@@ -11,7 +11,9 @@ from clash_relay.mihomo import validate_with_mihomo
 
 @pytest.mark.integration
 def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
-    project_factory, fixture_env, yaml_editor
+    project_factory,
+    fixture_env,
+    yaml_editor,
 ) -> None:
     root, paths = project_factory()
 

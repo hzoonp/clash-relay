@@ -54,7 +54,9 @@ def _resolve_acl4ssr_manifest(root: Path, relative: str) -> dict[str, Any]:
     try:
         target.relative_to(root.resolve())
     except ValueError as exc:
-        raise ConfigurationError(f"ACL4SSR manifest path escapes the project root: {relative}") from exc
+        raise ConfigurationError(
+            f"ACL4SSR manifest path escapes the project root: {relative}"
+        ) from exc
     if not target.is_file():
         raise ConfigurationError(f"ACL4SSR manifest does not exist: {relative}")
     return load_and_validate(target, "acl4ssr.schema.json")
