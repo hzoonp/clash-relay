@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from clash_relay.config_loader import load_project
 from clash_relay.util import load_yaml_file
 
