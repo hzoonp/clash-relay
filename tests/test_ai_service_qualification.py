@@ -216,7 +216,9 @@ def test_service_qualification_rejects_nested_hidden_provider_scope_drift() -> N
     )
     country["use"] = ["cr_ai_us_us"]
 
-    with pytest.raises(ValidationError, match="exposes providers outside its routing anchor"):
+    with pytest.raises(
+        ValidationError, match="exposes providers outside its routing anchor"
+    ):
         apply_ai_service_qualification(
             config,
             {
