@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    diagnostics: dict[str, object] = {}
     try:
         probes = load_ai_probe_specs(args.policies)
         qualified = probe_ai_nodes(
@@ -37,11 +38,26 @@ def main(argv: list[str] | None = None) -> int:
             args.candidate,
             probes,
             workers=args.workers,
+            diagnostics=diagnostics,
         )
         report = rewrite_ai_qualified_candidate(args.candidate, qualified)
-        print(json.dumps({"status": "qualified", **report}, ensure_ascii=False, sort_keys=True))
+        print(
+            json.dumps(
+                {"status": "qualified", "diagnostics": diagnostics, **report},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
         return 0
     except ClashRelayError as exc:
+        if diagnostics:
+            print(
+                json.dumps(
+                    {"status": "rejected", "diagnostics": diagnostics},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

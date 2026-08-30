@@ -60,23 +60,62 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
         path = tmp_path / "candidate.yaml"
         path.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
         url = f"http://ai-probe.invalid:{server.server_port}/probe"
+        diagnostics: dict = {}
 
         qualified = probe_ai_nodes(
             _binary(),
             path,
-            ({"name": "local", "url": url, "expected_status": "204", "timeout": 2000},),
+            (
+                {
+                    "name": "local",
+                    "url": url,
+                    "method": "HEAD",
+                    "expected_status": "204",
+                    "timeout": 2000,
+                },
+            ),
             workers=1,
+            diagnostics=diagnostics,
         )
         assert qualified == {"AI Direct"}
-        assert observed == ["GET"]
+        assert observed == ["HEAD"]
+        assert diagnostics == {
+            "tested_nodes": 1,
+            "qualified_nodes": 1,
+            "selector_failures": 0,
+            "probes": {
+                "local": {
+                    "method": "HEAD",
+                    "expected_status": "204",
+                    "passed": 1,
+                    "failed": 0,
+                    "outcomes": {"status_204": 1},
+                }
+            },
+        }
 
+        observed.clear()
+        rejected_diagnostics: dict = {}
         rejected = probe_ai_nodes(
             _binary(),
             path,
-            ({"name": "local", "url": url, "expected_status": "200", "timeout": 2000},),
+            (
+                {
+                    "name": "local",
+                    "url": url,
+                    "method": "HEAD",
+                    "expected_status": "200",
+                    "timeout": 2000,
+                },
+            ),
             workers=1,
+            diagnostics=rejected_diagnostics,
         )
         assert rejected == set()
+        assert observed == ["HEAD"]
+        assert rejected_diagnostics["qualified_nodes"] == 0
+        assert rejected_diagnostics["probes"]["local"]["failed"] == 1
+        assert rejected_diagnostics["probes"]["local"]["outcomes"] == {"status_204": 1}
     finally:
         server.shutdown()
         server.server_close()
