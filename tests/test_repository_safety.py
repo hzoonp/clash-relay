@@ -63,7 +63,14 @@ def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
     subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
     acl = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
 
-    assert set(policies["country_classification"]["aliases"]) >= {"HK", "TW", "SG", "JP", "US", "KR"}
+    assert set(policies["country_classification"]["aliases"]) >= {
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "US",
+        "KR",
+    }
     for subscription in subscriptions["subscriptions"]:
         assert "ai" in subscription["allowed_uses"]
         assert "*" in subscription["allowed_countries"]
