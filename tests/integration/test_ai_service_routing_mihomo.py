@@ -71,7 +71,9 @@ def _auto(name: str, provider: str) -> dict:
     }
 
 
-def test_service_qualified_candidate_is_accepted_by_real_mihomo(tmp_path: Path) -> None:
+def test_service_qualified_candidate_is_accepted_by_real_mihomo(
+    tmp_path: Path,
+) -> None:
     candidate = {
         "mixed-port": 7890,
         "allow-lan": False,
@@ -128,7 +130,9 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(tmp_path: Path) 
         },
     )
     path = tmp_path / "qualified.yaml"
-    path.write_text(yaml.safe_dump(candidate, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(candidate, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
 
     result = subprocess.run(
         [str(_binary()), "-t", "-d", str(tmp_path), "-f", str(path)],
