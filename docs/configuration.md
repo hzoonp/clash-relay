@@ -4,7 +4,7 @@ All declarations use `version: 1` and reject unknown properties through JSON Sch
 
 ## Canonical production profile
 
-The real repository-root production configuration is intentionally minimal:
+The repository-root production declarations are intentionally narrow:
 
 ```yaml
 modules:
@@ -13,31 +13,32 @@ modules:
 
 Production uses:
 
-- four metadata-only rows in `subscriptions.yaml`, displayed as `订阅源 1` through `订阅源 4`;
+- four metadata-only rows in `subscriptions.yaml`;
 - an empty `services.yaml`;
-- one `general` pool in `policies.yaml`, displayed as `节点选择`;
-- pinned ACL4SSR Full routing in `rules/acl4ssr.yaml`;
-- five visible FlClash groups total;
+- one internal `general` node inventory in `policies.yaml`;
+- seven AI country candidate inventories;
+- pinned ACL4SSR Online Full routing in `rules/acl4ssr.yaml`;
+- FlClash presentation-only containers that are never rule targets;
 - Cloudflare Workers KV as the only credential-bearing publication backend.
 
-Legacy dedicated production declarations for ChatGPT, Claude, Gemini, Google Play, bulk, residential, EMBY, high-multiplier, and chain routing have been removed. The generic engine still supports richer data-driven configurations; regression coverage for those capabilities lives under `tests/fixtures/project/` and is deliberately isolated from root production YAML.
+The production contract is: **ACL4SSR owns every non-AI rule target and semantic policy group. FlClash presentation and live AI qualification are the only project-specific layers.**
 
 ## `config.yaml`
 
 ### `runtime`
 
-Maps directly to a deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, and DNS. The generator never emits a private controller, controller secret, listeners, or tunnels.
+Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, and DNS. Production does not emit a public controller, controller secret, listeners, or tunnels.
 
 ### `modules`
 
-The schema permits arbitrary Boolean module IDs because the generator is reusable. Canonical production currently defines only:
+Canonical production enables only:
 
 ```yaml
 modules:
   general: true
 ```
 
-A service, pool, chain, or ACL4SSR source with a module is active only when that module is enabled.
+The schema remains reusable and permits other Boolean module IDs for isolated fixture projects.
 
 ### `generation`
 
@@ -56,8 +57,6 @@ A service, pool, chain, or ACL4SSR source with a module is active only when that
 | `node_name_prefix` | stable generated node-name namespace option |
 | `generated_header` | stable generated-file attribution/header option |
 
-Canonical production requires at least one successful subscription and one usable node overall. Individual source failures are skipped because no one provider is treated as mandatory.
-
 ### `rule_sources`
 
 Production enables:
@@ -69,15 +68,15 @@ rule_sources:
     manifest: rules/acl4ssr.yaml
 ```
 
-The manifest pins an immutable ACL4SSR commit. Its fetched fragments are converted at build time to inline classical Mihomo `rule-providers`; no remote rule-provider URL/path is emitted.
+The manifest pins an immutable ACL4SSR commit. Trusted generation fetches each configured fragment and embeds it as an inline classical Mihomo `rule-provider`; the final client profile contains no remote rule-provider URL/path.
 
-ACL4SSR policy groups and individual sources may additionally declare `excluded_sources`, and the final route may declare `final_excluded_sources`. These IDs refer to subscription IDs, not secret names. Exclusions are enforced with hidden Mihomo routing anchors using `exclude-filter` against the deterministic runtime source prefix, while reusing the same inline proxy provider. Unknown source IDs fail generation closed.
+The reusable schema still supports `excluded_sources` and `final_excluded_sources` for isolated/custom projects, but **canonical production declares neither**. Subscription-source policy therefore does not rewrite non-AI ACL4SSR routes.
 
 See [Routing rules and ACL4SSR](rules.md).
 
 ### `publishing`
 
-The public-repository production profile uses Cloudflare Workers KV as the only credential-bearing publisher:
+Production publishes credential-bearing output only to Cloudflare Workers KV:
 
 ```yaml
 publishing:
@@ -93,13 +92,13 @@ publishing:
     key: production-config
 ```
 
-`publication-gate --mode cloudflare_kv` fails closed unless Artifact, GitHub Release, and Gist publication remain disabled. GitHub Actions reads Cloudflare credentials only during the final publication step.
+`publication-gate --mode cloudflare_kv` fails closed unless the public GitHub publishing paths remain disabled.
 
 ## `subscriptions.yaml`
 
-A subscription row contains no URL. Canonical production keeps four rows whose visible names are `订阅源 1` through `订阅源 4` while their secret keys remain `SUBSCRIPTION_1_URL` through `SUBSCRIPTION_4_URL`.
+Tracked rows contain no URL. Their `secret_name` values resolve from `CLASH_RELAY_SUBSCRIPTIONS` or a local ignored secret mapping.
 
-`subscription_1` additionally has a hard node-admission ceiling:
+Canonical `subscription_1` is representative:
 
 ```yaml
 - id: subscription_1
@@ -110,15 +109,17 @@ A subscription row contains no URL. Canonical production keeps four rows whose v
   priority: 100
   on_error: skip
   allowed_uses: [general, ai]
-  allowed_countries: [OTHER]
+  allowed_countries: ['*']
   default_capabilities: [general]
   default_cost_level: standard
   max_node_multiplier: 2.0
 ```
 
-`max_node_multiplier` is applied after subscription parsing and before classification/provider generation. Only explicit multiplier markers in the original node name are evaluated. For a `2.0` ceiling, `2x` is retained, `2.01x` is rejected, and an unmarked node is retained rather than guessed.
+`max_node_multiplier` is an **admission** filter. It evaluates only explicit multiplier markers in the original node name. With a `2.0` ceiling, `2x` is retained, `2.01x` is rejected, and an unmarked node is retained rather than guessed.
 
-The generic schema supports:
+`allowed_uses` is also an inventory-admission boundary. Canonical production does not convert it into application-specific ACL4SSR source exclusions after the node enters the general inventory. AI is the explicit exception because AI candidate admission and live service qualification are part of the scheduler itself.
+
+Generic subscription fields:
 
 | Field | Meaning |
 |---|---|
@@ -129,19 +130,17 @@ The generic schema supports:
 | `secret_name` | key in secret bundle or environment |
 | `priority` | deterministic processing and duplicate ownership |
 | `on_error` | `fail` or `skip` |
-| `allowed_uses` | purposes the source contract allows |
+| `allowed_uses` | inventories/purposes the source may enter |
 | `allowed_countries` | source-level country boundary |
 | `default_capabilities` | capabilities assigned to every node from the source |
 | `default_cost_level` | default cost bucket |
-| `max_node_multiplier` | optional maximum explicit node-name multiplier; larger marked nodes are dropped |
+| `max_node_multiplier` | optional maximum explicit node-name multiplier |
 | `node_metadata` | exact original-name override map |
 | `name_rules` | optional auxiliary regex classifiers |
 
-`max_node_multiplier` recognizes explicit multiplier notation such as `2x`, `x2.5`, `3倍`, or `倍率:4`. It does not infer provider billing ratios from unrelated numbers or external account metadata.
-
 ## Secret injection
 
-Preferred GitHub Actions format:
+Preferred Actions Secret format:
 
 ```json
 {
@@ -152,9 +151,7 @@ Preferred GitHub Actions format:
 }
 ```
 
-Store the mapping as `CLASH_RELAY_SUBSCRIPTIONS`. These values are original provider URLs, not the protected Cloudflare Worker URL.
-
-For local development, an ignored YAML secret file can be passed with `--secret-file`.
+Store the mapping as `CLASH_RELAY_SUBSCRIPTIONS`. These are original provider URLs, not the Cloudflare Worker URL.
 
 ## `services.yaml`
 
@@ -165,21 +162,23 @@ version: 1
 services: []
 ```
 
-The generic schema remains capable of defining data-driven services with selectors, rule files, fallback order, and probe settings. Those generic examples are exercised under `tests/fixtures/project/` rather than root production.
+The generic schema can still define data-driven services for fixture/custom projects. Production AI scheduling is implemented through country candidate pools plus private post-generation qualification rather than declaration-time ChatGPT/Claude/Gemini service modules.
 
 ## `policies.yaml`
 
-Canonical production defines only:
+Canonical production defines:
 
 - capability `general`;
 - cost level `standard`;
-- one connectivity probe;
-- one `general` pool displayed as `节点选择`;
-- no chains.
+- deterministic country aliases used for AI candidate classification;
+- connectivity plus OpenAI/Claude/Gemini qualification probes;
+- one internal general inventory named `__CR_GENERAL_INVENTORY`;
+- seven AI candidate inventories: SG / JP / US / HK / TW / KR / OTHER;
+- no production chains.
 
-The pool uses `regions: [ANY]`, so one hidden `__CR_AUTO_GENERAL_ANY` url-test group is sufficient. No redundant public `Auto` selector or one-target fallback wrapper is generated.
+The internal general inventory is deliberately **not** the ACL4SSR `节点选择` policy. `rules/acl4ssr.yaml` materializes the actual ACL4SSR `节点选择`, `自动选择`, `手动切换`, country selectors, and other semantic policy groups over that shared provider-backed inventory.
 
-The generic engine can still model additional capabilities, country aliases, probes, special pools, and chains. Selector semantics remain:
+Generic pool selection remains data-driven:
 
 1. source must allow `source_use`;
 2. source must allow node country;
@@ -189,15 +188,45 @@ The generic engine can still model additional capabilities, country aliases, pro
 6. no `excluded_capabilities` may match;
 7. cost must be allowed.
 
-## `rules/`
+## `rules/direct.yaml`
 
-Production root keeps:
+Canonical production intentionally contains:
 
-- `rules/direct.yaml` for the small always-first local direct rules;
-- `rules/acl4ssr.yaml` for the pinned ACL4SSR Full manifest, five-group policy topology, and subscription-source routing exclusions.
+```yaml
+version: 1
+rules: []
+```
 
-Canonical `subscription_1` policy allows it on `ProxyGFWlist` and AI/OpenAI routes, while streaming, domestic-service proxy routes, Telegram, and final unmatched traffic exclude it. This is a rule-routing boundary; it is not browser-process detection.
+There is no project-defined local/private-network rule prelude ahead of ACL4SSR. If such a rule is needed in the future, it must come from the pinned ACL4SSR model or be explicitly documented as a deliberate semantic exception.
 
-Old root business rule files for ChatGPT, Claude, Gemini, Google Play, bulk traffic, and EMBY have been removed. Equivalent generic regression fixtures exist only under `tests/fixtures/project/rules/`.
+## `rules/acl4ssr.yaml`
 
-ACL4SSR rule data itself is not vendored into the repository. Trusted generation fetches the pinned upstream fragments, normalizes them, embeds them as inline `rule-providers`, and then validates the complete standalone YAML with both supported Mihomo versions.
+This file owns canonical non-AI routing behavior. It declares:
+
+- exact pinned ACL4SSR repository/ref/license;
+- Full rule-fragment order and targets;
+- ACL4SSR semantic policy groups and member order;
+- provider-backed manual/automatic/country selectors using the upstream regexes;
+- `GEOIP,CN -> 全球直连`;
+- `MATCH -> 漏网之鱼`;
+- presentation-only `流媒体`, `国内服务`, and `更多策略` containers that are not rule targets.
+
+The only intentional semantic extension is the `人工智能` scheduling layer: candidate country groups are live-qualified per service, and private post-processing inserts service-specific OpenAI/Claude/Gemini routes before the generic ACL4SSR AI rule.
+
+## Output visibility
+
+After successful AI qualification, the intended FlClash top level is:
+
+```text
+节点选择
+人工智能
+流媒体
+国内服务
+更多策略
+```
+
+ACL4SSR semantic groups hidden under the presentation containers still receive their original rule traffic. AI country groups are hidden at the top level and appear only under `人工智能`.
+
+## Validation
+
+Canonical changes must pass schema validation, Python 3.11/3.12 quality checks, deterministic generation, repository audit, real fetch of the pinned ACL4SSR sources with zero skipped legacy rules, and Mihomo v1.19.30/v1.19.29 integration before the exact private candidate may be published.
