@@ -149,9 +149,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         group_names.add(name)
         group_rows[name] = group
 
-    hidden_names = {
-        name for name, group in group_rows.items() if bool(group.get("hidden", False))
-    }
+    hidden_names = {name for name, group in group_rows.items() if bool(group.get("hidden", False))}
     graph: dict[str, set[str]] = defaultdict(set)
     for name, group in group_rows.items():
         references = group.get("proxies", [])
