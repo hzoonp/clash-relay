@@ -76,6 +76,35 @@ def _selector_capabilities(selector: dict[str, Any]) -> set[str]:
     )
 
 
+def _validate_acl4ssr_group_cycles(group_rows: list[dict[str, Any]]) -> None:
+    names = {str(item["display_name"]) for item in group_rows}
+    dependencies: dict[str, set[str]] = {}
+    for item in group_rows:
+        name = str(item["display_name"])
+        dependencies[name] = {
+            str(member["group"])
+            for member in item["members"]
+            if "group" in member and str(member["group"]) in names
+        }
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            raise ConfigurationError(f"ACL4SSR routing groups contain a cycle at {name!r}")
+        visiting.add(name)
+        for dependency in dependencies[name]:
+            visit(dependency)
+        visiting.remove(name)
+        visited.add(name)
+
+    for name in sorted(names):
+        visit(name)
+
+
 def load_project(
     *,
     config_path: Path,
@@ -250,10 +279,46 @@ def load_project(
         acl4ssr = _resolve_acl4ssr_manifest(root, str(acl_config["manifest"]))
         source_rows = list(acl4ssr["sources"])
         inline_rows = list(acl4ssr.get("inline_rules", []))
-        _ensure_unique(source_rows + inline_rows, "id", "ACL4SSR source IDs")
+        group_rows = list(acl4ssr.get("groups", []))
+        _ensure_unique(source_rows + inline_rows + group_rows, "id", "ACL4SSR declaration IDs")
+        if group_rows:
+            _ensure_unique(group_rows, "display_name", "ACL4SSR routing group names")
+            existing_names = {str(item["display_name"]) for item in all_units}
+            routing_names = {str(item["display_name"]) for item in group_rows}
+            collisions = existing_names & routing_names
+            if collisions:
+                raise ConfigurationError(
+                    "ACL4SSR routing group names collide with existing groups: "
+                    + ", ".join(sorted(collisions))
+                )
+            pool_ids = {str(item["id"]) for item in pool_rows}
+            known_names = existing_names | routing_names
+            for group in group_rows:
+                module = group.get("module")
+                if module is not None and module not in modules:
+                    raise ConfigurationError(
+                        f"ACL4SSR routing group {group['id']!r} references undeclared module "
+                        f"{module!r}"
+                    )
+                for member in group["members"]:
+                    if "group" in member and str(member["group"]) not in known_names:
+                        raise ConfigurationError(
+                            f"ACL4SSR routing group {group['id']!r} references unknown group "
+                            f"{member['group']!r}"
+                        )
+                    if "auto_pool" in member and str(member["auto_pool"]) not in pool_ids:
+                        raise ConfigurationError(
+                            f"ACL4SSR routing group {group['id']!r} references unknown auto pool "
+                            f"{member['auto_pool']!r}"
+                        )
+            _validate_acl4ssr_group_cycles(group_rows)
+        else:
+            routing_names = set()
+
         declared_targets = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"} | {
             str(item["display_name"]) for item in all_units
         }
+        declared_targets |= routing_names
         for item in source_rows + inline_rows:
             module = item.get("module")
             if module is not None and module not in modules:
@@ -264,6 +329,11 @@ def load_project(
                 raise ConfigurationError(
                     f"ACL4SSR source {item['id']!r} targets unknown group {item['target']!r}"
                 )
+        final_target = acl4ssr.get("final_target")
+        if final_target is not None and str(final_target) not in declared_targets:
+            raise ConfigurationError(
+                f"ACL4SSR final_target references unknown group {final_target!r}"
+            )
         for source in source_rows:
             relative = str(source["path"])
             path = Path(relative)
