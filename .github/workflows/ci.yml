@@ -29,11 +29,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - run: python -m pip install --requirement requirements-dev.lock --editable .
-      - name: Diagnose Ruff normalization
-        run: |
-          ruff check . --fix || true
-          git diff -- tests/test_repository_safety.py
-          git diff --exit-code
+      - run: ruff check .
       - run: ruff format --check .
       - run: pytest -m "not integration" --junitxml=.work/unit-${{ matrix.python }}.xml
       - run: python scripts/repository_audit.py
