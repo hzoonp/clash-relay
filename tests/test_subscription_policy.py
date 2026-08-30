@@ -227,3 +227,12 @@ def test_canonical_subscription_1_policy_is_locked(repo_root: Path) -> None:
     assert sources["telegram"]["excluded_sources"] == ["subscription_1"]
     assert "excluded_sources" not in sources["proxy_gfwlist"]
     assert acl4ssr["final_excluded_sources"] == ["subscription_1"]
+
+    for group in acl4ssr["groups"]:
+        uses_node_selection = {"group": "节点选择"} in group["members"]
+        if uses_node_selection and group["display_name"] != "人工智能":
+            assert "subscription_1" in group.get("excluded_sources", [])
+
+    for source in acl4ssr["sources"]:
+        if source["target"] == "节点选择" and source["id"] != "proxy_gfwlist":
+            assert "subscription_1" in source.get("excluded_sources", [])
