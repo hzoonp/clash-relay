@@ -45,19 +45,87 @@ jobs:
               print(f"::add-mask::{command_escape(value)}")
           PY
 
-      - name: Generate private production-equivalent candidate
+      - name: Build anonymous raw subscription 3 probe config
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
         run: |
           mkdir -p .work/private
-          clash-relay generate \
-            --config config.yaml \
-            --subscriptions subscriptions.yaml \
-            --services services.yaml \
-            --policies policies.yaml \
-            --output .work/private/config.yaml \
-            --report .work/private/build-report.json \
-            > .work/private/generation-summary.json
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+
+          from clash_relay.fetch import fetch_subscription
+          from clash_relay.secrets import load_secret_mapping
+          from clash_relay.subscription_parser import parse_subscription
+
+          mapping = load_secret_mapping(env=os.environ)
+          url = mapping["SUBSCRIPTION_3_URL"]
+          text = fetch_subscription(
+              url,
+              timeout=20,
+              max_bytes=8388608,
+              allow_http=False,
+              allow_file=False,
+          )
+          parsed = parse_subscription(
+              text,
+              invalid_policy="error",
+              reject_private_hosts=True,
+          )
+
+          proxies = []
+          for index, proxy in enumerate(parsed.proxies, start=1):
+              anonymous = dict(proxy)
+              anonymous["name"] = f"probe-{index:04d}"
+              proxies.append(anonymous)
+
+          print(f"subscription_3_raw_nodes={len(proxies)}")
+          print(f"subscription_3_skipped_invalid={parsed.skipped_items}")
+          if not proxies:
+              raise SystemExit("subscription 3 has no usable raw proxy nodes")
+
+          document = {
+              "mixed-port": 17890,
+              "allow-lan": False,
+              "bind-address": "127.0.0.1",
+              "mode": "rule",
+              "log-level": "error",
+              "ipv6": False,
+              "profile": {"store-selected": False, "store-fake-ip": False},
+              "external-controller": "127.0.0.1:19090",
+              "secret": "local-probe-only",
+              "dns": {
+                  "enable": True,
+                  "enhanced-mode": "fake-ip",
+                  "listen": "127.0.0.1:1153",
+                  "nameserver": [
+                      "https://1.1.1.1/dns-query",
+                      "https://8.8.8.8/dns-query",
+                  ],
+                  "fallback": ["tls://1.0.0.1:853"],
+              },
+              "proxy-providers": {
+                  "probe_subscription_3": {
+                      "type": "inline",
+                      "payload": proxies,
+                  }
+              },
+              "proxy-groups": [
+                  {
+                      "name": "__AI_PROBE_RAW",
+                      "type": "select",
+                      "hidden": True,
+                      "use": ["probe_subscription_3"],
+                  }
+              ],
+              "rules": ["MATCH,__AI_PROBE_RAW"],
+          }
+          Path(".work/private/probe.yaml").write_text(
+              yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+              encoding="utf-8",
+          )
+          PY
 
       - name: Download pinned Mihomo
         run: |
@@ -66,46 +134,6 @@ jobs:
             --tag v1.19.30 \
             --output .work/bin/mihomo-1.19.30 \
             > .work/private/mihomo-download.json
-
-      - name: Prepare local-only probe runtime
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          source = Path(".work/private/config.yaml")
-          target = Path(".work/private/probe.yaml")
-          document = yaml.safe_load(source.read_text(encoding="utf-8"))
-          document["mixed-port"] = 17890
-          document["bind-address"] = "127.0.0.1"
-          document["allow-lan"] = False
-          document["external-controller"] = "127.0.0.1:19090"
-          document["secret"] = "local-probe-only"
-          document["log-level"] = "error"
-          document.setdefault("profile", {})["store-selected"] = False
-          if isinstance(document.get("dns"), dict):
-              document["dns"]["listen"] = "127.0.0.1:1153"
-
-          document.setdefault("proxy-groups", []).append(
-              {
-                  "name": "__AI_PROBE_RAW",
-                  "type": "select",
-                  "hidden": True,
-                  "use": ["cr_general_any"],
-              }
-          )
-          probe_rules = [
-              "DOMAIN,api.openai.com,__AI_PROBE_RAW",
-              "DOMAIN,api.anthropic.com,__AI_PROBE_RAW",
-              "DOMAIN,generativelanguage.googleapis.com,__AI_PROBE_RAW",
-          ]
-          document["rules"] = probe_rules + list(document.get("rules", []))
-
-          target.write_text(
-              yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
-              encoding="utf-8",
-          )
-          PY
 
       - name: Probe subscription 3 through real Mihomo nodes
         shell: bash
@@ -120,8 +148,9 @@ jobs:
           trap 'kill "$mihomo_pid" 2>/dev/null || true' EXIT
 
           python scripts/probe_subscription_ai.py \
-            --candidate .work/private/config.yaml \
+            --candidate .work/private/probe.yaml \
             --source-id subscription_3 \
+            --provider probe_subscription_3 \
             --group __AI_PROBE_RAW \
             --timeout 4.0
 
