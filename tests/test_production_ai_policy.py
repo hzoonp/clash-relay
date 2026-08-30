@@ -1,5 +1,4 @@
 from clash_relay.config_loader import load_project
-from clash_relay.util import load_yaml_file
 
 
 AI_COUNTRY_GROUPS = [
@@ -13,16 +12,21 @@ AI_COUNTRY_GROUPS = [
 ]
 
 
-def _load(path) -> dict:
-    document = load_yaml_file(path)
-    assert isinstance(document, dict)
-    return document
+def _project(repo_root):
+    return load_project(
+        config_path=repo_root / "config.yaml",
+        subscriptions_path=repo_root / "subscriptions.yaml",
+        services_path=repo_root / "services.yaml",
+        policies_path=repo_root / "policies.yaml",
+    )
 
 
 def test_production_ai_candidates_are_country_classified_and_live_gated(repo_root) -> None:
-    policies = _load(repo_root / "policies.yaml")
-    subscriptions = _load(repo_root / "subscriptions.yaml")
-    acl = _load(repo_root / "rules/acl4ssr.yaml")
+    project = _project(repo_root)
+    policies = project.policies
+    subscriptions = project.subscriptions_document
+    acl = project.acl4ssr
+    assert acl is not None
 
     assert set(policies["country_classification"]["aliases"]) >= {"HK", "TW", "SG", "JP", "US", "KR"}
     for subscription in subscriptions["subscriptions"]:
@@ -47,11 +51,6 @@ def test_production_ai_candidates_are_country_classified_and_live_gated(repo_roo
 
 
 def test_production_project_with_ai_country_pools_is_schema_valid(repo_root) -> None:
-    project = load_project(
-        config_path=repo_root / "config.yaml",
-        subscriptions_path=repo_root / "subscriptions.yaml",
-        services_path=repo_root / "services.yaml",
-        policies_path=repo_root / "policies.yaml",
-    )
+    project = _project(repo_root)
     assert project.config["modules"]["general"] is True
     assert {pool["display_name"] for pool in project.policies["pools"]} >= set(AI_COUNTRY_GROUPS)
