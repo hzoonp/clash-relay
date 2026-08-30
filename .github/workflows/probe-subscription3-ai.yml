@@ -59,20 +59,24 @@ jobs:
           from clash_relay.secrets import load_secret_mapping
           from clash_relay.subscription_parser import parse_subscription
 
-          mapping = load_secret_mapping(env=os.environ)
-          url = mapping["SUBSCRIPTION_3_URL"]
-          text = fetch_subscription(
-              url,
-              timeout=20,
-              max_bytes=8388608,
-              allow_http=False,
-              allow_file=False,
-          )
-          parsed = parse_subscription(
-              text,
-              invalid_policy="error",
-              reject_private_hosts=True,
-          )
+          try:
+              mapping = load_secret_mapping(env=os.environ)
+              url = mapping["SUBSCRIPTION_3_URL"]
+              text = fetch_subscription(
+                  url,
+                  timeout=20,
+                  max_bytes=8388608,
+                  allow_http=False,
+                  allow_file=False,
+              )
+              parsed = parse_subscription(
+                  text,
+                  invalid_policy="skip",
+                  reject_private_hosts=True,
+              )
+          except Exception:
+              print("subscription_3_parse_status=failed")
+              raise SystemExit(2) from None
 
           proxies = []
           for index, proxy in enumerate(parsed.proxies, start=1):
@@ -80,10 +84,12 @@ jobs:
               anonymous["name"] = f"probe-{index:04d}"
               proxies.append(anonymous)
 
+          print("subscription_3_parse_status=ok")
           print(f"subscription_3_raw_nodes={len(proxies)}")
           print(f"subscription_3_skipped_invalid={parsed.skipped_items}")
           if not proxies:
-              raise SystemExit("subscription 3 has no usable raw proxy nodes")
+              print("subscription_3_probe_status=no_usable_nodes")
+              raise SystemExit(2)
 
           document = {
               "mixed-port": 17890,
