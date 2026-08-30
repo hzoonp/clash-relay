@@ -94,6 +94,12 @@ def safe_identifier(value: str, *, upper: bool = False, maximum: int = 64) -> st
     return normalized[:maximum]
 
 
+def normalize_expected_status(value: Any) -> int | str:
+    """Render a Mihomo expected-status value with exact statuses as YAML integers."""
+    text = str(value).strip()
+    return int(text) if text.isdecimal() else text
+
+
 def deep_size_guard(value: Any, *, max_depth: int = 20, max_items: int = 100_000) -> None:
     """Bound nested attacker-controlled subscription structures."""
     stack: list[tuple[Any, int]] = [(value, 0)]
