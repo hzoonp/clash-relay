@@ -10,7 +10,7 @@ All notable changes will be documented here.
 - Separated FlClash presentation-only containers from semantic ACL4SSR policy groups so UI nesting no longer changes rule behavior.
 - Removed the canonical local direct-rule prelude and subscription-source route exclusions that previously altered ACL4SSR behavior.
 - Kept service-aware OpenAI, Claude, and Gemini live qualification as the explicit routing-semantic extension.
-- Added canonical production-shaped Mihomo integration coverage and a zero-skipped-rule assertion for the pinned ACL4SSR sources.
+- Added canonical production-shaped Mihomo integration coverage and a fail-closed compatibility boundary requiring the pinned ACL4SSR Provider files to verify all nine legacy `URL-REGEX` omissions, with zero unverified legacy rules.
 
 ## [0.1.0] - 2026-08-30
 
