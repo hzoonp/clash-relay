@@ -81,9 +81,7 @@ def _reachable_providers(anchor: str, groups: dict[str, dict[str, Any]]) -> set[
             found.update(item for item in uses if isinstance(item, str))
         references = group.get("proxies", [])
         if isinstance(references, list):
-            pending.extend(
-                item for item in references if isinstance(item, str) and item in groups
-            )
+            pending.extend(item for item in references if isinstance(item, str) and item in groups)
     return found
 
 
@@ -270,7 +268,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 and "dialer-proxy" in proxy
                 and proxy["dialer-proxy"] not in group_names
             ):
-                errors.append(f"provider {provider_name!r} dialer-proxy references an unknown group")
+                errors.append(
+                    f"provider {provider_name!r} dialer-proxy references an unknown group"
+                )
 
     cycle_list = _cycles(dict(graph))
     if cycle_list:
@@ -289,9 +289,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 errors.append("generated rules must be strings")
                 continue
             parts = rule.split(",")
-            if parts[0] == "RULE-SET" and (
-                len(parts) < 3 or parts[1] not in rule_providers
-            ):
+            if parts[0] == "RULE-SET" and (len(parts) < 3 or parts[1] not in rule_providers):
                 errors.append(f"RULE-SET references unknown rule provider in {rule!r}")
                 continue
             try:
