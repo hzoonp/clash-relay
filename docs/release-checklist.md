@@ -28,12 +28,14 @@
 - [ ] Review Actions permissions; keep default read and grant write only to promotion.
 - [ ] Enable Dependabot and private vulnerability reporting.
 - [ ] Optionally pin Actions to full commit SHAs.
-- [ ] Decide whether deployers should use a private template repository rather than a public fork.
+- [ ] Use a separate private repository for real production subscriptions and credential-bearing Artifacts.
 
 ## Fictional acceptance run
 
 - [ ] Add only a completely fictional `CLASH_RELAY_SUBSCRIPTIONS` mapping.
-- [ ] Run the production workflow and inspect the redacted report.
+- [ ] Run the production workflow in a private test repository and inspect the redacted report.
+- [ ] Confirm a public repository with canonical production declarations fails in `prepare` before the candidate job can receive Secrets.
+- [ ] Confirm every individual derived subscription URL is registered with `::add-mask::` before generation.
 - [ ] Delete each fixture subscription in turn and confirm generation behavior.
 - [ ] Add a new fixture subscription without changing Python.
 - [ ] Add a fixture AI service using one service row and one rule file (a module Boolean is optional).
@@ -43,9 +45,11 @@
 
 ## Production deployment
 
+- [ ] The deployment repository is private before any real subscription Secret is added.
 - [ ] Add real URLs only through Actions Secrets.
-- [ ] Review repository access before adding real subscription Secrets; candidate generation starts only after canonical declarations are committed.
-- [ ] Leave Release and Gist disabled unless public credential exposure is intentionally accepted; enabling either also requires its backend variable and the exact acknowledgement variable.
-- [ ] Import the validated file into a non-critical Mihomo/FlClash profile first.
+- [ ] Confirm tracked `config.yaml` and `subscriptions.yaml` contain metadata only.
+- [ ] Leave Release and Gist disabled unless credential-bearing output is intentionally sent to those backends; enabling either also requires its backend variable and the exact acknowledgement variable.
+- [ ] Import the validated Artifact into a non-critical Mihomo/FlClash profile first.
 - [ ] Verify service behavior independently of health-check reachability.
-- [ ] Establish credential rotation and Artifact/Release retention procedures.
+- [ ] Establish credential rotation and Artifact/Release/Gist retention procedures.
+- [ ] If repository visibility is ever changed, re-audit retained workflow logs, Artifacts, Releases, and linked Gists before the change.
