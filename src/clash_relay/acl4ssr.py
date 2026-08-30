@@ -120,6 +120,15 @@ def _default_compatibility_path(source_path: str) -> str:
     return str(PurePosixPath("Clash/Providers") / f"{path.stem}.yaml")
 
 
+def _validated_compatibility_path(path_text: str, *, source_id: str) -> str:
+    path = PurePosixPath(path_text)
+    if path.is_absolute() or ".." in path.parts or not path_text.startswith("Clash/Providers/"):
+        raise GenerationError(
+            f"ACL4SSR source {source_id!r} has an unsafe Mihomo compatibility provider path"
+        )
+    return path_text
+
+
 def _verify_legacy_compatibility(
     *,
     source: dict[str, Any],
@@ -138,6 +147,9 @@ def _verify_legacy_compatibility(
     compatibility_path = source.get("mihomo_compatibility_path")
     if not isinstance(compatibility_path, str) or not compatibility_path:
         compatibility_path = _default_compatibility_path(source_path)
+    compatibility_path = _validated_compatibility_path(
+        compatibility_path, source_id=source_id
+    )
     compatibility_url = _raw_url(repository, ref, compatibility_path)
     try:
         compatibility_text = fetcher(
