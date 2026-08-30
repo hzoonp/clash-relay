@@ -100,9 +100,7 @@ def _provider_routes(
 
 def _quote_re2_literal(value: str) -> str:
     """Quote one runtime proxy name for Mihomo's Go/RE2-compatible regex parser."""
-    return "".join(
-        f"\\{character}" if character in _RE2_META else character for character in value
-    )
+    return "".join(f"\\{character}" if character in _RE2_META else character for character in value)
 
 
 def _exact_filter(names: set[str]) -> str:
@@ -298,9 +296,7 @@ def apply_ai_service_qualification(
         }
         for service in _SERVICE_ORDER
     }
-    union_names = set().union(
-        *(set(qualified_by_probe[service]) for service in _SERVICE_ORDER)
-    )
+    union_names = set().union(*(set(qualified_by_probe[service]) for service in _SERVICE_ORDER))
     if not union_names:
         raise ValidationError(
             "no nodes passed any AI service qualification probe; refusing to replace the published profile"
