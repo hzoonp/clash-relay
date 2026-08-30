@@ -30,7 +30,7 @@ generation:
   minimum_usable_nodes: 1
   fetch_timeout_seconds: 20
   max_subscription_bytes: 8388608
-  invalid_proxy_policy: error
+  invalid_proxy_policy: skip
   duplicate_policy: keep_first
   allow_http_subscription_urls: false
   allow_file_subscription_urls: false
