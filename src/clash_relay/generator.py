@@ -10,7 +10,7 @@ from .errors import GenerationError
 from .models import Node
 from .schema import load_and_validate
 from .selector import select_nodes
-from .util import safe_identifier, unique
+from .util import normalize_expected_status, safe_identifier, unique
 
 _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
@@ -42,7 +42,7 @@ def _health_check(probe: dict[str, Any]) -> dict[str, Any]:
         "interval": probe["interval"],
         "timeout": probe["timeout"],
         "lazy": probe["lazy"],
-        "expected-status": str(probe["expected_status"]),
+        "expected-status": normalize_expected_status(probe["expected_status"]),
     }
 
 
@@ -52,7 +52,7 @@ def _test_fields(probe: dict[str, Any]) -> dict[str, Any]:
         "interval": probe["interval"],
         "timeout": probe["timeout"],
         "lazy": probe["lazy"],
-        "expected-status": str(probe["expected_status"]),
+        "expected-status": normalize_expected_status(probe["expected_status"]),
     }
 
 
