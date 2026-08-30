@@ -43,7 +43,8 @@ def _proxy(name: str = "Node") -> dict:
 
 @pytest.fixture(scope="module")
 def policies(repo_root: Path) -> dict:
-    return yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    path = repo_root / "tests/fixtures/project/policies.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def test_country_name_classifier_is_auxiliary(policies: dict) -> None:
