@@ -7,9 +7,12 @@ from collections.abc import Iterable
 from typing import Any
 
 _MULTIPLIER_PATTERNS = (
-    re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)\s*(?:[xX×]|倍)(?![A-Za-z0-9.])"),
-    re.compile(r"(?:倍率|倍数)\s*[:：=]?\s*(\d+(?:\.\d+)?)(?:\s*[xX×倍])?", re.IGNORECASE),
-    re.compile(r"(?<![A-Za-z0-9])[xX×]\s*(\d+(?:\.\d+)?)(?![0-9.])"),
+    re.compile(r"(?<![0-9.])(\d+(?:\.\d+)?)\s*(?:[xX\u00d7]|倍)(?![A-Za-z0-9.])"),
+    re.compile(
+        r"(?:倍率|倍数)\s*[:\uff1a=]?\s*(\d+(?:\.\d+)?)(?:\s*[xX\u00d7倍])?",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?<![A-Za-z0-9])[xX\u00d7]\s*(\d+(?:\.\d+)?)(?![0-9.])"),
 )
 
 
