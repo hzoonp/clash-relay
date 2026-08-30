@@ -75,11 +75,11 @@ def load_ai_probe_specs(
     return tuple(result)
 
 
-def _ai_proxy_names(config: dict[str, Any]) -> tuple[str, ...]:
+def _ai_proxy_refs(config: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     providers = config.get("proxy-providers", {})
     if not isinstance(providers, dict):
         raise ValidationError("candidate proxy-providers must be a mapping")
-    names: list[str] = []
+    refs: list[tuple[str, str]] = []
     for provider_name in sorted(providers):
         if not provider_name.startswith(AI_PROVIDER_PREFIX):
             continue
@@ -89,10 +89,10 @@ def _ai_proxy_names(config: dict[str, Any]) -> tuple[str, ...]:
         for proxy in provider["payload"]:
             if not isinstance(proxy, dict) or not isinstance(proxy.get("name"), str):
                 raise ValidationError("AI qualification provider contains an unnamed proxy")
-            names.append(proxy["name"])
-    if not names:
+            refs.append((provider_name, proxy["name"]))
+    if not refs:
         raise ValidationError("AI qualification found no candidate AI proxy nodes")
-    return tuple(names)
+    return tuple(refs)
 
 
 def _probe_copy(config_path: Path, workdir: Path) -> tuple[Path, int, str]:
@@ -149,17 +149,20 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
 def _probe_proxy(
     controller_port: int,
     secret: str,
+    provider_name: str,
     proxy_name: str,
     probes: tuple[dict[str, Any], ...],
 ) -> bool:
+    encoded_provider = urllib.parse.quote(provider_name, safe="")
     encoded_name = urllib.parse.quote(proxy_name, safe="")
+    path = f"/providers/proxies/{encoded_provider}/{encoded_name}/healthcheck"
     for probe in probes:
         timeout_ms = int(probe["timeout"])
         try:
             payload = _controller_json(
                 controller_port,
                 secret,
-                f"/proxies/{encoded_name}/delay",
+                path,
                 query={
                     "url": probe["url"],
                     "timeout": timeout_ms,
@@ -196,7 +199,7 @@ def probe_ai_nodes(
     config = load_yaml_file(config_path)
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
-    proxy_names = _ai_proxy_names(config)
+    proxy_refs = _ai_proxy_refs(config)
     if not probes:
         raise ValidationError("AI qualification requires at least one probe")
 
@@ -233,17 +236,18 @@ def probe_ai_nodes(
         try:
             _wait_for_controller(process, controller_port, secret)
             qualified: set[str] = set()
-            worker_count = max(1, min(workers, len(proxy_names)))
+            worker_count = max(1, min(workers, len(proxy_refs)))
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
                 futures = {
                     executor.submit(
                         _probe_proxy,
                         controller_port,
                         secret,
+                        provider_name,
                         proxy_name,
                         probes,
                     ): proxy_name
-                    for proxy_name in proxy_names
+                    for provider_name, proxy_name in proxy_refs
                 }
                 for future in as_completed(futures):
                     if future.result():
