@@ -254,7 +254,7 @@ def _select_node(port: int, secret: str, node_name: str) -> bool:
             data=body,
             method="PUT",
             headers={
-                "Authorization": f"Bearer {secret}"},
+                "Authorization": f"Bearer {secret}",
                 "Content-Type": "application/json",
             },
         )
