@@ -17,6 +17,7 @@ Production uses:
 - an empty `services.yaml`;
 - one `general` pool in `policies.yaml`, displayed as `节点选择`;
 - pinned ACL4SSR Full routing in `rules/acl4ssr.yaml`;
+- five visible FlClash groups total;
 - Cloudflare Workers KV as the only credential-bearing publication backend.
 
 Legacy dedicated production declarations for ChatGPT, Claude, Gemini, Google Play, bulk, residential, EMBY, high-multiplier, and chain routing have been removed. The generic engine still supports richer data-driven configurations; regression coverage for those capabilities lives under `tests/fixtures/project/` and is deliberately isolated from root production YAML.
@@ -68,7 +69,11 @@ rule_sources:
     manifest: rules/acl4ssr.yaml
 ```
 
-The manifest pins an immutable ACL4SSR commit. Its fetched fragments are converted at build time to inline classical Mihomo `rule-providers`; no remote rule-provider URL/path is emitted. See [Routing rules and ACL4SSR](rules.md).
+The manifest pins an immutable ACL4SSR commit. Its fetched fragments are converted at build time to inline classical Mihomo `rule-providers`; no remote rule-provider URL/path is emitted.
+
+ACL4SSR policy groups and individual sources may additionally declare `excluded_sources`, and the final route may declare `final_excluded_sources`. These IDs refer to subscription IDs, not secret names. Exclusions are enforced with hidden Mihomo routing anchors using `exclude-filter` against the deterministic runtime source prefix, while reusing the same inline proxy provider. Unknown source IDs fail generation closed.
+
+See [Routing rules and ACL4SSR](rules.md).
 
 ### `publishing`
 
@@ -94,7 +99,7 @@ publishing:
 
 A subscription row contains no URL. Canonical production keeps four rows whose visible names are `订阅源 1` through `订阅源 4` while their secret keys remain `SUBSCRIPTION_1_URL` through `SUBSCRIPTION_4_URL`.
 
-Production rows use only the general contract:
+`subscription_1` additionally has a hard node-admission ceiling:
 
 ```yaml
 - id: subscription_1
@@ -104,13 +109,16 @@ Production rows use only the general contract:
   secret_name: SUBSCRIPTION_1_URL
   priority: 100
   on_error: skip
-  allowed_uses: [general]
+  allowed_uses: [general, ai]
   allowed_countries: [OTHER]
   default_capabilities: [general]
   default_cost_level: standard
+  max_node_multiplier: 2.0
 ```
 
-The generic schema also supports:
+`max_node_multiplier` is applied after subscription parsing and before classification/provider generation. Only explicit multiplier markers in the original node name are evaluated. For a `2.0` ceiling, `2x` is retained, `2.01x` is rejected, and an unmarked node is retained rather than guessed.
+
+The generic schema supports:
 
 | Field | Meaning |
 |---|---|
@@ -125,8 +133,11 @@ The generic schema also supports:
 | `allowed_countries` | source-level country boundary |
 | `default_capabilities` | capabilities assigned to every node from the source |
 | `default_cost_level` | default cost bucket |
+| `max_node_multiplier` | optional maximum explicit node-name multiplier; larger marked nodes are dropped |
 | `node_metadata` | exact original-name override map |
 | `name_rules` | optional auxiliary regex classifiers |
+
+`max_node_multiplier` recognizes explicit multiplier notation such as `2x`, `x2.5`, `3倍`, or `倍率:4`. It does not infer provider billing ratios from unrelated numbers or external account metadata.
 
 ## Secret injection
 
@@ -183,7 +194,9 @@ The generic engine can still model additional capabilities, country aliases, pro
 Production root keeps:
 
 - `rules/direct.yaml` for the small always-first local direct rules;
-- `rules/acl4ssr.yaml` for the pinned ACL4SSR Full manifest and Chinese policy topology.
+- `rules/acl4ssr.yaml` for the pinned ACL4SSR Full manifest, five-group policy topology, and subscription-source routing exclusions.
+
+Canonical `subscription_1` policy allows it on `ProxyGFWlist` and AI/OpenAI routes, while streaming, domestic-service proxy routes, Telegram, and final unmatched traffic exclude it. This is a rule-routing boundary; it is not browser-process detection.
 
 Old root business rule files for ChatGPT, Claude, Gemini, Google Play, bulk traffic, and EMBY have been removed. Equivalent generic regression fixtures exist only under `tests/fixtures/project/rules/`.
 
