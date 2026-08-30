@@ -83,7 +83,7 @@ ACL4SSR 原本的策略行为也保留，包括 `节点选择`、`自动选择`�
 
 ACL4SSR 规则片段在可信构建阶段获取，并内联为 Mihomo classical rule-provider。最终 YAML 为 standalone，运行时 rule-provider 不含 `url` 或 `path`。
 
-adapter 会统计固定 Mihomo 无法表达的 legacy 规则类型；CI 还会真实抓取 canonical 固定 Full 片段并强制要求 **`skipped_legacy_rules == 0`**。以后若更新 ACL4SSR pin 后必须丢规则才能生成，CI 会失败，而不是把不完整结果继续称为“严格遵循”。
+固定 Full 片段中有 9 条 Mihomo 1.19.x 无法用 classical rule 表达的旧式 `URL-REGEX`：`Download.list` 7 条、`ChinaMedia.list` 1 条、`ProxyMedia.list` 1 条。项目不会私自改写成近似的 `DOMAIN-REGEX`。只有当**同一 ACL4SSR commit** 的 `Clash/Providers/*.yaml` 对同一条规则明确以注释形式省略时，adapter 才允许做相同兼容处理；任何不匹配都会 fail closed。canonical CI 强制要求 `verified_compatibility_omissions == 9` 且 `unverified_legacy_rules == 0`。
 
 详见 [ACL4SSR 规则模型](docs/rules.md)。
 
