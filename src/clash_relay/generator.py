@@ -317,6 +317,7 @@ def generate_config(
     services: dict[str, Any],
     policies: dict[str, Any],
     nodes: list[Node],
+    external_rules: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     providers: dict[str, Any] = {}
     groups: list[dict[str, Any]] = []
@@ -370,27 +371,49 @@ def generate_config(
     if not groups:
         raise GenerationError("no enabled module produced a public proxy group")
 
-    rule_rows: list[tuple[int, str, str]] = []
+    available_targets = _BUILTINS | {str(group["name"]) for group in groups}
+    rule_rows: list[tuple[int, str, int, str]] = []
     for service in services["services"]:
         if modules.get(service["module"], False):
-            for rule in _load_rules(root, service["rules"]):
+            for order, rule in enumerate(_load_rules(root, service["rules"])):
                 rule_rows.append(
                     (
                         service["rule_priority"],
-                        service["id"],
+                        f"service:{service['id']}",
+                        order,
                         _render_rule(rule, service["display_name"]),
                     )
                 )
     for pool in policies["pools"]:
         if modules.get(pool["module"], False) and pool["rules"]:
-            for rule in _load_rules(root, pool["rules"]):
+            for order, rule in enumerate(_load_rules(root, pool["rules"])):
                 rule_rows.append(
-                    (pool["rule_priority"], pool["id"], _render_rule(rule, pool["display_name"]))
+                    (
+                        pool["rule_priority"],
+                        f"pool:{pool['id']}",
+                        order,
+                        _render_rule(rule, pool["display_name"]),
+                    )
                 )
+    for item in external_rules or []:
+        target = str(item["target"])
+        if target not in available_targets:
+            raise GenerationError(
+                f"external rule source {item['source_id']!r} targets unavailable group {target!r}"
+            )
+        rule_rows.append(
+            (
+                int(item["priority"]),
+                f"acl4ssr:{item['source_id']}",
+                int(item["order"]),
+                _render_rule(item["rule"], target),
+            )
+        )
+
     rendered_rules = [
         _render_rule(rule, "DIRECT") for rule in _load_rules(root, "rules/direct.yaml")
     ]
-    rendered_rules.extend(value for _, _, value in sorted(rule_rows, key=lambda item: item[:2]))
+    rendered_rules.extend(value for _, _, _, value in sorted(rule_rows, key=lambda item: item[:3]))
     final_target = "Proxy" if modules.get("general", False) else "DIRECT"
     rendered_rules.append(f"MATCH,{final_target}")
     rendered_rules = unique(rendered_rules)
@@ -404,6 +427,7 @@ def generate_config(
         "providers": len(providers),
         "proxy_groups": len(groups),
         "public_groups": [group["name"] for group in groups if not group.get("hidden", False)],
+        "routing_rules": len(rendered_rules),
         "pools": pool_report,
     }
     return output, report

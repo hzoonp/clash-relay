@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from .acl4ssr import load_acl4ssr_rules
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
 from .errors import FetchError, GenerationError, SubscriptionError
@@ -69,6 +70,22 @@ def _expose_manual_provider_choices(output: dict[str, Any]) -> None:
             public["use"] = provider_names
 
 
+def _with_acl4ssr_attribution(
+    yaml_text: str, *, generated_header: bool, acl_report: dict[str, Any] | None
+) -> str:
+    if acl_report is None:
+        return yaml_text
+    attribution = (
+        "# ACL4SSR routing data adapted by clash-relay from "
+        f"ACL4SSR/ACL4SSR@{acl_report['ref']} under CC-BY-SA-4.0; "
+        "https://creativecommons.org/licenses/by-sa/4.0/"
+    )
+    if generated_header and "\n" in yaml_text:
+        first, rest = yaml_text.split("\n", 1)
+        return f"{first}\n{attribution}\n{rest}"
+    return f"{attribution}\n{yaml_text}"
+
+
 def build_candidate(
     *,
     config_path: Path,
@@ -78,6 +95,7 @@ def build_candidate(
     secret_file: Path | None = None,
     env: Mapping[str, str] | None = None,
     fetcher: Fetcher = fetch_subscription,
+    rule_fetcher: Fetcher = fetch_subscription,
 ) -> BuildResult:
     project = load_project(
         config_path=config_path,
@@ -139,16 +157,29 @@ def build_candidate(
     deduplicated, duplicate_count = deduplicate_nodes(nodes, generation["duplicate_policy"])
     if len(deduplicated) < generation["minimum_usable_nodes"]:
         raise GenerationError("usable nodes are below generation.minimum_usable_nodes")
+
+    external_rules, acl_report = load_acl4ssr_rules(
+        project.acl4ssr,
+        modules=project.config["modules"],
+        fetcher=rule_fetcher,
+        timeout=generation["fetch_timeout_seconds"],
+    )
     output, generator_report = generate_config(
         root=project.root,
         config=project.config,
         services=project.services,
         policies=project.policies,
         nodes=deduplicated,
+        external_rules=external_rules,
     )
     _expose_manual_provider_choices(output)
     validate_generated_config(output, secret_urls=secret_values)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
+    yaml_text = _with_acl4ssr_attribution(
+        yaml_text,
+        generated_header=generation["generated_header"],
+        acl_report=acl_report,
+    )
     for value in secret_values:
         if value and value in yaml_text:
             raise GenerationError("a subscription URL secret leaked into candidate YAML")
@@ -162,4 +193,6 @@ def build_candidate(
         "duplicates_removed": duplicate_count,
         **generator_report,
     }
+    if acl_report is not None:
+        report["rule_sources"] = {"acl4ssr": acl_report}
     return BuildResult(output, yaml_text, report, secret_values)

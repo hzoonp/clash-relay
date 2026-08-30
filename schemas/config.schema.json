@@ -73,6 +73,27 @@
         "generated_header": {"type": "boolean"}
       }
     },
+    "rule_sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acl4ssr"],
+      "properties": {
+        "acl4ssr": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "manifest"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "manifest": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\r\\n]+$"
+            }
+          }
+        }
+      }
+    },
     "publishing": {
       "type": "object",
       "additionalProperties": false,

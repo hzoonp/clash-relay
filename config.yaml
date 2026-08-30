@@ -48,6 +48,11 @@ generation:
   node_name_prefix: source_id
   generated_header: true
 
+rule_sources:
+  acl4ssr:
+    enabled: true
+    manifest: rules/acl4ssr.yaml
+
 publishing:
   artifact: false
   github_release:

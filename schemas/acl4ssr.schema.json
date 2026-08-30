@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clash-relay.invalid/schema/acl4ssr.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "repository", "ref", "license", "max_source_bytes", "sources", "inline_rules"],
+  "properties": {
+    "version": {"const": 1},
+    "repository": {"const": "ACL4SSR/ACL4SSR"},
+    "ref": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "license": {"const": "CC-BY-SA-4.0"},
+    "max_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 4194304},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "target", "priority"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "path": {"type": "string", "minLength": 1, "maxLength": 256},
+          "target": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^,\\r\\n]+$"},
+          "priority": {"type": "integer", "minimum": 0, "maximum": 10000},
+          "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+        }
+      }
+    },
+    "inline_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "value", "target", "priority"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "type": {
+            "enum": [
+              "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX",
+              "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "DST-PORT", "SRC-PORT",
+              "PROCESS-NAME", "PROCESS-PATH", "NETWORK", "GEOIP"
+            ]
+          },
+          "value": {"type": ["string", "integer"]},
+          "target": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^,\\r\\n]+$"},
+          "priority": {"type": "integer", "minimum": 0, "maximum": 10000},
+          "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "options": {"type": "array", "uniqueItems": true, "items": {"enum": ["no-resolve"]}}
+        }
+      }
+    }
+  }
+}
