@@ -62,8 +62,8 @@ pools:
     fallback_order: [ANY]
     capabilities_any: [general]
     capabilities_all: []
-    excluded_capabilities: [ai, residential, emby, high_multiplier, chain]
-    allowed_cost_levels: [free, low, standard]
+    excluded_capabilities: [residential, emby, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard, premium]
     on_empty: error
     probe: connectivity
     rule_priority: 1000

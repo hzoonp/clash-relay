@@ -48,13 +48,45 @@ def test_acl4ssr_manifest_is_immutable_and_attributed(repo_root: Path) -> None:
         "Block",
         "App Purify",
         "Google FCM",
+        "Microsoft Bing",
+        "Microsoft OneDrive",
         "Microsoft",
         "Apple",
         "Telegram",
+        "AI",
+        "NetEase Music",
+        "Games",
+        "YouTube",
+        "Netflix",
+        "Bahamut",
+        "Bilibili",
+        "Domestic Media",
+        "Foreign Media",
         "Final",
     }
     source_ids = {item["id"] for item in manifest["sources"]}
-    assert {"unban", "google_fcm"}.issubset(source_ids)
+    assert {
+        "unban",
+        "google_fcm",
+        "ai",
+        "openai",
+        "youtube",
+        "netflix",
+        "proxy_gfwlist",
+        "download",
+    }.issubset(source_ids)
+
+
+def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> None:
+    config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
+    assert config["rule_sources"]["acl4ssr"]["enabled"] is True
+    assert config["modules"]["general"] is True
+    for module in ("chatgpt", "claude", "gemini", "google_play", "bulk"):
+        assert config["modules"][module] is False
+
+    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    general = next(item for item in policies["pools"] if item["id"] == "general")
+    assert "ai" not in general["excluded_capabilities"]
 
 
 def test_acl4ssr_rules_are_prioritized_and_inlined(

@@ -19,6 +19,16 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
 
     def enable_acl4ssr(document):
         document["rule_sources"] = {"acl4ssr": {"enabled": True, "manifest": "rules/acl4ssr.yaml"}}
+        document["modules"].update(
+            {
+                "general": True,
+                "chatgpt": False,
+                "claude": False,
+                "gemini": False,
+                "google_play": False,
+                "bulk": False,
+            }
+        )
 
     yaml_editor(paths["config_path"], enable_acl4ssr)
     result = build_candidate(**paths, env=fixture_env)
@@ -27,15 +37,23 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
 
     assert acl_report["repository"] == "ACL4SSR/ACL4SSR"
     assert len(acl_report["ref"]) == 40
-    assert acl_report["rules"] > 500
+    assert acl_report["rules"] > 1000
     assert "GEOIP,CN,Direct,no-resolve" in result.config["rules"]
     assert result.config["rules"][-1] == "MATCH,Final"
     assert groups["Direct"]["proxies"] == ["DIRECT", "Proxy", "Auto"]
     assert groups["Block"]["proxies"] == ["REJECT", "DIRECT"]
-    assert groups["Microsoft"]["proxies"] == ["Direct", "Proxy"]
-    assert groups["Apple"]["proxies"] == ["Proxy", "Direct"]
-    assert groups["Telegram"]["proxies"] == ["Proxy", "Direct"]
-    assert groups["Final"]["proxies"] == ["Proxy", "Direct", "Auto"]
+    assert groups["AI"]["proxies"] == ["Proxy", "Auto", "Direct"]
+    assert groups["Microsoft"]["proxies"] == ["Direct", "Proxy", "Auto"]
+    assert groups["Apple"]["proxies"] == ["Direct", "Proxy", "Auto"]
+    assert groups["Telegram"]["proxies"] == ["Proxy", "Auto", "Direct"]
+    assert groups["YouTube"]["proxies"] == ["Proxy", "Auto", "Direct"]
+    assert groups["Netflix"]["proxies"] == ["Proxy", "Auto", "Direct"]
+    assert groups["Final"]["proxies"] == ["Proxy", "Auto", "Direct"]
+    assert "ChatGPT" not in groups
+    assert "Claude" not in groups
+    assert "Gemini" not in groups
+    assert "Google Play" not in groups
+    assert "Video & Downloads" not in groups
     assert "use" not in groups["Auto"]
 
     candidate = root / ".acl4ssr-candidate.yaml"
