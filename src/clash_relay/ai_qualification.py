@@ -13,17 +13,17 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
-from .util import atomic_write, dump_yaml, load_yaml_file, normalize_expected_status
+from .util import atomic_write, dump_yaml, load_yaml_file, safe_identifier
 from .validator import validate_generated_config
 
 AI_PROVIDER_PREFIX = "cr_ai_"
 AI_POLICY_GROUP = "人工智能"
 DEFAULT_PROBE_NAMES = ("ai_openai", "ai_claude", "ai_gemini")
-_PROBE_INTERVAL_SECONDS = 86400
 
 
 def _free_port() -> int:
@@ -98,34 +98,51 @@ def _ai_provider_nodes(config: dict[str, Any]) -> dict[str, tuple[str, ...]]:
     return result
 
 
+def _probe_group_name(provider_name: str) -> str:
+    return f"__CR_AI_PROBE_{safe_identifier(provider_name, upper=True, maximum=40)}"
+
+
 def _probe_copy(
     config_path: Path,
     workdir: Path,
-    probe: dict[str, Any],
-) -> tuple[Path, int, str]:
+    provider_nodes: dict[str, tuple[str, ...]],
+) -> tuple[Path, int, str, dict[str, str]]:
     config = load_yaml_file(config_path)
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
     providers = config.get("proxy-providers")
-    if not isinstance(providers, dict):
-        raise ValidationError("candidate proxy-providers must be a mapping")
+    groups = config.get("proxy-groups")
+    if not isinstance(providers, dict) or not isinstance(groups, list):
+        raise ValidationError("candidate proxy provider/group structure is invalid")
 
-    for provider_name, provider in providers.items():
+    # The temporary qualification core is driven only through explicit API delay
+    # requests. Disable all periodic provider checks so unrelated traffic cannot
+    # race with or contaminate the qualification result.
+    for provider in providers.values():
         if not isinstance(provider, dict):
             raise ValidationError("candidate contains an invalid proxy provider")
-        if str(provider_name).startswith(AI_PROVIDER_PREFIX):
-            provider["health-check"] = {
-                "enable": True,
-                "url": str(probe["url"]),
-                "interval": _PROBE_INTERVAL_SECONDS,
-                "timeout": int(probe["timeout"]),
-                "lazy": False,
-                "expected-status": normalize_expected_status(probe["expected_status"]),
+        provider.pop("health-check", None)
+
+    existing_names = {
+        str(group["name"])
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("name"), str)
+    }
+    probe_groups: dict[str, str] = {}
+    for provider_name in provider_nodes:
+        group_name = _probe_group_name(provider_name)
+        if group_name in existing_names:
+            raise ValidationError("AI qualification temporary group name collides with candidate")
+        groups.append(
+            {
+                "name": group_name,
+                "type": "select",
+                "hidden": True,
+                "use": [provider_name],
             }
-        else:
-            # The qualification process is private and short-lived. Avoid unrelated
-            # provider traffic while the AI candidates are being measured.
-            provider.pop("health-check", None)
+        )
+        existing_names.add(group_name)
+        probe_groups[provider_name] = group_name
 
     controller_port = _free_port()
     secret = "clash-relay-ai-qualification-only"
@@ -138,7 +155,7 @@ def _probe_copy(
     config["dns"] = dns
     target = workdir / "ai-probe.yaml"
     target.write_text(dump_yaml(config), encoding="utf-8")
-    return target, controller_port, secret
+    return target, controller_port, secret, probe_groups
 
 
 def _controller_json(
@@ -146,9 +163,12 @@ def _controller_json(
     secret: str,
     path: str,
     *,
+    query: dict[str, Any] | None = None,
     timeout: float = 2.0,
 ) -> dict[str, Any]:
     url = f"http://127.0.0.1:{controller_port}{path}"
+    if query:
+        url += "?" + urllib.parse.urlencode(query)
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {secret}"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.load(response)
@@ -170,90 +190,94 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
     raise ValidationError("Mihomo controller did not become ready for AI qualification")
 
 
-def _provider_result(
+def _probe_group(
     controller_port: int,
     secret: str,
-    provider_name: str,
+    group_name: str,
     expected_names: tuple[str, ...],
-) -> tuple[set[str], set[str]]:
-    encoded_provider = urllib.parse.quote(provider_name, safe="")
-    payload = _controller_json(
-        controller_port,
-        secret,
-        f"/providers/proxies/{encoded_provider}",
-        timeout=1.5,
-    )
-    proxies = payload.get("proxies")
-    if not isinstance(proxies, list):
-        raise ValidationError("Mihomo provider API returned an invalid proxy list")
-    expected = set(expected_names)
-    completed: set[str] = set()
-    alive: set[str] = set()
-    for proxy in proxies:
-        if not isinstance(proxy, dict):
-            continue
-        name = proxy.get("name")
-        if not isinstance(name, str) or name not in expected:
-            continue
-        history = proxy.get("history")
-        if not isinstance(history, list) or not history:
-            continue
-        completed.add(name)
-        if proxy.get("alive") is True:
-            alive.add(name)
-    return completed, alive
-
-
-def _wait_for_probe_round(
-    process: subprocess.Popen[bytes],
-    controller_port: int,
-    secret: str,
-    provider_nodes: dict[str, tuple[str, ...]],
-    *,
-    probe_timeout_ms: int,
+    probe: dict[str, Any],
 ) -> set[str]:
-    expected_total = sum(len(names) for names in provider_nodes.values())
-    deadline = time.monotonic() + max(20.0, (probe_timeout_ms / 1000) * 3 + 10)
-    latest_alive: set[str] = set()
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise ValidationError("Mihomo exited during AI qualification")
-        completed_total = 0
-        alive: set[str] = set()
-        api_ready = True
-        for provider_name, expected_names in provider_nodes.items():
-            try:
-                completed, provider_alive = _provider_result(
-                    controller_port,
-                    secret,
-                    provider_name,
-                    expected_names,
-                )
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
-                api_ready = False
-                break
-            completed_total += len(completed)
-            alive.update(provider_alive)
-        if api_ready:
-            latest_alive = alive
-            if completed_total == expected_total:
-                return alive
-        time.sleep(0.2)
+    encoded_group = urllib.parse.quote(group_name, safe="")
+    timeout_ms = int(probe["timeout"])
+    try:
+        payload = _controller_json(
+            controller_port,
+            secret,
+            f"/group/{encoded_group}/delay",
+            query={
+                "url": probe["url"],
+                "timeout": timeout_ms,
+                "expected": probe["expected_status"],
+            },
+            timeout=(timeout_ms / 1000) + 5,
+        )
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        ConnectionError,
+        json.JSONDecodeError,
+    ):
+        return set()
 
-    # A node that did not produce fresh history within the bounded probe round is
-    # treated as failed. This is fail-closed without aborting useful survivors.
-    return latest_alive
+    expected = set(expected_names)
+    return {
+        name
+        for name, delay in payload.items()
+        if name in expected and isinstance(delay, int) and delay > 0
+    }
 
 
 def _run_probe_round(
-    binary: Path,
-    config_path: Path,
+    controller_port: int,
+    secret: str,
     provider_nodes: dict[str, tuple[str, ...]],
+    probe_groups: dict[str, str],
     probe: dict[str, Any],
 ) -> set[str]:
+    passed: set[str] = set()
+    worker_count = max(1, min(8, len(provider_nodes)))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(
+                _probe_group,
+                controller_port,
+                secret,
+                probe_groups[provider_name],
+                expected_names,
+                probe,
+            ): provider_name
+            for provider_name, expected_names in provider_nodes.items()
+        }
+        for future in as_completed(futures):
+            passed.update(future.result())
+    return passed
+
+
+def probe_ai_nodes(
+    binary: Path,
+    config_path: Path,
+    probes: tuple[dict[str, Any], ...],
+) -> set[str]:
+    """Return runtime proxy names that pass every configured AI probe."""
+    binary = binary.resolve()
+    config_path = config_path.resolve()
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise ValidationError("AI qualification requires an executable Mihomo binary")
+    config = load_yaml_file(config_path)
+    if not isinstance(config, dict):
+        raise ValidationError("candidate is not a YAML mapping")
+    provider_nodes = _ai_provider_nodes(config)
+    if not probes:
+        raise ValidationError("AI qualification requires at least one probe")
+
     with tempfile.TemporaryDirectory(prefix="clash-relay-ai-") as temp_name:
         workdir = Path(temp_name)
-        probe_path, controller_port, secret = _probe_copy(config_path, workdir, probe)
+        probe_path, controller_port, secret, probe_groups = _probe_copy(
+            config_path,
+            workdir,
+            provider_nodes,
+        )
         try:
             test = subprocess.run(
                 [str(binary), "-t", "-d", str(workdir), "-f", str(probe_path)],
@@ -283,13 +307,20 @@ def _run_probe_round(
 
         try:
             _wait_for_controller(process, controller_port, secret)
-            return _wait_for_probe_round(
-                process,
-                controller_port,
-                secret,
-                provider_nodes,
-                probe_timeout_ms=int(probe["timeout"]),
-            )
+            qualified = {name for names in provider_nodes.values() for name in names}
+            for probe in probes:
+                qualified.intersection_update(
+                    _run_probe_round(
+                        controller_port,
+                        secret,
+                        provider_nodes,
+                        probe_groups,
+                        probe,
+                    )
+                )
+                if not qualified:
+                    break
+            return qualified
         finally:
             if process.poll() is None:
                 with contextlib.suppress(ProcessLookupError):
@@ -300,31 +331,6 @@ def _run_probe_round(
                     with contextlib.suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
-
-
-def probe_ai_nodes(
-    binary: Path,
-    config_path: Path,
-    probes: tuple[dict[str, Any], ...],
-) -> set[str]:
-    """Return runtime proxy names that pass every configured AI probe."""
-    binary = binary.resolve()
-    config_path = config_path.resolve()
-    if not binary.is_file() or not os.access(binary, os.X_OK):
-        raise ValidationError("AI qualification requires an executable Mihomo binary")
-    config = load_yaml_file(config_path)
-    if not isinstance(config, dict):
-        raise ValidationError("candidate is not a YAML mapping")
-    provider_nodes = _ai_provider_nodes(config)
-    if not probes:
-        raise ValidationError("AI qualification requires at least one probe")
-
-    qualified = {name for names in provider_nodes.values() for name in names}
-    for probe in probes:
-        qualified.intersection_update(_run_probe_round(binary, config_path, provider_nodes, probe))
-        if not qualified:
-            break
-    return qualified
 
 
 def _provider_public_groups(
