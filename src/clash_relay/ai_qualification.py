@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
-from .util import atomic_write, dump_yaml, load_yaml_file
+from .util import atomic_write, dump_yaml, load_yaml_file, normalize_expected_status
 from .validator import validate_generated_config
 
 AI_PROVIDER_PREFIX = "cr_ai_"
@@ -120,7 +120,7 @@ def _probe_copy(
                 "interval": _PROBE_INTERVAL_SECONDS,
                 "timeout": int(probe["timeout"]),
                 "lazy": False,
-                "expected-status": str(probe["expected_status"]),
+                "expected-status": normalize_expected_status(probe["expected_status"]),
             }
         else:
             # The qualification process is private and short-lived. Avoid unrelated
