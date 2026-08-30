@@ -149,6 +149,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         group_names.add(name)
         group_rows[name] = group
 
+    hidden_names = {
+        name for name, group in group_rows.items() if bool(group.get("hidden", False))
+    }
     graph: dict[str, set[str]] = defaultdict(set)
     for name, group in group_rows.items():
         references = group.get("proxies", [])
@@ -177,14 +180,32 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             if group.get("type") != "select":
                 errors.append(f"public group {name!r} must be a select group")
             public_refs = group.get("proxies", [])
-            if (
-                not isinstance(public_refs, list)
-                or len(public_refs) != 1
-                or not str(public_refs[0]).startswith("__CR_SERVICE_FALLBACK_")
-            ):
-                errors.append(
-                    f"public group {name!r} must point only to its hidden SERVICE-FALLBACK"
-                )
+            if not isinstance(public_refs, list) or not public_refs:
+                errors.append(f"public group {name!r} must have at least one proxy/group reference")
+                public_refs = []
+
+            provider_backed = bool(uses)
+            if provider_backed:
+                if (
+                    len(public_refs) != 1
+                    or not str(public_refs[0]).startswith("__CR_SERVICE_FALLBACK_")
+                ):
+                    errors.append(
+                        f"provider-backed public group {name!r} must point only to its hidden "
+                        "SERVICE-FALLBACK"
+                    )
+            else:
+                hidden_refs = [reference for reference in public_refs if reference in hidden_names]
+                unsafe_hidden_refs = [
+                    reference
+                    for reference in hidden_refs
+                    if not str(reference).startswith("__CR_SERVICE_FALLBACK_")
+                ]
+                if unsafe_hidden_refs:
+                    errors.append(
+                        f"policy-only public group {name!r} references forbidden internal groups: "
+                        f"{unsafe_hidden_refs}"
+                    )
         elif not name.startswith("__CR_"):
             errors.append(f"hidden internal group {name!r} lacks the reserved __CR_ prefix")
 
