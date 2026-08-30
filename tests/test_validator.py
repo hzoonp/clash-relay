@@ -125,7 +125,7 @@ def test_policy_only_public_group_cannot_attach_provider_use(built_candidate) ->
             "use": [next(iter(config["proxy-providers"]))],
         }
     )
-    with pytest.raises(ValidationError, match="provider-backed.*SERVICE-FALLBACK"):
+    with pytest.raises(ValidationError, match=r"provider-backed.*SERVICE-FALLBACK"):
         validate_generated_config(config)
 
 
