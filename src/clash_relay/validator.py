@@ -279,7 +279,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                     f"hidden presentation group {name!r} must be select or url-test, got {group_type!r}"
                 )
             if group_type == "url-test" and not uses and not references:
-                errors.append(f"hidden url-test group {name!r} has no providers or proxy references")
+                errors.append(
+                    f"hidden url-test group {name!r} has no providers or proxy references"
+                )
             if group_type == "select" and uses:
                 nested_refs = group.get("proxies", [])
                 if (
