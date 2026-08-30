@@ -157,20 +157,17 @@ def classify(service: str, status: int | None, body: str | None) -> str:
     raise ValueError(f"unknown service: {service}")
 
 
-def subscription_node_names(candidate: Path, source_id: str) -> list[str]:
+def provider_node_names(candidate: Path, provider_name: str) -> list[str]:
     document = yaml.safe_load(candidate.read_text(encoding="utf-8"))
     providers = document.get("proxy-providers", {})
-    provider = providers.get("cr_general_any")
+    provider = providers.get(provider_name)
     if not isinstance(provider, dict):
-        raise RuntimeError("general_provider_missing")
+        raise RuntimeError("probe_provider_missing")
     payload = provider.get("payload", [])
-    prefix = f"[GENERAL:ANY] {source_id}/"
     return [
         str(proxy["name"])
         for proxy in payload
-        if isinstance(proxy, dict)
-        and isinstance(proxy.get("name"), str)
-        and str(proxy["name"]).startswith(prefix)
+        if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
     ]
 
 
@@ -178,6 +175,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--source-id", required=True)
+    parser.add_argument("--provider", default="probe_subscription_3")
     parser.add_argument("--controller", default="http://127.0.0.1:19090")
     parser.add_argument("--controller-secret", default="local-probe-only")
     parser.add_argument("--proxy", default="http://127.0.0.1:17890")
@@ -185,7 +183,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=4.0)
     args = parser.parse_args()
 
-    nodes = subscription_node_names(args.candidate, args.source_id)
+    nodes = provider_node_names(args.candidate, args.provider)
     print(f"source={args.source_id}")
     print(f"nodes_found={len(nodes)}")
     if not nodes:
@@ -233,7 +231,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:  # noqa: BLE001 - diagnostic wrapper prints only safe class/reason
         reason = str(exc)
-        if not reason.startswith(("controller_", "selection_status_", "source_", "general_")):
+        if not reason.startswith(("controller_", "selection_status_", "source_", "probe_")):
             reason = type(exc).__name__
         print(f"probe_failed={reason}", file=sys.stderr)
         raise SystemExit(2) from None
