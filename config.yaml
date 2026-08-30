@@ -24,11 +24,11 @@ runtime:
 
 modules:
   general: true
-  chatgpt: true
-  claude: true
-  gemini: true
-  google_play: true
-  bulk: true
+  chatgpt: false
+  claude: false
+  gemini: false
+  google_play: false
+  bulk: false
   residential: false
   emby: false
   high_multiplier: false

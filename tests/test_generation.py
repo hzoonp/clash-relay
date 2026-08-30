@@ -105,10 +105,10 @@ def test_ai_country_pools_are_generated(built_candidate) -> None:
     assert "cr_chatgpt_other" not in providers
 
 
-def test_general_pool_excludes_ai_and_special_routes(built_candidate) -> None:
+def test_general_pool_includes_ai_but_excludes_special_routes(built_candidate) -> None:
     servers = _provider_servers(built_candidate.config, "cr_general_")
     assert servers
-    assert not any("-ai-" in server for server in servers)
+    assert any("-ai-" in server for server in servers)
     assert not any(server.startswith("special-") for server in servers)
 
 
