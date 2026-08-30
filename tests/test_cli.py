@@ -22,7 +22,7 @@ def _project_args(project_paths: dict[str, Path]) -> list[str]:
     ]
 
 
-def _inject(monkeypatch, fixture_env: dict[str, str]) -> None:  # noqa: ANN001
+def _inject(monkeypatch, fixture_env: dict[str, str]) -> None:
     for key, value in fixture_env.items():
         monkeypatch.setenv(key, value)
 
@@ -76,12 +76,7 @@ def test_validate_existing_candidate(
 ) -> None:
     _inject(monkeypatch, fixture_env)
     output = tmp_path / "candidate.yaml"
-    assert (
-        cli.main(
-            ["generate", *_project_args(project_paths), "--output", str(output)]
-        )
-        == 0
-    )
+    assert cli.main(["generate", *_project_args(project_paths), "--output", str(output)]) == 0
     capsys.readouterr()
     assert cli.main(["validate", "--candidate", str(output)]) == 0
     assert json.loads(capsys.readouterr().out)["static_validation"] == "passed"
@@ -119,7 +114,7 @@ def test_build_failure_never_writes_output(
 ) -> None:
     _inject(monkeypatch, fixture_env)
 
-    def reject(*args, **kwargs):  # noqa: ANN002, ANN003
+    def reject(*args, **kwargs):
         raise ValidationError("core rejected candidate")
 
     monkeypatch.setattr(cli, "validate_with_mihomo", reject)
@@ -172,9 +167,7 @@ def test_release_publication_gate_is_closed_by_default(project_paths, capsys) ->
 def test_missing_secret_returns_controlled_error(project_paths, monkeypatch, capsys) -> None:
     for name in ("SUB_PRIMARY", "SUB_SECONDARY", "SUB_SPECIAL", "CLASH_RELAY_SUBSCRIPTIONS"):
         monkeypatch.delenv(name, raising=False)
-    result = cli.main(
-        ["generate", *_project_args(project_paths), "--output", "ignored.yaml"]
-    )
+    result = cli.main(["generate", *_project_args(project_paths), "--output", "ignored.yaml"])
     assert result == 2
     assert "missing subscription URL secret" in capsys.readouterr().err
 

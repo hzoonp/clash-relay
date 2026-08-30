@@ -13,7 +13,6 @@ from urllib.parse import unquote, urlsplit
 from .errors import FetchError
 from .redact import redact_text, redact_url
 
-
 _USER_AGENT = "clash-relay/0.1 (+https://github.com/)"
 
 
@@ -72,7 +71,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         self._allow_file = allow_file
         super().__init__()
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         validate_subscription_url(
             newurl,
             allow_http=self._allow_http,
@@ -81,7 +80,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _read_bounded(response, max_bytes: int) -> bytes:  # noqa: ANN001
+def _read_bounded(response, max_bytes: int) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:

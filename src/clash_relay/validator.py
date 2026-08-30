@@ -10,7 +10,6 @@ from .schema import validate_schema
 from .status import parse_expected_status
 from .util import stable_json
 
-
 _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 _FORBIDDEN_TOP_LEVEL = {
     "external-controller",
@@ -34,7 +33,7 @@ def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
                 start = stack.index(node)
             except ValueError:
                 start = 0
-            found.append(stack[start:] + [node])
+            found.append([*stack[start:], node])
             return
         if node in visited:
             return
@@ -64,9 +63,7 @@ def _rule_target(rule: str) -> str:
     return parts[2]
 
 
-def validate_generated_config(
-    config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()
-) -> None:
+def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()) -> None:
     validate_schema(config, "mihomo-output.schema.json", source="generated config", output=True)
     errors: list[str] = []
     if "proxies" in config:
@@ -132,9 +129,7 @@ def validate_generated_config(
                     errors.append(
                         f"provider {provider_name!r} has uncontrolled dialer-proxy injection"
                     )
-                if not isinstance(dialer, str) or not dialer.startswith(
-                    "__CR_CHAIN_ENTRY_AUTO_"
-                ):
+                if not isinstance(dialer, str) or not dialer.startswith("__CR_CHAIN_ENTRY_AUTO_"):
                     errors.append(
                         f"provider {provider_name!r} dialer-proxy does not reference a controlled chain entry"
                     )
@@ -197,11 +192,14 @@ def validate_generated_config(
         if not isinstance(provider, dict):
             continue
         for proxy in provider.get("payload", []):
-            if isinstance(proxy, dict) and "dialer-proxy" in proxy:
-                if proxy["dialer-proxy"] not in group_names:
-                    errors.append(
-                        f"provider {provider_name!r} dialer-proxy references an unknown group"
-                    )
+            if (
+                isinstance(proxy, dict)
+                and "dialer-proxy" in proxy
+                and proxy["dialer-proxy"] not in group_names
+            ):
+                errors.append(
+                    f"provider {provider_name!r} dialer-proxy references an unknown group"
+                )
 
     cycle_list = _cycles(dict(graph))
     if cycle_list:

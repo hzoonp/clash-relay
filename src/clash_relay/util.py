@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -74,10 +75,8 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         os.chmod(temp_name, mode)
         os.replace(temp_name, path)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
-        except FileNotFoundError:
-            pass
         raise
 
 

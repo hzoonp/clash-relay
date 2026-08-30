@@ -23,7 +23,7 @@ def _provider_servers(config: dict, prefix: str) -> set[str]:
     return servers
 
 
-def _build(paths: dict[str, Path], env: dict[str, str]):  # noqa: ANN202
+def _build(paths: dict[str, Path], env: dict[str, str]):
     return build_candidate(**paths, env=env)
 
 
@@ -142,9 +142,7 @@ def test_chain_is_controlled_two_hop_dialer(built_candidate) -> None:
     exits = config["proxy-providers"]["cr_chain_exit_chain"]
     assert all("dialer-proxy" not in proxy for proxy in entry["payload"])
     assert exits["payload"]
-    assert {
-        proxy["dialer-proxy"] for proxy in exits["payload"]
-    } == {"__CR_CHAIN_ENTRY_AUTO_CHAIN"}
+    assert {proxy["dialer-proxy"] for proxy in exits["payload"]} == {"__CR_CHAIN_ENTRY_AUTO_CHAIN"}
 
 
 def test_subscription_dialer_proxy_is_stripped_before_generation(
@@ -169,14 +167,14 @@ def test_subscription_dialer_proxy_is_stripped_before_generation(
         encoding="utf-8",
     )
 
-    def one_source(document):  # noqa: ANN001
+    def one_source(document):
         item = document["subscriptions"][0]
         item["node_metadata"] = {}
         document["subscriptions"] = [item]
 
     yaml_editor(paths["subscriptions_path"], one_source)
 
-    def general_only(document):  # noqa: ANN001
+    def general_only(document):
         for key in document["modules"]:
             document["modules"][key] = key == "general"
 
@@ -192,7 +190,7 @@ def test_subscription_dialer_proxy_is_stripped_before_generation(
 def test_optional_empty_service_fails_closed(project_factory, fixture_env, yaml_editor) -> None:
     _, paths = project_factory()
 
-    def remove_ai_metadata(document):  # noqa: ANN001
+    def remove_ai_metadata(document):
         for subscription in document["subscriptions"]:
             for metadata in subscription.get("node_metadata", {}).values():
                 metadata["add_capabilities"] = [
@@ -206,10 +204,12 @@ def test_optional_empty_service_fails_closed(project_factory, fixture_env, yaml_
     assert not any(name.startswith("cr_chatgpt_") for name in result.config["proxy-providers"])
 
 
-def test_required_general_pool_empty_aborts_build(project_factory, fixture_env, yaml_editor) -> None:
+def test_required_general_pool_empty_aborts_build(
+    project_factory, fixture_env, yaml_editor
+) -> None:
     _, paths = project_factory()
 
-    def remove_general(document):  # noqa: ANN001
+    def remove_general(document):
         for subscription in document["subscriptions"]:
             subscription["default_capabilities"] = []
             for metadata in subscription.get("node_metadata", {}).values():
@@ -228,7 +228,7 @@ def test_deleting_any_subscription_still_generates(
 ) -> None:
     _, paths = project_factory()
 
-    def remove(document):  # noqa: ANN001
+    def remove(document):
         document["subscriptions"] = [
             item for item in document["subscriptions"] if item["id"] != removed_id
         ]
@@ -237,7 +237,10 @@ def test_deleting_any_subscription_still_generates(
     env = {
         key: value
         for key, value in fixture_env.items()
-        if key != {"primary": "SUB_PRIMARY", "secondary": "SUB_SECONDARY", "special": "SUB_SPECIAL"}[removed_id]
+        if key
+        != {"primary": "SUB_PRIMARY", "secondary": "SUB_SECONDARY", "special": "SUB_SPECIAL"}[
+            removed_id
+        ]
     }
     result = _build(paths, env)
     assert result.report["successful_subscriptions"] >= 2
@@ -249,7 +252,7 @@ def test_adding_subscription_requires_no_python_change(
 ) -> None:
     _, paths = project_factory()
 
-    def add(document):  # noqa: ANN001
+    def add(document):
         item = dict(document["subscriptions"][1])
         item.update(id="new_source", secret_name="SUB_NEW", display_name="New Source", priority=250)
         item["node_metadata"] = {}
@@ -262,19 +265,17 @@ def test_adding_subscription_requires_no_python_change(
     assert result.report["successful_subscriptions"] == 4
 
 
-def test_new_ai_service_is_configuration_only(
-    project_factory, fixture_env, yaml_editor
-) -> None:
+def test_new_ai_service_is_configuration_only(project_factory, fixture_env, yaml_editor) -> None:
     root, paths = project_factory()
     (root / "rules/perplexity.yaml").write_text(
         "version: 1\nrules:\n  - {type: DOMAIN-SUFFIX, value: perplexity.ai}\n",
         encoding="utf-8",
     )
 
-    def add_module(document):  # noqa: ANN001
+    def add_module(document):
         document["modules"]["perplexity"] = True
 
-    def add_service(document):  # noqa: ANN001
+    def add_service(document):
         item = dict(document["services"][0])
         item.update(
             id="perplexity",
@@ -297,7 +298,7 @@ def test_disabling_optional_modules_removes_public_and_internal_groups(
 ) -> None:
     _, paths = project_factory()
 
-    def general_only(document):  # noqa: ANN001
+    def general_only(document):
         for name in document["modules"]:
             document["modules"][name] = name == "general"
 

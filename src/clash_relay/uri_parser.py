@@ -26,12 +26,12 @@ def decode_base64_text(value: str) -> str:
         raise SubscriptionError("base64 subscription is not UTF-8") from exc
 
 
-def _name(parsed, default: str) -> str:  # noqa: ANN001
+def _name(parsed, default: str) -> str:
     fragment = unquote(parsed.fragment) if parsed.fragment else ""
     return fragment.strip() or default
 
 
-def _port(parsed) -> int:  # noqa: ANN001
+def _port(parsed) -> int:
     try:
         port = parsed.port
     except ValueError as exc:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -107,17 +107,13 @@ def validate_with_mihomo(
                 time.sleep(0.05)
         finally:
             if process.poll() is None:
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    try:
+                    with contextlib.suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
                     process.wait(timeout=5)
     version = _run([str(binary), "-v"], cwd=config_path.parent, timeout=10)
     version_line = (version.stdout.strip().splitlines() or [binary.name])[0]

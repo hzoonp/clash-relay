@@ -50,7 +50,7 @@ def _write_report(path: Path | None, report: dict[str, Any]) -> None:
         atomic_write(path, _json_text(report))
 
 
-def _build_from_args(args: argparse.Namespace):  # noqa: ANN202
+def _build_from_args(args: argparse.Namespace):
     return build_candidate(
         config_path=args.config,
         subscriptions_path=args.subscriptions,

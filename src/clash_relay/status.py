@@ -6,7 +6,6 @@ import re
 
 from .errors import ConfigurationError
 
-
 _SEGMENT_RE = re.compile(r"^(?P<start>[1-5][0-9]{2})(?:-(?P<end>[1-5][0-9]{2}))?$")
 
 

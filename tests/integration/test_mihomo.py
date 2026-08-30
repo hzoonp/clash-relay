@@ -8,7 +8,6 @@ import pytest
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -30,9 +29,7 @@ def test_generated_fictional_candidate_loads_and_starts(
     assert report["startup_smoke"] == "passed"
 
 
-def test_real_core_validation_is_deterministic(
-    project_paths, fixture_env, tmp_path: Path
-) -> None:
+def test_real_core_validation_is_deterministic(project_paths, fixture_env, tmp_path: Path) -> None:
     first = build_candidate(**project_paths, env=fixture_env)
     second = build_candidate(**project_paths, env=fixture_env)
     assert first.yaml_text == second.yaml_text

@@ -12,7 +12,7 @@ from clash_relay.models import SubscriptionSpec
 from clash_relay.selector import select_nodes
 
 
-def _spec(**overrides) -> SubscriptionSpec:  # noqa: ANN003
+def _spec(**overrides) -> SubscriptionSpec:
     values = {
         "id": "source",
         "display_name": "Source",
@@ -64,9 +64,7 @@ def test_name_rule_can_add_nonrestricted_capability(policies: dict) -> None:
 
 
 def test_exact_metadata_can_add_restricted_capability(policies: dict) -> None:
-    spec = _spec(
-        node_metadata={"Home": {"country": "US", "add_capabilities": ["residential"]}}
-    )
+    spec = _spec(node_metadata={"Home": {"country": "US", "add_capabilities": ["residential"]}})
     node = classify_proxy(_proxy("Home"), spec, policies)
     assert "residential" in node.capabilities
 
@@ -89,11 +87,7 @@ def test_default_country_and_capability(policies: dict) -> None:
 
 
 def test_node_can_have_multiple_capabilities(policies: dict) -> None:
-    spec = _spec(
-        node_metadata={
-            "Multi": {"add_capabilities": ["ai", "bulk"], "country": "SG"}
-        }
-    )
+    spec = _spec(node_metadata={"Multi": {"add_capabilities": ["ai", "bulk"], "country": "SG"}})
     node = classify_proxy(_proxy("Multi"), spec, policies)
     assert node.capabilities == frozenset({"general", "ai", "bulk"})
 

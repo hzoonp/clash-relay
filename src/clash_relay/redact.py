@@ -5,14 +5,11 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit, urlunsplit
 
-
 _URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
 _URL_QUERY_SECRET = re.compile(
     r"(?i)([?&](?:token|access_token|apikey|api_key|key|auth|secret)=)[^&#\s]+"
 )
-_FIELD_SECRET = re.compile(
-    r"(?i)\b(password|passwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+"
-)
+_FIELD_SECRET = re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+")
 _AUTH_HEADER = re.compile(r"(?i)\bAuthorization\s*:\s*[^\r\n]+")
 _USERINFO = re.compile(r"(?i)(https?://)[^/@\s]+@")
 _WORDISH_SECRET = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -39,9 +36,7 @@ def _replace_known_secret(text: str, secret: str) -> str:
     if not secret:
         return text
     if _WORDISH_SECRET.fullmatch(secret):
-        pattern = re.compile(
-            rf"(?<![A-Za-z0-9_]){re.escape(secret)}(?![A-Za-z0-9_])"
-        )
+        pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(secret)}(?![A-Za-z0-9_])")
         return pattern.sub("<redacted>", text)
     return text.replace(secret, "<redacted>")
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import gzip
 import hashlib
 import json
@@ -15,7 +16,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
-
 
 _API_VERSION = "2022-11-28"
 
@@ -128,10 +128,8 @@ def main() -> int:
         os.chmod(temporary, 0o755)
         os.replace(temporary, args.output)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temporary)
-        except FileNotFoundError:
-            pass
     print(
         json.dumps(
             {

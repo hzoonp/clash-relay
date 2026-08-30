@@ -8,7 +8,7 @@ from clash_relay.errors import ValidationError
 from clash_relay.validator import validate_generated_config
 
 
-def _candidate(built_candidate) -> dict:  # noqa: ANN001
+def _candidate(built_candidate) -> dict:
     return copy.deepcopy(built_candidate.config)
 
 
@@ -48,9 +48,7 @@ def test_missing_provider_health_check_rejected(built_candidate) -> None:
 
 def test_invalid_provider_expected_status_rejected(built_candidate) -> None:
     config = _candidate(built_candidate)
-    next(iter(config["proxy-providers"].values()))["health-check"][
-        "expected-status"
-    ] = "999"
+    next(iter(config["proxy-providers"].values()))["health-check"]["expected-status"] = "999"
     with pytest.raises(ValidationError, match="expected-status"):
         validate_generated_config(config)
 
@@ -131,9 +129,9 @@ def test_uncontrolled_dialer_proxy_rejected(built_candidate) -> None:
     regular_name = next(
         name for name in config["proxy-providers"] if not name.startswith("cr_chain_exit_")
     )
-    config["proxy-providers"][regular_name]["payload"][0][
-        "dialer-proxy"
-    ] = "__CR_CHAIN_ENTRY_AUTO_CHAIN"
+    config["proxy-providers"][regular_name]["payload"][0]["dialer-proxy"] = (
+        "__CR_CHAIN_ENTRY_AUTO_CHAIN"
+    )
     with pytest.raises(ValidationError, match="uncontrolled"):
         validate_generated_config(config)
 
@@ -156,7 +154,14 @@ def test_subscription_secret_url_leak_rejected(built_candidate) -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["external-controller", "external-controller-tls", "secret", "authentication", "listeners", "tunnels"],
+    [
+        "external-controller",
+        "external-controller-tls",
+        "secret",
+        "authentication",
+        "listeners",
+        "tunnels",
+    ],
 )
 def test_private_control_top_level_fields_rejected(built_candidate, field: str) -> None:
     config = _candidate(built_candidate)

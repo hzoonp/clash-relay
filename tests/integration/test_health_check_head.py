@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -32,7 +31,7 @@ def _port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _api(url: str, secret: str):  # noqa: ANN202
+def _api(url: str, secret: str):
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {secret}"})
     with urllib.request.urlopen(request, timeout=1) as response:
         return json.load(response)
@@ -42,19 +41,19 @@ def test_provider_health_check_uses_head_and_accepts_401(tmp_path: Path) -> None
     observed: list[tuple[str, str]] = []
 
     class Handler(BaseHTTPRequestHandler):
-        def do_HEAD(self) -> None:  # noqa: N802
+        def do_HEAD(self) -> None:
             observed.append(("HEAD", self.path))
             self.send_response(401)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             observed.append(("GET", self.path))
             self.send_response(405)
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        def log_message(self, format, *args) -> None:  # noqa: A002, ANN001
+        def log_message(self, format, *args) -> None:
             return
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -83,9 +82,7 @@ def test_provider_health_check_uses_head_and_accepts_401(tmp_path: Path) -> None
                 "payload": [{"name": "local-direct", "type": "direct"}],
             }
         },
-        "proxy-groups": [
-            {"name": "Head Test", "type": "select", "use": ["head-check"]}
-        ],
+        "proxy-groups": [{"name": "Head Test", "type": "select", "use": ["head-check"]}],
         "rules": ["MATCH,Head Test"],
     }
     path = tmp_path / "head.yaml"

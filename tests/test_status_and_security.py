@@ -4,10 +4,15 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from clash_relay.builder import build_candidate
-from clash_relay.errors import FetchError, GenerationError, PublicationError, SecretError
+from clash_relay.errors import (
+    ConfigurationError,
+    FetchError,
+    GenerationError,
+    PublicationError,
+    SecretError,
+)
 from clash_relay.fetch import fetch_subscription, validate_subscription_url
 from clash_relay.models import SubscriptionSpec
 from clash_relay.publication import ACKNOWLEDGEMENT, publication_gate
@@ -33,7 +38,7 @@ def test_expected_status_parser(expression: str, present: set[int], absent: set[
 
 @pytest.mark.parametrize("expression", ["", "999", "abc", "300-200", "100-500"])
 def test_invalid_expected_status_rejected(expression: str) -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ConfigurationError):
         parse_expected_status(expression)
 
 
@@ -107,7 +112,9 @@ def test_file_subscription_fetch_is_explicit_and_bounded(tmp_path: Path) -> None
 
 
 def test_secret_bundle_accepts_json_and_yaml(tmp_path: Path) -> None:
-    json_mapping = load_secret_mapping(env={"CLASH_RELAY_SUBSCRIPTIONS": '{"SUB_A":"https://a.invalid"}'})
+    json_mapping = load_secret_mapping(
+        env={"CLASH_RELAY_SUBSCRIPTIONS": '{"SUB_A":"https://a.invalid"}'}
+    )
     assert json_mapping["SUB_A"] == "https://a.invalid"
     path = tmp_path / "secret.yaml"
     path.write_text("SUB_B:\n  url: https://b.invalid\n", encoding="utf-8")
@@ -169,9 +176,7 @@ def test_release_requires_enablement_and_acknowledgement() -> None:
     config = _publishing_config()
     with pytest.raises(PublicationError, match="acknowledgement"):
         publication_gate(config, "github_release", "")
-    config["publishing"]["github_release"].update(
-        enabled=True, allow_sensitive_public_release=True
-    )
+    config["publishing"]["github_release"].update(enabled=True, allow_sensitive_public_release=True)
     publication_gate(config, "github_release", ACKNOWLEDGEMENT)
 
 
@@ -187,7 +192,7 @@ def test_optional_subscription_failure_is_skipped(
 ) -> None:
     _, paths = project_factory()
 
-    def optional_only(document):  # noqa: ANN001
+    def optional_only(document):
         document["subscriptions"][1]["secret_name"] = "SUB_BROKEN"
         document["subscriptions"][1]["on_error"] = "skip"
 
@@ -200,9 +205,7 @@ def test_optional_subscription_failure_is_skipped(
     assert "not/present" not in json.dumps(failed)
 
 
-def test_required_subscription_failure_aborts(
-    project_factory, fixture_env, yaml_editor
-) -> None:
+def test_required_subscription_failure_aborts(project_factory, fixture_env, yaml_editor) -> None:
     _, paths = project_factory()
     yaml_editor(
         paths["subscriptions_path"],
@@ -214,9 +217,7 @@ def test_required_subscription_failure_aborts(
         build_candidate(**paths, env=env)
 
 
-def test_minimum_successful_subscriptions_gate(
-    project_factory, fixture_env, yaml_editor
-) -> None:
+def test_minimum_successful_subscriptions_gate(project_factory, fixture_env, yaml_editor) -> None:
     _, paths = project_factory()
     yaml_editor(
         paths["config_path"],

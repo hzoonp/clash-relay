@@ -18,7 +18,6 @@ from .subscription_parser import parse_subscription
 from .util import dump_yaml, sha256_text
 from .validator import validate_generated_config
 
-
 Fetcher = Callable[..., str]
 
 
@@ -45,9 +44,7 @@ def build_candidate(
         policies_path=policies_path,
     )
     enabled_specs = [spec for spec in project.subscriptions if spec.enabled]
-    urls, secret_values = resolve_subscription_urls(
-        enabled_specs, secret_file=secret_file, env=env
-    )
+    urls, secret_values = resolve_subscription_urls(enabled_specs, secret_file=secret_file, env=env)
     generation = project.config["generation"]
     nodes: list[Node] = []
     source_reports: list[dict[str, Any]] = []
@@ -68,9 +65,7 @@ def build_candidate(
             )
             if not parsed.proxies:
                 raise SubscriptionError("subscription contains no usable proxies")
-            classified = [
-                classify_proxy(proxy, spec, project.policies) for proxy in parsed.proxies
-            ]
+            classified = [classify_proxy(proxy, spec, project.policies) for proxy in parsed.proxies]
             nodes.extend(classified)
             successful += 1
             source_reports.append(
@@ -93,9 +88,7 @@ def build_candidate(
                 }
             )
             if _failure_is_fatal(spec, project):
-                raise GenerationError(
-                    f"subscription {spec.id!r} failed: {safe_error}"
-                ) from exc
+                raise GenerationError(f"subscription {spec.id!r} failed: {safe_error}") from exc
 
     if successful < generation["minimum_successful_subscriptions"]:
         raise GenerationError(
