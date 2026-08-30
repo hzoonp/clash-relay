@@ -25,6 +25,12 @@
             "pattern": "^[^,\\r\\n]+$"
           },
           "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "excluded_sources": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}
+          },
           "members": {
             "type": "array",
             "minItems": 1,
