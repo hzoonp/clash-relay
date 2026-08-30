@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .acl4ssr import load_acl4ssr_rules
+from .acl4ssr_policy import apply_acl4ssr_group_semantics
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
 from .errors import FetchError, GenerationError, SubscriptionError
@@ -207,6 +208,15 @@ def build_candidate(
         external_groups=acl_groups,
         final_target=final_target,
     )
+    acl_group_semantics = (
+        apply_acl4ssr_group_semantics(
+            output,
+            group_specs=acl_groups,
+            pool_specs=list(project.policies["pools"]),
+        )
+        if acl_groups
+        else {}
+    )
     source_exclusions = apply_acl4ssr_source_exclusions(
         output,
         group_specs=acl_groups,
@@ -239,6 +249,8 @@ def build_candidate(
     }
     if acl_report is not None:
         report["rule_sources"] = {"acl4ssr": acl_report}
+    if acl_group_semantics:
+        report["acl4ssr_groups"] = acl_group_semantics
     if source_exclusions:
         report["source_exclusions"] = source_exclusions
     return BuildResult(output, yaml_text, report, secret_values)

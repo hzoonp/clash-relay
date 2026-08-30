@@ -10,24 +10,30 @@ FlClash consumes the token-protected Worker URL. It does not need runtime access
 >
 > The generated configuration contains inline proxy credentials and must be treated as highest-sensitivity data. The supported public production workflow does **not** upload it to Actions Artifacts, Releases, Gists, commits, or Pages.
 
-## Canonical production profile
+## Production contract
+
+Production has one intentionally narrow contract:
+
+1. **ACL4SSR owns all non-AI routing behavior.** Rule order, rule targets, policy membership, and policy default order mirror the pinned `ACL4SSR_Online_Full.ini` semantics.
+2. **FlClash presentation may differ without changing routing.** Semantic ACL4SSR groups may be hidden and nested under compact presentation-only containers, but those containers are never rule targets.
+3. **AI live qualification is the only routing-semantic extension.** OpenAI, Claude, and Gemini are tested through real candidate nodes, and protected service traffic is routed only through nodes that passed that service's probe.
+4. **No local rule prelude is allowed ahead of ACL4SSR.** Canonical `rules/direct.yaml` is intentionally empty.
+5. **Subscription policy is admission policy, not a hidden routing rewrite.** Multiplier limits and `allowed_uses` may decide whether a node enters an inventory, but canonical non-AI ACL4SSR routes do not exclude a subscription source after admission.
+
+The production flow is:
 
 ```text
 4 private subscription URLs
           ↓
-subscription-scoped admission policies
+subscription/node admission
           ↓
-general inventory + deterministic country classification from node names
+internal general inventory
           ↓
-AI candidate pools: SG / JP / US / HK / TW / KR / OTHER
+pinned ACL4SSR Online Full semantics
           ↓
-trusted runner probes ChatGPT / Claude / Gemini independently per node
+AI candidate countries + live OpenAI / Claude / Gemini qualification
           ↓
-keep the union of service-qualified nodes in country inventories
-          ↓
-hidden OpenAI / Claude / Gemini routes use only nodes qualified for that service
-          ↓
-pinned ACL4SSR Online Full rules
+service-qualified hidden AI routes
           ↓
 Mihomo v1.19.30 + v1.19.29
           ↓
@@ -36,20 +42,102 @@ Cloudflare Workers KV
 FlClash
 ```
 
-Production still enables only:
+Production enables only:
 
 ```yaml
 modules:
   general: true
 ```
 
-`services.yaml` remains empty. `policies.yaml` has one general pool plus seven country-scoped AI candidate pools under the same `general` module. This does not restore dedicated ChatGPT, Claude, or Gemini declaration-time service modules. Legacy Google Play, bulk, residential, EMBY, high-multiplier, and chain production declarations remain removed. Generic engine capabilities continue to be exercised in `tests/fixtures/project/`.
+`services.yaml` is empty. `policies.yaml` contains one internal general inventory plus seven AI country candidate inventories. Generic engine features continue to be tested under `tests/fixtures/project/` and are not automatically exposed in production.
+
+## Strict ACL4SSR routing
+
+`rules/acl4ssr.yaml` pins `ACL4SSR/ACL4SSR` at immutable commit:
+
+```text
+c498ae4911f15b19c5ceaef6f8737ca8705b4430
+```
+
+The canonical manifest restores the upstream Full policy mapping instead of collapsing unrelated applications into a few routing groups. Examples:
+
+```text
+LocalAreaNetwork / UnBan / GoogleCN / SteamCN  -> 全球直连
+BanAD                                         -> 广告拦截
+BanProgramAD                                  -> 应用净化
+GoogleFCM                                     -> 谷歌FCM
+Bing / OneDrive / Microsoft                   -> their own Microsoft groups
+Apple                                         -> 苹果服务
+Telegram                                      -> 电报消息
+YouTube                                       -> 油管视频
+Netflix                                       -> 奈飞视频
+Bahamut                                       -> 巴哈姆特
+BilibiliHMT / Bilibili                        -> 哔哩哔哩
+ChinaMedia                                    -> 国内媒体
+ProxyMedia                                    -> 国外媒体
+ProxyGFWlist                                  -> 节点选择
+ChinaDomain / ChinaCompanyIp / Download       -> 全球直连
+GEOIP,CN                                      -> 全球直连
+MATCH                                         -> 漏网之鱼
+```
+
+The original ACL4SSR selector behavior is also retained, including `节点选择`, `自动选择`, `手动切换`, country selectors, `奈飞节点`, `全球直连`, `广告拦截`, `应用净化`, application/media selectors, and `漏网之鱼`. Provider-backed selectors reuse the private inline general inventory; no node credentials are copied merely to reproduce an ACL4SSR selector.
+
+Rule fragments are fetched during the trusted build and embedded as inline classical Mihomo rule providers. The final profile is standalone: generated rule providers contain no runtime `url` or `path`.
+
+The pinned Full fragments contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`. clash-relay does not invent approximate `DOMAIN-REGEX` replacements. An omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit. Canonical CI therefore requires `verified_compatibility_omissions == 9` and `unverified_legacy_rules == 0`; any mismatch fails closed.
+
+See [Routing rules and ACL4SSR](docs/rules.md).
+
+## FlClash presentation
+
+Presentation is deliberately compact while routing remains ACL4SSR-compatible. The intended top-level groups are:
+
+```text
+节点选择
+人工智能
+流媒体
+国内服务
+更多策略
+```
+
+`流媒体`, `国内服务`, and `更多策略` are **presentation-only containers**. No ACL4SSR rule targets them. They expose hidden semantic groups so a user can still reach the original policy when a manual override is needed.
+
+For example:
+
+```text
+流媒体
+├─ 油管视频
+├─ 奈飞视频
+├─ 巴哈姆特
+├─ 哔哩哔哩
+├─ 国内媒体
+└─ 国外媒体
+
+国内服务
+├─ 谷歌FCM
+├─ 微软Bing
+├─ 微软云盘
+├─ 微软服务
+├─ 苹果服务
+├─ 游戏平台
+└─ 网易音乐
+
+更多策略
+├─ 电报消息
+├─ 全球直连
+├─ 广告拦截
+├─ 应用净化
+└─ 漏网之鱼
+```
+
+Hiding or nesting a semantic group is a UI decision only; its ACL4SSR rule target and member order remain unchanged.
 
 ## AI qualification and country groups
 
-AI candidates are deterministically classified from **node names**, not from GeoIP. Production currently recognizes SG, JP, US, HK, TW, and KR from common Chinese/English location names, airport codes, flags, and unambiguous short-code boundaries. Unrecognized nodes go to `OTHER`; the project does not guess their location or claim that a label proves the actual egress IP location.
+AI candidates are deterministically classified from **node names**, not GeoIP. Production recognizes SG, JP, US, HK, TW, and KR from common location labels; unknown or ambiguous labels go to `OTHER`.
 
-Every subscription may provide AI **candidates**, but declaration-time eligibility is not enough. On trusted `main`, the workflow starts short-lived Mihomo processes, pins a temporary selector to each candidate node through the Core API, and then makes actual `HEAD` requests through that Mihomo mixed port to:
+On trusted `main`, short-lived Mihomo processes pin each candidate node and send actual `HEAD` requests through that node to:
 
 ```text
 https://chatgpt.com/
@@ -57,74 +145,58 @@ https://claude.ai/
 https://gemini.google.com/
 ```
 
-The three services are qualified **independently**. For each service, a node qualifies only when that service probe returns the configured accepted HTTP status range; production currently requires `200-399`. Network errors, timeouts, TLS failures, or a non-accepted response fail that node for that service without falsely declaring the whole node unusable for every AI service.
+The services are qualified independently. A node is accepted for a service only when the probe returns the configured accepted status range; production currently requires `200-399`. Network errors, timeout, TLS failure, or an unaccepted HTTP status fail that node for that service.
 
-The final country AI inventories retain the **union** of nodes that qualify for at least one of OpenAI, Claude, or Gemini. Hidden service-specific routing anchors then filter those shared country providers so OpenAI traffic can use only OpenAI-qualified nodes, Claude traffic only Claude-qualified nodes, and Gemini traffic only Gemini-qualified nodes. The ordinary `节点选择` inventory is never pruned by AI results.
-
-Candidates are sharded across a bounded number of isolated temporary Mihomo processes so hundreds of nodes do not have to be tested serially. Node names, servers, credentials, and per-node probe results are not printed to the public Actions log. Public diagnostics contain only aggregate counts such as accepted/rejected status totals, timeout/TLS/network error counts, selector failures, and service-qualified node counts.
-
-After qualification, an empty country group is removed from `人工智能`. A service with zero qualified nodes fails closed through a hidden `REJECT` route while other successfully qualified services may still publish. Publication aborts only when **no node qualifies for any protected AI service** or when the qualification infrastructure itself cannot complete safely; in either case the previous Cloudflare KV value remains untouched.
-
-The core visible groups remain:
+The AI country providers retain the union of nodes that qualify for at least one protected service. Hidden service-specific routes then enforce:
 
 ```text
-节点选择
+OpenAI traffic -> OpenAI-qualified nodes only
+Claude traffic -> Claude-qualified nodes only
+Gemini traffic -> Gemini-qualified nodes only
+```
+
+The pinned ACL4SSR OpenAI provider and exact Claude/Gemini subsets derived from pinned `AI.list` are placed immediately before the generic ACL4SSR AI rule. The generic AI rule itself remains present for the rest of ACL4SSR AI coverage.
+
+AI country groups are hidden from the top level and are exposed only under `人工智能`:
+
+```text
 人工智能
-流媒体
-国内服务
-广告拦截
+├─ AI · 新加坡
+├─ AI · 日本
+├─ AI · 美国
+├─ AI · 香港
+├─ AI · 台湾
+├─ AI · 韩国
+├─ AI · 其他地区
+└─ DIRECT
 ```
 
-`人工智能` may additionally expose any non-empty subset of:
+Empty countries are removed. If one protected service has no qualified node, only that service fails closed to `REJECT`. If no node qualifies for any protected service, publication fails closed and the previous KV value is retained.
 
-```text
-AI · 新加坡
-AI · 日本
-AI · 美国
-AI · 香港
-AI · 台湾
-AI · 韩国
-AI · 其他地区
-DIRECT
-```
+Public Actions logs contain only aggregate qualification counts; node names, servers, credentials, and per-node results are not printed.
 
-The service-specific OpenAI / Claude / Gemini routes are hidden implementation groups, so service-aware qualification does not add extra user-facing selectors. The general inventory and AI country inventories use separate private inline providers so the trusted build can physically remove nodes that qualify for no protected AI service before final validation. The final credential-bearing YAML still exists only in the private publication path.
+## Subscription admission
 
-## Subscription-scoped policies
+A subscription may declare `max_node_multiplier`. The filter recognizes explicit node-name markers such as `2x`, `x2.5`, `3倍`, or `倍率:4`. Nodes explicitly above the configured ceiling are removed before provider generation; unmarked nodes are retained rather than guessed.
 
-A subscription may declare an optional `max_node_multiplier`. The filter evaluates only explicit multiplier markers in node names, such as `2x`, `x2.5`, `3倍`, or `倍率:4`. A ceiling of `2.0` removes nodes explicitly marked above 2x before classification and provider generation; nodes without an explicit multiplier marker are retained rather than guessed.
+`allowed_uses` controls which inventory a subscription may enter. In canonical production, this is **not** converted into application-specific source exclusions inside ACL4SSR routing. Once a node is admitted to the general inventory, non-AI routing follows ACL4SSR exactly. AI remains the explicit exception because its candidate inventory and live qualification are part of the project's AI scheduling feature.
 
-Canonical production still restricts `subscription_1` to explicit generic-web and AI routes:
+## Generated AI rule shape
 
-- ACL4SSR `ProxyGFWlist` may use `subscription_1`;
-- protected OpenAI / Claude / Gemini traffic may use it only through the corresponding live-qualified hidden service route, while remaining ACL4SSR AI traffic continues through `人工智能`;
-- `流媒体`, `国内服务`, Telegram, and final unmatched ordinary proxy traffic exclude `subscription_1`.
-
-Ordinary source exclusions reuse the general inline provider through hidden Mihomo `exclude-filter` routing anchors. If a restricted route has no permitted proxy left, it fails closed to `REJECT`.
-
-This is rule-routing policy, not process identification: it does not attempt to prove that the originating executable is a web browser.
-
-## ACL4SSR rule model
-
-ACL4SSR is pinned to an immutable commit rather than the moving `master` branch. Trusted generation fetches the configured Full fragments and embeds each one as a Mihomo inline classical rule provider. During private AI qualification, exact Claude and Gemini subsets are derived from that pinned AI payload and checked for upstream drift; the dedicated pinned OpenAI provider plus those derived subsets are placed before the generic AI rule so service-qualified routes take precedence.
+Before qualification, ACL4SSR remains the source of AI rule data. Private qualification then introduces only the protected service routes:
 
 ```yaml
-rule-providers:
-  acl4ssr_ai:
-    type: inline
-    behavior: classical
-    payload: [...]
-
 rules:
   - RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI
   - RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE
   - RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI
   - RULE-SET,acl4ssr_ai,人工智能
-  - GEOIP,CN,DIRECT,no-resolve
-  - MATCH,<source-filtered-final-anchor>
+  # ...remaining pinned ACL4SSR order...
+  - GEOIP,CN,全球直连,no-resolve
+  - MATCH,漏网之鱼
 ```
 
-The final profile remains standalone: generated rule providers contain no `url` or `path`, and FlClash/Mihomo does not fetch ACL4SSR at runtime. See [Routing rules and ACL4SSR](docs/rules.md).
+`cr_ai_rules_claude` and `cr_ai_rules_gemini` are exact subsets of the already-pinned ACL4SSR `AI.list`. If the pinned payload no longer contains the expected service rules, qualification fails closed for review.
 
 ## Security architecture
 
@@ -134,23 +206,19 @@ Public GitHub repository
   ├─ CLASH_RELAY_SUBSCRIPTIONS              GitHub Secret
   └─ CLOUDFLARE_API_TOKEN                   GitHub Secret
             ↓
-      trusted main-branch Actions run
+      trusted main Actions
             ↓
-      per-subscription ::add-mask::
+      mask each subscription URL
             ↓
-      fetch + parse + admission filter + deduplicate
+      fetch / parse / admission / deduplicate
             ↓
       fetch pinned ACL4SSR fragments
             ↓
       generate private standalone YAML
             ↓
-      per-node, per-service AI qualification through temporary Mihomo mixed ports
+      live per-service AI qualification
             ↓
-      keep service-qualified union + build hidden service routes + prune empty countries
-            ↓
-      Mihomo v1.19.30 validation
-            ↓
-      Mihomo v1.19.29 validation
+      validate exact candidate with both Mihomo pins
             ↓
       Cloudflare Workers KV
             ↓
@@ -159,9 +227,7 @@ Public GitHub repository
            FlClash
 ```
 
-The subscription Secret is present only during masking and generation. AI qualification reads the already-generated private candidate and does not receive the original subscription Secret. The Cloudflare API token is present only during the final publish step. The Worker `PROFILE_TOKEN` never enters GitHub.
-
-See [Security model](docs/security.md) and [Publishing](docs/publishing.md).
+The Cloudflare publication gate refuses unsafe public publishing modes. If generation, AI qualification, or either Mihomo validation fails, KV is not updated.
 
 ## GitHub configuration
 
@@ -179,42 +245,7 @@ CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-`CLASH_RELAY_SUBSCRIPTIONS` is a JSON or YAML mapping:
-
-```json
-{
-  "SUBSCRIPTION_1_URL": "<private subscription URL>",
-  "SUBSCRIPTION_2_URL": "<private subscription URL>",
-  "SUBSCRIPTION_3_URL": "<private subscription URL>",
-  "SUBSCRIPTION_4_URL": "<private subscription URL>"
-}
-```
-
-These are original provider URLs, not the Cloudflare Worker URL. Every `secret_name` in `subscriptions.yaml` must exactly match one mapping key. `PROFILE_TOKEN` must not be stored in GitHub.
-
-## Cloudflare-only publication
-
-The public-safe production profile is:
-
-```yaml
-publishing:
-  artifact: false
-  github_release:
-    enabled: false
-    allow_sensitive_public_release: false
-  gist:
-    enabled: false
-    allow_sensitive_unlisted_gist: false
-  cloudflare_kv:
-    enabled: true
-    key: production-config
-```
-
-The Cloudflare publication gate refuses to run if Artifact, Release, or Gist is enabled. If generation, AI qualification, or either Mihomo validation fails, KV is not updated and the previous successful value remains available.
-
-## Generic engine vs. production declarations
-
-The schemas and generator remain data-driven. Generic fixture coverage still includes capabilities such as `bulk`, `residential`, `emby`, `high_multiplier`, and `chain`. Production uses only the `general` module plus country-scoped AI candidate pools within that module, keeping the production routing surface focused while preserving reusable-engine regression coverage.
+`CLASH_RELAY_SUBSCRIPTIONS` is a JSON or YAML mapping from each tracked `secret_name` to its private subscription URL. `PROFILE_TOKEN` protects the Worker profile URL and must not be stored in GitHub.
 
 ## Local development
 
@@ -230,20 +261,15 @@ pytest -m "not integration"
 python scripts/repository_audit.py
 ```
 
-Generate the isolated fictional fixture with:
+CI additionally performs byte-for-byte deterministic generation and real Mihomo v1.19.30 / v1.19.29 integration validation.
 
-```bash
-python scripts/make_fixture_sources.py
-clash-relay generate \
-  --config tests/fixtures/project/config.yaml \
-  --subscriptions tests/fixtures/project/subscriptions.yaml \
-  --services tests/fixtures/project/services.yaml \
-  --policies tests/fixtures/project/policies.yaml \
-  --secret-file .work/fixture-secrets.yaml \
-  --output .work/config.yaml
-```
+Further documentation:
 
-CI runs schema/lint/unit/repository-safety checks on Python 3.11 and 3.12, byte-for-byte deterministic generation, and real Mihomo v1.19.30/v1.19.29 configuration/startup integration tests, including selector-to-mixed-port AI status validation and service-aware post-qualification routing validation. Production runs only from trusted `main` and creates no credential-bearing GitHub Artifact.
+- [Configuration](docs/configuration.md)
+- [Routing rules and ACL4SSR](docs/rules.md)
+- [Security model](docs/security.md)
+- [Publishing](docs/publishing.md)
+- [First release checklist](docs/release-checklist.md)
 
 ## License
 

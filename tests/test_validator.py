@@ -182,12 +182,39 @@ def test_inline_classical_rule_provider_is_allowed(built_candidate) -> None:
     validate_generated_config(config)
 
 
-def test_hidden_group_requires_reserved_prefix(built_candidate) -> None:
+def test_orphan_hidden_presentation_group_rejected(built_candidate) -> None:
     config = _candidate(built_candidate)
-    hidden = next(group for group in config["proxy-groups"] if group.get("hidden", False))
-    hidden["name"] = "Internal But Unreserved"
-    with pytest.raises(ValidationError, match="reserved __CR_"):
+    config["proxy-groups"].append(
+        {
+            "name": "Hidden Presentation Policy",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["DIRECT"],
+        }
+    )
+    with pytest.raises(ValidationError, match="reachable from a public parent group"):
         validate_generated_config(config)
+
+
+def test_rule_may_target_hidden_presentation_group_when_ui_reachable(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["proxy-groups"].extend(
+        [
+            {
+                "name": "Hidden Semantic Policy",
+                "type": "select",
+                "hidden": True,
+                "proxies": ["DIRECT"],
+            },
+            {
+                "name": "Presentation Container",
+                "type": "select",
+                "proxies": ["Hidden Semantic Policy"],
+            },
+        ]
+    )
+    config["rules"].insert(-1, "DOMAIN,example.invalid,Hidden Semantic Policy")
+    validate_generated_config(config)
 
 
 def test_group_cycle_rejected(built_candidate) -> None:

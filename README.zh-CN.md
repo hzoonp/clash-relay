@@ -8,26 +8,30 @@
 
 > **敏感信息提示**：最终 `config.yaml` 内联真实节点凭据，应视为最高敏感数据。支持的 Public 生产工作流不会把它上传到 Actions Artifact、Release、Gist、Git commit 或 Pages。
 
-## 当前生产模型
+## 生产契约
 
-当前 canonical 生产配置为：
+canonical 生产配置遵循一个明确边界：
+
+1. **除 AI 实测调度外，所有规则行为由 ACL4SSR 决定。** 规则顺序、规则目标、策略成员和默认成员顺序严格跟随固定版本 `ACL4SSR_Online_Full.ini` 的语义。
+2. **FlClash 可以优化展示，但不能改变路由。** ACL4SSR 的语义策略组可以隐藏并嵌套到更简洁的展示容器中，但这些展示容器绝不能成为规则 target。
+3. **AI 实测资格是唯一允许改变路由语义的扩展。** OpenAI、Claude、Gemini 会通过真实候选节点探测，受保护的服务流量只能使用对应服务实测通过的节点。
+4. **ACL4SSR 之前不允许私加本地规则。** canonical `rules/direct.yaml` 有意保持空规则集。
+5. **订阅策略只负责节点准入，不再暗中改写 ACL4SSR 路由。** 倍率限制和 `allowed_uses` 可以决定节点能否进入某个库存，但节点进入通用库存后，非 AI 路由不再按订阅源做 application-specific exclusion。
+
+生产数据流：
 
 ```text
 4 个私密订阅 URL
           ↓
-订阅源级节点准入策略
+订阅 / 节点准入
           ↓
-通用节点库存 + 按节点名称识别国家/地区
+内部通用节点库存
           ↓
-AI 候选池：SG / JP / US / HK / TW / KR / OTHER
+固定版本 ACL4SSR Online Full 语义
           ↓
-可信 Runner 对每个节点分别探测 ChatGPT / Claude / Gemini
+AI 国家候选池 + OpenAI / Claude / Gemini 实测资格
           ↓
-AI 国家库存保留至少通过一个服务的节点并集
-          ↓
-隐藏的 OpenAI / Claude / Gemini 路由只使用各自通过实测的节点
-          ↓
-ACL4SSR Online Full（固定 commit）
+隐藏的服务专用合格节点路由
           ↓
 Mihomo v1.19.30 + v1.19.29
           ↓
@@ -43,25 +47,95 @@ modules:
   general: true
 ```
 
-`services.yaml` 在生产中为空。`policies.yaml` 保留一个通用 `general` 节点池，并增加 7 个 AI 国家/地区候选池；它们仍属于同一个 `general` 模块，不恢复旧的 ChatGPT、Claude、Gemini 声明期独立服务模块。旧的 Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明仍保持移除。通用生成引擎的其它能力继续在 `tests/fixtures/project/` 中独立测试。
+`services.yaml` 为空。`policies.yaml` 只保留一个内部通用节点库存和 7 个 AI 国家/地区候选库存。通用引擎的其它能力继续在 `tests/fixtures/project/` 中独立测试，不会自动进入真实生产配置。
 
-## AI 节点资格与国家分组
+## 严格 ACL4SSR 路由
 
-AI 节点先根据**节点名称**进行确定性国家/地区分类，目前识别：
+`rules/acl4ssr.yaml` 固定 `ACL4SSR/ACL4SSR` 到不可变 commit：
 
 ```text
-SG  新加坡
-JP  日本
-US  美国
-HK  香港
-TW  台湾
-KR  韩国
-OTHER 其它/无法可靠识别
+c498ae4911f15b19c5ceaef6f8737ca8705b4430
 ```
 
-这不是 GeoIP 探测，也不声称节点出口 IP 一定与名称一致；它只是根据常见中文/英文地区名、机场码、国旗和边界明确的地区缩写进行分类。无法可靠识别时进入 `OTHER`，不会猜测。
+canonical manifest 已恢复 ACL4SSR Full 原本的策略映射，不再为了减少 FlClash 顶层组数把不同应用合并到同一个路由目标。典型映射为：
 
-所有订阅都可以提供 AI **候选**节点，但候选资格本身不等于可用。可信 `main` Runner 会为候选节点启动临时 Mihomo，使用 Core API 把临时 selector 固定到具体节点，再让 Python 通过该 Mihomo 的本地 mixed-port 实际发送 `HEAD` 请求：
+```text
+LocalAreaNetwork / UnBan / GoogleCN / SteamCN  -> 全球直连
+BanAD                                         -> 广告拦截
+BanProgramAD                                  -> 应用净化
+GoogleFCM                                     -> 谷歌FCM
+Bing / OneDrive / Microsoft                   -> 各自微软策略组
+Apple                                         -> 苹果服务
+Telegram                                      -> 电报消息
+YouTube                                       -> 油管视频
+Netflix                                       -> 奈飞视频
+Bahamut                                       -> 巴哈姆特
+BilibiliHMT / Bilibili                        -> 哔哩哔哩
+ChinaMedia                                    -> 国内媒体
+ProxyMedia                                    -> 国外媒体
+ProxyGFWlist                                  -> 节点选择
+ChinaDomain / ChinaCompanyIp / Download       -> 全球直连
+GEOIP,CN                                      -> 全球直连
+MATCH                                         -> 漏网之鱼
+```
+
+ACL4SSR 原本的策略行为也保留，包括 `节点选择`、`自动选择`、`手动切换`、各国家节点、`奈飞节点`、`全球直连`、`广告拦截`、`应用净化`、应用/媒体策略和 `漏网之鱼` 的成员及顺序。provider-backed selector 直接复用私密的通用 inline provider，不会仅为了复刻 ACL4SSR selector 而复制一份节点凭据。
+
+ACL4SSR 规则片段在可信构建阶段获取，并内联为 Mihomo classical rule-provider。最终 YAML 为 standalone，运行时 rule-provider 不含 `url` 或 `path`。
+
+固定 Full 片段中有 9 条 Mihomo 1.19.x 无法用 classical rule 表达的旧式 `URL-REGEX`：`Download.list` 7 条、`ChinaMedia.list` 1 条、`ProxyMedia.list` 1 条。项目不会私自改写成近似的 `DOMAIN-REGEX`。只有当**同一 ACL4SSR commit** 的 `Clash/Providers/*.yaml` 对同一条规则明确以注释形式省略时，adapter 才允许做相同兼容处理；任何不匹配都会 fail closed。canonical CI 强制要求 `verified_compatibility_omissions == 9` 且 `unverified_legacy_rules == 0`。
+
+详见 [ACL4SSR 规则模型](docs/rules.md)。
+
+## FlClash 展示层
+
+展示层尽量简洁，但规则行为不合并。预期顶层只显示：
+
+```text
+节点选择
+人工智能
+流媒体
+国内服务
+更多策略
+```
+
+其中 `流媒体`、`国内服务`、`更多策略` 都是**纯展示容器**，没有任何 ACL4SSR 规则会直接命中它们。真正被规则命中的 ACL4SSR 语义组隐藏在容器下，用户需要手动覆盖时仍然可以进入对应策略。
+
+例如：
+
+```text
+流媒体
+├─ 油管视频
+├─ 奈飞视频
+├─ 巴哈姆特
+├─ 哔哩哔哩
+├─ 国内媒体
+└─ 国外媒体
+
+国内服务
+├─ 谷歌FCM
+├─ 微软Bing
+├─ 微软云盘
+├─ 微软服务
+├─ 苹果服务
+├─ 游戏平台
+└─ 网易音乐
+
+更多策略
+├─ 电报消息
+├─ 全球直连
+├─ 广告拦截
+├─ 应用净化
+└─ 漏网之鱼
+```
+
+因此“隐藏/嵌套”只改变 FlClash UI，不改变 ACL4SSR 的 rule target、成员顺序或默认行为。
+
+## AI 实测资格与国家分组
+
+AI 候选节点根据**节点名称**做确定性国家/地区分类，不使用 GeoIP 猜测出口位置。生产识别 SG、JP、US、HK、TW、KR，无法可靠识别时进入 `OTHER`。
+
+可信 `main` Runner 会启动临时 Mihomo，把 selector 固定到具体候选节点，再通过该节点实际发送 `HEAD` 请求：
 
 ```text
 https://chatgpt.com/
@@ -69,95 +143,60 @@ https://claude.ai/
 https://gemini.google.com/
 ```
 
-三个服务会**分别判定资格**。某个节点只有在对应服务的 probe 返回配置允许的 HTTP 状态范围时，才算通过该服务；生产当前要求 `200-399`。网络错误、超时、TLS 失败或非允许状态，只会让节点在该服务上失败，不再因为另一家服务的限制而把整个节点错误判定为“所有 AI 都不可用”。
+三个服务独立判定资格。当前生产要求对应 probe 返回 `200-399`；网络错误、timeout、TLS 失败或不允许的 HTTP 状态，只让该节点在该服务上失败。
 
-最终 AI 国家 provider 保留 OpenAI、Claude、Gemini 三个通过集合的**并集**。随后由隐藏的服务专用路由锚点对这些共享国家 provider 做精确过滤：OpenAI 流量只使用 OpenAI 实测通过的节点，Claude 只使用 Claude 通过节点，Gemini 只使用 Gemini 通过节点。普通 `节点选择` 完全不受 AI 资格结果影响。
-
-为了避免几百个节点完全串行测试，候选 provider 会被分片并以有上限的并发临时 Mihomo 进程执行；节点名称、服务器、凭据和单节点探测结果不会输出到公开 Actions 日志。公开日志只保留安全的聚合信息，例如各 probe 的 HTTP 状态数量、timeout/TLS/network error 数量、selector failure 数量和各服务合格节点总数。
-
-资格筛选完成后：
-
-- 某国家/地区仍有至少一个服务合格节点：保留对应 `AI · <地区>` 组；
-- 某国家/地区没有任何服务合格节点：从最终 `人工智能` 组移除；
-- 某一个服务没有任何合格节点：该服务的隐藏路由 fail closed 到 `REJECT`，不会影响其它已通过服务继续发布；
-- 三个受保护 AI 服务全部没有任何合格节点，或资格基础设施无法安全完成：生产发布整体 fail closed，不覆盖 Cloudflare KV 中上一版成功配置。
-
-因此最终 FlClash 可见组数量会随实际资格结果变化。核心策略组始终包括：
+最终 AI 国家 provider 保存至少通过 OpenAI、Claude、Gemini 任一服务的节点并集，再由隐藏服务路由严格限制：
 
 ```text
-节点选择
+OpenAI 流量 -> 仅 OpenAI 实测通过节点
+Claude 流量 -> 仅 Claude 实测通过节点
+Gemini 流量 -> 仅 Gemini 实测通过节点
+```
+
+固定 ACL4SSR `OpenAi.list` 以及从固定 `AI.list` 精确派生的 Claude/Gemini 子集，会放在通用 ACL4SSR AI 规则之前。除这三个受保护服务的实测调度外，其余 AI 域名仍由固定 ACL4SSR AI 规则覆盖。
+
+AI 国家组不在顶层展示，只在 `人工智能` 内出现：
+
+```text
 人工智能
-流媒体
-国内服务
-广告拦截
+├─ AI · 新加坡
+├─ AI · 日本
+├─ AI · 美国
+├─ AI · 香港
+├─ AI · 台湾
+├─ AI · 韩国
+├─ AI · 其他地区
+└─ DIRECT
 ```
 
-`人工智能` 下最多出现：
+空国家组会被删除；某单一服务没有任何合格节点时，仅该服务 fail closed 到 `REJECT`；三个受保护服务全部没有合格节点时，整个发布 fail closed，不覆盖上一版 Cloudflare KV。
 
-```text
-AI · 新加坡
-AI · 日本
-AI · 美国
-AI · 香港
-AI · 台湾
-AI · 韩国
-AI · 其他地区
-DIRECT
-```
+公开 Actions 日志只输出聚合资格统计，不输出节点名称、服务器、凭据或单节点结果。
 
-OpenAI / Claude / Gemini 的服务专用路由是隐藏实现组，不会增加额外的 FlClash 用户选择器。通用节点由 `节点选择` 的 inline provider 持有；AI 国家组使用独立的私密 inline provider，以便在发布前删除对三个受保护 AI 服务都无资格的节点。最终 YAML 仍只存在于私密发布链路中。
+## 订阅节点准入
 
-## 订阅源级策略
+订阅可以声明 `max_node_multiplier`。过滤器只识别节点名称里明确写出的倍率，例如 `2x`、`x2.5`、`3倍`、`倍率:4`。明确高于上限的节点会在 provider 生成前剔除；没有明确倍率标记的节点保留，不猜测。
 
-每个订阅可以声明可选的 `max_node_multiplier`。过滤器只识别节点名称中明确写出的倍率，例如 `2x`、`x2.5`、`3倍`、`倍率:4`。当上限设为 `2.0` 时：
+`allowed_uses` 只决定订阅能进入哪些节点库存。canonical 生产**不会再把它转换为 ACL4SSR 应用路由中的 source exclusion**。节点一旦进入通用库存，所有非 AI 流量严格按 ACL4SSR 路由。AI 是唯一例外，因为 AI candidate inventory 和实时资格筛选本身就是项目明确提供的调度功能。
 
-- 明确倍率 `<= 2.0`：保留；
-- 明确倍率 `> 2.0`：在分类和 provider 生成前直接剔除；
-- 名称没有明确倍率标记：保留，不猜测。
+## 最终 AI 规则形态
 
-canonical 生产仍把 `subscription_1` 限制在明确的通用网页与 AI 路径：
-
-- ACL4SSR `ProxyGFWlist` 可以使用 `subscription_1`；
-- OpenAI / Claude / Gemini 受保护流量只有通过对应服务实时资格筛选的隐藏路由才能使用 `subscription_1`，其它 ACL4SSR AI 流量继续通过 `人工智能`；
-- `流媒体`、`国内服务` 的普通代理路径排除 `subscription_1`；
-- Telegram 排除 `subscription_1`；
-- 未命中的最终 `MATCH` 流量排除 `subscription_1`。
-
-这些普通路由限制不会复制额外的 general provider。生成器通过隐藏路由锚点和 Mihomo `exclude-filter` 过滤共享 provider 中带有对应订阅源前缀的运行时节点。如果受限路由没有其它允许节点，则 fail closed 到隐藏的 `REJECT`。
-
-这里约束的是**规则路由场景**，不是进程识别；项目不会声称能够仅凭域名证明发起流量的可执行程序一定是浏览器。
-
-## ACL4SSR 规则模型
-
-ACL4SSR 固定到不可变 commit，而不是跟随移动的 `master`。构建时从该 commit 获取 Full 规则片段，并转换为 inline classical rule-provider。私密 AI 资格阶段会从固定的 AI payload 中严格派生 Claude 与 Gemini 子集，并检查上游规则是否发生预期外漂移；固定的 OpenAI provider 与这两个派生子集会放在通用 AI 规则前面，使服务资格路由优先生效：
+资格筛选之前，AI 规则数据仍来自 ACL4SSR。私密资格阶段只增加受保护服务的专用路由：
 
 ```yaml
-rule-providers:
-  acl4ssr_ai:
-    type: inline
-    behavior: classical
-    payload: [...]
-
 rules:
   - RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI
   - RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE
   - RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI
   - RULE-SET,acl4ssr_ai,人工智能
-  - GEOIP,CN,DIRECT,no-resolve
-  - MATCH,<source-filtered-final-anchor>
+  # ...其余规则继续保持固定 ACL4SSR 顺序...
+  - GEOIP,CN,全球直连,no-resolve
+  - MATCH,漏网之鱼
 ```
 
-因此：
+`cr_ai_rules_claude` 和 `cr_ai_rules_gemini` 是固定 ACL4SSR `AI.list` 的精确子集；如果 pin 中相关规则漂移，qualification 会 fail closed 并要求人工审查。
 
-- ACL4SSR 数据在可信构建阶段获取；
-- 最终 YAML 已包含完整所需规则；
-- FlClash/Mihomo 运行时不依赖 GitHub；
-- rule-provider 不含 `url` 或 `path`；
-- 每次规则拓扑变化都必须通过两版真实 Mihomo 验证。
-
-详见 [ACL4SSR 规则模型](docs/rules.md)。
-
-## 最终数据流
+## 安全发布链
 
 ```text
 Public GitHub
@@ -167,30 +206,26 @@ Public GitHub
              ↓
       trusted main Actions
              ↓
-      每个订阅 URL ::add-mask::
+      mask 每个订阅 URL
              ↓
-      获取 / 解析 / 准入过滤 / 去重
+      获取 / 解析 / 准入 / 去重
              ↓
-      获取固定 ACL4SSR 规则
+      获取固定 ACL4SSR 片段
              ↓
       生成私密 standalone YAML
              ↓
-      临时 Mihomo：逐节点、逐服务 AI 实际 HEAD 资格筛选
+      AI 逐服务真实资格筛选
              ↓
-      保留服务合格并集 + 构建隐藏服务路由 + 删除空国家组
-             ↓
-      Mihomo v1.19.30
-             ↓
-      Mihomo v1.19.29
+      两版 Mihomo 验证 exact candidate
              ↓
       Cloudflare Workers KV
              ↓
-      /profile/<PROFILE_TOKEN>
+      受 token 保护的 Worker URL
              ↓
             FlClash
 ```
 
-订阅 Secret 只出现在 mask 和 generate 步骤；AI 资格筛选读取的是已经生成的临时 candidate，不需要原始订阅 Secret；Cloudflare API Token 只出现在最后发布步骤。`PROFILE_TOKEN` 完全不进入 GitHub。
+Cloudflare publication gate 会拒绝不安全的公开发布方式。任何生成、AI qualification 或 Mihomo 验证失败，都不会覆盖 KV 中上一版成功配置。
 
 ## GitHub 配置
 
@@ -208,47 +243,7 @@ CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-`CLASH_RELAY_SUBSCRIPTIONS` 是一个 JSON/YAML 映射：
-
-```json
-{
-  "SUBSCRIPTION_1_URL": "<真实订阅 URL>",
-  "SUBSCRIPTION_2_URL": "<真实订阅 URL>",
-  "SUBSCRIPTION_3_URL": "<真实订阅 URL>",
-  "SUBSCRIPTION_4_URL": "<真实订阅 URL>"
-}
-```
-
-这里保存的是原始服务商订阅 URL，不是 Cloudflare Worker URL。`subscriptions.yaml` 中的 `secret_name` 必须与这些键完全一致。`PROFILE_TOKEN` 不要放 GitHub。
-
-## Cloudflare-only 发布
-
-生产保持：
-
-```yaml
-publishing:
-  artifact: false
-  github_release:
-    enabled: false
-    allow_sensitive_public_release: false
-  gist:
-    enabled: false
-    allow_sensitive_unlisted_gist: false
-  cloudflare_kv:
-    enabled: true
-    key: production-config
-```
-
-Cloudflare 模式的安全门禁会拒绝同时开启 Artifact、Release 或 Gist。任何生成、AI 资格筛选或 Mihomo 验证步骤失败，都不会覆盖 KV 中上一版成功配置。
-
-## Public 仓库安全要求
-
-- 保护 `main`，要求 PR CI 通过；
-- 限制可修改 Workflow 和生产 Python 代码的人员；
-- 不使用 `pull_request_target` 运行不可信代码并读取生产 Secrets；
-- 公开 YAML 不得包含真实 URL、token、用户名、密码或节点凭据；
-- 完整 Worker URL 本身是 Bearer Credential；
-- `PROFILE_TOKEN` 泄露时立即轮换。
+`CLASH_RELAY_SUBSCRIPTIONS` 是 `subscriptions.yaml` 中各 `secret_name` 到真实订阅 URL 的 JSON/YAML 映射。`PROFILE_TOKEN` 只用于保护 Worker profile URL，不应存入 GitHub。
 
 ## 本地开发
 
@@ -262,20 +257,7 @@ pytest -m "not integration"
 python scripts/repository_audit.py
 ```
 
-通用引擎的 fictional fixture 与真实生产声明完全隔离。生成 fixture 时使用：
-
-```bash
-python scripts/make_fixture_sources.py
-clash-relay generate \
-  --config tests/fixtures/project/config.yaml \
-  --subscriptions tests/fixtures/project/subscriptions.yaml \
-  --services tests/fixtures/project/services.yaml \
-  --policies tests/fixtures/project/policies.yaml \
-  --secret-file .work/fixture-secrets.yaml \
-  --output .work/config.yaml
-```
-
-CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置、启动、AI selector/mixed-port HEAD 状态和服务资格路由验证。
+CI 还会做字节级确定性生成，以及 Mihomo v1.19.30 / v1.19.29 的真实配置和启动集成验证。
 
 详细说明：
 

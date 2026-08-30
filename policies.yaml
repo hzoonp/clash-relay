@@ -64,8 +64,10 @@ probes:
     tolerance: 50
 
 pools:
+  # Internal all-node inventory. ACL4SSR owns the user-facing 节点选择 / 自动选择 /
+  # country/manual groups and their exact member order.
   - id: general
-    display_name: 节点选择
+    display_name: __CR_GENERAL_INVENTORY
     module: general
     source_use: general
     regions: [ANY]
@@ -79,9 +81,8 @@ pools:
     rule_priority: 1000
     rules: null
 
-  # AI pools are candidate inventories only. The trusted production workflow
-  # probes every runtime node against OpenAI, Claude, and Gemini and removes
-  # failures before the exact candidate is validated and published.
+  # AI pools are the only intentional semantic extension over ACL4SSR. They are
+  # candidate inventories live-qualified per service on the trusted runner.
   - id: ai_sg
     display_name: AI · 新加坡
     module: general

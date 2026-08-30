@@ -211,7 +211,7 @@ def test_source_exclusion_rejects_unknown_subscription_ids() -> None:
         )
 
 
-def test_canonical_subscription_1_policy_is_locked(repo_root: Path) -> None:
+def test_canonical_subscription_policy_does_not_override_acl4ssr_routing(repo_root: Path) -> None:
     subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in subscriptions["subscriptions"]}
     subscription_1 = by_id["subscription_1"]
@@ -219,20 +219,6 @@ def test_canonical_subscription_1_policy_is_locked(repo_root: Path) -> None:
     assert set(subscription_1["allowed_uses"]) == {"general", "ai"}
 
     acl4ssr = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
-    groups = {item["display_name"]: item for item in acl4ssr["groups"]}
-    sources = {item["id"]: item for item in acl4ssr["sources"]}
-    assert groups["流媒体"]["excluded_sources"] == ["subscription_1"]
-    assert groups["国内服务"]["excluded_sources"] == ["subscription_1"]
-    assert "excluded_sources" not in groups["人工智能"]
-    assert sources["telegram"]["excluded_sources"] == ["subscription_1"]
-    assert "excluded_sources" not in sources["proxy_gfwlist"]
-    assert acl4ssr["final_excluded_sources"] == ["subscription_1"]
-
-    for group in acl4ssr["groups"]:
-        uses_node_selection = {"group": "节点选择"} in group["members"]
-        if uses_node_selection and group["display_name"] != "人工智能":
-            assert "subscription_1" in group.get("excluded_sources", [])
-
-    for source in acl4ssr["sources"]:
-        if source["target"] == "节点选择" and source["id"] != "proxy_gfwlist":
-            assert "subscription_1" in source.get("excluded_sources", [])
+    assert "final_excluded_sources" not in acl4ssr
+    assert all("excluded_sources" not in group for group in acl4ssr["groups"])
+    assert all("excluded_sources" not in source for source in acl4ssr["sources"])

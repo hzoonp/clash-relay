@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
@@ -26,10 +27,11 @@ _SUPPORTED_TYPES = {
     "PROCESS-PATH",
     "NETWORK",
 }
-# These legacy Clash rule types occur in some ACL4SSR fragments but are not
-# accepted by the pinned Mihomo cores used by this project. They are skipped
-# explicitly and reported instead of being silently rewritten.
-_SKIPPED_TYPES = {"URL-REGEX", "USER-AGENT"}
+# These legacy Clash rule types are present in some ACL4SSR Full fragments but
+# are not accepted by the pinned Mihomo cores. Canonical production may omit
+# them only when the same immutable ACL4SSR commit explicitly comments out the
+# exact rule in its maintained Clash Provider representation.
+_LEGACY_TYPES = {"URL-REGEX", "USER-AGENT"}
 _ALLOWED_OPTIONS = {"no-resolve"}
 
 
@@ -48,11 +50,9 @@ def _render_classical_rule(rule: dict[str, Any]) -> str:
     return ",".join(parts)
 
 
-def parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any]], int]:
-    """Parse a classical ACL4SSR .list fragment into clash-relay rule objects."""
-
+def _parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any]], list[str]]:
     rules: list[dict[str, Any]] = []
-    skipped = 0
+    legacy_rules: list[str] = []
     for line_number, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith(";"):
@@ -63,8 +63,8 @@ def parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any
                 f"ACL4SSR source {source_id!r} has an invalid rule at line {line_number}"
             )
         rule_type = parts[0].upper()
-        if rule_type in _SKIPPED_TYPES:
-            skipped += 1
+        if rule_type in _LEGACY_TYPES:
+            legacy_rules.append(line)
             continue
         if rule_type not in _SUPPORTED_TYPES:
             raise GenerationError(
@@ -88,7 +88,87 @@ def parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any
         rules.append(rule)
     if not rules:
         raise GenerationError(f"ACL4SSR source {source_id!r} contains no supported rules")
-    return rules, skipped
+    return rules, legacy_rules
+
+
+def parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any]], int]:
+    """Parse one ACL4SSR .list fragment and report legacy compatibility rules."""
+
+    rules, legacy_rules = _parse_acl4ssr_list(text, source_id=source_id)
+    return rules, len(legacy_rules)
+
+
+def _commented_legacy_rules(text: str) -> set[str]:
+    comments: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("#"):
+            continue
+        candidate = line[1:].strip()
+        if not candidate or "," not in candidate:
+            continue
+        rule_type = candidate.split(",", 1)[0].strip().upper()
+        if rule_type in _LEGACY_TYPES:
+            comments.add(candidate)
+    return comments
+
+
+def _default_compatibility_path(source_path: str) -> str:
+    path = PurePosixPath(source_path)
+    return str(PurePosixPath("Clash/Providers") / f"{path.stem}.yaml")
+
+
+def _validated_compatibility_path(path_text: str, *, source_id: str) -> str:
+    path = PurePosixPath(path_text)
+    if path.is_absolute() or ".." in path.parts or not path_text.startswith("Clash/Providers/"):
+        raise GenerationError(
+            f"ACL4SSR source {source_id!r} has an unsafe Mihomo compatibility provider path"
+        )
+    return path_text
+
+
+def _verify_legacy_compatibility(
+    *,
+    source: dict[str, Any],
+    source_id: str,
+    legacy_rules: list[str],
+    repository: str,
+    ref: str,
+    fetcher: RuleFetcher,
+    timeout: int,
+    max_source_bytes: int,
+) -> str | None:
+    if not legacy_rules:
+        return None
+
+    source_path = str(source["path"])
+    compatibility_path = source.get("mihomo_compatibility_path")
+    if not isinstance(compatibility_path, str) or not compatibility_path:
+        compatibility_path = _default_compatibility_path(source_path)
+    compatibility_path = _validated_compatibility_path(compatibility_path, source_id=source_id)
+    compatibility_url = _raw_url(repository, ref, compatibility_path)
+    try:
+        compatibility_text = fetcher(
+            compatibility_url,
+            timeout=timeout,
+            max_bytes=max_source_bytes,
+            allow_http=False,
+            allow_file=False,
+        )
+    except FetchError as exc:
+        raise GenerationError(
+            f"ACL4SSR source {source_id!r} contains Mihomo-incompatible legacy rules, "
+            "but its pinned ACL4SSR compatibility provider could not be fetched"
+        ) from exc
+
+    documented_omissions = _commented_legacy_rules(compatibility_text)
+    missing = [rule for rule in legacy_rules if rule not in documented_omissions]
+    if missing:
+        raise GenerationError(
+            f"ACL4SSR source {source_id!r} contains legacy rules that are not explicitly "
+            "omitted by its pinned ACL4SSR Mihomo/Clash compatibility provider"
+        )
+    return compatibility_path
 
 
 def load_acl4ssr_rules(
@@ -127,7 +207,17 @@ def load_acl4ssr_rules(
             )
         except FetchError as exc:
             raise GenerationError(f"ACL4SSR source {source_id!r} could not be fetched") from exc
-        rules, skipped = parse_acl4ssr_list(text, source_id=source_id)
+        rules, legacy_rules = _parse_acl4ssr_list(text, source_id=source_id)
+        compatibility_path = _verify_legacy_compatibility(
+            source=source,
+            source_id=source_id,
+            legacy_rules=legacy_rules,
+            repository=repository,
+            ref=ref,
+            fetcher=fetcher,
+            timeout=timeout,
+            max_source_bytes=max_source_bytes,
+        )
         payload = unique(_render_classical_rule(rule) for rule in rules)
         if not payload:
             raise GenerationError(f"ACL4SSR source {source_id!r} produced an empty rule provider")
@@ -153,8 +243,10 @@ def load_acl4ssr_rules(
             "path": str(source["path"]),
             "provider": provider_name,
             "rules": len(payload),
-            "skipped_legacy_rules": skipped,
+            "verified_compatibility_omissions": len(legacy_rules),
         }
+        if compatibility_path is not None:
+            source_report["mihomo_compatibility_path"] = compatibility_path
         if source.get("excluded_sources"):
             source_report["excluded_sources"] = list(source["excluded_sources"])
         source_reports.append(source_report)
@@ -188,6 +280,9 @@ def load_acl4ssr_rules(
         "sources": source_reports,
         "rule_providers": len(providers),
         "rules": total_rules,
-        "skipped_legacy_rules": sum(item["skipped_legacy_rules"] for item in source_reports),
+        "verified_compatibility_omissions": sum(
+            item["verified_compatibility_omissions"] for item in source_reports
+        ),
+        "unverified_legacy_rules": 0,
     }
     return providers, directives, report
