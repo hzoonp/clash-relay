@@ -50,9 +50,7 @@ def _render_classical_rule(rule: dict[str, Any]) -> str:
     return ",".join(parts)
 
 
-def _parse_acl4ssr_list(
-    text: str, *, source_id: str
-) -> tuple[list[dict[str, Any]], list[str]]:
+def _parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any]], list[str]]:
     rules: list[dict[str, Any]] = []
     legacy_rules: list[str] = []
     for line_number, raw in enumerate(text.splitlines(), start=1):
@@ -147,9 +145,7 @@ def _verify_legacy_compatibility(
     compatibility_path = source.get("mihomo_compatibility_path")
     if not isinstance(compatibility_path, str) or not compatibility_path:
         compatibility_path = _default_compatibility_path(source_path)
-    compatibility_path = _validated_compatibility_path(
-        compatibility_path, source_id=source_id
-    )
+    compatibility_path = _validated_compatibility_path(compatibility_path, source_id=source_id)
     compatibility_url = _raw_url(repository, ref, compatibility_path)
     try:
         compatibility_text = fetcher(
