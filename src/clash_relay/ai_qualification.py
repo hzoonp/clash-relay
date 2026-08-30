@@ -319,13 +319,9 @@ def probe_ai_nodes(
     if not probes:
         raise ValidationError("AI qualification requires at least one probe")
 
-    qualified = {
-        name for names in provider_nodes.values() for name in names
-    }
+    qualified = {name for names in provider_nodes.values() for name in names}
     for probe in probes:
-        qualified.intersection_update(
-            _run_probe_round(binary, config_path, provider_nodes, probe)
-        )
+        qualified.intersection_update(_run_probe_round(binary, config_path, provider_nodes, probe))
         if not qualified:
             break
     return qualified
