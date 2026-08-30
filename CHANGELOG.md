@@ -2,6 +2,16 @@
 
 All notable changes will be documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Restored pinned `ACL4SSR_Online_Full.ini` semantics as the canonical owner of all non-AI rule targets, policy groups, member order, and final routing.
+- Separated FlClash presentation-only containers from semantic ACL4SSR policy groups so UI nesting no longer changes rule behavior.
+- Removed the canonical local direct-rule prelude and subscription-source route exclusions that previously altered ACL4SSR behavior.
+- Kept service-aware OpenAI, Claude, and Gemini live qualification as the explicit routing-semantic extension.
+- Added canonical production-shaped Mihomo integration coverage and a zero-skipped-rule assertion for the pinned ACL4SSR sources.
+
 ## [0.1.0] - 2026-08-30
 
 ### Added
