@@ -101,7 +101,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ github.run_id }}
           path: .work/candidate
@@ -148,7 +148,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ github.run_id }}
           path: .work/candidate
@@ -193,7 +193,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ github.run_id }}
           path: .work/candidate
@@ -234,7 +234,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-${{ github.run_id }}
           path: .work/candidate
