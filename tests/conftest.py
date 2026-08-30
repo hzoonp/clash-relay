@@ -18,11 +18,12 @@ def repo_root() -> Path:
 
 @pytest.fixture(scope="session")
 def project_paths(repo_root: Path) -> dict[str, Path]:
+    root = repo_root / "tests/fixtures/project"
     return {
-        "config_path": repo_root / "tests/fixtures/project/config.yaml",
-        "subscriptions_path": repo_root / "tests/fixtures/project/subscriptions.yaml",
-        "services_path": repo_root / "services.yaml",
-        "policies_path": repo_root / "policies.yaml",
+        "config_path": root / "config.yaml",
+        "subscriptions_path": root / "subscriptions.yaml",
+        "services_path": root / "services.yaml",
+        "policies_path": root / "policies.yaml",
     }
 
 
@@ -49,15 +50,7 @@ def project_factory(tmp_path: Path, repo_root: Path):
         nonlocal counter
         counter += 1
         root = tmp_path / f"project-{counter}"
-        root.mkdir()
-        shutil.copy(repo_root / "tests/fixtures/project/config.yaml", root / "config.yaml")
-        shutil.copy(
-            repo_root / "tests/fixtures/project/subscriptions.yaml",
-            root / "subscriptions.yaml",
-        )
-        shutil.copy(repo_root / "services.yaml", root / "services.yaml")
-        shutil.copy(repo_root / "policies.yaml", root / "policies.yaml")
-        shutil.copytree(repo_root / "rules", root / "rules")
+        shutil.copytree(repo_root / "tests/fixtures/project", root)
         return root, {
             "config_path": root / "config.yaml",
             "subscriptions_path": root / "subscriptions.yaml",

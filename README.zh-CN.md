@@ -2,11 +2,106 @@
 
 [English](README.md)
 
-`clash-relay` 是一个确定性、fail-closed 的 Mihomo 配置生成项目，目标是在 **Public GitHub 仓库** 中也能安全完成真实生产生成。公开 YAML 只保存策略和订阅元数据；真实订阅 URL 只进入 GitHub Actions Secrets；包含节点凭据的最终 `config.yaml` 只在临时 GitHub Runner 上生成并通过两个 Mihomo 稳定版验证，随后直接写入私有 Cloudflare Workers KV。
+`clash-relay` 是一个确定性、fail-closed 的 Mihomo 配置生成项目，目标是在 **Public GitHub 仓库** 中安全生成真实生产配置。公开 YAML 只保存策略和订阅元数据；真实订阅 URL 只进入 GitHub Actions Secrets；包含节点凭据的最终 `config.yaml` 只在临时 GitHub Runner 上生成，并在通过两个 Mihomo 稳定版验证后直接写入私有 Cloudflare Workers KV。
 
-最终配置是标准 Mihomo YAML，FlClash 直接通过受 `PROFILE_TOKEN` 保护的 Worker URL 自动读取。
+最终配置是标准、单文件、standalone Mihomo YAML。FlClash 只需要受 `PROFILE_TOKEN` 保护的 Worker URL，不需要在运行时访问 GitHub 或 ACL4SSR。
 
-> **敏感信息提示**：最终 `config.yaml` 内联节点凭据，应视为最高敏感数据。支持的 Public 生产工作流不会把它上传到 Actions Artifact、Release、Gist、Git commit 或 Pages。
+> **敏感信息提示**：最终 `config.yaml` 内联真实节点凭据，应视为最高敏感数据。支持的 Public 生产工作流不会把它上传到 Actions Artifact、Release、Gist、Git commit 或 Pages。
+
+## 当前生产模型
+
+当前 canonical 生产配置已经精简为：
+
+```text
+4 个私密订阅 URL
+  ├─ 订阅源 1
+  ├─ 订阅源 2
+  ├─ 订阅源 3
+  └─ 订阅源 4
+          ↓
+     单一 general 节点库存
+          ↓
+        节点选择
+          ↓
+ACL4SSR Online Full（固定 commit）
+          ↓
+17 个中文可见策略组
+          ↓
+Mihomo v1.19.30 + v1.19.29
+          ↓
+Cloudflare Workers KV
+          ↓
+FlClash
+```
+
+生产只启用：
+
+```yaml
+modules:
+  general: true
+```
+
+`services.yaml` 在生产中为空，`policies.yaml` 只保留一个 `general` 节点池。旧的 ChatGPT、Claude、Gemini、Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明已经移除。通用生成引擎仍保留这些数据驱动能力，并在 `tests/fixtures/project/` 中独立测试，避免测试夹具污染真实生产配置。
+
+## 当前 FlClash 可见策略组
+
+生产配置共有 17 个中文可见组：
+
+```text
+节点选择
+直连
+广告拦截
+谷歌FCM
+微软服务
+苹果服务
+电报消息
+人工智能
+网易音乐
+游戏平台
+油管视频
+奈飞视频
+巴哈姆特
+哔哩哔哩
+国内媒体
+国外媒体
+漏网之鱼
+```
+
+这次精简删除了 4 个重复选择层：
+
+- `Auto`：与唯一 `__CR_AUTO_GENERAL_ANY` 自动锚点重复；
+- `App Purify`：合并到 `广告拦截`；
+- `Microsoft Bing`：合并到 `微软服务`；
+- `Microsoft OneDrive`：合并到 `微软服务`。
+
+真正的节点凭据只由 `节点选择` 对应的 inline `proxy-provider` 持有。其它 ACL4SSR 组只是轻量策略选择器，不复制节点凭据。
+
+## ACL4SSR 规则模型
+
+ACL4SSR 固定到不可变 commit，而不是跟随移动的 `master`。构建时从该 commit 获取 Full 规则片段，并转换为：
+
+```yaml
+rule-providers:
+  acl4ssr_ai:
+    type: inline
+    behavior: classical
+    payload: [...]
+
+rules:
+  - RULE-SET,acl4ssr_ai,人工智能
+  - GEOIP,CN,直连,no-resolve
+  - MATCH,漏网之鱼
+```
+
+因此：
+
+- ACL4SSR 数据在可信构建阶段获取；
+- 最终 YAML 已包含完整所需规则；
+- FlClash/Mihomo 运行时不依赖 GitHub；
+- rule-provider 不含 `url` 或 `path`；
+- 每次规则拓扑变化都必须通过两版真实 Mihomo 验证。
+
+详见 [ACL4SSR 规则模型](docs/rules.md)。
 
 ## 最终数据流
 
@@ -20,9 +115,11 @@ Public GitHub
              ↓
       每个订阅 URL ::add-mask::
              ↓
-      获取 / 解析 / 分类
+      获取 / 解析 / 去重
              ↓
-      生成私密 config.yaml
+      获取固定 ACL4SSR 规则
+             ↓
+      生成私密 standalone YAML
              ↓
       Mihomo v1.19.30
              ↓
@@ -37,33 +134,23 @@ Public GitHub
 
 订阅 Secret 只出现在 mask 和 generate 步骤；Cloudflare API Token 只出现在最后发布步骤；Mihomo 验证阶段拿不到这两类 Secret。`PROFILE_TOKEN` 完全不进入 GitHub。
 
-## GitHub 需要的配置
+## GitHub 配置
 
-### Secrets
+Repository **Secrets**：
 
 ```text
 CLASH_RELAY_SUBSCRIPTIONS
 CLOUDFLARE_API_TOKEN
 ```
 
-### Variables
+Repository **Variables**：
 
 ```text
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-例如：
-
-```text
-CLOUDFLARE_KV_NAMESPACE_TITLE = clash-relay-config
-```
-
-`PROFILE_TOKEN` 不要放 GitHub，只保存在 Cloudflare Worker Secret 和 FlClash 的完整订阅 URL 中。
-
-## 多订阅 Secret
-
-`CLASH_RELAY_SUBSCRIPTIONS` 是一个 JSON/YAML 映射，因此可以放任意数量订阅：
+`CLASH_RELAY_SUBSCRIPTIONS` 是一个 JSON/YAML 映射：
 
 ```json
 {
@@ -74,13 +161,11 @@ CLOUDFLARE_KV_NAMESPACE_TITLE = clash-relay-config
 }
 ```
 
-这里放的是原始服务商/机场订阅 URL，不是 Cloudflare Worker URL。
+这里保存的是原始服务商订阅 URL，不是 Cloudflare Worker URL。`subscriptions.yaml` 中的 `secret_name` 必须与这些键完全一致。`PROFILE_TOKEN` 不要放 GitHub。
 
-`subscriptions.yaml` 中的 `secret_name` 必须和这些键完全一致。
+## Cloudflare-only 发布
 
-## Cloudflare
-
-生产默认使用：
+生产保持：
 
 ```yaml
 publishing:
@@ -96,63 +181,16 @@ publishing:
     key: production-config
 ```
 
-Cloudflare 模式的安全门禁会拒绝同时开启 Artifact、Release 或 Gist。
-
-Worker 负责读取 `production-config`，并只对正确的：
-
-```text
-https://<worker>.<workers-subdomain>.workers.dev/profile/<PROFILE_TOKEN>
-```
-
-返回 YAML。完整 URL 本身就是 Bearer Credential，谁拿到它，谁就能读取配置。
-
-## 生产 Workflow
-
-当 `main` 中存在 `config.yaml` 与 `subscriptions.yaml` 后，**Generate, validate, and publish** 会：
-
-1. 先验证 Cloudflare-only 发布策略；
-2. 在任何订阅抓取之前，对每个实际 URL 执行 `::add-mask::`；
-3. 在单个临时 Runner 上生成 `.work/private/config.yaml`；
-4. 使用 Mihomo v1.19.30 验证同一个 candidate；
-5. 使用 Mihomo v1.19.29 再验证同一个 candidate；
-6. 两个版本都通过后，最后一步才获得 `CLOUDFLARE_API_TOKEN`；
-7. 自动按 `CLOUDFLARE_KV_NAMESPACE_TITLE` 精确查找 Namespace；
-8. 把验证过的原始字节写入 `production-config`；
-9. 成功后删除 Runner 上的私密 candidate。
-
-任何前置步骤失败，都不会修改 Cloudflare 中之前的成功配置。
-
-真实 Mihomo 验证如果失败，详细 stdout/stderr 只保存在临时 Runner 文件中，不打印到 Public Actions 日志，也不会上传 Artifact。
+Cloudflare 模式的安全门禁会拒绝同时开启 Artifact、Release 或 Gist。任何生成或 Mihomo 验证步骤失败，都不会覆盖 KV 中上一版成功配置。
 
 ## Public 仓库安全要求
 
 - 保护 `main`，要求 PR CI 通过；
 - 限制可修改 Workflow 和生产 Python 代码的人员；
 - 不使用 `pull_request_target` 运行不可信代码并读取生产 Secrets；
-- `config.yaml` / `subscriptions.yaml` 只能包含公开策略和元数据；
-- 真实 URL、节点 UUID/password、Cloudflare API Token、完整 FlClash Worker URL 都不得提交；
+- 公开 YAML 不得包含真实 URL、token、用户名、密码或节点凭据；
+- 完整 Worker URL 本身是 Bearer Credential；
 - `PROFILE_TOKEN` 泄露时立即轮换。
-
-## 节点能力
-
-节点来源和 capability 相互独立。支持：
-
-- `general`
-- `ai`
-- `bulk`
-- `residential`
-- `emby`
-- `high_multiplier`
-- `chain`
-
-restricted capability 必须显式启用。空的可选业务池进入 `REJECT`，必需池为空则构建失败，不会跨业务借线。
-
-详细说明：
-
-- [配置模型](docs/configuration.md)
-- [安全模型](docs/security.md)
-- [发布流程](docs/publishing.md)
-- [首次发布检查清单](docs/release-checklist.md)
 
 ## 本地开发
 
@@ -166,4 +204,25 @@ pytest -m "not integration"
 python scripts/repository_audit.py
 ```
 
-PR CI 使用完全虚构的 fixture，并分别在 Python 3.11/3.12、Mihomo v1.19.30/v1.19.29 上验证。
+通用引擎的 fictional fixture 与真实生产声明完全隔离。生成 fixture 时使用：
+
+```bash
+python scripts/make_fixture_sources.py
+clash-relay generate \
+  --config tests/fixtures/project/config.yaml \
+  --subscriptions tests/fixtures/project/subscriptions.yaml \
+  --services tests/fixtures/project/services.yaml \
+  --policies tests/fixtures/project/policies.yaml \
+  --secret-file .work/fixture-secrets.yaml \
+  --output .work/config.yaml
+```
+
+CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置与启动集成验证。
+
+详细说明：
+
+- [配置模型](docs/configuration.md)
+- [ACL4SSR 规则模型](docs/rules.md)
+- [安全模型](docs/security.md)
+- [发布流程](docs/publishing.md)
+- [首次发布检查清单](docs/release-checklist.md)

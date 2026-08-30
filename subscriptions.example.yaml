@@ -5,51 +5,13 @@ version: 1
 # ignored local --secret-file.
 subscriptions:
   - id: primary
-    display_name: Primary subscription
+    display_name: 示例订阅源
     enabled: true
     required: true
     secret_name: SUB_PRIMARY
     priority: 100
     on_error: fail
-    allowed_uses: [general, ai, bulk]
-    allowed_countries: [US, JP, SG, OTHER]
+    allowed_uses: [general]
+    allowed_countries: [OTHER]
     default_capabilities: [general]
     default_cost_level: standard
-    node_metadata:
-      "Fictional AI US 01":
-        country: US
-        add_capabilities: [ai]
-      "Fictional Bulk JP 01":
-        country: JP
-        add_capabilities: [bulk]
-        cost_level: low
-    name_rules:
-      - pattern: "(?i)\\b(?:us|united states|美国|美國)\\b"
-        country: US
-      - pattern: "(?i)\\b(?:jp|japan|日本)\\b"
-        country: JP
-
-  - id: special
-    display_name: Optional special routes
-    enabled: false
-    required: false
-    secret_name: SUB_SPECIAL
-    priority: 200
-    on_error: skip
-    allowed_uses: [residential, emby, high_multiplier, chain]
-    allowed_countries: [US, JP, SG, OTHER]
-    default_capabilities: []
-    default_cost_level: premium
-    node_metadata:
-      "Fictional Residential US 01":
-        country: US
-        add_capabilities: [residential]
-      "Fictional EMBY SG 01":
-        country: SG
-        add_capabilities: [emby]
-      "Fictional Premium JP 01":
-        country: JP
-        add_capabilities: [high_multiplier]
-      "Fictional Chain Exit US 01":
-        country: US
-        add_capabilities: [chain]

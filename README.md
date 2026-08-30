@@ -2,13 +2,99 @@
 
 [简体中文](README.zh-CN.md)
 
-`clash-relay` is a deterministic, fail-closed Mihomo configuration builder designed to run safely from a **public GitHub repository**. Public YAML contains policy and subscription metadata only. Real subscription URLs stay in GitHub Actions Secrets, generated node credentials exist only on an ephemeral GitHub-hosted runner, and the validated `config.yaml` is published only to private Cloudflare Workers KV.
+`clash-relay` is a deterministic, fail-closed Mihomo configuration builder designed to run safely from a **public GitHub repository**. Public YAML contains policy and subscription metadata only. Real subscription URLs stay in GitHub Actions Secrets, generated node credentials exist only on an ephemeral GitHub-hosted runner, and the validated standalone `config.yaml` is published only to private Cloudflare Workers KV.
 
-The generated file is standard Mihomo YAML. FlClash is only a consumer; no Python process, database, ASN database, daemon, or project-specific runtime is required on the client device.
+FlClash consumes the token-protected Worker URL. It does not need runtime access to GitHub or ACL4SSR.
 
 > **Credential warning**
 >
-> The standalone generated configuration contains inline proxy credentials and must be treated as highest-sensitivity data. The supported public production workflow does **not** upload it to Actions Artifacts, Releases, Gists, commits, or Pages. FlClash reads it through a token-protected Cloudflare Worker URL.
+> The generated configuration contains inline proxy credentials and must be treated as highest-sensitivity data. The supported public production workflow does **not** upload it to Actions Artifacts, Releases, Gists, commits, or Pages.
+
+## Canonical production profile
+
+The repository's production declarations are intentionally smaller than the generic engine:
+
+```text
+4 private subscription URLs
+  ├─ 订阅源 1
+  ├─ 订阅源 2
+  ├─ 订阅源 3
+  └─ 订阅源 4
+          ↓
+ single general node inventory
+          ↓
+        节点选择
+          ↓
+pinned ACL4SSR Online Full rules
+          ↓
+17 Chinese visible policy groups
+          ↓
+Mihomo v1.19.30 + v1.19.29
+          ↓
+Cloudflare Workers KV
+          ↓
+FlClash
+```
+
+Production enables only:
+
+```yaml
+modules:
+  general: true
+```
+
+`services.yaml` is empty in production and `policies.yaml` contains only the `general` node pool. Legacy production declarations for dedicated ChatGPT, Claude, Gemini, Google Play, bulk, residential, EMBY, high-multiplier, and chain pools have been removed. The generic engine still supports and tests those data-driven capabilities under the isolated `tests/fixtures/project/` tree.
+
+## Visible FlClash groups
+
+The canonical profile exposes exactly 17 Chinese groups:
+
+```text
+节点选择
+直连
+广告拦截
+谷歌FCM
+微软服务
+苹果服务
+电报消息
+人工智能
+网易音乐
+游戏平台
+油管视频
+奈飞视频
+巴哈姆特
+哔哩哔哩
+国内媒体
+国外媒体
+漏网之鱼
+```
+
+Four redundant selectors were removed or merged:
+
+- `Auto` is unnecessary because production has one automatic anchor, `__CR_AUTO_GENERAL_ANY`;
+- `App Purify` is merged into `广告拦截`;
+- `Microsoft Bing` and `Microsoft OneDrive` are merged into `微软服务`.
+
+Only `节点选择` owns proxy credentials through an inline proxy provider. ACL4SSR service/media groups are lightweight selectors and do not duplicate nodes.
+
+## ACL4SSR rule model
+
+ACL4SSR is pinned to an immutable commit rather than the moving `master` branch. Trusted generation fetches the configured Full fragments and embeds each one as a Mihomo inline classical rule provider:
+
+```yaml
+rule-providers:
+  acl4ssr_ai:
+    type: inline
+    behavior: classical
+    payload: [...]
+
+rules:
+  - RULE-SET,acl4ssr_ai,人工智能
+  - GEOIP,CN,直连,no-resolve
+  - MATCH,漏网之鱼
+```
+
+The final profile therefore remains standalone: generated rule providers contain no `url` or `path`, and FlClash/Mihomo does not fetch ACL4SSR at runtime. See [Routing rules and ACL4SSR](docs/rules.md).
 
 ## Security architecture
 
@@ -22,9 +108,11 @@ Public GitHub repository
             ↓
       per-subscription ::add-mask::
             ↓
-      fetch + parse + classify
+      fetch + parse + deduplicate
             ↓
-      generate private config.yaml
+      fetch pinned ACL4SSR fragments
+            ↓
+      generate private standalone YAML
             ↓
       Mihomo v1.19.30 validation
             ↓
@@ -41,28 +129,7 @@ The subscription Secret is present only during masking and generation. The Cloud
 
 See [Security model](docs/security.md) and [Publishing](docs/publishing.md).
 
-## Quick start
-
-### 1. Prepare Cloudflare
-
-Create:
-
-- a Workers KV namespace, for example `clash-relay-config`;
-- a Worker bound to that namespace as `CONFIG_KV`;
-- Worker Secret `PROFILE_TOKEN`;
-- a narrowly scoped Cloudflare API token with Workers KV edit/write permission.
-
-The Worker should return the KV key `production-config` only when the request path contains the correct `PROFILE_TOKEN`, and should return a generic `404` otherwise.
-
-A typical FlClash URL is:
-
-```text
-https://<worker>.<workers-subdomain>.workers.dev/profile/<PROFILE_TOKEN>
-```
-
-Treat the complete URL as a bearer credential.
-
-### 2. Configure GitHub
+## GitHub configuration
 
 Repository **Secrets**:
 
@@ -78,9 +145,7 @@ CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-`PROFILE_TOKEN` must not be stored in GitHub.
-
-`CLASH_RELAY_SUBSCRIPTIONS` is one JSON or YAML mapping, so any number of subscriptions can be used:
+`CLASH_RELAY_SUBSCRIPTIONS` is a JSON or YAML mapping:
 
 ```json
 {
@@ -91,42 +156,9 @@ CLOUDFLARE_KV_NAMESPACE_TITLE
 }
 ```
 
-Do not put the Cloudflare Worker URL in this Secret. These values are the original provider subscription URLs.
+These are original provider URLs, not the Cloudflare Worker URL. Every `secret_name` in `subscriptions.yaml` must exactly match one mapping key. `PROFILE_TOKEN` must not be stored in GitHub.
 
-### 3. Create public declarations
-
-```bash
-cp config.example.yaml config.yaml
-cp subscriptions.example.yaml subscriptions.yaml
-```
-
-`config.yaml` and `subscriptions.yaml` may be committed to the public repository only if they contain no URL, token, username, password, private endpoint, or generated node credential.
-
-Every `secret_name` in `subscriptions.yaml` must exactly match one key in `CLASH_RELAY_SUBSCRIPTIONS`.
-
-Example:
-
-```yaml
-version: 1
-subscriptions:
-  - id: subscription_1
-    display_name: Subscription 1
-    enabled: true
-    required: true
-    secret_name: SUBSCRIPTION_1_URL
-    priority: 100
-    on_error: fail
-    allowed_uses: [general, ai, bulk]
-    allowed_countries: [US, JP, SG, OTHER]
-    default_capabilities: [general]
-    default_cost_level: standard
-    node_metadata: {}
-    name_rules: []
-```
-
-Adding more subscriptions requires adding more rows, not changing Python or workflow code.
-
-### 4. Keep GitHub publication disabled
+## Cloudflare-only publication
 
 The public-safe production profile is:
 
@@ -144,49 +176,11 @@ publishing:
     key: production-config
 ```
 
-The Cloudflare publication gate refuses to run if Artifact, Release, or Gist is enabled at the same time.
+The Cloudflare publication gate refuses to run if Artifact, Release, or Gist is enabled. If generation or either Mihomo validation fails, KV is not updated and the previous successful value remains available.
 
-### 5. Run production
+## Generic engine vs. production declarations
 
-Commit the canonical declarations to trusted `main`, or manually dispatch **Generate, validate, and publish** from `main`.
-
-The production job:
-
-1. validates the public declarations and Cloudflare-only publication policy;
-2. registers every derived subscription URL with `::add-mask::`;
-3. generates one private candidate on the runner;
-4. validates the exact candidate with Mihomo v1.19.30;
-5. validates the same candidate with Mihomo v1.19.29;
-6. writes the exact validated bytes to the configured Cloudflare KV namespace/key;
-7. removes the private candidate after successful publication.
-
-If any earlier step fails, Cloudflare is not updated and the previous successful value remains available.
-
-## Node capability model
-
-Node source and node capability are independent. A source may permit `general`, `ai`, `bulk`, `residential`, `emby`, `high_multiplier`, or `chain`, while individual nodes can receive exact metadata overrides.
-
-Built-in capabilities:
-
-| Capability | Purpose | Restricted |
-|---|---|---:|
-| `general` | ordinary browsing | no |
-| `ai` | explicitly approved AI egress | no |
-| `bulk` | sustained video/download/CDN traffic | no |
-| `residential` | residential/home IP | yes |
-| `emby` | dedicated EMBY route | yes |
-| `high_multiplier` | expensive/high-ratio route | yes |
-| `chain` | explicit second-hop exit | yes |
-
-Restricted capabilities are opt-in. Empty optional pools route to `REJECT`; required pools stop the build. Unrelated business pools never silently borrow each other's nodes.
-
-See [Configuration reference](docs/configuration.md).
-
-## Subscription formats
-
-The parser accepts common Clash/Mihomo YAML, proxy lists, inline provider payloads, plain/base64 URI lists, and common SS/SSR/VMess/VLESS/Trojan/HTTP/SOCKS5/Hysteria/Hysteria2/TUIC/AnyTLS forms. Remote provider URLs embedded inside an input subscription are not followed.
-
-Unsafe schemes, URL userinfo, private proxy IP literals, oversized payloads, aliases/anchors, invalid ports, unsupported proxy types, and subscription-supplied routing controls receive explicit validation or sanitization.
+The schemas and generator remain data-driven. Generic fixture coverage includes capabilities such as `ai`, `bulk`, `residential`, `emby`, `high_multiplier`, and `chain`, but those are not enabled or declared by the canonical production profile. This separation keeps production minimal without reducing regression coverage for the reusable engine.
 
 ## Local development
 
@@ -202,38 +196,20 @@ pytest -m "not integration"
 python scripts/repository_audit.py
 ```
 
-Use the fictional fixtures for local generation:
+Generate the isolated fictional fixture with:
 
 ```bash
 python scripts/make_fixture_sources.py
 clash-relay generate \
   --config tests/fixtures/project/config.yaml \
   --subscriptions tests/fixtures/project/subscriptions.yaml \
-  --services services.yaml \
-  --policies policies.yaml \
+  --services tests/fixtures/project/services.yaml \
+  --policies tests/fixtures/project/policies.yaml \
   --secret-file .work/fixture-secrets.yaml \
   --output .work/config.yaml
 ```
 
-## CI/CD behavior
-
-Pull requests run only fictional CI:
-
-1. schema, lint, unit, and repository-safety checks on Python 3.11 and 3.12;
-2. byte-for-byte deterministic fixture generation;
-3. real startup/provider integration tests on Mihomo v1.19.30 and v1.19.29.
-
-Production runs only from trusted `main`. Real Mihomo failure output is redirected to runner-local files and is intentionally not printed into public Actions logs. No credential-bearing Artifact is created.
-
-## FlClash
-
-FlClash should use the Worker URL directly. The Worker retrieves the latest `production-config` from KV after validating `PROFILE_TOKEN`. The Worker URL remains stable while GitHub Actions replaces the KV value after each successful build.
-
-Because the complete Worker URL is itself a credential, keep it private and rotate `PROFILE_TOKEN` if it is exposed.
-
-## Project status
-
-This is an initial public architecture. Current limitations include no DNS-resolution pinning against hostname rebinding during subscription fetches, build-time dependence on availability of the pinned ACL4SSR source when refreshing rules, and best-effort support for uncommon protocol extensions. Real Mihomo validation remains the final authority for proxy fields not modeled by the parser.
+CI runs schema/lint/unit/repository-safety checks on Python 3.11 and 3.12, byte-for-byte deterministic generation, and real Mihomo v1.19.30/v1.19.29 configuration/startup integration tests. Production runs only from trusted `main` and creates no credential-bearing GitHub Artifact.
 
 ## License
 

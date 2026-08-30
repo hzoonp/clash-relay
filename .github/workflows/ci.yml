@@ -52,24 +52,24 @@ jobs:
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services services.yaml \
-            --policies policies.yaml \
+            --services tests/fixtures/project/services.yaml \
+            --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/first.yaml \
             --report .work/first.json
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services services.yaml \
-            --policies policies.yaml \
+            --services tests/fixtures/project/services.yaml \
+            --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/second.yaml
           cmp .work/first.yaml .work/second.yaml
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services services.yaml \
-            --policies policies.yaml \
+            --services tests/fixtures/project/services.yaml \
+            --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/first.yaml \
             --check
@@ -102,8 +102,8 @@ jobs:
           clash-relay build \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services services.yaml \
-            --policies policies.yaml \
+            --services tests/fixtures/project/services.yaml \
+            --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --mihomo-bin .work/bin/mihomo \
             --output .work/config.yaml \

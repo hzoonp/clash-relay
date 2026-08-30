@@ -24,15 +24,6 @@ runtime:
 
 modules:
   general: true
-  chatgpt: false
-  claude: false
-  gemini: false
-  google_play: false
-  bulk: false
-  residential: false
-  emby: false
-  high_multiplier: false
-  chain: false
 
 generation:
   minimum_successful_subscriptions: 1

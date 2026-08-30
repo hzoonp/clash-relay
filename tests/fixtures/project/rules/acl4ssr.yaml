@@ -4,309 +4,353 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# Production routing follows ACL4SSR's Online Full model. Visible groups use
-# stable Chinese names; policy-only selectors never duplicate proxy credentials.
+# Production routing follows ACL4SSR's Online Full model. The groups below are
+# policy-only selectors: proxy credentials remain owned by the single Proxy pool.
 groups:
+  - id: policy_auto
+    display_name: Auto
+    module: general
+    members:
+      - {auto_pool: general}
+
   - id: policy_direct
-    display_name: 直连
+    display_name: Direct
     module: general
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_block
-    display_name: 广告拦截
+    display_name: Block
+    module: general
+    members:
+      - {builtin: REJECT}
+      - {builtin: DIRECT}
+
+  - id: policy_app_purify
+    display_name: App Purify
     module: general
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
 
   - id: policy_google_fcm
-    display_name: 谷歌FCM
+    display_name: Google FCM
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
+
+  - id: policy_bing
+    display_name: Microsoft Bing
+    module: general
+    members:
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
+
+  - id: policy_onedrive
+    display_name: Microsoft OneDrive
+    module: general
+    members:
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_microsoft
-    display_name: 微软服务
+    display_name: Microsoft
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_apple
-    display_name: 苹果服务
+    display_name: Apple
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_telegram
-    display_name: 电报消息
+    display_name: Telegram
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_ai
-    display_name: 人工智能
+    display_name: AI
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_netease
-    display_name: 网易音乐
+    display_name: NetEase Music
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_games
-    display_name: 游戏平台
+    display_name: Games
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_youtube
-    display_name: 油管视频
+    display_name: YouTube
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_netflix
-    display_name: 奈飞视频
+    display_name: Netflix
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_bahamut
-    display_name: 巴哈姆特
+    display_name: Bahamut
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_bilibili
-    display_name: 哔哩哔哩
+    display_name: Bilibili
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_domestic_media
-    display_name: 国内媒体
+    display_name: Domestic Media
     module: general
     members:
-      - {group: 直连}
-      - {group: 节点选择}
+      - {group: Direct}
+      - {group: Proxy}
+      - {group: Auto}
 
   - id: policy_foreign_media
-    display_name: 国外媒体
+    display_name: Foreign Media
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
   - id: policy_final
-    display_name: 漏网之鱼
+    display_name: Final
     module: general
     members:
-      - {group: 节点选择}
-      - {group: 直连}
+      - {group: Proxy}
+      - {group: Auto}
+      - {group: Direct}
 
-final_target: 漏网之鱼
+final_target: Final
 
 # Rule fragments mirror ACL4SSR_Online_Full.ini order, but fetch from the pinned
 # immutable commit above instead of the moving master branch.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list
-    target: 直连
+    target: Direct
     priority: 10
     module: general
 
   - id: unban
     path: Clash/UnBan.list
-    target: 直连
+    target: Direct
     priority: 15
     module: general
 
   - id: ban_ad
     path: Clash/BanAD.list
-    target: 广告拦截
+    target: Block
     priority: 20
     module: general
 
   - id: ban_program_ad
     path: Clash/BanProgramAD.list
-    target: 广告拦截
+    target: App Purify
     priority: 30
     module: general
 
   - id: google_fcm
     path: Clash/Ruleset/GoogleFCM.list
-    target: 谷歌FCM
+    target: Google FCM
     priority: 40
     module: general
 
   - id: google_cn
     path: Clash/GoogleCN.list
-    target: 直连
+    target: Direct
     priority: 50
     module: general
 
   - id: steam_cn
     path: Clash/Ruleset/SteamCN.list
-    target: 直连
+    target: Direct
     priority: 60
     module: general
 
   - id: bing
     path: Clash/Bing.list
-    target: 微软服务
+    target: Microsoft Bing
     priority: 70
     module: general
 
   - id: onedrive
     path: Clash/OneDrive.list
-    target: 微软服务
+    target: Microsoft OneDrive
     priority: 80
     module: general
 
   - id: microsoft
     path: Clash/Microsoft.list
-    target: 微软服务
+    target: Microsoft
     priority: 90
     module: general
 
   - id: apple
     path: Clash/Apple.list
-    target: 苹果服务
+    target: Apple
     priority: 100
     module: general
 
   - id: telegram
     path: Clash/Telegram.list
-    target: 电报消息
+    target: Telegram
     priority: 110
     module: general
 
   - id: ai
     path: Clash/Ruleset/AI.list
-    target: 人工智能
+    target: AI
     priority: 120
     module: general
 
   - id: openai
     path: Clash/Ruleset/OpenAi.list
-    target: 人工智能
+    target: AI
     priority: 125
     module: general
 
   - id: netease_music
     path: Clash/Ruleset/NetEaseMusic.list
-    target: 网易音乐
+    target: NetEase Music
     priority: 130
     module: general
 
   - id: epic
     path: Clash/Ruleset/Epic.list
-    target: 游戏平台
+    target: Games
     priority: 140
     module: general
 
   - id: origin
     path: Clash/Ruleset/Origin.list
-    target: 游戏平台
+    target: Games
     priority: 145
     module: general
 
   - id: sony
     path: Clash/Ruleset/Sony.list
-    target: 游戏平台
+    target: Games
     priority: 150
     module: general
 
   - id: steam
     path: Clash/Ruleset/Steam.list
-    target: 游戏平台
+    target: Games
     priority: 155
     module: general
 
   - id: nintendo
     path: Clash/Ruleset/Nintendo.list
-    target: 游戏平台
+    target: Games
     priority: 160
     module: general
 
   - id: youtube
     path: Clash/Ruleset/YouTube.list
-    target: 油管视频
+    target: YouTube
     priority: 170
     module: general
 
   - id: netflix
     path: Clash/Ruleset/Netflix.list
-    target: 奈飞视频
+    target: Netflix
     priority: 180
     module: general
 
   - id: bahamut
     path: Clash/Ruleset/Bahamut.list
-    target: 巴哈姆特
+    target: Bahamut
     priority: 190
     module: general
 
   - id: bilibili_hmt
     path: Clash/Ruleset/BilibiliHMT.list
-    target: 哔哩哔哩
+    target: Bilibili
     priority: 200
     module: general
 
   - id: bilibili
     path: Clash/Ruleset/Bilibili.list
-    target: 哔哩哔哩
+    target: Bilibili
     priority: 210
     module: general
 
   - id: china_media
     path: Clash/ChinaMedia.list
-    target: 国内媒体
+    target: Domestic Media
     priority: 220
     module: general
 
   - id: proxy_media
     path: Clash/ProxyMedia.list
-    target: 国外媒体
+    target: Foreign Media
     priority: 230
     module: general
 
   - id: proxy_gfwlist
     path: Clash/ProxyGFWlist.list
-    target: 节点选择
+    target: Proxy
     priority: 800
     module: general
 
   - id: china_domain
     path: Clash/ChinaDomain.list
-    target: 直连
+    target: Direct
     priority: 900
     module: general
 
   - id: china_company_ip
     path: Clash/ChinaCompanyIp.list
-    target: 直连
+    target: Direct
     priority: 910
     module: general
 
   - id: download
     path: Clash/Download.list
-    target: 直连
+    target: Direct
     priority: 915
     module: general
 
@@ -314,7 +358,7 @@ inline_rules:
   - id: geoip_cn
     type: GEOIP
     value: CN
-    target: 直连
+    target: Direct
     priority: 920
     module: general
     options: [no-resolve]

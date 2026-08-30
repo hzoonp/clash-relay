@@ -41,28 +41,24 @@ def test_acl4ssr_manifest_is_immutable_and_attributed(repo_root: Path) -> None:
     assert all(character in "0123456789abcdef" for character in manifest["ref"])
     assert manifest["ref"] != "master"
     assert manifest["license"] == "CC-BY-SA-4.0"
-    assert manifest["final_target"] == "Final"
+    assert manifest["final_target"] == "漏网之鱼"
     assert {item["display_name"] for item in manifest["groups"]} == {
-        "Auto",
-        "Direct",
-        "Block",
-        "App Purify",
-        "Google FCM",
-        "Microsoft Bing",
-        "Microsoft OneDrive",
-        "Microsoft",
-        "Apple",
-        "Telegram",
-        "AI",
-        "NetEase Music",
-        "Games",
-        "YouTube",
-        "Netflix",
-        "Bahamut",
-        "Bilibili",
-        "Domestic Media",
-        "Foreign Media",
-        "Final",
+        "直连",
+        "广告拦截",
+        "谷歌FCM",
+        "微软服务",
+        "苹果服务",
+        "电报消息",
+        "人工智能",
+        "网易音乐",
+        "游戏平台",
+        "油管视频",
+        "奈飞视频",
+        "巴哈姆特",
+        "哔哩哔哩",
+        "国内媒体",
+        "国外媒体",
+        "漏网之鱼",
     }
     source_ids = {item["id"] for item in manifest["sources"]}
     assert {
@@ -80,13 +76,29 @@ def test_acl4ssr_manifest_is_immutable_and_attributed(repo_root: Path) -> None:
 def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> None:
     config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
     assert config["rule_sources"]["acl4ssr"]["enabled"] is True
-    assert config["modules"]["general"] is True
-    for module in ("chatgpt", "claude", "gemini", "google_play", "bulk"):
-        assert config["modules"][module] is False
+    assert config["modules"] == {"general": True}
+
+    services = yaml.safe_load((repo_root / "services.yaml").read_text(encoding="utf-8"))
+    assert services["services"] == []
 
     policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
-    general = next(item for item in policies["pools"] if item["id"] == "general")
-    assert "ai" not in general["excluded_capabilities"]
+    assert set(policies["capabilities"]) == {"general"}
+    assert policies["chains"] == []
+    assert len(policies["pools"]) == 1
+    general = policies["pools"][0]
+    assert general["id"] == "general"
+    assert general["display_name"] == "节点选择"
+    assert general["excluded_capabilities"] == []
+
+    for relative in (
+        "rules/bulk.yaml",
+        "rules/chatgpt.yaml",
+        "rules/claude.yaml",
+        "rules/emby.yaml",
+        "rules/gemini.yaml",
+        "rules/google_play.yaml",
+    ):
+        assert not (repo_root / relative).exists()
 
 
 def test_acl4ssr_sources_become_inline_rule_providers_in_priority_order(
