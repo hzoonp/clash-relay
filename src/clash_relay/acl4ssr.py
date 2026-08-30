@@ -137,25 +137,27 @@ def load_acl4ssr_rules(
             "behavior": "classical",
             "payload": payload,
         }
-        directives.append(
-            {
-                "priority": int(source["priority"]),
-                "source_id": source_id,
-                "order": 0,
-                "target": str(source["target"]),
-                "provider": provider_name,
-            }
-        )
+        directive: dict[str, Any] = {
+            "priority": int(source["priority"]),
+            "source_id": source_id,
+            "order": 0,
+            "target": str(source["target"]),
+            "provider": provider_name,
+        }
+        if source.get("excluded_sources"):
+            directive["excluded_sources"] = list(source["excluded_sources"])
+        directives.append(directive)
         total_rules += len(payload)
-        source_reports.append(
-            {
-                "id": source_id,
-                "path": str(source["path"]),
-                "provider": provider_name,
-                "rules": len(payload),
-                "skipped_legacy_rules": skipped,
-            }
-        )
+        source_report: dict[str, Any] = {
+            "id": source_id,
+            "path": str(source["path"]),
+            "provider": provider_name,
+            "rules": len(payload),
+            "skipped_legacy_rules": skipped,
+        }
+        if source.get("excluded_sources"):
+            source_report["excluded_sources"] = list(source["excluded_sources"])
+        source_reports.append(source_report)
 
     for inline in sorted(
         manifest.get("inline_rules", []), key=lambda item: (item["priority"], item["id"])
