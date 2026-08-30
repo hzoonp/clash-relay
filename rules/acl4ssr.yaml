@@ -26,6 +26,7 @@ groups:
   - id: policy_streaming
     display_name: 流媒体
     module: general
+    excluded_sources: [subscription_1]
     members:
       - {group: 节点选择}
       - {builtin: DIRECT}
@@ -33,6 +34,7 @@ groups:
   - id: policy_domestic_services
     display_name: 国内服务
     module: general
+    excluded_sources: [subscription_1]
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
