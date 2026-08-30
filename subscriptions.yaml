@@ -1,8 +1,9 @@
 version: 1
 
 # No URL belongs in this tracked file. Real subscription URLs are resolved from
-# CLASH_RELAY_SUBSCRIPTIONS. Production now uses one general node inventory and
-# lets ACL4SSR perform all service/media/application routing.
+# CLASH_RELAY_SUBSCRIPTIONS. Production uses one shared general node inventory;
+# ACL4SSR policy groups may further restrict which subscription sources are
+# eligible for a specific traffic class.
 subscriptions:
   - id: subscription_1
     display_name: 订阅源 1
@@ -11,10 +12,12 @@ subscriptions:
     secret_name: SUBSCRIPTION_1_URL
     priority: 100
     on_error: skip
-    allowed_uses: [general]
+    allowed_uses: [general, ai]
     allowed_countries: [OTHER]
     default_capabilities: [general]
     default_cost_level: standard
+    # Explicit multiplier markers above 2x are rejected before classification.
+    max_node_multiplier: 2.0
 
   - id: subscription_2
     display_name: 订阅源 2
