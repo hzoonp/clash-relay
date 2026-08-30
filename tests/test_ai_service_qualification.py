@@ -211,14 +211,10 @@ def test_service_qualification_fails_closed_only_for_empty_service() -> None:
 
 def test_service_qualification_rejects_nested_hidden_provider_scope_drift() -> None:
     config = _config()
-    country = next(
-        group for group in config["proxy-groups"] if group.get("name") == "AI · 新加坡"
-    )
+    country = next(group for group in config["proxy-groups"] if group.get("name") == "AI · 新加坡")
     country["use"] = ["cr_ai_us_us"]
 
-    with pytest.raises(
-        ValidationError, match="exposes providers outside its routing anchor"
-    ):
+    with pytest.raises(ValidationError, match="exposes providers outside its routing anchor"):
         apply_ai_service_qualification(
             config,
             {
