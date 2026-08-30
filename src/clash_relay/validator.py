@@ -85,6 +85,18 @@ def _reachable_providers(anchor: str, groups: dict[str, dict[str, Any]]) -> set[
     return found
 
 
+def _reachable_groups(starts: set[str], graph: dict[str, set[str]]) -> set[str]:
+    found: set[str] = set()
+    pending = list(starts)
+    while pending:
+        name = pending.pop()
+        if name in found:
+            continue
+        found.add(name)
+        pending.extend(graph.get(name, set()) - found)
+    return found
+
+
 def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()) -> None:
     validate_schema(config, "mihomo-output.schema.json", source="generated config", output=True)
     errors: list[str] = []
@@ -198,9 +210,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         group_rows[name] = group
 
     hidden_names = {name for name, group in group_rows.items() if bool(group.get("hidden", False))}
-    nested_hidden_names = {name for name in hidden_names if not name.startswith("__CR_")}
+    presentation_hidden_names = {name for name in hidden_names if not name.startswith("__CR_")}
     graph: dict[str, set[str]] = defaultdict(set)
-    visible_parents: dict[str, list[str]] = defaultdict(list)
+    visible_names: set[str] = set()
     for name, group in group_rows.items():
         references = group.get("proxies", [])
         if references is not None and not isinstance(references, list):
@@ -218,23 +230,20 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         for provider_name in uses or []:
             if provider_name not in providers:
                 errors.append(f"group {name!r} references unknown provider {provider_name!r}")
-        if group.get("type") in {"url-test", "fallback"}:
+        if group.get("type") in {"url-test", "fallback"} and "expected-status" in group:
             try:
-                parse_expected_status(str(group.get("expected-status", "")))
+                parse_expected_status(str(group["expected-status"]))
             except Exception as exc:
                 errors.append(f"group {name!r} has invalid expected-status: {exc}")
 
         if not group.get("hidden", False):
+            visible_names.add(name)
             if group.get("type") != "select":
                 errors.append(f"public group {name!r} must be a select group")
             public_refs = group.get("proxies", [])
             if not isinstance(public_refs, list) or not public_refs:
                 errors.append(f"public group {name!r} must have at least one proxy/group reference")
                 public_refs = []
-
-            for reference in public_refs:
-                if reference in nested_hidden_names:
-                    visible_parents[str(reference)].append(name)
 
             provider_backed = bool(uses)
             if provider_backed:
@@ -255,7 +264,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 unsafe_hidden_refs = [
                     reference
                     for reference in hidden_refs
-                    if reference not in nested_hidden_names
+                    if reference not in presentation_hidden_names
                     and not str(reference).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
                 ]
                 if unsafe_hidden_refs:
@@ -264,29 +273,26 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                         f"{unsafe_hidden_refs}"
                     )
         elif not name.startswith("__CR_"):
-            nested_refs = group.get("proxies", [])
-            valid_nested_selector = (
-                group.get("type") == "select"
-                and isinstance(nested_refs, list)
-                and len(nested_refs) == 1
-                and nested_refs[0] in hidden_names
-                and str(nested_refs[0]).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
-            )
-            if not valid_nested_selector:
-                errors.append(f"hidden internal group {name!r} lacks the reserved __CR_ prefix")
-            elif uses:
-                reachable = _reachable_providers(str(nested_refs[0]), group_rows)
-                if set(uses) != reachable:
-                    errors.append(
-                        f"nested hidden group {name!r} exposes providers outside its routing anchor"
-                    )
-
-    for name in sorted(nested_hidden_names):
-        parents = visible_parents.get(name, [])
-        if len(parents) != 1:
-            errors.append(
-                f"nested hidden group {name!r} must be referenced by exactly one public parent group"
-            )
+            group_type = group.get("type")
+            if group_type not in {"select", "url-test"}:
+                errors.append(
+                    f"hidden presentation group {name!r} must be select or url-test, got {group_type!r}"
+                )
+            if group_type == "url-test" and not uses and not references:
+                errors.append(f"hidden url-test group {name!r} has no providers or proxy references")
+            if group_type == "select" and uses:
+                nested_refs = group.get("proxies", [])
+                if (
+                    isinstance(nested_refs, list)
+                    and len(nested_refs) == 1
+                    and nested_refs[0] in hidden_names
+                    and str(nested_refs[0]).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
+                ):
+                    reachable = _reachable_providers(str(nested_refs[0]), group_rows)
+                    if set(uses) != reachable:
+                        errors.append(
+                            f"nested hidden group {name!r} exposes providers outside its routing anchor"
+                        )
 
     for provider_name, provider in providers.items():
         if not isinstance(provider, dict):
@@ -304,6 +310,13 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
     cycle_list = _cycles(dict(graph))
     if cycle_list:
         errors.append(f"proxy group reference cycle detected: {cycle_list[0]}")
+
+    reachable_from_ui = _reachable_groups(visible_names, dict(graph))
+    for name in sorted(presentation_hidden_names):
+        if name not in reachable_from_ui:
+            errors.append(
+                f"hidden presentation group {name!r} must be reachable from a public parent group"
+            )
 
     rules = config.get("rules", [])
     if not isinstance(rules, list) or not rules:
@@ -328,10 +341,6 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 continue
             if target not in group_names and target not in _BUILTINS:
                 errors.append(f"rule references unknown target {target!r}")
-            elif target in nested_hidden_names:
-                errors.append(
-                    f"rule targets nested hidden group {target!r}; target its public parent instead"
-                )
 
     serialized = stable_json(config)
     for value in secret_urls:
