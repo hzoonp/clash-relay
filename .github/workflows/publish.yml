@@ -12,6 +12,7 @@ on:
       - "rules/**"
       - "schemas/**"
       - "src/**"
+      - "scripts/qualify_ai.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
@@ -45,7 +46,7 @@ jobs:
           fi
 
   deploy:
-    name: Build, validate, and publish private config
+    name: Build, qualify, validate, and publish private config
     needs: prepare
     if: needs.prepare.outputs.configured == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -97,7 +98,25 @@ jobs:
             --report .work/private/build-report.json \
             > .work/private/generation-summary.json
 
-      - name: Validate exact candidate with both pinned Mihomo cores
+      - name: Download Mihomo for private AI qualification
+        run: |
+          python scripts/download_mihomo.py \
+            --channel stable \
+            --tag v1.19.30 \
+            --output .work/bin/mihomo-ai \
+            > .work/download-ai-qualification.json
+
+      - name: Qualify AI nodes by country
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/qualify_ai.py \
+            --candidate .work/private/config.yaml \
+            --policies policies.yaml \
+            --mihomo-bin .work/bin/mihomo-ai \
+            | tee .work/private/ai-qualification-summary.json
+
+      - name: Validate exact qualified candidate with both pinned Mihomo cores
         shell: bash
         run: |
           set -euo pipefail
@@ -118,7 +137,7 @@ jobs:
               --startup-seconds 1.5 \
               > ".work/validation-${tag}.json" \
               2> ".work/validation-${tag}.error"; then
-              echo "::error title=Mihomo validation failed::$tag rejected the generated private configuration. Detailed core output is intentionally suppressed in this public repository."
+              echo "::error title=Mihomo validation failed::$tag rejected the qualified private configuration. Detailed core output is intentionally suppressed in this public repository."
               exit 1
             fi
           }

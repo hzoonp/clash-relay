@@ -5,6 +5,16 @@ from pathlib import Path
 
 import yaml
 
+AI_COUNTRY_GROUPS = [
+    "AI · 新加坡",
+    "AI · 日本",
+    "AI · 美国",
+    "AI · 香港",
+    "AI · 台湾",
+    "AI · 韩国",
+    "AI · 其他地区",
+]
+
 
 def test_repository_audit_passes(repo_root: Path) -> None:
     result = subprocess.run(
@@ -46,6 +56,42 @@ def test_public_production_skips_individual_invalid_proxy_entries(repo_root: Pat
         assert document["generation"]["invalid_proxy_policy"] == "skip"
 
 
+def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
+    repo_root: Path,
+) -> None:
+    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
+    acl = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
+
+    assert set(policies["country_classification"]["aliases"]) >= {
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "US",
+        "KR",
+    }
+    for subscription in subscriptions["subscriptions"]:
+        assert "ai" in subscription["allowed_uses"]
+        assert "*" in subscription["allowed_countries"]
+
+    pools = {item["display_name"]: item for item in policies["pools"]}
+    for group_name in AI_COUNTRY_GROUPS:
+        pool = pools[group_name]
+        assert pool["source_use"] == "ai"
+        assert pool["on_empty"] == "reject"
+        assert pool["probe"] == "connectivity"
+
+    for probe_name in ("ai_openai", "ai_claude", "ai_gemini"):
+        probe = policies["probes"][probe_name]
+        assert probe["url"].startswith("https://")
+        assert probe["expected_status"] == "200-399"
+
+    ai_group = next(item for item in acl["groups"] if item["display_name"] == "人工智能")
+    members = [item.get("group", item.get("builtin")) for item in ai_group["members"]]
+    assert members == [*AI_COUNTRY_GROUPS, "DIRECT"]
+
+
 def test_lock_files_pin_every_dependency(repo_root: Path) -> None:
     for filename in ["requirements.lock", "requirements-dev.lock"]:
         for raw in (repo_root / filename).read_text(encoding="utf-8").splitlines():
@@ -70,9 +116,12 @@ def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> No
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     assert ".work/private/config.yaml" in publish
+    assert "python scripts/qualify_ai.py" in publish
     assert "validate_core v1.19.30" in publish
     assert "validate_core v1.19.29" in publish
     assert "clash-relay publish-cloudflare-kv" in publish
+    assert publish.index("python scripts/qualify_ai.py") < publish.index("validate_core v1.19.30")
+    assert publish.index("python scripts/qualify_ai.py") < publish.index("validate_core v1.19.29")
     assert publish.index("validate_core v1.19.30") < publish.index(
         "clash-relay publish-cloudflare-kv"
     )

@@ -4,10 +4,9 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# Production keeps the complete pinned ACL4SSR Online Full rule coverage while
-# exposing only four lightweight policy selectors plus the node-owning general
-# pool (节点选择). Built-in DIRECT/REJECT targets are used directly whenever a
-# separate user-facing selector would add no meaningful control.
+# Production keeps the complete pinned ACL4SSR Online Full rule coverage. AI
+# rules route through country-scoped candidate pools that are live-qualified on
+# the trusted runner before the final candidate is validated and published.
 groups:
   - id: policy_block
     display_name: 广告拦截
@@ -20,7 +19,13 @@ groups:
     display_name: 人工智能
     module: general
     members:
-      - {group: 节点选择}
+      - {group: AI · 新加坡}
+      - {group: AI · 日本}
+      - {group: AI · 美国}
+      - {group: AI · 香港}
+      - {group: AI · 台湾}
+      - {group: AI · 韩国}
+      - {group: AI · 其他地区}
       - {builtin: DIRECT}
 
   - id: policy_streaming
@@ -40,8 +45,8 @@ groups:
       - {group: 节点选择}
 
 # Subscription 1 is allowed only for the explicit general-web ProxyGFWlist path
-# and AI policy path. Application-specific Telegram and unmatched final traffic
-# use a hidden source-filtered anchor that excludes subscription_1.
+# and the live-qualified AI country pools. Application-specific Telegram and
+# unmatched final traffic use a hidden source-filtered anchor that excludes it.
 final_target: 节点选择
 final_excluded_sources: [subscription_1]
 

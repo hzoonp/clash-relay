@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`clash-relay` 是一个确定性、fail-closed 的 Mihomo 配置生成项目，目标是在 **Public GitHub 仓库** 中安全生成真实生产配置。公开 YAML 只保存策略和订阅元数据；真实订阅 URL 只进入 GitHub Actions Secrets；包含节点凭据的最终 `config.yaml` 只在临时 GitHub Runner 上生成，并在通过两个 Mihomo 稳定版验证后直接写入私有 Cloudflare Workers KV。
+`clash-relay` 是一个确定性、fail-closed 的 Mihomo 配置生成项目，目标是在 **Public GitHub 仓库** 中安全生成真实生产配置。公开 YAML 只保存策略和订阅元数据；真实订阅 URL 只进入 GitHub Actions Secrets；包含节点凭据的最终 `config.yaml` 只在临时 GitHub Runner 上生成，并在通过 AI 资格筛选和两个 Mihomo 稳定版验证后直接写入私有 Cloudflare Workers KV。
 
 最终配置是标准、单文件、standalone Mihomo YAML。FlClash 只需要受 `PROFILE_TOKEN` 保护的 Worker URL，不需要在运行时访问 GitHub 或 ACL4SSR。
 
@@ -10,20 +10,22 @@
 
 ## 当前生产模型
 
-当前 canonical 生产配置已经精简为：
+当前 canonical 生产配置为：
 
 ```text
 4 个私密订阅 URL
           ↓
 订阅源级节点准入策略
           ↓
-单一 general 节点库存
+通用节点库存 + 按节点名称识别国家/地区
           ↓
-        节点选择
+AI 候选池：SG / JP / US / HK / TW / KR / OTHER
+          ↓
+可信 Runner 逐节点实际访问 ChatGPT / Claude / Gemini
+          ↓
+只保留三项都通过的 AI 节点
           ↓
 ACL4SSR Online Full（固定 commit）
-          ↓
-5 个 FlClash 可见策略组
           ↓
 Mihomo v1.19.30 + v1.19.29
           ↓
@@ -32,18 +34,50 @@ Cloudflare Workers KV
 FlClash
 ```
 
-生产只启用：
+生产仍只启用：
 
 ```yaml
 modules:
   general: true
 ```
 
-`services.yaml` 在生产中为空，`policies.yaml` 只保留一个 `general` 节点池。旧的 ChatGPT、Claude、Gemini、Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明已经移除。通用生成引擎仍保留这些数据驱动能力，并在 `tests/fixtures/project/` 中独立测试，避免测试夹具污染真实生产配置。
+`services.yaml` 在生产中为空。`policies.yaml` 保留一个通用 `general` 节点池，并增加 7 个 AI 国家/地区候选池；它们仍属于同一个 `general` 模块，不恢复旧的 ChatGPT、Claude、Gemini 独立服务模块。旧的 Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明仍保持移除。通用生成引擎的其它能力继续在 `tests/fixtures/project/` 中独立测试。
 
-## 当前 FlClash 可见策略组
+## AI 节点资格与国家分组
 
-生产配置只保留 5 个可见组：
+AI 节点先根据**节点名称**进行确定性国家/地区分类，目前识别：
+
+```text
+SG  新加坡
+JP  日本
+US  美国
+HK  香港
+TW  台湾
+KR  韩国
+OTHER 其它/无法可靠识别
+```
+
+这不是 GeoIP 探测，也不声称节点出口 IP 一定与名称一致；它只是根据常见中文/英文地区名、机场码、国旗和边界明确的地区缩写进行分类。无法可靠识别时进入 `OTHER`，不会猜测。
+
+所有订阅都可以提供 AI **候选**节点，但候选资格本身不等于可用。可信 `main` Runner 会为候选节点启动临时 Mihomo，使用 Core API 把临时 selector 固定到具体节点，再让 Python 通过该 Mihomo 的本地 mixed-port 实际请求：
+
+```text
+https://chatgpt.com/
+https://claude.ai/
+https://gemini.google.com/
+```
+
+当前要求三项请求都返回配置允许的 HTTP 状态范围（生产为 `200-399`）。网络失败、超时、4xx/5xx 或任何一项不通过都会把该节点从 AI 池移除。普通 `节点选择` 不受 AI 资格筛选影响。
+
+为了避免几百个节点完全串行测试，候选 provider 会被分片并以有上限的并发临时 Mihomo 进程执行；节点名称、服务器、凭据和单节点探测结果不会输出到公开 Actions 日志。最终只记录安全的聚合数量。
+
+资格筛选完成后：
+
+- 某国家/地区仍有合格节点：保留对应 `AI · <地区>` 组；
+- 某国家/地区没有合格节点：从最终 `人工智能` 组移除；
+- 所有地区都没有合格节点：生产发布 fail closed，不覆盖 Cloudflare KV 中上一版成功配置。
+
+因此最终 FlClash 可见组数量会随实际资格结果变化。核心策略组始终包括：
 
 ```text
 节点选择
@@ -53,7 +87,20 @@ modules:
 广告拦截
 ```
 
-真正的节点凭据只由 `节点选择` 对应的 inline `proxy-provider` 持有。其它 4 个组只是轻量策略选择器，不复制节点凭据。无需人工切换的直连规则直接使用 Mihomo `DIRECT`，最终兜底也不再为了 UI 单独制造一个“漏网之鱼”组。
+`人工智能` 下最多出现：
+
+```text
+AI · 新加坡
+AI · 日本
+AI · 美国
+AI · 香港
+AI · 台湾
+AI · 韩国
+AI · 其他地区
+DIRECT
+```
+
+通用节点由 `节点选择` 的 inline provider 持有；AI 国家组使用独立的私密 inline provider，以便在发布前安全删除未通过资格测试的具体节点。最终 YAML 仍只存在于私密发布链路中。
 
 ## 订阅源级策略
 
@@ -63,15 +110,15 @@ modules:
 - 明确倍率 `> 2.0`：在分类和 provider 生成前直接剔除；
 - 名称没有明确倍率标记：保留，不猜测。
 
-canonical 生产进一步把 `subscription_1` 限制在明确的通用网页与 AI 路径：
+canonical 生产仍把 `subscription_1` 限制在明确的通用网页与 AI 路径：
 
 - ACL4SSR `ProxyGFWlist` 可以使用 `subscription_1`；
-- ACL4SSR `AI` / `OpenAi` 通过 `人工智能` 可以使用 `subscription_1`；
-- `流媒体`、`国内服务` 的代理路径排除 `subscription_1`；
+- ACL4SSR `AI` / `OpenAi` 通过经过实时资格筛选的 AI 国家组可以使用 `subscription_1`；
+- `流媒体`、`国内服务` 的普通代理路径排除 `subscription_1`；
 - Telegram 排除 `subscription_1`；
 - 未命中的最终 `MATCH` 流量排除 `subscription_1`。
 
-这些限制不会复制节点。生成器只克隆隐藏的路由锚点，并通过 Mihomo `exclude-filter` 过滤共享 provider 中带有对应订阅源前缀的运行时节点。如果受限路由已经没有其它允许节点，则 fail closed 到隐藏的 `REJECT`，不会偷偷回退到被禁止的订阅源。
+这些普通路由限制不会复制额外的 general provider。生成器通过隐藏路由锚点和 Mihomo `exclude-filter` 过滤共享 provider 中带有对应订阅源前缀的运行时节点。如果受限路由没有其它允许节点，则 fail closed 到隐藏的 `REJECT`。
 
 这里约束的是**规则路由场景**，不是进程识别；项目不会声称能够仅凭域名证明发起流量的可执行程序一定是浏览器。
 
@@ -120,6 +167,10 @@ Public GitHub
              ↓
       生成私密 standalone YAML
              ↓
+      临时 Mihomo：逐节点 AI 实际 HTTP(S) 资格筛选
+             ↓
+      删除不合格节点与空国家组
+             ↓
       Mihomo v1.19.30
              ↓
       Mihomo v1.19.29
@@ -131,7 +182,7 @@ Public GitHub
             FlClash
 ```
 
-订阅 Secret 只出现在 mask 和 generate 步骤；Cloudflare API Token 只出现在最后发布步骤；Mihomo 验证阶段拿不到这两类 Secret。`PROFILE_TOKEN` 完全不进入 GitHub。
+订阅 Secret 只出现在 mask 和 generate 步骤；AI 资格筛选读取的是已经生成的临时 candidate，不需要原始订阅 Secret；Cloudflare API Token 只出现在最后发布步骤。`PROFILE_TOKEN` 完全不进入 GitHub。
 
 ## GitHub 配置
 
@@ -180,7 +231,7 @@ publishing:
     key: production-config
 ```
 
-Cloudflare 模式的安全门禁会拒绝同时开启 Artifact、Release 或 Gist。任何生成或 Mihomo 验证步骤失败，都不会覆盖 KV 中上一版成功配置。
+Cloudflare 模式的安全门禁会拒绝同时开启 Artifact、Release 或 Gist。任何生成、AI 资格筛选或 Mihomo 验证步骤失败，都不会覆盖 KV 中上一版成功配置。
 
 ## Public 仓库安全要求
 
@@ -216,7 +267,7 @@ clash-relay generate \
   --output .work/config.yaml
 ```
 
-CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置与启动集成验证，包括 source-filtered `exclude-filter` 路由。
+CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置、启动和 AI selector/mixed-port 状态验证。
 
 详细说明：
 

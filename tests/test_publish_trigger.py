@@ -20,7 +20,7 @@ def test_publish_runs_on_main_and_manual_dispatch() -> None:
 
 def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storage() -> None:
     text = WORKFLOW.read_text()
-    assert "Build, validate, and publish private config" in text
+    assert "Build, qualify, validate, and publish private config" in text
     assert "repository.private" not in text
     assert "actions/upload-artifact" not in text
     assert "actions/download-artifact" not in text
@@ -47,6 +47,15 @@ def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
     assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
     assert text.index("CLOUDFLARE_API_TOKEN") > text.index("validate_core v1.19.29")
+
+
+def test_ai_qualification_precedes_final_validation() -> None:
+    text = WORKFLOW.read_text()
+    assert "Qualify AI nodes by country" in text
+    assert "python scripts/qualify_ai.py" in text
+    qualifier = text.index("python scripts/qualify_ai.py")
+    assert qualifier < text.index("validate_core v1.19.30")
+    assert qualifier < text.index("validate_core v1.19.29")
 
 
 def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:

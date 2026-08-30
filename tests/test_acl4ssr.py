@@ -81,11 +81,22 @@ def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> No
     policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
     assert set(policies["capabilities"]) == {"general"}
     assert policies["chains"] == []
-    assert len(policies["pools"]) == 1
-    general = policies["pools"][0]
-    assert general["id"] == "general"
+    pools = {item["id"]: item for item in policies["pools"]}
+    assert set(pools) == {
+        "general",
+        "ai_sg",
+        "ai_jp",
+        "ai_us",
+        "ai_hk",
+        "ai_tw",
+        "ai_kr",
+        "ai_other",
+    }
+    general = pools["general"]
     assert general["display_name"] == "节点选择"
+    assert general["source_use"] == "general"
     assert general["excluded_capabilities"] == []
+    assert {pools[item]["source_use"] for item in pools if item.startswith("ai_")} == {"ai"}
 
     for relative in (
         "rules/bulk.yaml",
