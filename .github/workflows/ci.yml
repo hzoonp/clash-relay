@@ -112,3 +112,26 @@ jobs:
         env:
           MIHOMO_BIN: ${{ github.workspace }}/.work/bin/mihomo
         run: pytest -m integration tests/integration --junitxml=.work/integration-${{ matrix.tag }}.xml
+
+  formatting-patch:
+    name: Temporary Ruff remediation patch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Generate mechanical Ruff patch
+        shell: bash
+        run: |
+          mkdir -p .work
+          ruff check --fix --unsafe-fixes . || true
+          ruff format .
+          git diff -- . ':!.github/workflows/ci.yml' > .work/ruff.patch
+      - uses: actions/upload-artifact@v5
+        with:
+          name: temporary-ruff-remediation-${{ github.run_id }}
+          path: .work/ruff.patch
+          retention-days: 1
+          if-no-files-found: error
