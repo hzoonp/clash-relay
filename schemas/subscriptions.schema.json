@@ -62,6 +62,11 @@
         },
         "default_capabilities": {"$ref": "#/$defs/capabilityList"},
         "default_cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "max_node_multiplier": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
         "node_metadata": {
           "type": "object",
           "propertyNames": {"minLength": 1, "maxLength": 256},
