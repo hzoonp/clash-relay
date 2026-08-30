@@ -85,7 +85,7 @@ The original ACL4SSR selector behavior is also retained, including `节点选择
 
 Rule fragments are fetched during the trusted build and embedded as inline classical Mihomo rule providers. The final profile is standalone: generated rule providers contain no runtime `url` or `path`.
 
-The adapter counts legacy rule types that pinned Mihomo cannot express. CI additionally fetches the canonical pinned Full sources and requires **zero skipped legacy rules** for this production pin. A future pin that would require silently dropping rules is therefore rejected rather than called “strict”.
+The pinned Full fragments contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`. clash-relay does not invent approximate `DOMAIN-REGEX` replacements. An omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit. Canonical CI therefore requires `verified_compatibility_omissions == 9` and `unverified_legacy_rules == 0`; any mismatch fails closed.
 
 See [Routing rules and ACL4SSR](docs/rules.md).
 
