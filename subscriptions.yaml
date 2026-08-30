@@ -1,15 +1,16 @@
 version: 1
 
 # This tracked file contains metadata only. Real subscription URLs are resolved
-# from the CLASH_RELAY_SUBSCRIPTIONS GitHub Actions secret.
+# from the CLASH_RELAY_SUBSCRIPTIONS GitHub Actions secret. No single provider is
+# mandatory: generation requires at least one successful subscription overall.
 subscriptions:
   - id: subscription_1
     display_name: Subscription 1
     enabled: true
-    required: true
+    required: false
     secret_name: SUBSCRIPTION_1_URL
     priority: 100
-    on_error: fail
+    on_error: skip
     allowed_uses: [general, ai, bulk]
     allowed_countries: [US, JP, SG, OTHER]
     default_capabilities: [general]
