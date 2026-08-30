@@ -1,4 +1,0 @@
-version: 1
-rules:
-  - {type: DOMAIN-SUFFIX, value: anthropic.com}
-  - {type: DOMAIN-SUFFIX, value: claude.ai}

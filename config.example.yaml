@@ -24,15 +24,6 @@ runtime:
 
 modules:
   general: true
-  chatgpt: true
-  claude: true
-  gemini: true
-  google_play: true
-  bulk: true
-  residential: false
-  emby: false
-  high_multiplier: false
-  chain: false
 
 generation:
   minimum_successful_subscriptions: 1
@@ -50,7 +41,7 @@ generation:
 
 rule_sources:
   acl4ssr:
-    enabled: false
+    enabled: true
     manifest: rules/acl4ssr.yaml
 
 publishing:

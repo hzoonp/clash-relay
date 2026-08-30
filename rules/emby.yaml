@@ -1,3 +1,0 @@
-version: 1
-rules:
-  - {type: DOMAIN-KEYWORD, value: emby}

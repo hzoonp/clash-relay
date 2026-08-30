@@ -1,9 +1,0 @@
-version: 1
-rules:
-  - {type: DOMAIN-SUFFIX, value: youtube.com}
-  - {type: DOMAIN-SUFFIX, value: googlevideo.com}
-  - {type: DOMAIN-SUFFIX, value: netflix.com}
-  - {type: DOMAIN-SUFFIX, value: nflxvideo.net}
-  - {type: DOMAIN-SUFFIX, value: speedtest.net}
-  - {type: DOMAIN-SUFFIX, value: dropbox.com}
-  - {type: DOMAIN-SUFFIX, value: cloudfront.net}
