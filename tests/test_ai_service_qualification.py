@@ -137,12 +137,15 @@ def test_service_qualification_routes_each_service_through_its_own_nodes() -> No
     ]
 
     groups = {group["name"]: group for group in config["proxy-groups"]}
-    assert groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0].startswith("__CR_AI_OPENAI_")
-    assert groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0].startswith("__CR_AI_CLAUDE_")
-    assert groups["__CR_AI_SERVICE_GEMINI"]["proxies"][0].startswith("__CR_AI_GEMINI_")
-    assert "sg-openai" in groups[groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0]]["filter"]
-    assert "us-claude" in groups[groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0]]["filter"]
-    assert "sg-gemini" in groups[groups["__CR_AI_SERVICE_GEMINI"]["proxies"][0]]["filter"]
+    openai_anchor = groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0]
+    claude_anchor = groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0]
+    gemini_anchor = groups["__CR_AI_SERVICE_GEMINI"]["proxies"][0]
+    assert openai_anchor.startswith("__CR_AI_OPENAI_")
+    assert claude_anchor.startswith("__CR_AI_CLAUDE_")
+    assert gemini_anchor.startswith("__CR_AI_GEMINI_")
+    assert groups[openai_anchor]["filter"] == "^(sg-openai)$"
+    assert groups[claude_anchor]["filter"] == "^(us-claude)$"
+    assert groups[gemini_anchor]["filter"] == "^(sg-gemini)$"
 
     ai_rule_index = config["rules"].index("RULE-SET,acl4ssr_ai,人工智能")
     assert config["rules"][:ai_rule_index] == [
@@ -186,13 +189,26 @@ def test_service_qualification_fails_closed_only_for_empty_service() -> None:
 
 def test_service_qualification_rejects_when_every_service_is_empty() -> None:
     config = copy.deepcopy(_config())
-    with pytest.raises(ValidationError, match="no nodes passed all AI qualification probes"):
+    with pytest.raises(ValidationError, match="no nodes passed any AI service qualification probe"):
         apply_ai_service_qualification(
             config,
             {
                 "ai_openai": set(),
                 "ai_claude": set(),
                 "ai_gemini": set(),
+            },
+        )
+
+
+def test_service_qualification_rejects_unknown_probe_results() -> None:
+    config = _config()
+    with pytest.raises(ValidationError, match="unknown candidate nodes"):
+        apply_ai_service_qualification(
+            config,
+            {
+                "ai_openai": {"not-a-runtime-node"},
+                "ai_claude": {"us-claude"},
+                "ai_gemini": {"sg-gemini"},
             },
         )
 
