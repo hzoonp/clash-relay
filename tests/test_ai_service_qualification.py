@@ -147,6 +147,22 @@ def test_service_qualification_routes_each_service_through_its_own_nodes() -> No
     assert groups[claude_anchor]["filter"] == "^(us-claude)$"
     assert groups[gemini_anchor]["filter"] == "^(sg-gemini)$"
 
+    country_names = {"AI · 新加坡", "AI · 美国"}
+    assert groups["人工智能"].get("hidden", False) is False
+    assert groups["人工智能"]["proxies"] == ["AI · 新加坡", "AI · 美国", "DIRECT"]
+    assert all(groups[name]["hidden"] is True for name in country_names)
+    visible_groups = {
+        group["name"] for group in config["proxy-groups"] if not group.get("hidden", False)
+    }
+    assert country_names.isdisjoint(visible_groups)
+    parents = [
+        group["name"]
+        for group in config["proxy-groups"]
+        if isinstance(group.get("proxies"), list)
+        and country_names.intersection(str(item) for item in group["proxies"])
+    ]
+    assert parents == ["人工智能"]
+
     ai_rule_index = config["rules"].index("RULE-SET,acl4ssr_ai,人工智能")
     assert config["rules"][:ai_rule_index] == [
         "RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI",
@@ -183,6 +199,8 @@ def test_service_qualification_fails_closed_only_for_empty_service() -> None:
         "hidden": True,
         "proxies": ["REJECT"],
     }
+    assert groups["AI · 新加坡"]["hidden"] is True
+    assert groups["AI · 美国"]["hidden"] is True
     assert report["service_fail_closed"] == ["openai"]
     assert report["qualified_nodes"] == 2
 
