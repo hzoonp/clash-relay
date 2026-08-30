@@ -96,12 +96,14 @@ def _config() -> dict:
                 "name": "AI · 新加坡",
                 "type": "select",
                 "proxies": ["__CR_AUTO_AI_SG_SG"],
+                "use": ["cr_ai_sg_sg"],
             },
             _auto("__CR_AUTO_AI_US_US", "cr_ai_us_us"),
             {
                 "name": "AI · 美国",
                 "type": "select",
                 "proxies": ["__CR_AUTO_AI_US_US"],
+                "use": ["cr_ai_us_us"],
             },
             {
                 "name": "人工智能",
@@ -150,6 +152,8 @@ def test_service_qualification_routes_each_service_through_its_own_nodes() -> No
     country_names = {"AI · 新加坡", "AI · 美国"}
     assert groups["人工智能"].get("hidden", False) is False
     assert groups["人工智能"]["proxies"] == ["AI · 新加坡", "AI · 美国", "DIRECT"]
+    assert groups["AI · 新加坡"]["use"] == ["cr_ai_sg_sg"]
+    assert groups["AI · 美国"]["use"] == ["cr_ai_us_us"]
     assert all(groups[name]["hidden"] is True for name in country_names)
     visible_groups = {
         group["name"] for group in config["proxy-groups"] if not group.get("hidden", False)
@@ -203,6 +207,24 @@ def test_service_qualification_fails_closed_only_for_empty_service() -> None:
     assert groups["AI · 美国"]["hidden"] is True
     assert report["service_fail_closed"] == ["openai"]
     assert report["qualified_nodes"] == 2
+
+
+def test_service_qualification_rejects_nested_hidden_provider_scope_drift() -> None:
+    config = _config()
+    country = next(
+        group for group in config["proxy-groups"] if group.get("name") == "AI · 新加坡"
+    )
+    country["use"] = ["cr_ai_us_us"]
+
+    with pytest.raises(ValidationError, match="exposes providers outside its routing anchor"):
+        apply_ai_service_qualification(
+            config,
+            {
+                "ai_openai": {"sg-openai"},
+                "ai_claude": {"us-claude"},
+                "ai_gemini": {"sg-gemini"},
+            },
+        )
 
 
 def test_service_qualification_rejects_when_every_service_is_empty() -> None:
