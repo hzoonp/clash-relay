@@ -51,7 +51,12 @@ def apply_acl4ssr_source_exclusions(
             return cached
         digest = hashlib.sha256("\0".join(excluded_sources).encode("utf-8")).hexdigest()[:12]
         name = f"__CR_FAIL_CLOSED_FILTER_{digest}"
-        group = {"name": name, "type": "select", "hidden": True, "proxies": ["REJECT"]}
+        group = {
+            "name": name,
+            "type": "select",
+            "hidden": True,
+            "proxies": ["REJECT"],
+        }
         groups.append(group)
         by_name[name] = group
         fail_closed_cache[excluded_sources] = name
@@ -60,7 +65,9 @@ def apply_acl4ssr_source_exclusions(
     def provider_has_survivor(provider_name: str, pattern: re.Pattern[str]) -> bool:
         provider = providers.get(provider_name)
         if not isinstance(provider, dict):
-            raise GenerationError(f"source-filtered route references unknown provider {provider_name!r}")
+            raise GenerationError(
+                f"source-filtered route references unknown provider {provider_name!r}"
+            )
         payload = provider.get("payload", [])
         if not isinstance(payload, list):
             return False
@@ -152,7 +159,9 @@ def apply_acl4ssr_source_exclusions(
     def filtered_reference(reference: str, excluded_sources: tuple[str, ...]) -> str:
         referenced = by_name.get(reference)
         if referenced is None:
-            raise GenerationError(f"source-filtered route references unknown group {reference!r}")
+            raise GenerationError(
+                f"source-filtered route references unknown group {reference!r}"
+            )
         if referenced.get("hidden", False):
             filtered = clone_hidden_anchor(reference, excluded_sources)
             return filtered or fail_closed(excluded_sources)
