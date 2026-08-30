@@ -62,16 +62,14 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
             _binary(),
             path,
             ({"name": "local", "url": url, "expected_status": "204", "timeout": 2000},),
-            workers=1,
         )
         assert qualified == {"AI Direct"}
-        assert observed
+        assert ("HEAD" in observed) or ("GET" in observed)
 
         rejected = probe_ai_nodes(
             _binary(),
             path,
             ({"name": "local", "url": url, "expected_status": "200", "timeout": 2000},),
-            workers=1,
         )
         assert rejected == set()
     finally:
