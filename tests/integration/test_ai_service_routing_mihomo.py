@@ -101,12 +101,14 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(
                 "name": "AI · 新加坡",
                 "type": "select",
                 "proxies": ["__CR_AUTO_AI_SG_SG"],
+                "use": ["cr_ai_sg_sg"],
             },
             _auto("__CR_AUTO_AI_US_US", "cr_ai_us_us"),
             {
                 "name": "AI · 美国",
                 "type": "select",
                 "proxies": ["__CR_AUTO_AI_US_US"],
+                "use": ["cr_ai_us_us"],
             },
             {
                 "name": "人工智能",
@@ -129,6 +131,13 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(
             "ai_gemini": {"sg-gemini"},
         },
     )
+    groups = {group["name"]: group for group in candidate["proxy-groups"]}
+    assert groups["人工智能"].get("hidden", False) is False
+    assert groups["AI · 新加坡"]["hidden"] is True
+    assert groups["AI · 新加坡"]["use"] == ["cr_ai_sg_sg"]
+    assert groups["AI · 美国"]["hidden"] is True
+    assert groups["AI · 美国"]["use"] == ["cr_ai_us_us"]
+
     path = tmp_path / "qualified.yaml"
     path.write_text(
         yaml.safe_dump(candidate, sort_keys=False, allow_unicode=True), encoding="utf-8"

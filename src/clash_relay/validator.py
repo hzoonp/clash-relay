@@ -267,7 +267,6 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             nested_refs = group.get("proxies", [])
             valid_nested_selector = (
                 group.get("type") == "select"
-                and not uses
                 and isinstance(nested_refs, list)
                 and len(nested_refs) == 1
                 and nested_refs[0] in hidden_names
@@ -275,6 +274,12 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             )
             if not valid_nested_selector:
                 errors.append(f"hidden internal group {name!r} lacks the reserved __CR_ prefix")
+            elif uses:
+                reachable = _reachable_providers(str(nested_refs[0]), group_rows)
+                if set(uses) != reachable:
+                    errors.append(
+                        f"nested hidden group {name!r} exposes providers outside its routing anchor"
+                    )
 
     for name in sorted(nested_hidden_names):
         parents = visible_parents.get(name, [])
