@@ -4,46 +4,141 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
+# Policy-only groups mirror ACL4SSR's selector model without copying proxy
+# payloads. They reference the node-owning clash-relay groups generated from
+# subscriptions, so the same credentials are never duplicated for each rule set.
+groups:
+  - id: policy_auto
+    display_name: Auto
+    module: general
+    members:
+      - {auto_pool: general}
+
+  - id: policy_direct
+    display_name: Direct
+    module: general
+    members:
+      - {builtin: DIRECT}
+      - {group: Proxy}
+      - {group: Auto}
+
+  - id: policy_block
+    display_name: Block
+    module: general
+    members:
+      - {builtin: REJECT}
+      - {builtin: DIRECT}
+
+  - id: policy_app_purify
+    display_name: App Purify
+    module: general
+    members:
+      - {builtin: REJECT}
+      - {builtin: DIRECT}
+
+  - id: policy_google_fcm
+    display_name: Google FCM
+    module: general
+    members:
+      - {group: Proxy}
+      - {group: Direct}
+      - {group: Auto}
+
+  - id: policy_microsoft
+    display_name: Microsoft
+    module: general
+    members:
+      - {group: Direct}
+      - {group: Proxy}
+
+  - id: policy_apple
+    display_name: Apple
+    module: general
+    members:
+      - {group: Proxy}
+      - {group: Direct}
+
+  - id: policy_telegram
+    display_name: Telegram
+    module: general
+    members:
+      - {group: Proxy}
+      - {group: Direct}
+
+  - id: policy_final
+    display_name: Final
+    module: general
+    members:
+      - {group: Proxy}
+      - {group: Direct}
+      - {group: Auto}
+
+final_target: Final
+
 # ACL4SSR rule fragments are fetched only during generation from the immutable
 # commit above. The final private Mihomo configuration contains the adapted
 # rules inline, so FlClash does not need runtime access to GitHub.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list
-    target: DIRECT
+    target: Direct
     priority: 10
+    module: general
+
+  - id: unban
+    path: Clash/UnBan.list
+    target: Direct
+    priority: 15
+    module: general
 
   - id: ban_ad
     path: Clash/BanAD.list
-    target: REJECT
+    target: Block
     priority: 20
+    module: general
 
   - id: ban_program_ad
     path: Clash/BanProgramAD.list
-    target: REJECT
+    target: App Purify
     priority: 30
+    module: general
+
+  - id: google_fcm
+    path: Clash/Ruleset/GoogleFCM.list
+    target: Google FCM
+    priority: 90
+    module: general
 
   # Keep the dedicated ChatGPT / Claude / Gemini rules at priorities 100-120
   # ahead of the general ACL4SSR proxy/media rules.
   - id: google_cn
     path: Clash/GoogleCN.list
-    target: DIRECT
+    target: Direct
     priority: 130
+    module: general
 
   - id: steam_cn
     path: Clash/Ruleset/SteamCN.list
-    target: DIRECT
+    target: Direct
     priority: 140
+    module: general
 
   - id: microsoft
     path: Clash/Microsoft.list
-    target: DIRECT
+    target: Microsoft
     priority: 210
+    module: general
 
   - id: apple
     path: Clash/Apple.list
-    target: Proxy
+    target: Apple
     priority: 220
+    module: general
+
+  - id: telegram
+    path: Clash/Telegram.list
+    target: Telegram
+    priority: 260
     module: general
 
   - id: proxy_media
@@ -51,12 +146,6 @@ sources:
     target: Video & Downloads
     priority: 270
     module: bulk
-
-  - id: telegram
-    path: Clash/Telegram.list
-    target: Proxy
-    priority: 400
-    module: general
 
   - id: proxy_lite
     path: Clash/ProxyLite.list
@@ -66,18 +155,21 @@ sources:
 
   - id: china_domain
     path: Clash/ChinaDomain.list
-    target: DIRECT
+    target: Direct
     priority: 900
+    module: general
 
   - id: china_company_ip
     path: Clash/ChinaCompanyIp.list
-    target: DIRECT
+    target: Direct
     priority: 910
+    module: general
 
 inline_rules:
   - id: geoip_cn
     type: GEOIP
     value: CN
-    target: DIRECT
+    target: Direct
     priority: 920
+    module: general
     options: [no-resolve]

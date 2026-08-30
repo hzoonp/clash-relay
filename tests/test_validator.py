@@ -85,6 +85,50 @@ def test_public_group_cannot_reference_nodes_directly(built_candidate) -> None:
         validate_generated_config(config)
 
 
+def test_policy_only_public_group_can_reference_valid_public_groups(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["proxy-groups"].append(
+        {
+            "name": "Policy Only",
+            "type": "select",
+            "proxies": ["DIRECT", "Proxy"],
+        }
+    )
+    validate_generated_config(config)
+
+
+def test_policy_only_public_group_cannot_reference_internal_auto_group(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    internal_auto = next(
+        group["name"]
+        for group in config["proxy-groups"]
+        if group.get("hidden", False) and group["type"] == "url-test"
+    )
+    config["proxy-groups"].append(
+        {
+            "name": "Unsafe Policy",
+            "type": "select",
+            "proxies": [internal_auto],
+        }
+    )
+    with pytest.raises(ValidationError, match="forbidden internal"):
+        validate_generated_config(config)
+
+
+def test_policy_only_public_group_cannot_attach_provider_use(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["proxy-groups"].append(
+        {
+            "name": "Unsafe Provider Policy",
+            "type": "select",
+            "proxies": ["Proxy"],
+            "use": [next(iter(config["proxy-providers"]))],
+        }
+    )
+    with pytest.raises(ValidationError, match=r"provider-backed.*SERVICE-FALLBACK"):
+        validate_generated_config(config)
+
+
 def test_hidden_group_requires_reserved_prefix(built_candidate) -> None:
     config = _candidate(built_candidate)
     hidden = next(group for group in config["proxy-groups"] if group.get("hidden", False))

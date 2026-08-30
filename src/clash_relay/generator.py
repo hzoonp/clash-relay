@@ -83,6 +83,10 @@ def _internal_names(unit_id: str, region: str) -> tuple[str, str]:
     )
 
 
+def _fallback_name(unit_id: str) -> str:
+    return f"__CR_SERVICE_FALLBACK_{_scope_token(unit_id)}"
+
+
 def _add_provider(
     providers: dict[str, Any],
     groups: list[dict[str, Any]],
@@ -147,7 +151,7 @@ def _add_regular_unit(
 ) -> dict[str, Any]:
     unit_id = unit["id"]
     token = _scope_token(unit_id)
-    fallback_name = f"__CR_SERVICE_FALLBACK_{token}"
+    fallback_name = _fallback_name(unit_id)
     regions = unit["countries"] if service else unit["regions"]
     fallback_order = unit["fallback_order"]
     selector = _normalized_selector(unit, service=service)
@@ -215,7 +219,7 @@ def _add_chain(
     token = _scope_token(chain["id"])
     entry_auto = f"__CR_CHAIN_ENTRY_AUTO_{token}"
     exit_auto = f"__CR_CHAIN_EXIT_AUTO_{token}"
-    fallback_name = f"__CR_SERVICE_FALLBACK_{token}"
+    fallback_name = _fallback_name(chain["id"])
     entry_nodes = _select_chain_leg(nodes, chain["entry"])
     exit_nodes = _select_chain_leg(nodes, chain["exit"])
     if not entry_nodes or not exit_nodes:
@@ -284,6 +288,73 @@ def _load_rules(root: Path, relative: str) -> list[dict[str, Any]]:
     return list(document["rules"])
 
 
+def _resolve_external_group_member(
+    member: dict[str, Any],
+    *,
+    known_groups: set[str],
+    auto_pools: dict[str, str],
+) -> str | None:
+    if "builtin" in member:
+        return str(member["builtin"])
+    if "group" in member:
+        name = str(member["group"])
+        return name if name in known_groups else None
+    if "auto_pool" in member:
+        name = auto_pools.get(str(member["auto_pool"]))
+        return name if name in known_groups else None
+    raise GenerationError("ACL4SSR routing group contains an invalid member")
+
+
+def _add_external_groups(
+    groups: list[dict[str, Any]],
+    specs: list[dict[str, Any]],
+    *,
+    modules: dict[str, bool],
+    auto_pools: dict[str, str],
+) -> None:
+    pending = [
+        spec
+        for spec in specs
+        if spec.get("module") is None or modules.get(str(spec["module"]), False)
+    ]
+    known_groups = {str(group["name"]) for group in groups}
+
+    while pending:
+        unresolved: list[dict[str, Any]] = []
+        progress = False
+        for spec in pending:
+            resolved_members: list[str] = []
+            for member in spec["members"]:
+                resolved = _resolve_external_group_member(
+                    member,
+                    known_groups=known_groups,
+                    auto_pools=auto_pools,
+                )
+                if resolved is None:
+                    break
+                resolved_members.append(resolved)
+            else:
+                display_name = str(spec["display_name"])
+                groups.append(
+                    {
+                        "name": display_name,
+                        "type": "select",
+                        "proxies": unique(resolved_members),
+                    }
+                )
+                known_groups.add(display_name)
+                progress = True
+                continue
+            unresolved.append(spec)
+
+        if not progress:
+            names = ", ".join(sorted(str(item["display_name"]) for item in unresolved))
+            raise GenerationError(
+                "ACL4SSR routing groups contain missing or cyclic references: " + names
+            )
+        pending = unresolved
+
+
 def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:
     runtime = config["runtime"]
     dns = runtime["dns"]
@@ -318,6 +389,8 @@ def generate_config(
     policies: dict[str, Any],
     nodes: list[Node],
     external_rules: list[dict[str, Any]] | None = None,
+    external_groups: list[dict[str, Any]] | None = None,
+    final_target: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     providers: dict[str, Any] = {}
     groups: list[dict[str, Any]] = []
@@ -371,6 +444,18 @@ def generate_config(
     if not groups:
         raise GenerationError("no enabled module produced a public proxy group")
 
+    auto_pools = {
+        str(pool["id"]): _fallback_name(str(pool["id"]))
+        for pool in policies["pools"]
+        if modules.get(str(pool["module"]), False)
+    }
+    _add_external_groups(
+        groups,
+        list(external_groups or []),
+        modules=modules,
+        auto_pools=auto_pools,
+    )
+
     available_targets = _BUILTINS | {str(group["name"]) for group in groups}
     rule_rows: list[tuple[int, str, int, str]] = []
     for service in services["services"]:
@@ -414,8 +499,10 @@ def generate_config(
         _render_rule(rule, "DIRECT") for rule in _load_rules(root, "rules/direct.yaml")
     ]
     rendered_rules.extend(value for _, _, _, value in sorted(rule_rows, key=lambda item: item[:3]))
-    final_target = "Proxy" if modules.get("general", False) else "DIRECT"
-    rendered_rules.append(f"MATCH,{final_target}")
+    resolved_final_target = final_target or ("Proxy" if modules.get("general", False) else "DIRECT")
+    if resolved_final_target not in available_targets:
+        raise GenerationError(f"final routing target is unavailable: {resolved_final_target!r}")
+    rendered_rules.append(f"MATCH,{resolved_final_target}")
     rendered_rules = unique(rendered_rules)
 
     output = _runtime_config(config)

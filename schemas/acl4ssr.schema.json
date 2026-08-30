@@ -10,6 +10,35 @@
     "ref": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "license": {"const": "CC-BY-SA-4.0"},
     "max_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 4194304},
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "display_name", "members"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^,\\r\\n]+$"
+          },
+          "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "members": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/groupMember"}
+          }
+        }
+      }
+    },
+    "final_target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^,\\r\\n]+$"
+    },
     "sources": {
       "type": "array",
       "minItems": 1,
@@ -48,6 +77,41 @@
           "options": {"type": "array", "uniqueItems": true, "items": {"enum": ["no-resolve"]}}
         }
       }
+    }
+  },
+  "$defs": {
+    "groupMember": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["builtin"],
+          "properties": {
+            "builtin": {"enum": ["DIRECT", "REJECT", "PASS", "COMPATIBLE"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["group"],
+          "properties": {
+            "group": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^,\\r\\n]+$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["auto_pool"],
+          "properties": {
+            "auto_pool": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+          }
+        }
+      ]
     }
   }
 }

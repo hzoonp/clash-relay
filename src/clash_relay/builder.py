@@ -28,9 +28,12 @@ def _failure_is_fatal(spec: SubscriptionSpec, project: ProjectDefinition) -> boo
     )
 
 
-def _expose_manual_provider_choices(output: dict[str, Any]) -> None:
-    """Let clients manually select provider nodes while retaining automatic fallback."""
+def _expose_manual_provider_choices(
+    output: dict[str, Any], *, excluded_groups: set[str] | None = None
+) -> None:
+    """Let node-owning groups expose providers without altering policy-only groups."""
 
+    excluded = excluded_groups or set()
     providers = output.get("proxy-providers", {})
     groups = output.get("proxy-groups", [])
     if not isinstance(providers, dict) or not isinstance(groups, list):
@@ -43,6 +46,8 @@ def _expose_manual_provider_choices(output: dict[str, Any]) -> None:
     }
     for public in groups:
         if not isinstance(public, dict) or public.get("hidden", False):
+            continue
+        if public.get("name") in excluded:
             continue
         references = public.get("proxies", [])
         if not isinstance(references, list) or len(references) != 1:
@@ -164,6 +169,13 @@ def build_candidate(
         fetcher=rule_fetcher,
         timeout=generation["fetch_timeout_seconds"],
     )
+    acl_groups = list(project.acl4ssr.get("groups", [])) if project.acl4ssr else []
+    acl_group_names = {str(item["display_name"]) for item in acl_groups}
+    final_target = (
+        str(project.acl4ssr["final_target"])
+        if project.acl4ssr and project.acl4ssr.get("final_target")
+        else None
+    )
     output, generator_report = generate_config(
         root=project.root,
         config=project.config,
@@ -171,8 +183,10 @@ def build_candidate(
         policies=project.policies,
         nodes=deduplicated,
         external_rules=external_rules,
+        external_groups=acl_groups,
+        final_target=final_target,
     )
-    _expose_manual_provider_choices(output)
+    _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
     validate_generated_config(output, secret_urls=secret_values)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
     yaml_text = _with_acl4ssr_attribution(
