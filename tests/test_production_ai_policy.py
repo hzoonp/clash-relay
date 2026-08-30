@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from clash_relay.config_loader import load_project
 from clash_relay.util import load_yaml_file
 
@@ -17,13 +15,13 @@ AI_COUNTRY_GROUPS = [
 ]
 
 
-def _load(path: Path) -> dict:
+def _load(path) -> dict:
     document = load_yaml_file(path)
     assert isinstance(document, dict)
     return document
 
 
-def test_production_ai_candidates_are_country_classified_and_live_gated(repo_root: Path) -> None:
+def test_production_ai_candidates_are_country_classified_and_live_gated(repo_root) -> None:
     policies = _load(repo_root / "policies.yaml")
     subscriptions = _load(repo_root / "subscriptions.yaml")
     acl = _load(repo_root / "rules/acl4ssr.yaml")
@@ -50,7 +48,7 @@ def test_production_ai_candidates_are_country_classified_and_live_gated(repo_roo
     assert members == [*AI_COUNTRY_GROUPS, "DIRECT"]
 
 
-def test_production_project_with_ai_country_pools_is_schema_valid(repo_root: Path) -> None:
+def test_production_project_with_ai_country_pools_is_schema_valid(repo_root) -> None:
     project = load_project(
         config_path=repo_root / "config.yaml",
         subscriptions_path=repo_root / "subscriptions.yaml",
