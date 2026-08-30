@@ -39,7 +39,7 @@ def _validate_key_name(key_name: str) -> None:
         raise PublicationError("Cloudflare KV key must be a non-empty ordinary key")
     if any(character.isspace() for character in key_name):
         raise PublicationError("Cloudflare KV key must not contain whitespace")
-    if len(key_name.encode("utf-8")) > 512:
+    if len(key_name.encode()) > 512:
         raise PublicationError("Cloudflare KV key exceeds the 512-byte limit")
 
 
@@ -120,8 +120,8 @@ class CloudflareKVPublisher:
             f"--{boundary}\r\n"
             'Content-Disposition: form-data; name="value"; filename="config.yaml"\r\n'
             "Content-Type: text/yaml; charset=utf-8\r\n\r\n"
-        ).encode("utf-8")
-        suffix = f"\r\n--{boundary}--\r\n".encode("utf-8")
+        ).encode()
+        suffix = f"\r\n--{boundary}--\r\n".encode()
         request = urllib.request.Request(
             f"{_API_ROOT}/accounts/{encoded_account}/storage/kv/namespaces/"
             f"{encoded_namespace}/values/{encoded_key}",
