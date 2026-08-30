@@ -22,6 +22,7 @@ class ProjectDefinition:
     subscriptions: tuple[SubscriptionSpec, ...]
     services: dict[str, Any]
     policies: dict[str, Any]
+    acl4ssr: dict[str, Any] | None
 
 
 def _ensure_unique(items: list[dict[str, Any]], field: str, label: str) -> None:
@@ -46,6 +47,19 @@ def _resolve_rule(root: Path, relative: str) -> Path:
         raise ConfigurationError(f"rule file does not exist: {relative}")
     load_and_validate(target, "rules.schema.json")
     return target
+
+
+def _resolve_acl4ssr_manifest(root: Path, relative: str) -> dict[str, Any]:
+    target = (root / relative).resolve()
+    try:
+        target.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ConfigurationError(
+            f"ACL4SSR manifest path escapes the project root: {relative}"
+        ) from exc
+    if not target.is_file():
+        raise ConfigurationError(f"ACL4SSR manifest does not exist: {relative}")
+    return load_and_validate(target, "acl4ssr.schema.json")
 
 
 def _probe_semantics(probe: dict[str, Any], label: str) -> None:
@@ -229,6 +243,35 @@ def load_project(
     if not direct.is_file():
         raise ConfigurationError("rules/direct.yaml is required")
     load_and_validate(direct, "rules.schema.json")
+
+    acl4ssr: dict[str, Any] | None = None
+    acl_config = config.get("rule_sources", {}).get("acl4ssr")
+    if acl_config and acl_config["enabled"]:
+        acl4ssr = _resolve_acl4ssr_manifest(root, str(acl_config["manifest"]))
+        source_rows = list(acl4ssr["sources"])
+        inline_rows = list(acl4ssr.get("inline_rules", []))
+        _ensure_unique(source_rows + inline_rows, "id", "ACL4SSR source IDs")
+        declared_targets = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"} | {
+            str(item["display_name"]) for item in all_units
+        }
+        for item in source_rows + inline_rows:
+            module = item.get("module")
+            if module is not None and module not in modules:
+                raise ConfigurationError(
+                    f"ACL4SSR source {item['id']!r} references undeclared module {module!r}"
+                )
+            if item["target"] not in declared_targets:
+                raise ConfigurationError(
+                    f"ACL4SSR source {item['id']!r} targets unknown group {item['target']!r}"
+                )
+        for source in source_rows:
+            relative = str(source["path"])
+            path = Path(relative)
+            if path.is_absolute() or ".." in path.parts or not relative.startswith("Clash/"):
+                raise ConfigurationError(
+                    f"ACL4SSR source {source['id']!r} has an unsafe repository path"
+                )
+
     return ProjectDefinition(
         root=root,
         config=config,
@@ -236,4 +279,5 @@ def load_project(
         subscriptions=tuple(specs),
         services=services,
         policies=policies,
+        acl4ssr=acl4ssr,
     )

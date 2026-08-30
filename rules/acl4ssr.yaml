@@ -1,0 +1,83 @@
+version: 1
+repository: ACL4SSR/ACL4SSR
+ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
+license: CC-BY-SA-4.0
+max_source_bytes: 2097152
+
+# ACL4SSR rule fragments are fetched only during generation from the immutable
+# commit above. The final private Mihomo configuration contains the adapted
+# rules inline, so FlClash does not need runtime access to GitHub.
+sources:
+  - id: local_area_network
+    path: Clash/LocalAreaNetwork.list
+    target: DIRECT
+    priority: 10
+
+  - id: ban_ad
+    path: Clash/BanAD.list
+    target: REJECT
+    priority: 20
+
+  - id: ban_program_ad
+    path: Clash/BanProgramAD.list
+    target: REJECT
+    priority: 30
+
+  # Keep the dedicated ChatGPT / Claude / Gemini rules at priorities 100-120
+  # ahead of the general ACL4SSR proxy/media rules.
+  - id: google_cn
+    path: Clash/GoogleCN.list
+    target: DIRECT
+    priority: 130
+
+  - id: steam_cn
+    path: Clash/Ruleset/SteamCN.list
+    target: DIRECT
+    priority: 140
+
+  - id: microsoft
+    path: Clash/Microsoft.list
+    target: DIRECT
+    priority: 210
+
+  - id: apple
+    path: Clash/Apple.list
+    target: Proxy
+    priority: 220
+    module: general
+
+  - id: proxy_media
+    path: Clash/ProxyMedia.list
+    target: Video & Downloads
+    priority: 270
+    module: bulk
+
+  - id: telegram
+    path: Clash/Telegram.list
+    target: Proxy
+    priority: 400
+    module: general
+
+  - id: proxy_lite
+    path: Clash/ProxyLite.list
+    target: Proxy
+    priority: 800
+    module: general
+
+  - id: china_domain
+    path: Clash/ChinaDomain.list
+    target: DIRECT
+    priority: 900
+
+  - id: china_company_ip
+    path: Clash/ChinaCompanyIp.list
+    target: DIRECT
+    priority: 910
+
+inline_rules:
+  - id: geoip_cn
+    type: GEOIP
+    value: CN
+    target: DIRECT
+    priority: 920
+    options: [no-resolve]
