@@ -89,7 +89,7 @@ def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> No
     assert "ai" not in general["excluded_capabilities"]
 
 
-def test_acl4ssr_rules_are_prioritized_and_inlined(
+def test_acl4ssr_sources_become_inline_rule_providers_in_priority_order(
     project_factory, fixture_env, yaml_editor
 ) -> None:
     root, paths = project_factory()
@@ -148,14 +148,26 @@ def test_acl4ssr_rules_are_prioritized_and_inlined(
 
     result = build_candidate(**paths, env=fixture_env, rule_fetcher=fake_rule_fetcher)
     rules = result.config["rules"]
+    providers = result.config["rule-providers"]
 
-    ad_rule = "DOMAIN-SUFFIX,ads.example,REJECT"
-    proxy_rule = "DOMAIN-SUFFIX,proxy.example,Proxy"
+    assert providers["acl4ssr_ban_ad"] == {
+        "type": "inline",
+        "behavior": "classical",
+        "payload": ["DOMAIN-SUFFIX,ads.example"],
+    }
+    assert providers["acl4ssr_proxy_lite"] == {
+        "type": "inline",
+        "behavior": "classical",
+        "payload": ["DOMAIN-SUFFIX,proxy.example"],
+    }
+    ad_rule = "RULE-SET,acl4ssr_ban_ad,REJECT"
+    proxy_rule = "RULE-SET,acl4ssr_proxy_lite,Proxy"
     geoip_rule = "GEOIP,CN,DIRECT,no-resolve"
     assert rules.index(ad_rule) < rules.index(proxy_rule) < rules.index(geoip_rule)
     assert rules[-1] == "MATCH,Proxy"
     assert "ACL4SSR/ACL4SSR@0123456789abcdef0123456789abcdef01234567" in result.yaml_text
     assert "CC-BY-SA-4.0" in result.yaml_text
+    assert result.report["rule_sources"]["acl4ssr"]["rule_providers"] == 2
     assert result.report["rule_sources"]["acl4ssr"]["rules"] == 3
 
 
@@ -235,12 +247,12 @@ def test_acl4ssr_policy_groups_are_lightweight_and_drive_final_target(
     )
     groups = {item["name"]: item for item in result.config["proxy-groups"]}
 
-    assert groups["Auto"]["proxies"] == ["__CR_SERVICE_FALLBACK_GENERAL"]
+    assert groups["Auto"]["proxies"] == ["__CR_AUTO_GENERAL_ANY"]
     assert "use" not in groups["Auto"]
     assert groups["Direct"]["proxies"] == ["DIRECT", "Proxy", "Auto"]
     assert groups["Microsoft"]["proxies"] == ["Direct", "Proxy"]
     assert groups["Final"]["proxies"] == ["Proxy", "Direct", "Auto"]
-    assert "DOMAIN-SUFFIX,microsoft.example,Microsoft" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_microsoft_rules,Microsoft" in result.config["rules"]
     assert result.config["rules"][-1] == "MATCH,Final"
 
 
