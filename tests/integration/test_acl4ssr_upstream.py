@@ -18,9 +18,7 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
     root, paths = project_factory()
 
     def enable_acl4ssr(document):
-        document["rule_sources"] = {
-            "acl4ssr": {"enabled": True, "manifest": "rules/acl4ssr.yaml"}
-        }
+        document["rule_sources"] = {"acl4ssr": {"enabled": True, "manifest": "rules/acl4ssr.yaml"}}
         document["modules"].update(
             {
                 "general": True,
@@ -46,9 +44,7 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
     assert all(item["type"] == "inline" for item in rule_providers.values())
     assert all(item["behavior"] == "classical" for item in rule_providers.values())
     assert all("url" not in item and "path" not in item for item in rule_providers.values())
-    assert any(
-        rule.startswith("RULE-SET,acl4ssr_ai,AI") for rule in result.config["rules"]
-    )
+    assert any(rule.startswith("RULE-SET,acl4ssr_ai,AI") for rule in result.config["rules"])
     assert any(
         rule.startswith("RULE-SET,acl4ssr_youtube,YouTube") for rule in result.config["rules"]
     )
