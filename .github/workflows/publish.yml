@@ -75,7 +75,7 @@ jobs:
             --services services.yaml \
             --policies policies.yaml \
             --mode artifact
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-${{ github.run_id }}
           path: .work/candidate/
@@ -122,7 +122,7 @@ jobs:
         env:
           MIHOMO_BIN: .work/bin/mihomo
         run: pytest -q -m integration
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: validation-${{ matrix.tag }}-${{ github.run_id }}
           path: .work/validation-${{ matrix.tag }}.json
@@ -166,7 +166,7 @@ jobs:
           print(f"gist_enabled={str(bool(publishing['gist']['enabled'])).lower()}")
           PY
       - name: Create immutable production Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: clash-relay-production-${{ github.run_number }}-${{ github.sha }}
           path: .work/candidate/
