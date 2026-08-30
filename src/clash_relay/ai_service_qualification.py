@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,7 @@ _CLAUDE_RULE_PROVIDER = "cr_ai_rules_claude"
 _GEMINI_RULE_PROVIDER = "cr_ai_rules_gemini"
 _ACL4SSR_AI_PROVIDER = "acl4ssr_ai"
 _ACL4SSR_OPENAI_PROVIDER = "acl4ssr_openai"
+_RE2_META = frozenset("\\.+*?()|[]{}^$")
 
 # Exact subsets of the repository's pinned ACL4SSR AI.list. Keeping these exact
 # makes a future upstream-ref update fail closed until its service routing is
@@ -98,10 +98,15 @@ def _provider_routes(
     return routes
 
 
+def _quote_re2_literal(value: str) -> str:
+    """Quote one runtime proxy name for Mihomo's Go/RE2-compatible regex parser."""
+    return "".join(f"\\{character}" if character in _RE2_META else character for character in value)
+
+
 def _exact_filter(names: set[str]) -> str:
     if not names:
         raise ValidationError("AI service filter cannot be empty")
-    return "^(?:" + "|".join(re.escape(name) for name in sorted(names)) + ")$"
+    return "^(" + "|".join(_quote_re2_literal(name) for name in sorted(names)) + ")$"
 
 
 def _service_country_anchor_name(service: str, provider_name: str) -> str:
@@ -200,6 +205,10 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     ai_provider = rule_providers.get(_ACL4SSR_AI_PROVIDER)
     if not isinstance(ai_provider, dict) or not isinstance(ai_provider.get("payload"), list):
         raise ValidationError("AI service routing requires the pinned ACL4SSR AI provider")
+    openai_provider = rule_providers.get(_ACL4SSR_OPENAI_PROVIDER)
+    if not isinstance(openai_provider, dict) or not isinstance(openai_provider.get("payload"), list):
+        raise ValidationError("AI service routing requires the pinned ACL4SSR OpenAI provider")
+
     ai_payload = {str(rule) for rule in ai_provider["payload"]}
     missing_claude = _CLAUDE_AI_RULES - ai_payload
     missing_gemini = _GEMINI_AI_RULES - ai_payload
@@ -233,7 +242,7 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     ]
     rules[ai_index:ai_index] = service_rules
     return {
-        "openai_rules": len(rule_providers[_ACL4SSR_OPENAI_PROVIDER]["payload"]),
+        "openai_rules": len(openai_provider["payload"]),
         "claude_rules": len(_CLAUDE_AI_RULES),
         "gemini_rules": len(_GEMINI_AI_RULES),
     }
@@ -271,6 +280,12 @@ def apply_ai_service_qualification(
             if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
         }
 
+    candidate_names = set().union(*original_names_by_provider.values())
+    for service in _SERVICE_ORDER:
+        unknown = set(qualified_by_probe[service]) - candidate_names
+        if unknown:
+            raise ValidationError("AI service qualification returned unknown candidate nodes")
+
     service_names_by_provider: dict[str, dict[str, set[str]]] = {
         service: {
             provider_name: original_names_by_provider[provider_name]
@@ -280,6 +295,10 @@ def apply_ai_service_qualification(
         for service in _SERVICE_ORDER
     }
     union_names = set().union(*(set(qualified_by_probe[service]) for service in _SERVICE_ORDER))
+    if not union_names:
+        raise ValidationError(
+            "no nodes passed any AI service qualification probe; refusing to replace the published profile"
+        )
 
     # Reuse the existing country-pool pruning logic, but keep the union of
     # service-qualified nodes instead of requiring one node to pass all services.
