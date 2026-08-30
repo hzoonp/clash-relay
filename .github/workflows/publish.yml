@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Check fork configuration
+    name: Check fork configuration and repository privacy
     runs-on: ubuntu-latest
     outputs:
       configured: ${{ steps.detect.outputs.configured }}
@@ -35,8 +35,15 @@ jobs:
       - id: detect
         name: Detect canonical user declarations
         shell: bash
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: |
+          set -euo pipefail
           if [[ -f config.yaml && -f subscriptions.yaml ]]; then
+            if [[ "$REPOSITORY_PRIVATE" != "true" ]]; then
+              echo "::error title=Sensitive production build blocked::clash-relay refuses to read subscription Secrets or generate credential-bearing config.yaml in a non-private repository. Create a private fork/repository for production use."
+              exit 1
+            fi
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -56,6 +63,21 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
+      - name: Mask individual subscription URLs
+        shell: bash
+        env:
+          CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
+        run: |
+          python - <<'PY'
+          import os
+          from clash_relay.secrets import load_secret_mapping
+
+          def command_escape(value: str) -> str:
+              return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+          for value in load_secret_mapping(env=os.environ).values():
+              print(f"::add-mask::{command_escape(value)}")
+          PY
       - name: Generate and statically validate candidate
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
