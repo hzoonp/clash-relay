@@ -47,6 +47,7 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
             "allow-lan": False,
             "mode": "rule",
             "log-level": "warning",
+            "hosts": {"ai-probe.invalid": "127.0.0.1"},
             "proxy-providers": {
                 "cr_ai_test_test": {
                     "type": "inline",
@@ -58,20 +59,22 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
         }
         path = tmp_path / "candidate.yaml"
         path.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
-        url = f"http://127.0.0.1:{server.server_port}/probe"
+        url = f"http://ai-probe.invalid:{server.server_port}/probe"
 
         qualified = probe_ai_nodes(
             _binary(),
             path,
             ({"name": "local", "url": url, "expected_status": "204", "timeout": 2000},),
+            workers=1,
         )
         assert qualified == {"AI Direct"}
-        assert ("HEAD" in observed) or ("GET" in observed)
+        assert observed == ["GET"]
 
         rejected = probe_ai_nodes(
             _binary(),
             path,
             ({"name": "local", "url": url, "expected_status": "200", "timeout": 2000},),
+            workers=1,
         )
         assert rejected == set()
     finally:
