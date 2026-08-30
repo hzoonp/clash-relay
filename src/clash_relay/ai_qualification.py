@@ -179,7 +179,7 @@ def _probe_proxy(
         ):
             return False
         delay = payload.get("delay")
-        if not isinstance(delay, int) or delay <= 0:
+        if not isinstance(delay, int) or delay < 0:
             return False
     return True
 
