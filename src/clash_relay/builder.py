@@ -15,7 +15,7 @@ from .models import BuildResult, Node, SubscriptionSpec
 from .redact import redact_text
 from .secrets import resolve_subscription_urls
 from .subscription_parser import parse_subscription
-from .util import dump_yaml, sha256_text
+from .util import dump_yaml, sha256_text, unique
 from .validator import validate_generated_config
 
 Fetcher = Callable[..., str]
@@ -25,6 +25,48 @@ def _failure_is_fatal(spec: SubscriptionSpec, project: ProjectDefinition) -> boo
     return spec.on_error == "fail" or (
         spec.required and project.config["generation"]["fail_on_required_subscription_error"]
     )
+
+
+def _expose_manual_provider_choices(output: dict[str, Any]) -> None:
+    """Let clients manually select provider nodes while retaining automatic fallback."""
+
+    providers = output.get("proxy-providers", {})
+    groups = output.get("proxy-groups", [])
+    if not isinstance(providers, dict) or not isinstance(groups, list):
+        return
+
+    by_name = {
+        group["name"]: group
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("name"), str)
+    }
+    for public in groups:
+        if not isinstance(public, dict) or public.get("hidden", False):
+            continue
+        references = public.get("proxies", [])
+        if not isinstance(references, list) or len(references) != 1:
+            continue
+        fallback = by_name.get(references[0])
+        if not isinstance(fallback, dict) or fallback.get("proxies") == ["REJECT"]:
+            continue
+
+        provider_names: list[str] = []
+        fallback_children = fallback.get("proxies", [])
+        if not isinstance(fallback_children, list):
+            continue
+        for child_name in fallback_children:
+            child = by_name.get(child_name)
+            if not isinstance(child, dict):
+                continue
+            uses = child.get("use", [])
+            if not isinstance(uses, list):
+                continue
+            provider_names.extend(
+                name for name in uses if isinstance(name, str) and name in providers
+            )
+        provider_names = unique(provider_names)
+        if provider_names:
+            public["use"] = provider_names
 
 
 def build_candidate(
@@ -104,6 +146,7 @@ def build_candidate(
         policies=project.policies,
         nodes=deduplicated,
     )
+    _expose_manual_provider_choices(output)
     validate_generated_config(output, secret_urls=secret_values)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
     for value in secret_values:
