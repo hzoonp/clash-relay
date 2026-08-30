@@ -3,7 +3,8 @@ version: 1
 # No URL belongs in this tracked file. Real subscription URLs are resolved from
 # CLASH_RELAY_SUBSCRIPTIONS. Production uses one shared general node inventory;
 # ACL4SSR policy groups may further restrict which subscription sources are
-# eligible for a specific traffic class.
+# eligible for a specific traffic class. AI is permissive at declaration time
+# and fail-closed at publication time: every AI candidate must pass live probes.
 subscriptions:
   - id: subscription_1
     display_name: 订阅源 1
@@ -13,7 +14,7 @@ subscriptions:
     priority: 100
     on_error: skip
     allowed_uses: [general, ai]
-    allowed_countries: [OTHER]
+    allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
     # Explicit multiplier markers above 2x are rejected before classification.
@@ -26,8 +27,8 @@ subscriptions:
     secret_name: SUBSCRIPTION_2_URL
     priority: 200
     on_error: skip
-    allowed_uses: [general]
-    allowed_countries: [OTHER]
+    allowed_uses: [general, ai]
+    allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
 
@@ -38,8 +39,8 @@ subscriptions:
     secret_name: SUBSCRIPTION_3_URL
     priority: 300
     on_error: skip
-    allowed_uses: [general]
-    allowed_countries: [OTHER]
+    allowed_uses: [general, ai]
+    allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
 
@@ -50,7 +51,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_4_URL
     priority: 400
     on_error: skip
-    allowed_uses: [general]
-    allowed_countries: [OTHER]
+    allowed_uses: [general, ai]
+    allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
