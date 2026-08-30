@@ -29,13 +29,17 @@ def apply_acl4ssr_source_exclusions(
     *,
     group_specs: list[dict[str, Any]],
     known_source_ids: set[str],
+    rule_specs: list[dict[str, Any]] | None = None,
+    final_target: str | None = None,
+    final_excluded_sources: list[str] | None = None,
 ) -> dict[str, list[str]]:
-    """Replace provider-backed policy members with source-filtered hidden anchors."""
+    """Replace provider-backed routes with source-filtered hidden anchors."""
 
     providers = output.get("proxy-providers", {})
     groups = output.get("proxy-groups", [])
-    if not isinstance(providers, dict) or not isinstance(groups, list):
-        raise GenerationError("generated proxy provider/group structure is invalid")
+    rules = output.get("rules", [])
+    if not isinstance(providers, dict) or not isinstance(groups, list) or not isinstance(rules, list):
+        raise GenerationError("generated proxy provider/group/rule structure is invalid")
 
     by_name: dict[str, dict[str, Any]] = {
         str(group["name"]): group
@@ -44,6 +48,16 @@ def apply_acl4ssr_source_exclusions(
     }
     clone_cache: dict[tuple[str, tuple[str, ...]], str | None] = {}
     fail_closed_cache: dict[tuple[str, ...], str] = {}
+
+    def checked_sources(raw_sources: list[str], context: str) -> tuple[str, ...]:
+        excluded_sources = tuple(sorted(str(source_id) for source_id in raw_sources))
+        unknown = set(excluded_sources) - known_source_ids
+        if unknown:
+            raise GenerationError(
+                f"{context} excludes unknown subscription sources: "
+                + ", ".join(sorted(unknown))
+            )
+        return excluded_sources
 
     def fail_closed(excluded_sources: tuple[str, ...]) -> str:
         cached = fail_closed_cache.get(excluded_sources)
@@ -180,22 +194,15 @@ def apply_acl4ssr_source_exclusions(
         raw_excluded = spec.get("excluded_sources", [])
         if not raw_excluded:
             continue
-        excluded_sources = tuple(sorted(str(source_id) for source_id in raw_excluded))
-        unknown = set(excluded_sources) - known_source_ids
-        if unknown:
-            raise GenerationError(
-                f"ACL4SSR group {spec['id']!r} excludes unknown subscription sources: "
-                + ", ".join(sorted(unknown))
-            )
+        context = f"ACL4SSR group {spec['id']!r}"
+        excluded_sources = checked_sources(list(raw_excluded), context)
         public_name = str(spec["display_name"])
         public = by_name.get(public_name)
         if public is None or public.get("hidden", False):
-            raise GenerationError(
-                f"ACL4SSR group {spec['id']!r} did not produce a public policy group"
-            )
+            raise GenerationError(f"{context} did not produce a public policy group")
         references = public.get("proxies", [])
         if not isinstance(references, list) or not references:
-            raise GenerationError(f"ACL4SSR group {spec['id']!r} has no routing members")
+            raise GenerationError(f"{context} has no routing members")
 
         rewritten: list[str] = []
         filtered_any = False
@@ -207,9 +214,46 @@ def apply_acl4ssr_source_exclusions(
             rewritten.append(filtered_reference(name, excluded_sources))
             filtered_any = True
         if not filtered_any:
-            raise GenerationError(
-                f"ACL4SSR group {spec['id']!r} excludes sources but has no provider-backed member"
-            )
+            raise GenerationError(f"{context} excludes sources but has no provider-backed member")
         public["proxies"] = unique(rewritten)
-        report[public_name] = list(excluded_sources)
+        report[f"group:{public_name}"] = list(excluded_sources)
+
+    for spec in rule_specs or []:
+        raw_excluded = spec.get("excluded_sources", [])
+        if not raw_excluded:
+            continue
+        source_id = str(spec["source_id"])
+        context = f"ACL4SSR rule source {source_id!r}"
+        excluded_sources = checked_sources(list(raw_excluded), context)
+        target = str(spec["target"])
+        if target in _BUILTINS:
+            raise GenerationError(f"{context} cannot source-filter a built-in target")
+        provider_name = spec.get("provider")
+        if not isinstance(provider_name, str):
+            raise GenerationError(f"{context} must use a rule provider for source filtering")
+        filtered_target = filtered_reference(target, excluded_sources)
+        original_rule = f"RULE-SET,{provider_name},{target}"
+        rewritten_rule = f"RULE-SET,{provider_name},{filtered_target}"
+        try:
+            index = rules.index(original_rule)
+        except ValueError as exc:
+            raise GenerationError(f"{context} did not produce its expected routing rule") from exc
+        rules[index] = rewritten_rule
+        report[f"rule:{source_id}"] = list(excluded_sources)
+
+    if final_excluded_sources:
+        context = "ACL4SSR final route"
+        excluded_sources = checked_sources(list(final_excluded_sources), context)
+        if final_target is None or final_target in _BUILTINS:
+            raise GenerationError(f"{context} requires a provider-backed final target")
+        filtered_target = filtered_reference(final_target, excluded_sources)
+        original_rule = f"MATCH,{final_target}"
+        rewritten_rule = f"MATCH,{filtered_target}"
+        try:
+            index = rules.index(original_rule)
+        except ValueError as exc:
+            raise GenerationError(f"{context} did not produce its expected MATCH rule") from exc
+        rules[index] = rewritten_rule
+        report["final"] = list(excluded_sources)
+
     return report
