@@ -51,9 +51,7 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
                     "payload": [{"name": "AI Direct", "type": "direct"}],
                 }
             },
-            "proxy-groups": [
-                {"name": "AI Test", "type": "select", "use": ["cr_ai_test_test"]}
-            ],
+            "proxy-groups": [{"name": "AI Test", "type": "select", "use": ["cr_ai_test_test"]}],
             "rules": ["MATCH,AI Test"],
         }
         path = tmp_path / "candidate.yaml"
