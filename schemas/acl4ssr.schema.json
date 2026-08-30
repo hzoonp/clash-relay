@@ -25,12 +25,7 @@
             "pattern": "^[^,\\r\\n]+$"
           },
           "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
-          "excluded_sources": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}
-          },
+          "excluded_sources": {"$ref": "#/$defs/sourceIdList"},
           "members": {
             "type": "array",
             "minItems": 1,
@@ -45,6 +40,7 @@
       "maxLength": 128,
       "pattern": "^[^,\\r\\n]+$"
     },
+    "final_excluded_sources": {"$ref": "#/$defs/sourceIdList"},
     "sources": {
       "type": "array",
       "minItems": 1,
@@ -57,7 +53,8 @@
           "path": {"type": "string", "minLength": 1, "maxLength": 256},
           "target": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^,\\r\\n]+$"},
           "priority": {"type": "integer", "minimum": 0, "maximum": 10000},
-          "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+          "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "excluded_sources": {"$ref": "#/$defs/sourceIdList"}
         }
       }
     },
@@ -86,6 +83,12 @@
     }
   },
   "$defs": {
+    "sourceIdList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}
+    },
     "groupMember": {
       "oneOf": [
         {
