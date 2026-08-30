@@ -358,9 +358,7 @@ def _new_diagnostics(probes: tuple[dict[str, Any], ...]) -> dict[str, Any]:
     }
 
 
-def _record_probe_results(
-    diagnostics: dict[str, Any], results: tuple[dict[str, Any], ...]
-) -> None:
+def _record_probe_results(diagnostics: dict[str, Any], results: tuple[dict[str, Any], ...]) -> None:
     probes = diagnostics["probes"]
     for result in results:
         probe = probes[str(result["probe"])]
@@ -379,8 +377,8 @@ def _merge_diagnostics(target: dict[str, Any], source: dict[str, Any]) -> None:
         target_probe["passed"] += int(source_probe["passed"])
         target_probe["failed"] += int(source_probe["failed"])
         for outcome, count in source_probe["outcomes"].items():
-            target_probe["outcomes"][outcome] = (
-                int(target_probe["outcomes"].get(outcome, 0)) + int(count)
+            target_probe["outcomes"][outcome] = int(target_probe["outcomes"].get(outcome, 0)) + int(
+                count
             )
 
 
