@@ -2,6 +2,25 @@
 
 All declarations use `version: 1` and reject unknown properties through JSON Schema. Cross-file references receive additional semantic validation.
 
+## Canonical production profile
+
+The real repository-root production configuration is intentionally minimal:
+
+```yaml
+modules:
+  general: true
+```
+
+Production uses:
+
+- four metadata-only rows in `subscriptions.yaml`, displayed as `订阅源 1` through `订阅源 4`;
+- an empty `services.yaml`;
+- one `general` pool in `policies.yaml`, displayed as `节点选择`;
+- pinned ACL4SSR Full routing in `rules/acl4ssr.yaml`;
+- Cloudflare Workers KV as the only credential-bearing publication backend.
+
+Legacy dedicated production declarations for ChatGPT, Claude, Gemini, Google Play, bulk, residential, EMBY, high-multiplier, and chain routing have been removed. The generic engine still supports richer data-driven configurations; regression coverage for those capabilities lives under `tests/fixtures/project/` and is deliberately isolated from root production YAML.
+
 ## `config.yaml`
 
 ### `runtime`
@@ -10,7 +29,14 @@ Maps directly to a deliberately small Mihomo runtime surface: mixed port, LAN bi
 
 ### `modules`
 
-A mapping of arbitrary module IDs to Booleans. Every service, pool, and chain references one module. Adding a data-driven service therefore requires one new Boolean but no Python change.
+The schema permits arbitrary Boolean module IDs because the generator is reusable. Canonical production currently defines only:
+
+```yaml
+modules:
+  general: true
+```
+
+A service, pool, chain, or ACL4SSR source with a module is active only when that module is enabled.
 
 ### `generation`
 
@@ -23,15 +49,30 @@ A mapping of arbitrary module IDs to Booleans. Every service, pool, and chain re
 | `invalid_proxy_policy` | `error` or `skip` one malformed proxy |
 | `duplicate_policy` | `keep_first` or `error` on identical proxy fingerprints |
 | `allow_http_subscription_urls` | local/legacy opt-in; HTTPS is default |
-| `allow_file_subscription_urls` | test/local opt-in; disabled in production example |
+| `allow_file_subscription_urls` | test/local opt-in; disabled in production |
 | `reject_private_proxy_hosts` | reject literal private/special IP endpoints |
 | `fail_on_required_subscription_error` | required-source failure gate |
-| `node_name_prefix` | reserved output naming option |
-| `generated_header` | stable generated-file comment |
+| `node_name_prefix` | stable generated node-name namespace option |
+| `generated_header` | stable generated-file attribution/header option |
+
+Canonical production requires at least one successful subscription and one usable node overall. Individual source failures are skipped because no one provider is treated as mandatory.
+
+### `rule_sources`
+
+Production enables:
+
+```yaml
+rule_sources:
+  acl4ssr:
+    enabled: true
+    manifest: rules/acl4ssr.yaml
+```
+
+The manifest pins an immutable ACL4SSR commit. Its fetched fragments are converted at build time to inline classical Mihomo `rule-providers`; no remote rule-provider URL/path is emitted. See [Routing rules and ACL4SSR](rules.md).
 
 ### `publishing`
 
-The public-repository production profile uses Cloudflare Workers KV as the only credential-bearing publisher. The example configuration therefore sets:
+The public-repository production profile uses Cloudflare Workers KV as the only credential-bearing publisher:
 
 ```yaml
 publishing:
@@ -47,37 +88,45 @@ publishing:
     key: production-config
 ```
 
-`publication-gate --mode cloudflare_kv` fails closed unless Artifact, GitHub Release, and Gist publication all remain disabled. Cloudflare account credentials and namespace identity are runtime deployment settings, not tracked YAML. GitHub Actions reads:
-
-- Secret `CLOUDFLARE_API_TOKEN`;
-- Variable `CLOUDFLARE_ACCOUNT_ID`;
-- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`.
-
-The API token is never passed to generation or Mihomo validation steps. The namespace is resolved by exact title at publication time and the validated bytes are written to the configured KV key.
+`publication-gate --mode cloudflare_kv` fails closed unless Artifact, GitHub Release, and Gist publication remain disabled. GitHub Actions reads Cloudflare credentials only during the final publication step.
 
 ## `subscriptions.yaml`
 
-A subscription row contains no URL:
+A subscription row contains no URL. Canonical production keeps four rows whose visible names are `订阅源 1` through `订阅源 4` while their secret keys remain `SUBSCRIPTION_1_URL` through `SUBSCRIPTION_4_URL`.
+
+Production rows use only the general contract:
+
+```yaml
+- id: subscription_1
+  display_name: 订阅源 1
+  enabled: true
+  required: false
+  secret_name: SUBSCRIPTION_1_URL
+  priority: 100
+  on_error: skip
+  allowed_uses: [general]
+  allowed_countries: [OTHER]
+  default_capabilities: [general]
+  default_cost_level: standard
+```
+
+The generic schema also supports:
 
 | Field | Meaning |
 |---|---|
 | `id` | stable unique machine ID |
-| `display_name` | report-only human name |
-| `enabled` | whether the source is resolved/fetched |
+| `display_name` | human-readable source name |
+| `enabled` | whether the source is fetched |
 | `required` | source-level criticality |
 | `secret_name` | key in secret bundle or environment |
-| `priority` | stable processing and duplicate ownership; not quality |
+| `priority` | deterministic processing and duplicate ownership |
 | `on_error` | `fail` or `skip` |
-| `allowed_uses` | business purposes the source contract allows |
-| `allowed_countries` | explicit source-level country boundary |
-| `default_capabilities` | explicit capabilities assigned to every node from this source |
+| `allowed_uses` | purposes the source contract allows |
+| `allowed_countries` | source-level country boundary |
+| `default_capabilities` | capabilities assigned to every node from the source |
 | `default_cost_level` | default cost bucket |
-| `node_metadata` | authoritative original-name override map |
+| `node_metadata` | exact original-name override map |
 | `name_rules` | optional auxiliary regex classifiers |
-
-`node_metadata` may set country, add/remove capabilities, and change cost. Multiple capabilities are allowed.
-
-Restricted capabilities are defined by `policies.yaml`. A name rule that adds one must set `allow_restricted_capabilities: true`; exact metadata and source defaults are already explicit declarations.
 
 ## Secret injection
 
@@ -85,48 +134,41 @@ Preferred GitHub Actions format:
 
 ```json
 {
-  "SUB_ONE": "<private URL>",
-  "SUB_TWO": "<private URL>"
+  "SUBSCRIPTION_1_URL": "<private URL>",
+  "SUBSCRIPTION_2_URL": "<private URL>",
+  "SUBSCRIPTION_3_URL": "<private URL>",
+  "SUBSCRIPTION_4_URL": "<private URL>"
 }
 ```
 
-Store it as `CLASH_RELAY_SUBSCRIPTIONS`. Values may alternatively be YAML or objects with a `url` field. For local development:
+Store the mapping as `CLASH_RELAY_SUBSCRIPTIONS`. These values are original provider URLs, not the protected Cloudflare Worker URL.
 
-```yaml
-SUB_ONE: <private URL>
-SUB_TWO:
-  url: <private URL>
-```
-
-Save as an ignored file such as `.secrets/subscriptions.yaml` and pass `--secret-file`.
+For local development, an ignored YAML secret file can be passed with `--secret-file`.
 
 ## `services.yaml`
 
-Each AI service declares:
+Canonical production contains:
 
-- `id`, `display_name`, and `module`;
-- `source_use`;
-- required and excluded capabilities;
-- allowed cost levels;
-- countries and fallback order;
-- empty behavior;
-- rule priority/file;
-- probe URL, method, accepted status codes, interval, timeout, laziness, and tolerance.
+```yaml
+version: 1
+services: []
+```
 
-The method is fixed to `HEAD` because the provider integration test verifies actual Mihomo behavior. `expected_status` accepts slash/comma/space-separated codes and inclusive ranges. Keep the expression within statuses supported by the pinned Mihomo matrix.
+The generic schema remains capable of defining data-driven services with selectors, rule files, fallback order, and probe settings. Those generic examples are exercised under `tests/fixtures/project/` rather than root production.
 
 ## `policies.yaml`
 
-This file defines:
+Canonical production defines only:
 
-- capability vocabulary and restricted status;
-- cost vocabulary;
-- auxiliary country aliases;
-- reusable probes;
-- ordinary/special business pools;
-- controlled chain entry and exit selectors.
+- capability `general`;
+- cost level `standard`;
+- one connectivity probe;
+- one `general` pool displayed as `节点选择`;
+- no chains.
 
-Selector semantics:
+The pool uses `regions: [ANY]`, so one hidden `__CR_AUTO_GENERAL_ANY` url-test group is sufficient. No redundant public `Auto` selector or one-target fallback wrapper is generated.
+
+The generic engine can still model additional capabilities, country aliases, probes, special pools, and chains. Selector semantics remain:
 
 1. source must allow `source_use`;
 2. source must allow node country;
@@ -138,16 +180,11 @@ Selector semantics:
 
 ## `rules/`
 
-Rule files use structured rows rather than raw comma strings:
+Production root keeps:
 
-```yaml
-version: 1
-rules:
-  - type: DOMAIN-SUFFIX
-    value: example.invalid
-  - type: IP-CIDR
-    value: 192.0.2.0/24
-    options: [no-resolve]
-```
+- `rules/direct.yaml` for the small always-first local direct rules;
+- `rules/acl4ssr.yaml` for the pinned ACL4SSR Full manifest and Chinese policy topology.
 
-The generator attaches the correct public business group. `rules/direct.yaml` is always placed first, business rules are sorted by priority and ID, and one final `MATCH` is appended.
+Old root business rule files for ChatGPT, Claude, Gemini, Google Play, bulk traffic, and EMBY have been removed. Equivalent generic regression fixtures exist only under `tests/fixtures/project/rules/`.
+
+ACL4SSR rule data itself is not vendored into the repository. Trusted generation fetches the pinned upstream fragments, normalizes them, embeds them as inline `rule-providers`, and then validates the complete standalone YAML with both supported Mihomo versions.
