@@ -13,9 +13,10 @@ from typing import Any
 from . import __version__
 from .builder import build_candidate
 from .config_loader import load_project
-from .errors import ClashRelayError, ValidationError
+from .errors import ClashRelayError, PublicationError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
 from .publication import ACKNOWLEDGEMENT, publication_gate
+from .publishers.cloudflare_kv import CloudflareKVPublisher
 from .publishers.gist import GistPublisher
 from .util import atomic_write
 from .validator import validate_generated_config
@@ -139,6 +140,35 @@ def _command_publication_gate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        services_path=args.services,
+        policies_path=args.policies,
+    )
+    publication_gate(project.config, "cloudflare_kv")
+    candidate = load_candidate(args.candidate)
+    validate_generated_config(candidate)
+    try:
+        content = args.candidate.read_bytes()
+    except OSError as exc:
+        raise PublicationError("failed to read candidate for Cloudflare KV publication") from exc
+
+    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
+    account_id = args.account_id or os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
+    namespace_title = args.namespace_title or os.environ.get("CLOUDFLARE_KV_NAMESPACE_TITLE", "")
+    key_name = args.key or project.config["publishing"]["cloudflare_kv"]["key"]
+    result = CloudflareKVPublisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=key_name,
+    ).publish(content=content)
+    print(_json_text({"status": "published", **result}), end="")
+    return 0
+
+
 def _command_publish_gist(args: argparse.Namespace) -> int:
     project = load_project(
         config_path=args.config,
@@ -204,12 +234,28 @@ def build_parser() -> argparse.ArgumentParser:
     validate.set_defaults(handler=_command_validate)
 
     gate = subparsers.add_parser(
-        "publication-gate", help="Enforce artifact/Release/Gist publication acknowledgements."
+        "publication-gate",
+        help="Enforce Artifact/Release/Gist/Cloudflare KV publication policy.",
     )
     _add_project_args(gate)
-    gate.add_argument("--mode", choices=["artifact", "github_release", "gist"], required=True)
+    gate.add_argument(
+        "--mode",
+        choices=["artifact", "github_release", "gist", "cloudflare_kv"],
+        required=True,
+    )
     gate.add_argument("--acknowledgement", default="")
     gate.set_defaults(handler=_command_publication_gate)
+
+    cloudflare = subparsers.add_parser(
+        "publish-cloudflare-kv",
+        help="Publish one statically validated candidate to private Cloudflare Workers KV.",
+    )
+    _add_project_args(cloudflare)
+    cloudflare.add_argument("--candidate", type=_path, required=True)
+    cloudflare.add_argument("--account-id")
+    cloudflare.add_argument("--namespace-title")
+    cloudflare.add_argument("--key")
+    cloudflare.set_defaults(handler=_command_publish_cloudflare_kv)
 
     gist = subparsers.add_parser("publish-gist", help="Publish a validated candidate to a Gist.")
     _add_project_args(gist)

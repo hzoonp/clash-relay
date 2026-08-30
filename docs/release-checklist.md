@@ -5,9 +5,8 @@
 - [ ] `python scripts/repository_audit.py` passes on the exact staged tree.
 - [ ] `git log --all -p` contains no real subscription URL, token, node credential, private controller, or generated config.
 - [ ] Example and fixture hosts remain fictional/reserved and fixture identities contain no personal data.
-- [ ] `config.yaml` and `subscriptions.yaml`, when added in a deployment repository, contain metadata only.
+- [ ] Tracked `config.yaml` and `subscriptions.yaml`, when added, contain metadata only.
 - [ ] License, CODE_OF_CONDUCT, CONTRIBUTING, SECURITY, and issue templates are correct for the owner.
-- [ ] Replace `OWNER` placeholders in issue contact and README fixed-URL examples.
 
 ## Code and tests
 
@@ -22,34 +21,44 @@
 
 ## GitHub settings
 
-- [ ] Create the public source repository without importing another repository's history.
-- [ ] Push the single audited initial commit.
-- [ ] Enable branch protection and require all PR checks.
-- [ ] Review Actions permissions; keep default read and grant write only to promotion.
-- [ ] Enable Dependabot and private vulnerability reporting.
-- [ ] Optionally pin Actions to full commit SHAs.
-- [ ] Use a separate private repository for real production subscriptions and credential-bearing Artifacts.
+- [ ] Protect `main` and require all PR status checks.
+- [ ] Restrict who can modify Actions workflows and production-relevant Python code.
+- [ ] Keep default Actions permissions read-only.
+- [ ] Secret `CLASH_RELAY_SUBSCRIPTIONS` contains only the private subscription mapping.
+- [ ] Secret `CLOUDFLARE_API_TOKEN` is a narrowly scoped Workers KV edit/write token.
+- [ ] Variable `CLOUDFLARE_ACCOUNT_ID` is configured.
+- [ ] Variable `CLOUDFLARE_KV_NAMESPACE_TITLE` points to the intended namespace.
+- [ ] `PROFILE_TOKEN` is not stored in GitHub.
+
+## Cloudflare settings
+
+- [ ] Worker KV binding points to the intended namespace.
+- [ ] The namespace contains the `production-config` key or is ready for the first write.
+- [ ] Worker Secret `PROFILE_TOKEN` is a high-entropy random value.
+- [ ] Invalid profile tokens return a generic `404`.
+- [ ] Valid profile token reads `production-config` and returns YAML.
+- [ ] Worker responses use `Cache-Control: no-store` and noindex headers.
+- [ ] Worker code and logs do not print the complete request URL or `PROFILE_TOKEN`.
 
 ## Fictional acceptance run
 
-- [ ] Add only a completely fictional `CLASH_RELAY_SUBSCRIPTIONS` mapping.
-- [ ] Run the production workflow in a private test repository and inspect the redacted report.
-- [ ] Confirm a public repository with canonical production declarations fails in `prepare` before the candidate job can receive Secrets.
+- [ ] Use a completely fictional `CLASH_RELAY_SUBSCRIPTIONS` mapping for the first end-to-end run.
 - [ ] Confirm every individual derived subscription URL is registered with `::add-mask::` before generation.
-- [ ] Delete each fixture subscription in turn and confirm generation behavior.
-- [ ] Add a new fixture subscription without changing Python.
-- [ ] Add a fixture AI service using one service row and one rule file (a module Boolean is optional).
-- [ ] Confirm empty optional pools route only to `REJECT`.
-- [ ] Confirm general/bulk pools contain no residential, EMBY, high-multiplier, or chain node.
-- [ ] Deliberately break candidate validation and confirm no new production Artifact/Release appears.
+- [ ] Confirm generated candidate bytes never appear in an Actions Artifact, Release, Gist, commit, or Pages asset.
+- [ ] Confirm Mihomo v1.19.30 validates the candidate.
+- [ ] Confirm Mihomo v1.19.29 validates the same candidate.
+- [ ] Deliberately break a Mihomo validation and confirm Cloudflare KV is not updated.
+- [ ] Deliberately use an invalid namespace title and confirm the prior KV value remains untouched.
+- [ ] Confirm the public Actions log does not contain a real candidate or detailed Mihomo failure output.
 
 ## Production deployment
 
-- [ ] The deployment repository is private before any real subscription Secret is added.
-- [ ] Add real URLs only through Actions Secrets.
-- [ ] Confirm tracked `config.yaml` and `subscriptions.yaml` contain metadata only.
-- [ ] Leave Release and Gist disabled unless credential-bearing output is intentionally sent to those backends; enabling either also requires its backend variable and the exact acknowledgement variable.
-- [ ] Import the validated Artifact into a non-critical Mihomo/FlClash profile first.
-- [ ] Verify service behavior independently of health-check reachability.
-- [ ] Establish credential rotation and Artifact/Release/Gist retention procedures.
-- [ ] If repository visibility is ever changed, re-audit retained workflow logs, Artifacts, Releases, and linked Gists before the change.
+- [ ] Add real URLs only through `CLASH_RELAY_SUBSCRIPTIONS`.
+- [ ] Confirm `publishing.artifact` is `false`.
+- [ ] Confirm GitHub Release and Gist are disabled.
+- [ ] Confirm `publishing.cloudflare_kv.enabled` is `true` and its key is correct.
+- [ ] Run production only from trusted `main`.
+- [ ] Import the Worker profile URL into a non-critical FlClash profile first.
+- [ ] Verify URL refresh and service behavior independently of health-check reachability.
+- [ ] Store the complete FlClash profile URL as a credential and establish a `PROFILE_TOKEN` rotation procedure.
+- [ ] Rotate any credential that ever appeared in repository history, logs, Artifacts, Releases, Gists, screenshots, or support messages.

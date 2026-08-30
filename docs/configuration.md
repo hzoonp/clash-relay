@@ -31,7 +31,29 @@ A mapping of arbitrary module IDs to Booleans. Every service, pool, and chain re
 
 ### `publishing`
 
-Artifacts are the baseline. Release and Gist each require both a declaration opt-in and a runtime acknowledgement. This model is separate from generator code.
+The public-repository production profile uses Cloudflare Workers KV as the only credential-bearing publisher. The example configuration therefore sets:
+
+```yaml
+publishing:
+  artifact: false
+  github_release:
+    enabled: false
+    allow_sensitive_public_release: false
+  gist:
+    enabled: false
+    allow_sensitive_unlisted_gist: false
+  cloudflare_kv:
+    enabled: true
+    key: production-config
+```
+
+`publication-gate --mode cloudflare_kv` fails closed unless Artifact, GitHub Release, and Gist publication all remain disabled. Cloudflare account credentials and namespace identity are runtime deployment settings, not tracked YAML. GitHub Actions reads:
+
+- Secret `CLOUDFLARE_API_TOKEN`;
+- Variable `CLOUDFLARE_ACCOUNT_ID`;
+- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`.
+
+The API token is never passed to generation or Mihomo validation steps. The namespace is resolved by exact title at publication time and the validated bytes are written to the configured KV key.
 
 ## `subscriptions.yaml`
 

@@ -2,63 +2,84 @@
 
 Publication is intentionally downstream of generation. A publisher receives already validated bytes and cannot influence node selection or policy.
 
-## Repository privacy gate
+## Public-repository production path
 
-A real production run is supported only in a private repository. The public upstream remains suitable for source code, examples, CI, and fictional fixtures, but not for real subscription Secrets or credential-bearing output.
+The production workflow is designed to run from a public repository without turning GitHub into credential storage. It permits real subscription Secrets on trusted `main` runs, but the generated `config.yaml` remains only on the ephemeral GitHub-hosted runner until publication to Cloudflare Workers KV.
 
-The `prepare` job checks whether both canonical production declarations (`config.yaml` and `subscriptions.yaml`) exist. If they do, GitHub must report `repository.private == true`. Otherwise the workflow fails before the `candidate` job is scheduled. That means a public repository cannot reach the step that receives `CLASH_RELAY_SUBSCRIPTIONS`, cannot fetch real subscriptions, and cannot upload a credential-bearing candidate or production Artifact through the supported workflow.
-
-If the canonical production declarations do not exist, the workflow exits successfully without reading Secrets or generating output. This keeps the public template repository safe to maintain and test.
+Production deployment is restricted to `refs/heads/main`. Pull requests continue to run fictional validation only.
 
 ## Secret masking before generation
 
-`CLASH_RELAY_SUBSCRIPTIONS` is intentionally one structured GitHub Secret so an arbitrary number of subscriptions can be declared without changing workflow YAML. Because individual URLs are values derived from that bundle, the candidate job parses the mapping in-memory and emits GitHub `::add-mask::` commands for every URL before any subscription fetch begins.
+`CLASH_RELAY_SUBSCRIPTIONS` is intentionally one structured GitHub Secret so an arbitrary number of subscriptions can be declared without changing workflow YAML. Because individual URLs are values derived from that bundle, the deployment job parses the mapping in memory and emits GitHub `::add-mask::` commands for every URL before any subscription fetch begins.
 
 No URL is written to tracked YAML, generated candidate YAML, or build reports. Application-level redaction remains in place as a second layer.
 
-## Candidate lifecycle
+## Single-runner lifecycle
 
-1. `prepare` verifies the canonical declarations and private-repository requirement before Secret use.
-2. `candidate` installs the locked runtime dependencies.
-3. every individual subscription URL is registered with `::add-mask::`.
-4. `candidate` resolves Secrets and generates `.work/candidate/config.yaml` once.
-5. static output validation completes before the candidate file is written.
-6. the candidate and redacted report are uploaded for one day inside the private repository.
-7. every stable matrix job downloads the same named Artifact.
-8. each job runs static validation, Mihomo config load, startup smoke, and provider `HEAD` behavior tests.
-9. `promote` has normal successful `needs` dependencies. There is no `always()` or tolerated stable failure.
+The credential-bearing candidate never crosses a GitHub Artifact boundary. One deployment job performs the complete sensitive lifecycle:
 
-## Production Artifact
+1. validate the public publication declaration before any production Secret is read;
+2. register each subscription URL with `::add-mask::`;
+3. resolve subscriptions and generate `.work/private/config.yaml` once;
+4. statically validate the candidate during generation;
+5. download and verify pinned Mihomo v1.19.30, then validate the exact candidate;
+6. download and verify pinned Mihomo v1.19.29, then validate the same candidate bytes;
+7. only after both stable cores pass, provide the Cloudflare API token to the final publication step;
+8. resolve the configured Workers KV namespace by exact title and write the exact candidate to the configured key;
+9. remove the private candidate after successful publication. On any earlier failure, the ephemeral runner is destroyed without updating Cloudflare.
 
-After rechecking static structure and `publishing.artifact`, `promote` uploads a versioned 90-day Artifact. Existing production Artifacts are immutable; a failed run does not modify them.
+Mihomo failure output for a real candidate is redirected to runner-local files and deliberately not printed in the public Actions log. Those files are never uploaded.
 
-The generated `config.yaml` contains inline node credentials and must be treated as highest-sensitivity data. Artifact transport is therefore supported only after the private-repository gate passes. Repository read access should be treated as access to the production configuration.
+## Cloudflare Workers KV
 
-## GitHub Release
+The default public-safe declaration is:
 
-Release publishing is optional and disabled by default. It is never part of the default production path. The workflow:
+```yaml
+publishing:
+  artifact: false
+  github_release:
+    enabled: false
+    allow_sensitive_public_release: false
+  gist:
+    enabled: false
+    allow_sensitive_unlisted_gist: false
+  cloudflare_kv:
+    enabled: true
+    key: production-config
+```
 
-1. checks the tracked declaration and `PUBLISH_PUBLIC_RELEASE=true`;
-2. executes the declaration + acknowledgement gate;
-3. creates a new draft Release with a unique run/commit tag;
-4. uploads the exact `config.yaml` and `build-report.json` while the Release remains a draft;
-5. changes the fully uploaded draft to latest in the final command.
+The Cloudflare publication gate refuses to run if Artifact, Release, or Gist is enabled at the same time.
 
-Generated config remains sensitive regardless of repository visibility. Do not use Release merely as a convenient distribution path unless its access model is appropriate for the credentials it contains. Changing a repository from private to public later can expose retained release assets.
+GitHub Actions expects:
 
-Any earlier failure leaves the previous latest Release unchanged. A failed final edit may leave a draft for manual cleanup.
+- Secret `CLOUDFLARE_API_TOKEN` with Workers KV edit/write permission;
+- Variable `CLOUDFLARE_ACCOUNT_ID`;
+- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`, for example `clash-relay-config`.
 
-## Gist
+The publisher lists namespaces with the Cloudflare API, requires exactly one exact title match, enforces the 25 MiB KV value limit, and writes the validated bytes to the configured key. It logs only non-sensitive publication metadata such as byte count and SHA-256 digest.
 
-Gist is an optional backend after the same stable validation and promotion dependencies and is disabled by default. An unlisted Gist is not private. It requires:
+Cloudflare's Worker remains responsible for authenticated delivery to FlClash. The recommended endpoint pattern is:
 
-- `publishing.gist.enabled: true`;
-- repository variable `PUBLISH_UNLISTED_GIST=true`;
-- repository variable `CLASH_RELAY_PUBLICATION_ACKNOWLEDGEMENT=I_UNDERSTAND_THIS_PUBLISHES_PROXY_CREDENTIALS`;
-- Secrets `GITHUB_GIST_TOKEN` and `GITHUB_GIST_ID`.
+```text
+https://<worker>.<workers-subdomain>.workers.dev/profile/<PROFILE_TOKEN>
+```
 
-The publisher uses the GitHub API and returns only the Gist ID. It never logs the token or URL content. Because the resulting config contains node credentials, Gist should not be used as the default production delivery mechanism.
+`PROFILE_TOKEN` must be a Worker Secret and must not be copied into GitHub. The complete URL is a bearer credential.
 
-## Adding another backend
+## GitHub Artifact, Release, and Gist
 
-Implement the small publisher protocol under `src/clash_relay/publishers/`, add a publication gate mode/consent, and call it only in `promote` after stable validation. A backend must not regenerate or mutate candidate bytes, and its access-control model must be suitable for credential-bearing output.
+The codebase retains legacy publication-gate support for Artifact, Release, and Gist for explicit non-default use cases, but the supported public production workflow contains no credential-bearing upload path for any of them.
+
+In Cloudflare KV mode:
+
+- Actions Artifact must remain disabled;
+- GitHub Release must remain disabled;
+- Gist must remain disabled.
+
+This is enforced both by configuration and by workflow regression tests.
+
+## Failure semantics
+
+Cloudflare is updated only after generation and both pinned stable-core validations succeed. A subscription fetch error, schema failure, graph error, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or KV API failure leaves the previously stored `production-config` untouched.
+
+Because Workers KV is a distributed eventually consistent store, clients may briefly continue to receive an older successful value after a new write. The workflow never intentionally publishes an unvalidated candidate.

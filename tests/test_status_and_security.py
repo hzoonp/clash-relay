@@ -164,12 +164,37 @@ def _publishing_config() -> dict:
                 "allow_sensitive_public_release": False,
             },
             "gist": {"enabled": False, "allow_sensitive_unlisted_gist": False},
+            "cloudflare_kv": {"enabled": False, "key": "production-config"},
         }
     }
 
 
-def test_artifact_publication_is_default() -> None:
+def test_artifact_gate_accepts_explicit_enablement() -> None:
     publication_gate(_publishing_config(), "artifact")
+
+
+def test_cloudflare_kv_requires_enablement_and_disables_github_sensitive_backends() -> None:
+    config = _publishing_config()
+    with pytest.raises(PublicationError, match="Cloudflare KV publication is disabled"):
+        publication_gate(config, "cloudflare_kv")
+
+    config["publishing"]["cloudflare_kv"]["enabled"] = True
+    config["publishing"]["artifact"] = False
+    publication_gate(config, "cloudflare_kv")
+
+    config["publishing"]["artifact"] = True
+    with pytest.raises(PublicationError, match="Artifacts"):
+        publication_gate(config, "cloudflare_kv")
+    config["publishing"]["artifact"] = False
+
+    config["publishing"]["github_release"]["enabled"] = True
+    with pytest.raises(PublicationError, match="Release"):
+        publication_gate(config, "cloudflare_kv")
+    config["publishing"]["github_release"]["enabled"] = False
+
+    config["publishing"]["gist"]["enabled"] = True
+    with pytest.raises(PublicationError, match="Gist"):
+        publication_gate(config, "cloudflare_kv")
 
 
 def test_release_requires_enablement_and_acknowledgement() -> None:

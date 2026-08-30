@@ -15,6 +15,21 @@ def publication_gate(config: dict[str, Any], mode: str, acknowledgement: str = "
         if publishing["artifact"] is not True:
             raise PublicationError("artifact publication is disabled")
         return
+    if mode == "cloudflare_kv":
+        settings = publishing["cloudflare_kv"]
+        if not settings["enabled"]:
+            raise PublicationError("Cloudflare KV publication is disabled")
+        if publishing["artifact"]:
+            raise PublicationError(
+                "Cloudflare KV mode requires credential-bearing Actions Artifacts to stay disabled"
+            )
+        if publishing["github_release"]["enabled"]:
+            raise PublicationError(
+                "Cloudflare KV mode requires GitHub Release publication to stay disabled"
+            )
+        if publishing["gist"]["enabled"]:
+            raise PublicationError("Cloudflare KV mode requires Gist publication to stay disabled")
+        return
     if acknowledgement != ACKNOWLEDGEMENT:
         raise PublicationError(
             f"{mode} publication requires the exact acknowledgement {ACKNOWLEDGEMENT!r}"
