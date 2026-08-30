@@ -113,25 +113,98 @@ jobs:
           MIHOMO_BIN: ${{ github.workspace }}/.work/bin/mihomo
         run: pytest -m integration tests/integration --junitxml=.work/integration-${{ matrix.tag }}.xml
 
-  formatting-patch:
-    name: Temporary Ruff remediation patch
+  formatting-remediation:
+    name: One-time Ruff remediation
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ci/initial-verification
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install --requirement requirements-dev.lock --editable .
-      - name: Generate mechanical Ruff patch
+      - name: Apply reviewed lint fixes and remove this one-time job
         shell: bash
         run: |
-          mkdir -p .work
-          ruff check --fix --unsafe-fixes . || true
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/repository_audit.py")
+          text = path.read_text()
+          text = text.replace(
+              '        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")}\:\n'
+              '            if "external-controller:" in text or "secret:" in text\:\n'
+              '                failures.append(f"private controller material found in {relative}")\n',
+              '        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")} and (\n'
+              '            "external-controller:" in text or "secret:" in text\n'
+              '        )\:\n'
+              '            failures.append(f"private controller material found in {relative}")\n',
+          )
+          path.write_text(text)
+
+          path = Path("src/clash_relay/validator.py")
+          text = path.read_text()
+          text = text.replace(
+              '            if isinstance(proxy, dict) and "dialer-proxy" in proxy\:\n'
+              '                if proxy["dialer-proxy"] not in group_names\:\n'
+              '                    errors.append(\n'
+              '                        f"provider {provider_name!r} dialer-proxy references an unknown group"\n'
+              '                    )\n',
+              '            if (\n'
+              '                isinstance(proxy, dict)\n'
+              '                and "dialer-proxy" in proxy\n'
+              '                and proxy["dialer-proxy"] not in group_names\n'
+              '            )\:\n'
+              '                errors.append(\n'
+              '                    f"provider {provider_name!r} dialer-proxy references an unknown group"\n'
+              '                )\n',
+          )
+          path.write_text(text)
+
+          path = Path("tests/test_config_loader.py")
+          path.write_text(path.read_text().replace('match="direct.yaml"', 'match=r"direct\\.yaml"'))
+
+          path = Path("tests/test_status_and_security.py")
+          text = path.read_text()
+          text = text.replace(
+              "from clash_relay.errors import FetchError, GenerationError, PublicationError, SecretError",
+              "from clash_relay.errors import (\\n"
+              "    ConfigurationError,\\n"
+              "    FetchError,\\n"
+              "    GenerationError,\\n"
+              "    PublicationError,\\n"
+              "    SecretError,\\n"
+              ")",
+          )
+          text = text.replace(
+              "with pytest.raises(Exception):\\n        parse_expected_status(expression)",
+              "with pytest.raises(ConfigurationError):\\n        parse_expected_status(expression)",
+          )
+          path.write_text(text)
+
+          path = Path(".github/workflows/ci.yml")
+          text = path.read_text()
+          marker = "\\n  formatting-remediation:\\n"
+          if marker not in text:
+              raise SystemExit("one-time remediation marker not found")
+          path.write_text(text.split(marker, 1)[0] + "\\n")
+          PY
+          ruff check --fix --unsafe-fixes .
           ruff format .
-          git diff -- . ':!.github/workflows/ci.yml' > .work/ruff.patch
-      - uses: actions/upload-artifact@v5
-        with:
-          name: temporary-ruff-remediation-${{ github.run_id }}
-          path: .work/ruff.patch
-          retention-days: 1
-          if-no-files-found: error
+          ruff check .
+          ruff format --check .
+          pytest -q -m "not integration"
+          python scripts/repository_audit.py
+          git diff --check
+      - name: Commit deterministic remediation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply Ruff formatting and lint fixes"
+          git push origin HEAD:ci/initial-verification
