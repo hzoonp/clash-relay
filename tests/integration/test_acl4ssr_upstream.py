@@ -11,6 +11,26 @@ from clash_relay.ai_service_qualification import apply_ai_service_qualification
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
 
+_EXPECTED_COMPATIBILITY_OMISSIONS = {
+    "china_media": (1, "Clash/Providers/ChinaMedia.yaml"),
+    "proxy_media": (1, "Clash/Providers/ProxyMedia.yaml"),
+    "download": (7, "Clash/Providers/Download.yaml"),
+}
+
+
+def _assert_canonical_compatibility_report(report: dict) -> None:
+    assert report["unverified_legacy_rules"] == 0
+    assert report["verified_compatibility_omissions"] == 9
+    actual = {
+        source["id"]: (
+            source["verified_compatibility_omissions"],
+            source["mihomo_compatibility_path"],
+        )
+        for source in report["sources"]
+        if source["verified_compatibility_omissions"]
+    }
+    assert actual == _EXPECTED_COMPATIBILITY_OMISSIONS
+
 
 @pytest.mark.integration
 def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
@@ -174,7 +194,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         for rule in result.config["rules"]
     }
     assert presentation_only.isdisjoint(rule_targets)
-    assert result.report["rule_sources"]["acl4ssr"]["skipped_legacy_rules"] == 0
+    _assert_canonical_compatibility_report(result.report["rule_sources"]["acl4ssr"])
     assert "source_exclusions" not in result.report
 
     candidate = tmp_path / "canonical-strict.yaml"
@@ -192,7 +212,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
 
 
 @pytest.mark.integration
-def test_canonical_acl4ssr_pin_skips_no_legacy_rules(repo_root: Path) -> None:
+def test_canonical_acl4ssr_pin_has_only_verified_legacy_omissions(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
     _providers, _directives, report = load_acl4ssr_rules(
         manifest,
@@ -202,4 +222,4 @@ def test_canonical_acl4ssr_pin_skips_no_legacy_rules(repo_root: Path) -> None:
 
     assert report is not None
     assert report["ref"] == "c498ae4911f15b19c5ceaef6f8737ca8705b4430"
-    assert report["skipped_legacy_rules"] == 0
+    _assert_canonical_compatibility_report(report)
