@@ -118,9 +118,6 @@ def build_candidate(
     enabled_specs = [spec for spec in project.subscriptions if spec.enabled]
     urls, secret_values = resolve_subscription_urls(enabled_specs, secret_file=secret_file, env=env)
     generation = project.config["generation"]
-    subscription_rows = {
-        str(row["id"]): row for row in project.subscriptions_document["subscriptions"]
-    }
     nodes: list[Node] = []
     source_reports: list[dict[str, Any]] = []
     successful = 0
@@ -142,12 +139,9 @@ def build_candidate(
             if not parsed.proxies:
                 raise SubscriptionError("subscription contains no usable proxies")
 
-            row = subscription_rows[spec.id]
-            raw_ceiling = row.get("max_node_multiplier")
-            max_multiplier = float(raw_ceiling) if raw_ceiling is not None else None
             admitted, rejected_multiplier = filter_proxies_by_multiplier(
                 parsed.proxies,
-                max_multiplier=max_multiplier,
+                max_multiplier=spec.max_node_multiplier,
             )
             classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
             nodes.extend(classified)
@@ -162,8 +156,8 @@ def build_candidate(
                 "skipped_invalid_nodes": parsed.skipped_items,
                 "filtered_over_multiplier": rejected_multiplier,
             }
-            if max_multiplier is not None:
-                source_report["max_node_multiplier"] = max_multiplier
+            if spec.max_node_multiplier is not None:
+                source_report["max_node_multiplier"] = spec.max_node_multiplier
             source_reports.append(source_report)
         except (FetchError, SubscriptionError, OSError, ValueError) as exc:
             safe_error = redact_text(str(exc), secret_values)
