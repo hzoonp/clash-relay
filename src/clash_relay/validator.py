@@ -19,6 +19,7 @@ _FORBIDDEN_TOP_LEVEL = {
     "listeners",
     "tunnels",
 }
+_SAFE_SHARED_ANCHOR_PREFIXES = ("__CR_AUTO_", "__CR_FALLBACK_", "__CR_FAIL_CLOSED_")
 
 
 def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
@@ -63,6 +64,27 @@ def _rule_target(rule: str) -> str:
     return parts[2]
 
 
+def _reachable_providers(anchor: str, groups: dict[str, dict[str, Any]]) -> set[str]:
+    found: set[str] = set()
+    pending = [anchor]
+    visited: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in visited:
+            continue
+        visited.add(name)
+        group = groups.get(name)
+        if not isinstance(group, dict):
+            continue
+        uses = group.get("use", [])
+        if isinstance(uses, list):
+            found.update(item for item in uses if isinstance(item, str))
+        references = group.get("proxies", [])
+        if isinstance(references, list):
+            pending.extend(item for item in references if isinstance(item, str) and item in groups)
+    return found
+
+
 def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()) -> None:
     validate_schema(config, "mihomo-output.schema.json", source="generated config", output=True)
     errors: list[str] = []
@@ -73,10 +95,14 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         errors.append(f"forbidden private/control fields are present: {forbidden}")
 
     providers = config.get("proxy-providers", {})
+    rule_providers = config.get("rule-providers", {})
     groups = config.get("proxy-groups", [])
     if not isinstance(providers, dict):
         errors.append("proxy-providers must be a mapping")
         providers = {}
+    if not isinstance(rule_providers, dict):
+        errors.append("rule-providers must be a mapping")
+        rule_providers = {}
     if not isinstance(groups, list):
         errors.append("proxy-groups must be a list")
         groups = []
@@ -134,6 +160,28 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                         f"provider {provider_name!r} dialer-proxy does not reference a controlled chain entry"
                     )
 
+    for provider_name, provider in rule_providers.items():
+        if not isinstance(provider_name, str) or not provider_name:
+            errors.append("rule provider names must be non-empty strings")
+            continue
+        if not isinstance(provider, dict):
+            errors.append(f"rule provider {provider_name!r} is not a mapping")
+            continue
+        if provider.get("type") != "inline":
+            errors.append(f"rule provider {provider_name!r} is not inline")
+        if provider.get("behavior") != "classical":
+            errors.append(f"rule provider {provider_name!r} is not classical")
+        if "url" in provider or "path" in provider:
+            errors.append(f"rule provider {provider_name!r} contains an external URL/path")
+        payload = provider.get("payload")
+        if not isinstance(payload, list) or not payload:
+            errors.append(f"rule provider {provider_name!r} is empty")
+            continue
+        for rule in payload:
+            if not isinstance(rule, str) or not rule.strip() or "," not in rule:
+                errors.append(f"rule provider {provider_name!r} contains an invalid classical rule")
+                break
+
     group_names: set[str] = set()
     group_rows: dict[str, dict[str, Any]] = {}
     for group in groups:
@@ -184,19 +232,24 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
 
             provider_backed = bool(uses)
             if provider_backed:
-                if len(public_refs) != 1 or not str(public_refs[0]).startswith(
-                    "__CR_SERVICE_FALLBACK_"
-                ):
+                if len(public_refs) != 1 or public_refs[0] not in hidden_names:
                     errors.append(
-                        f"provider-backed public group {name!r} must point only to its hidden "
-                        "SERVICE-FALLBACK"
+                        f"provider-backed public group {name!r} must point only to one hidden "
+                        "routing anchor"
                     )
+                else:
+                    reachable = _reachable_providers(str(public_refs[0]), group_rows)
+                    if set(uses) != reachable:
+                        errors.append(
+                            f"provider-backed public group {name!r} exposes providers outside "
+                            "its routing anchor"
+                        )
             else:
                 hidden_refs = [reference for reference in public_refs if reference in hidden_names]
                 unsafe_hidden_refs = [
                     reference
                     for reference in hidden_refs
-                    if not str(reference).startswith("__CR_SERVICE_FALLBACK_")
+                    if not str(reference).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
                 ]
                 if unsafe_hidden_refs:
                     errors.append(
@@ -234,6 +287,10 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         for rule in rules:
             if not isinstance(rule, str):
                 errors.append("generated rules must be strings")
+                continue
+            parts = rule.split(",")
+            if parts[0] == "RULE-SET" and (len(parts) < 3 or parts[1] not in rule_providers):
+                errors.append(f"RULE-SET references unknown rule provider in {rule!r}")
                 continue
             try:
                 target = _rule_target(rule)

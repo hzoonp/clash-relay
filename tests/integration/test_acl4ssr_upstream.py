@@ -34,12 +34,26 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
     result = build_candidate(**paths, env=fixture_env)
     acl_report = result.report["rule_sources"]["acl4ssr"]
     groups = {item["name"]: item for item in result.config["proxy-groups"]}
+    rule_providers = result.config["rule-providers"]
 
     assert acl_report["repository"] == "ACL4SSR/ACL4SSR"
     assert len(acl_report["ref"]) == 40
     assert acl_report["rules"] > 1000
+    assert acl_report["rule_providers"] == len(rule_providers)
+    assert rule_providers
+    assert all(item["type"] == "inline" for item in rule_providers.values())
+    assert all(item["behavior"] == "classical" for item in rule_providers.values())
+    assert all("url" not in item and "path" not in item for item in rule_providers.values())
+    assert any(rule.startswith("RULE-SET,acl4ssr_ai,AI") for rule in result.config["rules"])
+    assert any(
+        rule.startswith("RULE-SET,acl4ssr_youtube,YouTube") for rule in result.config["rules"]
+    )
     assert "GEOIP,CN,Direct,no-resolve" in result.config["rules"]
     assert result.config["rules"][-1] == "MATCH,Final"
+    assert len(result.config["rules"]) < acl_report["rules"]
+    assert groups["Proxy"]["proxies"] == ["__CR_AUTO_GENERAL_ANY"]
+    assert groups["Auto"]["proxies"] == ["__CR_AUTO_GENERAL_ANY"]
+    assert "__CR_SERVICE_FALLBACK_GENERAL" not in groups
     assert groups["Direct"]["proxies"] == ["DIRECT", "Proxy", "Auto"]
     assert groups["Block"]["proxies"] == ["REJECT", "DIRECT"]
     assert groups["AI"]["proxies"] == ["Proxy", "Auto", "Direct"]

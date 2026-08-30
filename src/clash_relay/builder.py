@@ -44,6 +44,29 @@ def _expose_manual_provider_choices(
         for group in groups
         if isinstance(group, dict) and isinstance(group.get("name"), str)
     }
+
+    def provider_names_from_anchor(anchor_name: str) -> list[str]:
+        found: list[str] = []
+        pending = [anchor_name]
+        visited: set[str] = set()
+        while pending:
+            group_name = pending.pop(0)
+            if group_name in visited:
+                continue
+            visited.add(group_name)
+            group = by_name.get(group_name)
+            if not isinstance(group, dict):
+                continue
+            uses = group.get("use", [])
+            if isinstance(uses, list):
+                found.extend(name for name in uses if isinstance(name, str) and name in providers)
+            references = group.get("proxies", [])
+            if isinstance(references, list):
+                pending.extend(
+                    name for name in references if isinstance(name, str) and name in by_name
+                )
+        return unique(found)
+
     for public in groups:
         if not isinstance(public, dict) or public.get("hidden", False):
             continue
@@ -52,25 +75,7 @@ def _expose_manual_provider_choices(
         references = public.get("proxies", [])
         if not isinstance(references, list) or len(references) != 1:
             continue
-        fallback = by_name.get(references[0])
-        if not isinstance(fallback, dict) or fallback.get("proxies") == ["REJECT"]:
-            continue
-
-        provider_names: list[str] = []
-        fallback_children = fallback.get("proxies", [])
-        if not isinstance(fallback_children, list):
-            continue
-        for child_name in fallback_children:
-            child = by_name.get(child_name)
-            if not isinstance(child, dict):
-                continue
-            uses = child.get("use", [])
-            if not isinstance(uses, list):
-                continue
-            provider_names.extend(
-                name for name in uses if isinstance(name, str) and name in providers
-            )
-        provider_names = unique(provider_names)
+        provider_names = provider_names_from_anchor(str(references[0]))
         if provider_names:
             public["use"] = provider_names
 
@@ -163,7 +168,7 @@ def build_candidate(
     if len(deduplicated) < generation["minimum_usable_nodes"]:
         raise GenerationError("usable nodes are below generation.minimum_usable_nodes")
 
-    external_rules, acl_report = load_acl4ssr_rules(
+    external_rule_providers, external_rules, acl_report = load_acl4ssr_rules(
         project.acl4ssr,
         modules=project.config["modules"],
         fetcher=rule_fetcher,
@@ -182,6 +187,7 @@ def build_candidate(
         services=project.services,
         policies=project.policies,
         nodes=deduplicated,
+        external_rule_providers=external_rule_providers,
         external_rules=external_rules,
         external_groups=acl_groups,
         final_target=final_target,

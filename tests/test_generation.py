@@ -50,18 +50,21 @@ def test_every_provider_is_nonempty_and_health_checked(built_candidate) -> None:
         assert provider["health-check"]["expected-status"]
 
 
-def test_layering_is_public_to_fallback_to_auto_to_provider(built_candidate) -> None:
+def test_public_groups_route_through_hidden_anchor_to_provider(built_candidate) -> None:
     config = built_candidate.config
     groups = _groups(config)
     for public in [item for item in config["proxy-groups"] if not item.get("hidden", False)]:
         assert public["type"] == "select"
         assert len(public["proxies"]) == 1
-        fallback = groups[public["proxies"][0]]
-        assert fallback["hidden"] is True
-        if fallback["proxies"] == ["REJECT"]:
+        anchor = groups[public["proxies"][0]]
+        assert anchor["hidden"] is True
+        if anchor.get("proxies") == ["REJECT"]:
             continue
-        assert fallback["type"] == "fallback"
-        for auto_name in fallback["proxies"]:
+        if anchor["type"] == "url-test":
+            assert all(name in config["proxy-providers"] for name in anchor["use"])
+            continue
+        assert anchor["type"] == "fallback"
+        for auto_name in anchor["proxies"]:
             auto = groups[auto_name]
             assert auto["type"] == "url-test"
             assert auto["hidden"] is True
@@ -200,7 +203,7 @@ def test_optional_empty_service_fails_closed(project_factory, fixture_env, yaml_
     yaml_editor(paths["subscriptions_path"], remove_ai_metadata)
     result = _build(paths, fixture_env)
     groups = _groups(result.config)
-    assert groups["__CR_SERVICE_FALLBACK_CHATGPT"]["proxies"] == ["REJECT"]
+    assert groups["__CR_FAIL_CLOSED_CHATGPT"]["proxies"] == ["REJECT"]
     assert not any(name.startswith("cr_chatgpt_") for name in result.config["proxy-providers"])
 
 

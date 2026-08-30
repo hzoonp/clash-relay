@@ -84,7 +84,11 @@ def _internal_names(unit_id: str, region: str) -> tuple[str, str]:
 
 
 def _fallback_name(unit_id: str) -> str:
-    return f"__CR_SERVICE_FALLBACK_{_scope_token(unit_id)}"
+    return f"__CR_FALLBACK_{_scope_token(unit_id)}"
+
+
+def _fail_closed_name(unit_id: str) -> str:
+    return f"__CR_FAIL_CLOSED_{_scope_token(unit_id)}"
 
 
 def _add_provider(
@@ -117,10 +121,10 @@ def _add_provider(
     groups.append(group)
 
 
-def _add_fail_closed_group(groups: list[dict[str, Any]], fallback_name: str) -> None:
+def _add_fail_closed_group(groups: list[dict[str, Any]], anchor_name: str) -> None:
     groups.append(
         {
-            "name": fallback_name,
+            "name": anchor_name,
             "type": "select",
             "hidden": True,
             "proxies": ["REJECT"],
@@ -128,14 +132,12 @@ def _add_fail_closed_group(groups: list[dict[str, Any]], fallback_name: str) -> 
     )
 
 
-def _add_public_group(
-    groups: list[dict[str, Any]], *, display_name: str, fallback_name: str
-) -> None:
+def _add_public_group(groups: list[dict[str, Any]], *, display_name: str, anchor_name: str) -> None:
     groups.append(
         {
             "name": display_name,
             "type": "select",
-            "proxies": [fallback_name],
+            "proxies": [anchor_name],
         }
     )
 
@@ -148,10 +150,9 @@ def _add_regular_unit(
     *,
     probe: dict[str, Any],
     service: bool,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
     unit_id = unit["id"]
     token = _scope_token(unit_id)
-    fallback_name = _fallback_name(unit_id)
     regions = unit["countries"] if service else unit["regions"]
     fallback_order = unit["fallback_order"]
     selector = _normalized_selector(unit, service=service)
@@ -175,30 +176,39 @@ def _add_regular_unit(
             probe=probe,
         )
         auto_by_region[region] = auto_name
+
     fallback_proxies = [
         auto_by_region[region] for region in fallback_order if region in auto_by_region
     ]
     if not fallback_proxies:
         if unit["on_empty"] == "error":
             raise GenerationError(f"required pool {unit_id!r} has no eligible nodes")
-        _add_fail_closed_group(groups, fallback_name)
+        anchor_name = _fail_closed_name(unit_id)
+        _add_fail_closed_group(groups, anchor_name)
+    elif len(fallback_proxies) == 1:
+        anchor_name = fallback_proxies[0]
     else:
+        anchor_name = _fallback_name(unit_id)
         fallback_group = {
-            "name": fallback_name,
+            "name": anchor_name,
             "type": "fallback",
             "hidden": True,
             "proxies": fallback_proxies,
         }
         fallback_group.update(_test_fields(probe))
         groups.append(fallback_group)
-    _add_public_group(groups, display_name=unit["display_name"], fallback_name=fallback_name)
-    return {
-        "id": unit_id,
-        "display_name": unit["display_name"],
-        "eligible_unique_nodes": len(total_fingerprints),
-        "regions": region_counts,
-        "fail_closed": not fallback_proxies,
-    }
+
+    _add_public_group(groups, display_name=unit["display_name"], anchor_name=anchor_name)
+    return (
+        {
+            "id": unit_id,
+            "display_name": unit["display_name"],
+            "eligible_unique_nodes": len(total_fingerprints),
+            "regions": region_counts,
+            "fail_closed": not fallback_proxies,
+        },
+        anchor_name,
+    )
 
 
 def _select_chain_leg(nodes: list[Node], selector: dict[str, Any]) -> list[Node]:
@@ -219,15 +229,15 @@ def _add_chain(
     token = _scope_token(chain["id"])
     entry_auto = f"__CR_CHAIN_ENTRY_AUTO_{token}"
     exit_auto = f"__CR_CHAIN_EXIT_AUTO_{token}"
-    fallback_name = _fallback_name(chain["id"])
     entry_nodes = _select_chain_leg(nodes, chain["entry"])
     exit_nodes = _select_chain_leg(nodes, chain["exit"])
     if not entry_nodes or not exit_nodes:
         if chain["on_empty"] == "error":
             missing = "entry" if not entry_nodes else "exit"
             raise GenerationError(f"chain {chain['id']!r} has no eligible {missing} nodes")
-        _add_fail_closed_group(groups, fallback_name)
-        _add_public_group(groups, display_name=chain["display_name"], fallback_name=fallback_name)
+        anchor_name = _fail_closed_name(chain["id"])
+        _add_fail_closed_group(groups, anchor_name)
+        _add_public_group(groups, display_name=chain["display_name"], anchor_name=anchor_name)
         return {
             "id": chain["id"],
             "display_name": chain["display_name"],
@@ -259,15 +269,7 @@ def _add_chain(
         probe=probe,
         dialer_proxy=entry_auto,
     )
-    fallback = {
-        "name": fallback_name,
-        "type": "fallback",
-        "hidden": True,
-        "proxies": [exit_auto],
-    }
-    fallback.update(_test_fields(probe))
-    groups.append(fallback)
-    _add_public_group(groups, display_name=chain["display_name"], fallback_name=fallback_name)
+    _add_public_group(groups, display_name=chain["display_name"], anchor_name=exit_auto)
     return {
         "id": chain["id"],
         "display_name": chain["display_name"],
@@ -388,6 +390,7 @@ def generate_config(
     services: dict[str, Any],
     policies: dict[str, Any],
     nodes: list[Node],
+    external_rule_providers: dict[str, Any] | None = None,
     external_rules: list[dict[str, Any]] | None = None,
     external_groups: list[dict[str, Any]] | None = None,
     final_target: str | None = None,
@@ -395,6 +398,7 @@ def generate_config(
     providers: dict[str, Any] = {}
     groups: list[dict[str, Any]] = []
     pool_report: list[dict[str, Any]] = []
+    pool_anchors: dict[str, str] = {}
     modules = config["modules"]
 
     pools = list(policies["pools"])
@@ -417,16 +421,17 @@ def generate_config(
         if not modules.get(unit["module"], False):
             continue
         probe = unit["probe"] if kind == "service" else policies["probes"][unit["probe"]]
-        pool_report.append(
-            _add_regular_unit(
-                providers,
-                groups,
-                nodes,
-                unit,
-                probe=probe,
-                service=kind == "service",
-            )
+        report, anchor_name = _add_regular_unit(
+            providers,
+            groups,
+            nodes,
+            unit,
+            probe=probe,
+            service=kind == "service",
         )
+        pool_report.append(report)
+        if kind == "pool":
+            pool_anchors[str(unit["id"])] = anchor_name
 
     for chain in sorted(policies["chains"], key=lambda item: item["id"]):
         if not modules.get(chain["module"], False):
@@ -444,16 +449,11 @@ def generate_config(
     if not groups:
         raise GenerationError("no enabled module produced a public proxy group")
 
-    auto_pools = {
-        str(pool["id"]): _fallback_name(str(pool["id"]))
-        for pool in policies["pools"]
-        if modules.get(str(pool["module"]), False)
-    }
     _add_external_groups(
         groups,
         list(external_groups or []),
         modules=modules,
-        auto_pools=auto_pools,
+        auto_pools=pool_anchors,
     )
 
     available_targets = _BUILTINS | {str(group["name"]) for group in groups}
@@ -480,18 +480,29 @@ def generate_config(
                         _render_rule(rule, pool["display_name"]),
                     )
                 )
+
+    rule_providers = dict(external_rule_providers or {})
     for item in external_rules or []:
         target = str(item["target"])
         if target not in available_targets:
             raise GenerationError(
                 f"external rule source {item['source_id']!r} targets unavailable group {target!r}"
             )
+        if "provider" in item:
+            provider_name = str(item["provider"])
+            if provider_name not in rule_providers:
+                raise GenerationError(
+                    f"external rule source {item['source_id']!r} references missing rule provider"
+                )
+            rendered = f"RULE-SET,{provider_name},{target}"
+        else:
+            rendered = _render_rule(item["rule"], target)
         rule_rows.append(
             (
                 int(item["priority"]),
                 f"acl4ssr:{item['source_id']}",
                 int(item["order"]),
-                _render_rule(item["rule"], target),
+                rendered,
             )
         )
 
@@ -507,11 +518,14 @@ def generate_config(
 
     output = _runtime_config(config)
     output["proxy-providers"] = providers
+    if rule_providers:
+        output["rule-providers"] = rule_providers
     output["proxy-groups"] = groups
     output["rules"] = rendered_rules
     report = {
         "input_nodes": len(nodes),
         "providers": len(providers),
+        "rule_providers": len(rule_providers),
         "proxy_groups": len(groups),
         "public_groups": [group["name"] for group in groups if not group.get("hidden", False)],
         "routing_rules": len(rendered_rules),
