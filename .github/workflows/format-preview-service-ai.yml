@@ -1,0 +1,27 @@
+name: Temporary service AI Ruff preview
+
+on:
+  push:
+    branches:
+      - fix/ai-service-aware-qualification
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Show Ruff formatter diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff format src/clash_relay/ai_service_qualification.py tests/integration/test_ai_service_routing_mihomo.py
+          git diff -- src/clash_relay/ai_service_qualification.py tests/integration/test_ai_service_routing_mihomo.py
