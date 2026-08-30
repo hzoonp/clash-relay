@@ -9,7 +9,25 @@ cost_levels: [standard]
 
 country_classification:
   default: OTHER
-  aliases: {}
+  aliases:
+    HK:
+      - '(?i)(香港|Hong ?Kong|HKG|🇭🇰)'
+      - '(?i)(^|[^A-Za-z])HK([^A-Za-z]|$)'
+    TW:
+      - '(?i)(台湾|臺灣|台北|Taiwan|Taipei|TPE|🇹🇼)'
+      - '(?i)(^|[^A-Za-z])TW([^A-Za-z]|$)'
+    SG:
+      - '(?i)(新加坡|狮城|獅城|Singapore|SIN|🇸🇬)'
+      - '(?i)(^|[^A-Za-z])SG([^A-Za-z]|$)'
+    JP:
+      - '(?i)(日本|东京|東京|大阪|Japan|Tokyo|Osaka|NRT|KIX|🇯🇵)'
+      - '(?i)(^|[^A-Za-z])JP([^A-Za-z]|$)'
+    US:
+      - '(?i)(美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|西雅圖|纽约|紐約|达拉斯|達拉斯|United ?States|Los ?Angeles|San ?Jose|Seattle|New ?York|Dallas|LAX|SJC|SEA|JFK|DFW|🇺🇸)'
+      - '(?i)(^|[^A-Za-z])USA?([^A-Za-z]|$)'
+    KR:
+      - '(?i)(韩国|韓國|首尔|首爾|Korea|Seoul|ICN|🇰🇷)'
+      - '(?i)(^|[^A-Za-z])KR([^A-Za-z]|$)'
 
 probes:
   connectivity:
@@ -19,6 +37,30 @@ probes:
     interval: 300
     timeout: 5000
     lazy: true
+    tolerance: 50
+  ai_openai:
+    url: https://chatgpt.com/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
+    tolerance: 50
+  ai_claude:
+    url: https://claude.ai/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
+    tolerance: 50
+  ai_gemini:
+    url: https://gemini.google.com/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
     tolerance: 50
 
 pools:
@@ -35,6 +77,114 @@ pools:
     on_empty: error
     probe: connectivity
     rule_priority: 1000
+    rules: null
+
+  # AI pools are candidate inventories only. The trusted production workflow
+  # probes every runtime node against OpenAI, Claude, and Gemini and removes
+  # failures before the exact candidate is validated and published.
+  - id: ai_sg
+    display_name: AI · 新加坡
+    module: general
+    source_use: ai
+    regions: [SG]
+    fallback_order: [SG]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1100
+    rules: null
+
+  - id: ai_jp
+    display_name: AI · 日本
+    module: general
+    source_use: ai
+    regions: [JP]
+    fallback_order: [JP]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1110
+    rules: null
+
+  - id: ai_us
+    display_name: AI · 美国
+    module: general
+    source_use: ai
+    regions: [US]
+    fallback_order: [US]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1120
+    rules: null
+
+  - id: ai_hk
+    display_name: AI · 香港
+    module: general
+    source_use: ai
+    regions: [HK]
+    fallback_order: [HK]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1130
+    rules: null
+
+  - id: ai_tw
+    display_name: AI · 台湾
+    module: general
+    source_use: ai
+    regions: [TW]
+    fallback_order: [TW]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1140
+    rules: null
+
+  - id: ai_kr
+    display_name: AI · 韩国
+    module: general
+    source_use: ai
+    regions: [KR]
+    fallback_order: [KR]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1150
+    rules: null
+
+  - id: ai_other
+    display_name: AI · 其他地区
+    module: general
+    source_use: ai
+    regions: [OTHER]
+    fallback_order: [OTHER]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1160
     rules: null
 
 chains: []
