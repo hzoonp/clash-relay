@@ -114,7 +114,6 @@ jobs:
             --candidate .work/private/config.yaml \
             --policies policies.yaml \
             --mihomo-bin .work/bin/mihomo-ai \
-            --workers 24 \
             | tee .work/private/ai-qualification-summary.json
 
       - name: Validate exact qualified candidate with both pinned Mihomo cores
