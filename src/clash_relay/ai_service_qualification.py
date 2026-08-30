@@ -250,6 +250,21 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _hide_country_groups_under_ai_policy(
+    groups: list[dict[str, Any]], country_names: list[str]
+) -> None:
+    by_name = {
+        str(group["name"]): group
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("name"), str)
+    }
+    for country_name in country_names:
+        group = by_name.get(country_name)
+        if not isinstance(group, dict):
+            raise ValidationError("AI policy references a missing country group")
+        group["hidden"] = True
+
+
 def apply_ai_service_qualification(
     config: dict[str, Any],
     qualified_by_probe: dict[str, set[str]],
@@ -366,6 +381,7 @@ def apply_ai_service_qualification(
             failed_closed.append(label)
 
     routing_report = _rewrite_service_rules(config)
+    _hide_country_groups_under_ai_policy(groups, country_order)
     validate_generated_config(config)
     return {
         "qualification_mode": "per-service",
