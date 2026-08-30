@@ -15,3 +15,7 @@ subscriptions:
     allowed_countries: [OTHER]
     default_capabilities: [general]
     default_cost_level: standard
+    # Optional admission ceiling. Only explicit multiplier markers in node names
+    # are evaluated (for example 2x, x2.5, 3倍, 倍率:4). Nodes without an explicit
+    # marker are retained. A value of 2.0 rejects only nodes strictly above 2x.
+    max_node_multiplier: 2.0
