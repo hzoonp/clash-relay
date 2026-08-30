@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
@@ -114,6 +115,11 @@ def _commented_legacy_rules(text: str) -> set[str]:
     return comments
 
 
+def _default_compatibility_path(source_path: str) -> str:
+    path = PurePosixPath(source_path)
+    return str(PurePosixPath("Clash/Providers") / f"{path.stem}.yaml")
+
+
 def _verify_legacy_compatibility(
     *,
     source: dict[str, Any],
@@ -128,12 +134,10 @@ def _verify_legacy_compatibility(
     if not legacy_rules:
         return None
 
+    source_path = str(source["path"])
     compatibility_path = source.get("mihomo_compatibility_path")
     if not isinstance(compatibility_path, str) or not compatibility_path:
-        raise GenerationError(
-            f"ACL4SSR source {source_id!r} contains Mihomo-incompatible legacy rules "
-            "without pinned ACL4SSR compatibility evidence"
-        )
+        compatibility_path = _default_compatibility_path(source_path)
     compatibility_url = _raw_url(repository, ref, compatibility_path)
     try:
         compatibility_text = fetcher(
@@ -145,7 +149,8 @@ def _verify_legacy_compatibility(
         )
     except FetchError as exc:
         raise GenerationError(
-            f"ACL4SSR compatibility source {source_id!r} could not be fetched"
+            f"ACL4SSR source {source_id!r} contains Mihomo-incompatible legacy rules, "
+            "but its pinned ACL4SSR compatibility provider could not be fetched"
         ) from exc
 
     documented_omissions = _commented_legacy_rules(compatibility_text)
