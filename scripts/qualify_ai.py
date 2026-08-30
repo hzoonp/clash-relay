@@ -24,7 +24,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate", type=_path, required=True)
     parser.add_argument("--policies", type=_path, required=True)
     parser.add_argument("--mihomo-bin", type=_path, required=True)
-    parser.add_argument("--workers", type=int, default=24)
     return parser
 
 
@@ -32,12 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         probes = load_ai_probe_specs(args.policies)
-        qualified = probe_ai_nodes(
-            args.mihomo_bin,
-            args.candidate,
-            probes,
-            workers=args.workers,
-        )
+        qualified = probe_ai_nodes(args.mihomo_bin, args.candidate, probes)
         report = rewrite_ai_qualified_candidate(args.candidate, qualified)
         print(json.dumps({"status": "qualified", **report}, ensure_ascii=False, sort_keys=True))
         return 0
