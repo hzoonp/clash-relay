@@ -1,6 +1,6 @@
 # Publishing and promotion
 
-Publication is intentionally downstream of generation. A publisher receives already validated bytes and cannot influence node selection or policy.
+Publication is intentionally downstream of generation and AI qualification. A publisher receives already qualified and validated bytes and cannot influence node selection or policy.
 
 ## Public-repository production path
 
@@ -22,11 +22,16 @@ The credential-bearing candidate never crosses a GitHub Artifact boundary. One d
 2. register each subscription URL with `::add-mask::`;
 3. resolve subscriptions and generate `.work/private/config.yaml` once;
 4. statically validate the candidate during generation;
-5. download and verify pinned Mihomo v1.19.30, then validate the exact candidate;
-6. download and verify pinned Mihomo v1.19.29, then validate the same candidate bytes;
-7. only after both stable cores pass, provide the Cloudflare API token to the final publication step;
-8. resolve the configured Workers KV namespace by exact title and write the exact candidate to the configured key;
-9. remove the private candidate after successful publication. On any earlier failure, the ephemeral runner is destroyed without updating Cloudflare.
+5. download and verify pinned Mihomo v1.19.30 for private AI qualification;
+6. shard AI candidate providers across bounded temporary Mihomo processes, select each candidate node through the local Core API, and issue the configured ChatGPT / Claude / Gemini HTTP(S) requests through that process's local mixed port;
+7. prune every AI node that fails any required service probe and remove empty country groups; if no AI node survives, stop without publishing;
+8. validate the exact qualified candidate with pinned Mihomo v1.19.30;
+9. validate those same qualified candidate bytes with pinned Mihomo v1.19.29;
+10. only after both stable cores pass, provide the Cloudflare API token to the final publication step;
+11. resolve the configured Workers KV namespace by exact title and write the exact candidate to the configured key;
+12. remove the private candidate after successful publication. On any earlier failure, the ephemeral runner is destroyed without updating Cloudflare.
+
+AI qualification receives the generated private candidate, not the original subscription Secret. Temporary Mihomo controller and mixed ports bind to loopback only. Node names, servers, credentials, and per-node service results stay runner-local; the public summary contains aggregate counts only.
 
 Mihomo failure output for a real candidate is redirected to runner-local files and deliberately not printed in the public Actions log. Those files are never uploaded.
 
@@ -80,6 +85,8 @@ This is enforced both by configuration and by workflow regression tests.
 
 ## Failure semantics
 
-Cloudflare is updated only after generation and both pinned stable-core validations succeed. A subscription fetch error, schema failure, graph error, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or KV API failure leaves the previously stored `production-config` untouched.
+Cloudflare is updated only after generation, AI qualification, and both pinned stable-core validations succeed. A subscription fetch error, schema failure, graph error, zero surviving AI nodes, AI probe infrastructure failure, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or KV API failure leaves the previously stored `production-config` untouched.
 
-Because Workers KV is a distributed eventually consistent store, clients may briefly continue to receive an older successful value after a new write. The workflow never intentionally publishes an unvalidated candidate.
+A failure of one AI node does not abort the whole build: that node is removed from AI providers while ordinary `节点选择` remains unchanged. A country with no surviving AI nodes is removed from the `人工智能` selector. Publication aborts only if no AI-qualified node remains at all or if the qualification infrastructure itself cannot complete safely.
+
+Because Workers KV is a distributed eventually consistent store, clients may briefly continue to receive an older successful value after a new write. The workflow never intentionally publishes an unqualified or unvalidated candidate.
