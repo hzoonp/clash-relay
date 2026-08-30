@@ -38,7 +38,11 @@ def apply_acl4ssr_source_exclusions(
     providers = output.get("proxy-providers", {})
     groups = output.get("proxy-groups", [])
     rules = output.get("rules", [])
-    if not isinstance(providers, dict) or not isinstance(groups, list) or not isinstance(rules, list):
+    if (
+        not isinstance(providers, dict)
+        or not isinstance(groups, list)
+        or not isinstance(rules, list)
+    ):
         raise GenerationError("generated proxy provider/group/rule structure is invalid")
 
     by_name: dict[str, dict[str, Any]] = {
@@ -54,8 +58,7 @@ def apply_acl4ssr_source_exclusions(
         unknown = set(excluded_sources) - known_source_ids
         if unknown:
             raise GenerationError(
-                f"{context} excludes unknown subscription sources: "
-                + ", ".join(sorted(unknown))
+                f"{context} excludes unknown subscription sources: " + ", ".join(sorted(unknown))
             )
         return excluded_sources
 
