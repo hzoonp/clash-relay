@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
     class Handler(BaseHTTPRequestHandler):
         def _ok(self) -> None:
             observed.append(self.command)
+            time.sleep(0.03)
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
