@@ -10,6 +10,7 @@ from clash_relay.acl4ssr import load_acl4ssr_rules
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
+from clash_relay.util import dump_yaml
 
 _EXPECTED_COMPATIBILITY_OMISSIONS = {
     "china_media": (1, "Clash/Providers/ChinaMedia.yaml"),
@@ -198,10 +199,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     assert "source_exclusions" not in result.report
 
     candidate = tmp_path / "canonical-strict.yaml"
-    candidate.write_text(
-        yaml.safe_dump(result.config, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    candidate.write_text(dump_yaml(result.config), encoding="utf-8")
     validation = validate_with_mihomo(
         Path(os.environ["MIHOMO_BIN"]),
         candidate,
