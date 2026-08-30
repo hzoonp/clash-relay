@@ -88,7 +88,9 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
         "download": "全球直连",
     }
     sources = {item["id"]: item for item in manifest["sources"]}
-    assert {source_id: source["target"] for source_id, source in sources.items()} == expected_targets
+    assert {
+        source_id: source["target"] for source_id, source in sources.items()
+    } == expected_targets
     assert all("excluded_sources" not in source for source in sources.values())
 
     assert manifest["inline_rules"] == [
