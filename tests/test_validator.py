@@ -81,7 +81,7 @@ def test_public_group_cannot_reference_nodes_directly(built_candidate) -> None:
     config = _candidate(built_candidate)
     public = next(group for group in config["proxy-groups"] if not group.get("hidden", False))
     public["proxies"] = [next(iter(config["proxy-providers"].values()))["payload"][0]["name"]]
-    with pytest.raises(ValidationError, match="SERVICE-FALLBACK"):
+    with pytest.raises(ValidationError, match="routing anchor"):
         validate_generated_config(config)
 
 
@@ -97,18 +97,35 @@ def test_policy_only_public_group_can_reference_valid_public_groups(built_candid
     validate_generated_config(config)
 
 
-def test_policy_only_public_group_cannot_reference_internal_auto_group(built_candidate) -> None:
+def test_policy_only_public_group_can_share_safe_auto_anchor(built_candidate) -> None:
     config = _candidate(built_candidate)
     internal_auto = next(
         group["name"]
         for group in config["proxy-groups"]
-        if group.get("hidden", False) and group["type"] == "url-test"
+        if group.get("hidden", False) and group["name"].startswith("__CR_AUTO_")
     )
     config["proxy-groups"].append(
         {
-            "name": "Unsafe Policy",
+            "name": "Shared Auto Policy",
             "type": "select",
             "proxies": [internal_auto],
+        }
+    )
+    validate_generated_config(config)
+
+
+def test_policy_only_public_group_cannot_reference_chain_internal_group(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    chain_internal = next(
+        group["name"]
+        for group in config["proxy-groups"]
+        if group.get("hidden", False) and group["name"].startswith("__CR_CHAIN_ENTRY_AUTO_")
+    )
+    config["proxy-groups"].append(
+        {
+            "name": "Unsafe Chain Policy",
+            "type": "select",
+            "proxies": [chain_internal],
         }
     )
     with pytest.raises(ValidationError, match="forbidden internal"):
@@ -125,8 +142,44 @@ def test_policy_only_public_group_cannot_attach_provider_use(built_candidate) ->
             "use": [next(iter(config["proxy-providers"]))],
         }
     )
-    with pytest.raises(ValidationError, match=r"provider-backed.*SERVICE-FALLBACK"):
+    with pytest.raises(ValidationError, match=r"provider-backed.*routing anchor"):
         validate_generated_config(config)
+
+
+def test_remote_rule_provider_rejected(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["rule-providers"] = {
+        "remote": {
+            "type": "http",
+            "behavior": "classical",
+            "url": "https://rules.invalid/rules.yaml",
+            "path": "./rules/remote.yaml",
+            "payload": ["DOMAIN-SUFFIX,example.invalid"],
+        }
+    }
+    config["rules"].insert(-1, "RULE-SET,remote,Proxy")
+    with pytest.raises(ValidationError, match="rule provider 'remote' is not inline"):
+        validate_generated_config(config)
+
+
+def test_unknown_rule_provider_rejected(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["rules"].insert(-1, "RULE-SET,missing,Proxy")
+    with pytest.raises(ValidationError, match="unknown rule provider"):
+        validate_generated_config(config)
+
+
+def test_inline_classical_rule_provider_is_allowed(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["rule-providers"] = {
+        "fixture": {
+            "type": "inline",
+            "behavior": "classical",
+            "payload": ["DOMAIN-SUFFIX,example.invalid"],
+        }
+    }
+    config["rules"].insert(-1, "RULE-SET,fixture,Proxy")
+    validate_generated_config(config)
 
 
 def test_hidden_group_requires_reserved_prefix(built_candidate) -> None:
