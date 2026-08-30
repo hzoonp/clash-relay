@@ -40,6 +40,12 @@ def test_public_per_fork_declarations_are_not_ignored(repo_root: Path) -> None:
         assert result.returncode == 1, value
 
 
+def test_public_production_skips_individual_invalid_proxy_entries(repo_root: Path) -> None:
+    for filename in ("config.yaml", "config.example.yaml"):
+        document = yaml.safe_load((repo_root / filename).read_text(encoding="utf-8"))
+        assert document["generation"]["invalid_proxy_policy"] == "skip"
+
+
 def test_lock_files_pin_every_dependency(repo_root: Path) -> None:
     for filename in ["requirements.lock", "requirements-dev.lock"]:
         for raw in (repo_root / filename).read_text(encoding="utf-8").splitlines():
