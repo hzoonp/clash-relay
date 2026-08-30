@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from .errors import FetchError, GenerationError
 from .fetch import fetch_subscription
+from .util import unique
 
 RuleFetcher = Callable[..., str]
 
@@ -35,6 +36,16 @@ _ALLOWED_OPTIONS = {"no-resolve"}
 def _raw_url(repository: str, ref: str, path: str) -> str:
     encoded = quote(path, safe="/")
     return f"https://raw.githubusercontent.com/{repository}/{ref}/{encoded}"
+
+
+def _rule_provider_name(source_id: str) -> str:
+    return f"acl4ssr_{source_id}"
+
+
+def _render_classical_rule(rule: dict[str, Any]) -> str:
+    parts = [str(rule["type"]), str(rule["value"])]
+    parts.extend(str(option) for option in rule.get("options", []))
+    return ",".join(parts)
 
 
 def parse_acl4ssr_list(text: str, *, source_id: str) -> tuple[list[dict[str, Any]], int]:
@@ -86,17 +97,19 @@ def load_acl4ssr_rules(
     modules: Mapping[str, bool],
     fetcher: RuleFetcher = fetch_subscription,
     timeout: int,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Fetch enabled sources from one immutable ACL4SSR commit."""
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
+    """Fetch enabled sources and package them as inline Mihomo rule providers."""
 
     if manifest is None:
-        return [], None
+        return {}, [], None
 
     repository = str(manifest["repository"])
     ref = str(manifest["ref"])
     max_source_bytes = int(manifest["max_source_bytes"])
-    rows: list[dict[str, Any]] = []
+    providers: dict[str, Any] = {}
+    directives: list[dict[str, Any]] = []
     source_reports: list[dict[str, Any]] = []
+    total_rules = 0
 
     for source in sorted(manifest["sources"], key=lambda item: (item["priority"], item["id"])):
         module = source.get("module")
@@ -115,21 +128,31 @@ def load_acl4ssr_rules(
         except FetchError as exc:
             raise GenerationError(f"ACL4SSR source {source_id!r} could not be fetched") from exc
         rules, skipped = parse_acl4ssr_list(text, source_id=source_id)
-        for order, rule in enumerate(rules):
-            rows.append(
-                {
-                    "priority": int(source["priority"]),
-                    "source_id": source_id,
-                    "order": order,
-                    "target": str(source["target"]),
-                    "rule": rule,
-                }
-            )
+        payload = unique(_render_classical_rule(rule) for rule in rules)
+        if not payload:
+            raise GenerationError(f"ACL4SSR source {source_id!r} produced an empty rule provider")
+        provider_name = _rule_provider_name(source_id)
+        providers[provider_name] = {
+            "type": "inline",
+            "behavior": "classical",
+            "payload": payload,
+        }
+        directives.append(
+            {
+                "priority": int(source["priority"]),
+                "source_id": source_id,
+                "order": 0,
+                "target": str(source["target"]),
+                "provider": provider_name,
+            }
+        )
+        total_rules += len(payload)
         source_reports.append(
             {
                 "id": source_id,
                 "path": str(source["path"]),
-                "rules": len(rules),
+                "provider": provider_name,
+                "rules": len(payload),
                 "skipped_legacy_rules": skipped,
             }
         )
@@ -143,7 +166,7 @@ def load_acl4ssr_rules(
         rule: dict[str, Any] = {"type": str(inline["type"]), "value": inline["value"]}
         if inline.get("options"):
             rule["options"] = list(inline["options"])
-        rows.append(
+        directives.append(
             {
                 "priority": int(inline["priority"]),
                 "source_id": str(inline["id"]),
@@ -152,15 +175,17 @@ def load_acl4ssr_rules(
                 "rule": rule,
             }
         )
+        total_rules += 1
 
-    if not rows:
+    if not directives:
         raise GenerationError("ACL4SSR routing is enabled but produced no rules")
     report = {
         "repository": repository,
         "ref": ref,
         "license": str(manifest["license"]),
         "sources": source_reports,
-        "rules": len(rows),
+        "rule_providers": len(providers),
+        "rules": total_rules,
         "skipped_legacy_rules": sum(item["skipped_legacy_rules"] for item in source_reports),
     }
-    return rows, report
+    return providers, directives, report
