@@ -12,7 +12,6 @@ from .schema import load_and_validate
 from .selector import select_nodes
 from .util import safe_identifier, unique
 
-
 _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
 
@@ -21,9 +20,9 @@ def _scope_token(value: str) -> str:
 
 
 def _runtime_name(node: Node, scope: str) -> str:
-    digest = hashlib.sha256(
-        f"{scope}\0{node.source_id}\0{node.fingerprint}".encode("utf-8")
-    ).hexdigest()[:10]
+    digest = hashlib.sha256(f"{scope}\0{node.source_id}\0{node.fingerprint}".encode()).hexdigest()[
+        :10
+    ]
     original = node.original_name.replace("\n", " ").replace("\r", " ").strip()[:96]
     return f"[{scope}] {node.source_id}/{original} #{digest}"
 
@@ -78,7 +77,10 @@ def _normalized_selector(unit: dict[str, Any], *, service: bool) -> dict[str, An
 def _internal_names(unit_id: str, region: str) -> tuple[str, str]:
     token = _scope_token(unit_id)
     region_token = _scope_token(region)
-    return f"cr_{safe_identifier(unit_id)}_{safe_identifier(region)}", f"__CR_AUTO_{token}_{region_token}"
+    return (
+        f"cr_{safe_identifier(unit_id)}_{safe_identifier(region)}",
+        f"__CR_AUTO_{token}_{region_token}",
+    )
 
 
 def _add_provider(
@@ -169,7 +171,9 @@ def _add_regular_unit(
             probe=probe,
         )
         auto_by_region[region] = auto_name
-    fallback_proxies = [auto_by_region[region] for region in fallback_order if region in auto_by_region]
+    fallback_proxies = [
+        auto_by_region[region] for region in fallback_order if region in auto_by_region
+    ]
     if not fallback_proxies:
         if unit["on_empty"] == "error":
             raise GenerationError(f"required pool {unit_id!r} has no eligible nodes")
@@ -219,9 +223,7 @@ def _add_chain(
             missing = "entry" if not entry_nodes else "exit"
             raise GenerationError(f"chain {chain['id']!r} has no eligible {missing} nodes")
         _add_fail_closed_group(groups, fallback_name)
-        _add_public_group(
-            groups, display_name=chain["display_name"], fallback_name=fallback_name
-        )
+        _add_public_group(groups, display_name=chain["display_name"], fallback_name=fallback_name)
         return {
             "id": chain["id"],
             "display_name": chain["display_name"],
@@ -373,7 +375,11 @@ def generate_config(
         if modules.get(service["module"], False):
             for rule in _load_rules(root, service["rules"]):
                 rule_rows.append(
-                    (service["rule_priority"], service["id"], _render_rule(rule, service["display_name"]))
+                    (
+                        service["rule_priority"],
+                        service["id"],
+                        _render_rule(rule, service["display_name"]),
+                    )
                 )
     for pool in policies["pools"]:
         if modules.get(pool["module"], False) and pool["rules"]:

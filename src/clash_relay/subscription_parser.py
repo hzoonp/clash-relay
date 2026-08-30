@@ -10,7 +10,6 @@ from .errors import SubscriptionError, UnsafeSubscriptionError
 from .uri_parser import decode_base64_text, parse_proxy_uri
 from .util import deep_size_guard, stable_json, yaml_load_no_aliases
 
-
 _ALLOWED_PROXY_TYPES = {
     "ss",
     "ssr",
@@ -189,7 +188,9 @@ def _parse_payload(text: str, *, depth: int = 0) -> list[Any]:
     try:
         decoded = decode_base64_text(stripped)
     except SubscriptionError as exc:
-        raise SubscriptionError("payload is neither Clash YAML, proxy URI lines, nor base64") from exc
+        raise SubscriptionError(
+            "payload is neither Clash YAML, proxy URI lines, nor base64"
+        ) from exc
     if decoded.strip() == stripped:
         raise SubscriptionError("subscription base64 decoding made no progress")
     return _parse_payload(decoded, depth=depth + 1)

@@ -30,17 +30,13 @@ def test_secret_and_generated_paths_are_ignored(repo_root: Path) -> None:
         "providers/cache.yaml",
     ]
     for value in ignored:
-        result = subprocess.run(
-            ["git", "check-ignore", "-q", value], cwd=repo_root, check=False
-        )
+        result = subprocess.run(["git", "check-ignore", "-q", value], cwd=repo_root, check=False)
         assert result.returncode == 0, value
 
 
 def test_public_per_fork_declarations_are_not_ignored(repo_root: Path) -> None:
     for value in ["config.yaml", "subscriptions.yaml"]:
-        result = subprocess.run(
-            ["git", "check-ignore", "-q", value], cwd=repo_root, check=False
-        )
+        result = subprocess.run(["git", "check-ignore", "-q", value], cwd=repo_root, check=False)
         assert result.returncode == 1, value
 
 
@@ -62,15 +58,11 @@ def test_workflows_parse_as_yaml(repo_root: Path) -> None:
 
 def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> None:
     for name in ("ci.yml", "publish.yml"):
-        workflow = (repo_root / ".github" / "workflows" / name).read_text(
-            encoding="utf-8"
-        )
+        workflow = (repo_root / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "always()" not in workflow
         assert "continue-on-error" not in workflow
 
-    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(
-        encoding="utf-8"
-    )
+    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     required_needs = """needs:
       - prepare
       - candidate
@@ -84,9 +76,7 @@ def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> No
 
 
 def test_public_release_and_gist_have_two_key_runtime_gates(repo_root: Path) -> None:
-    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(
-        encoding="utf-8"
-    )
+    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     assert "needs.promote.outputs.release_enabled == 'true'" in publish
     assert "vars.PUBLISH_PUBLIC_RELEASE == 'true'" in publish
     assert "needs.promote.outputs.gist_enabled == 'true'" in publish

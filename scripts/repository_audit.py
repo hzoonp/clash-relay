@@ -7,7 +7,6 @@ import re
 import subprocess
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_BASENAMES = {
     ".env",
@@ -60,9 +59,10 @@ def main() -> int:
         for label, pattern in TOKEN_PATTERNS.items():
             if pattern.search(text):
                 failures.append(f"{label} found in {relative}")
-        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")}:
-            if "external-controller:" in text or "secret:" in text:
-                failures.append(f"private controller material found in {relative}")
+        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")} and (
+            "external-controller:" in text or "secret:" in text
+        ):
+            failures.append(f"private controller material found in {relative}")
     if failures:
         raise SystemExit("repository safety audit failed:\n- " + "\n- ".join(failures))
     print(f"repository safety audit passed ({len(repository_files())} files checked)")

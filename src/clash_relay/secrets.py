@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import SecretError
 from .models import SubscriptionSpec
@@ -37,7 +38,9 @@ def _parse_mapping_text(text: str, *, source: str) -> dict[str, str]:
     return _normalize_mapping(decoded, source=source)
 
 
-def load_secret_mapping(secret_file: Path | None = None, env: Mapping[str, str] | None = None) -> dict[str, str]:
+def load_secret_mapping(
+    secret_file: Path | None = None, env: Mapping[str, str] | None = None
+) -> dict[str, str]:
     environment = os.environ if env is None else env
     result: dict[str, str] = {}
     bundle = environment.get("CLASH_RELAY_SUBSCRIPTIONS")

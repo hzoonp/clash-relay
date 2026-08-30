@@ -6,7 +6,6 @@ from typing import Any
 
 from .errors import PublicationError
 
-
 ACKNOWLEDGEMENT = "I_UNDERSTAND_THIS_PUBLISHES_PROXY_CREDENTIALS"
 
 

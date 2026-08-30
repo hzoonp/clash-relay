@@ -10,7 +10,7 @@ from clash_relay.errors import SubscriptionError
 from clash_relay.subscription_parser import parse_subscription
 
 
-def _http(name: str = "Node", server: str = "node.invalid.example", port=443):  # noqa: ANN001, ANN202
+def _http(name: str = "Node", server: str = "node.invalid.example", port=443):
     return {"name": name, "type": "http", "server": server, "port": port}
 
 
@@ -41,9 +41,7 @@ def test_parse_inline_provider_payload() -> None:
 
 def test_remote_provider_is_not_followed_and_yields_empty() -> None:
     document = {
-        "proxy-providers": {
-            "remote": {"type": "http", "url": "https://ignored.invalid/secret"}
-        }
+        "proxy-providers": {"remote": {"type": "http", "url": "https://ignored.invalid/secret"}}
     }
     result = parse_subscription(yaml.safe_dump(document))
     assert result.proxies == ()
@@ -164,7 +162,7 @@ def test_numeric_string_port_is_normalized() -> None:
 
 
 @pytest.mark.parametrize("port", [0, 65536, -1, "not-a-number", True])
-def test_invalid_ports_rejected(port) -> None:  # noqa: ANN001
+def test_invalid_ports_rejected(port) -> None:
     with pytest.raises(SubscriptionError, match="valid port"):
         parse_subscription(yaml.safe_dump({"proxies": [_http(port=port)]}))
 

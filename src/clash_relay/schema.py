@@ -10,7 +10,6 @@ from jsonschema import Draft202012Validator, FormatChecker
 from .errors import ConfigurationError, ValidationError
 from .util import load_yaml_file
 
-
 _SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
 
 

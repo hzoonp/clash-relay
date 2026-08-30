@@ -55,8 +55,10 @@ def _probe_semantics(probe: dict[str, Any], label: str) -> None:
 
 
 def _selector_capabilities(selector: dict[str, Any]) -> set[str]:
-    return set(selector["capabilities_any"]) | set(selector["capabilities_all"]) | set(
-        selector["excluded_capabilities"]
+    return (
+        set(selector["capabilities_any"])
+        | set(selector["capabilities_all"])
+        | set(selector["excluded_capabilities"])
     )
 
 
@@ -68,9 +70,7 @@ def load_project(
     policies_path: Path,
 ) -> ProjectDefinition:
     config = load_and_validate(config_path, "config.schema.json")
-    subscriptions_document = load_and_validate(
-        subscriptions_path, "subscriptions.schema.json"
-    )
+    subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
     services = load_and_validate(services_path, "services.schema.json")
     policies = load_and_validate(policies_path, "policies.schema.json")
     root = Path(
@@ -106,9 +106,7 @@ def load_project(
 
     capability_definitions = policies["capabilities"]
     capabilities = set(capability_definitions)
-    restricted = {
-        key for key, value in capability_definitions.items() if bool(value["restricted"])
-    }
+    restricted = {key for key, value in capability_definitions.items() if bool(value["restricted"])}
     cost_levels = set(policies["cost_levels"])
     countries = set(policies["country_classification"]["aliases"])
     countries.add(policies["country_classification"]["default"])
@@ -131,9 +129,7 @@ def load_project(
                 f"subscription {row['id']!r} uses unknown capabilities: {sorted(unknown_caps)}"
             )
         if row["default_cost_level"] not in cost_levels:
-            raise ConfigurationError(
-                f"subscription {row['id']!r} uses unknown cost level"
-            )
+            raise ConfigurationError(f"subscription {row['id']!r} uses unknown cost level")
         unknown_countries = set(row["allowed_countries"]) - countries
         if unknown_countries:
             raise ConfigurationError(
@@ -144,9 +140,7 @@ def load_project(
                 metadata.get("remove_capabilities", [])
             )
             if node_caps - capabilities:
-                raise ConfigurationError(
-                    f"node metadata {node_name!r} uses unknown capabilities"
-                )
+                raise ConfigurationError(f"node metadata {node_name!r} uses unknown capabilities")
             if metadata.get("cost_level", row["default_cost_level"]) not in cost_levels:
                 raise ConfigurationError(f"node metadata {node_name!r} uses unknown cost level")
             if metadata.get("country", "OTHER") not in countries:
@@ -195,9 +189,7 @@ def load_project(
         _probe_semantics(probe, f"probe {name!r}")
     for service in service_rows:
         _probe_semantics(service["probe"], f"service {service['id']!r} probe")
-        used_caps = set(service["required_capabilities"]) | set(
-            service["excluded_capabilities"]
-        )
+        used_caps = set(service["required_capabilities"]) | set(service["excluded_capabilities"])
         if used_caps - capabilities:
             raise ConfigurationError(f"service {service['id']!r} uses unknown capabilities")
         if set(service["allowed_cost_levels"]) - cost_levels:
@@ -219,9 +211,7 @@ def load_project(
         if set(pool["regions"]) - countries:
             raise ConfigurationError(f"pool {pool['id']!r} uses unknown regions")
         if not set(pool["fallback_order"]).issubset(pool["regions"]):
-            raise ConfigurationError(
-                f"pool {pool['id']!r} fallback_order is outside its regions"
-            )
+            raise ConfigurationError(f"pool {pool['id']!r} fallback_order is outside its regions")
         if pool["rules"]:
             _resolve_rule(root, pool["rules"])
     for chain in chain_rows:

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ConfigurationError
@@ -26,7 +25,7 @@ def test_fixture_project_loads(project_paths: dict[str, Path]) -> None:
 def test_arbitrary_subscription_count_is_data_driven(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
 
-    def add(document):  # noqa: ANN001
+    def add(document):
         item = dict(document["subscriptions"][1])
         item.update(id="fourth", secret_name="SUB_FOURTH", display_name="Fourth")
         document["subscriptions"].append(item)
@@ -40,7 +39,7 @@ def test_arbitrary_subscription_count_is_data_driven(project_factory, yaml_edito
 def test_duplicate_subscription_identity_fails(project_factory, yaml_editor, field: str) -> None:
     _, paths = project_factory()
 
-    def duplicate(document):  # noqa: ANN001
+    def duplicate(document):
         document["subscriptions"][1][field] = document["subscriptions"][0][field]
 
     yaml_editor(paths["subscriptions_path"], duplicate)
@@ -78,7 +77,7 @@ def test_unknown_cost_level_fails(project_factory, yaml_editor) -> None:
 def test_restricted_capability_name_inference_requires_opt_in(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
 
-    def mutate(data):  # noqa: ANN001
+    def mutate(data):
         data["subscriptions"][0]["name_rules"] = [
             {"pattern": "home", "add_capabilities": ["residential"]}
         ]
@@ -88,10 +87,12 @@ def test_restricted_capability_name_inference_requires_opt_in(project_factory, y
         load_project(**paths)
 
 
-def test_restricted_capability_name_inference_explicit_opt_in_loads(project_factory, yaml_editor) -> None:
+def test_restricted_capability_name_inference_explicit_opt_in_loads(
+    project_factory, yaml_editor
+) -> None:
     _, paths = project_factory()
 
-    def mutate(data):  # noqa: ANN001
+    def mutate(data):
         data["subscriptions"][0]["name_rules"] = [
             {
                 "pattern": "home",
@@ -188,7 +189,7 @@ def test_public_subscription_url_field_is_rejected(project_factory, yaml_editor)
 def test_missing_direct_rules_fails(project_factory) -> None:
     root, paths = project_factory()
     (root / "rules/direct.yaml").unlink()
-    with pytest.raises(ConfigurationError, match="direct.yaml"):
+    with pytest.raises(ConfigurationError, match=r"direct\.yaml"):
         load_project(**paths)
 
 

@@ -70,7 +70,7 @@ def project_factory(tmp_path: Path, repo_root: Path):
 
 @pytest.fixture
 def yaml_editor():
-    def edit(path: Path, callback):  # noqa: ANN001, ANN202
+    def edit(path: Path, callback):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         callback(data)
         path.write_text(dump_yaml(data), encoding="utf-8")
