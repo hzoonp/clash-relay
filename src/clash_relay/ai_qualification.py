@@ -8,6 +8,7 @@ import os
 import re
 import signal
 import socket
+import ssl
 import subprocess
 import tempfile
 import time
@@ -28,6 +29,7 @@ DEFAULT_PROBE_NAMES = ("ai_openai", "ai_claude", "ai_gemini")
 _PROBE_GROUP = "__CR_AI_PROBE"
 _DEFAULT_WORKERS = 12
 _SHARD_SIZE = 20
+_NETWORK_ATTEMPTS = 2
 _STATUS_TOKEN_RE = re.compile(r"^(\d{3})(?:-(\d{3}))?$")
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -86,10 +88,13 @@ def load_ai_probe_specs(
         if not isinstance(probe, dict):
             raise ValidationError(f"AI qualification probe {name!r} is missing")
         url = probe.get("url")
+        method = probe.get("method")
         expected = probe.get("expected_status")
         timeout = probe.get("timeout")
         if not isinstance(url, str) or not url.startswith("https://"):
             raise ValidationError(f"AI qualification probe {name!r} must use HTTPS")
+        if method != "HEAD":
+            raise ValidationError(f"AI qualification probe {name!r} must use HEAD")
         _expected_status_ranges(expected)
         if not isinstance(timeout, int) or timeout < 100:
             raise ValidationError(f"AI qualification probe {name!r} has an invalid timeout")
@@ -97,6 +102,7 @@ def load_ai_probe_specs(
             {
                 "name": name,
                 "url": url,
+                "method": method,
                 "expected_status": str(expected),
                 "timeout": timeout,
             }
@@ -248,7 +254,7 @@ def _select_node(port: int, secret: str, node_name: str) -> bool:
             data=body,
             method="PUT",
             headers={
-                "Authorization": f"Bearer {secret}",
+                "Authorization": f"Bearer {secret}"},
                 "Content-Type": "application/json",
             },
         )
@@ -265,42 +271,117 @@ def _select_node(port: int, secret: str, node_name: str) -> bool:
     return False
 
 
-def _request_status(mixed_port: int, probe: dict[str, Any]) -> int | None:
+def _network_outcome(exc: BaseException) -> str:
+    reason: BaseException | Any = exc
+    if isinstance(exc, urllib.error.URLError):
+        reason = exc.reason
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "timeout"
+    if isinstance(reason, socket.gaierror):
+        return "dns_error"
+    if isinstance(reason, ssl.SSLError):
+        return "tls_error"
+    if isinstance(reason, (ConnectionRefusedError, ConnectionResetError, BrokenPipeError)):
+        return "connection_error"
+    return "network_error"
+
+
+def _request_outcome(mixed_port: int, probe: dict[str, Any]) -> dict[str, Any]:
     proxy_url = f"http://127.0.0.1:{mixed_port}"
     opener = urllib.request.build_opener(
         urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
     )
-    request = urllib.request.Request(
-        str(probe["url"]),
-        method="GET",
-        headers={
-            "User-Agent": _USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-            "Cache-Control": "no-cache",
-        },
-    )
     timeout = (int(probe["timeout"]) / 1000) + 1
-    try:
-        with opener.open(request, timeout=timeout) as response:
-            return int(response.status)
-    except urllib.error.HTTPError as exc:
-        return int(exc.code)
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
-        return None
+    method = str(probe["method"])
+    last_network_outcome = "network_error"
+
+    for _ in range(_NETWORK_ATTEMPTS):
+        request = urllib.request.Request(
+            str(probe["url"]),
+            method=method,
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                status = int(response.status)
+        except urllib.error.HTTPError as exc:
+            status = int(exc.code)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            last_network_outcome = _network_outcome(exc)
+            continue
+
+        return {
+            "probe": str(probe["name"]),
+            "passed": _status_matches(probe["expected_status"], status),
+            "outcome": f"status_{status}",
+        }
+
+    return {
+        "probe": str(probe["name"]),
+        "passed": False,
+        "outcome": last_network_outcome,
+    }
 
 
-def _selected_node_passes(mixed_port: int, probes: tuple[dict[str, Any], ...]) -> bool:
+def _selected_node_results(
+    mixed_port: int, probes: tuple[dict[str, Any], ...]
+) -> tuple[bool, tuple[dict[str, Any], ...]]:
     worker_count = max(1, min(3, len(probes)))
+    results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = {executor.submit(_request_status, mixed_port, probe): probe for probe in probes}
+        futures = {executor.submit(_request_outcome, mixed_port, probe): probe for probe in probes}
         for future in as_completed(futures):
-            status = future.result()
-            probe = futures[future]
-            if status is None or not _status_matches(probe["expected_status"], status):
-                for pending in futures:
-                    pending.cancel()
-                return False
-    return True
+            results.append(future.result())
+    results.sort(key=lambda item: str(item["probe"]))
+    return all(bool(item["passed"]) for item in results), tuple(results)
+
+
+def _new_diagnostics(probes: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    return {
+        "tested_nodes": 0,
+        "qualified_nodes": 0,
+        "selector_failures": 0,
+        "probes": {
+            str(probe["name"]): {
+                "method": str(probe["method"]),
+                "expected_status": str(probe["expected_status"]),
+                "passed": 0,
+                "failed": 0,
+                "outcomes": {},
+            }
+            for probe in probes
+        },
+    }
+
+
+def _record_probe_results(
+    diagnostics: dict[str, Any], results: tuple[dict[str, Any], ...]
+) -> None:
+    probes = diagnostics["probes"]
+    for result in results:
+        probe = probes[str(result["probe"])]
+        key = "passed" if result["passed"] else "failed"
+        probe[key] += 1
+        outcome = str(result["outcome"])
+        probe["outcomes"][outcome] = int(probe["outcomes"].get(outcome, 0)) + 1
+
+
+def _merge_diagnostics(target: dict[str, Any], source: dict[str, Any]) -> None:
+    target["tested_nodes"] += int(source["tested_nodes"])
+    target["qualified_nodes"] += int(source["qualified_nodes"])
+    target["selector_failures"] += int(source["selector_failures"])
+    for name, source_probe in source["probes"].items():
+        target_probe = target["probes"][name]
+        target_probe["passed"] += int(source_probe["passed"])
+        target_probe["failed"] += int(source_probe["failed"])
+        for outcome, count in source_probe["outcomes"].items():
+            target_probe["outcomes"][outcome] = (
+                int(target_probe["outcomes"].get(outcome, 0)) + int(count)
+            )
 
 
 def _qualify_shard(
@@ -309,7 +390,9 @@ def _qualify_shard(
     provider_name: str,
     payload: tuple[dict[str, Any], ...],
     probes: tuple[dict[str, Any], ...],
-) -> set[str]:
+) -> tuple[set[str], dict[str, Any]]:
+    diagnostics = _new_diagnostics(probes)
+    diagnostics["tested_nodes"] = len(payload)
     with tempfile.TemporaryDirectory(prefix="clash-relay-ai-") as temp_name:
         workdir = Path(temp_name)
         mixed_port = _free_port()
@@ -362,10 +445,14 @@ def _qualify_shard(
                 if process.poll() is not None:
                     raise ValidationError("Mihomo exited during AI qualification")
                 if not _select_node(controller_port, secret, name):
+                    diagnostics["selector_failures"] += 1
                     continue
-                if _selected_node_passes(mixed_port, probes):
+                passed, results = _selected_node_results(mixed_port, probes)
+                _record_probe_results(diagnostics, results)
+                if passed:
                     qualified.add(name)
-            return qualified
+            diagnostics["qualified_nodes"] = len(qualified)
+            return qualified, diagnostics
         finally:
             if process.poll() is None:
                 with contextlib.suppress(ProcessLookupError):
@@ -384,6 +471,7 @@ def probe_ai_nodes(
     probes: tuple[dict[str, Any], ...],
     *,
     workers: int = _DEFAULT_WORKERS,
+    diagnostics: dict[str, Any] | None = None,
 ) -> set[str]:
     """Return runtime proxy names that pass every configured live AI service probe."""
     binary = binary.resolve()
@@ -398,12 +486,15 @@ def probe_ai_nodes(
         raise ValidationError("AI qualification requires at least one probe")
     for probe in probes:
         _expected_status_ranges(probe["expected_status"])
+        if probe.get("method") != "HEAD":
+            raise ValidationError("AI qualification runtime probes must use HEAD")
 
     shards: list[tuple[str, tuple[dict[str, Any], ...]]] = []
     for provider_name, payload in provider_payloads.items():
         for start in range(0, len(payload), _SHARD_SIZE):
             shards.append((provider_name, payload[start : start + _SHARD_SIZE]))
 
+    aggregate = _new_diagnostics(probes)
     qualified: set[str] = set()
     worker_count = max(1, min(int(workers), len(shards)))
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -419,7 +510,14 @@ def probe_ai_nodes(
             for index, (provider_name, payload) in enumerate(shards)
         }
         for future in as_completed(futures):
-            qualified.update(future.result())
+            shard_qualified, shard_diagnostics = future.result()
+            qualified.update(shard_qualified)
+            _merge_diagnostics(aggregate, shard_diagnostics)
+
+    aggregate["qualified_nodes"] = len(qualified)
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update(aggregate)
     return qualified
 
 
