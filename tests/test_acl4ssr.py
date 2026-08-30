@@ -34,33 +34,22 @@ def test_parse_acl4ssr_list_rejects_unknown_rule_types() -> None:
         parse_acl4ssr_list("FUTURE-RULE,example.com\n", source_id="fixture")
 
 
-def test_acl4ssr_manifest_is_immutable_and_attributed(repo_root: Path) -> None:
+def test_acl4ssr_manifest_is_immutable_attributed_and_compact(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
     assert manifest["repository"] == "ACL4SSR/ACL4SSR"
     assert len(manifest["ref"]) == 40
     assert all(character in "0123456789abcdef" for character in manifest["ref"])
     assert manifest["ref"] != "master"
     assert manifest["license"] == "CC-BY-SA-4.0"
-    assert manifest["final_target"] == "漏网之鱼"
+    assert manifest["final_target"] == "节点选择"
     assert {item["display_name"] for item in manifest["groups"]} == {
-        "直连",
         "广告拦截",
-        "谷歌FCM",
-        "微软服务",
-        "苹果服务",
-        "电报消息",
         "人工智能",
-        "网易音乐",
-        "游戏平台",
-        "油管视频",
-        "奈飞视频",
-        "巴哈姆特",
-        "哔哩哔哩",
-        "国内媒体",
-        "国外媒体",
-        "漏网之鱼",
+        "流媒体",
+        "国内服务",
     }
-    source_ids = {item["id"] for item in manifest["sources"]}
+
+    sources = {item["id"]: item for item in manifest["sources"]}
     assert {
         "unban",
         "google_fcm",
@@ -70,7 +59,15 @@ def test_acl4ssr_manifest_is_immutable_and_attributed(repo_root: Path) -> None:
         "netflix",
         "proxy_gfwlist",
         "download",
-    }.issubset(source_ids)
+    }.issubset(sources)
+    assert sources["local_area_network"]["target"] == "DIRECT"
+    assert sources["ban_ad"]["target"] == "广告拦截"
+    assert sources["google_fcm"]["target"] == "国内服务"
+    assert sources["telegram"]["target"] == "节点选择"
+    assert sources["ai"]["target"] == "人工智能"
+    assert sources["youtube"]["target"] == "流媒体"
+    assert sources["proxy_gfwlist"]["target"] == "节点选择"
+    assert sources["china_domain"]["target"] == "DIRECT"
 
 
 def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> None:
