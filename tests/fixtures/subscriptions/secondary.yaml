@@ -1,0 +1,17 @@
+proxies:
+  - name: Fictional General US 01
+    type: http
+    server: secondary-general-us.invalid.example
+    port: 22001
+  - name: Fictional AI JP 01
+    type: http
+    server: secondary-ai-jp.invalid.example
+    port: 22002
+  - name: Fictional AI SG 01
+    type: http
+    server: secondary-ai-sg.invalid.example
+    port: 22003
+  - name: Duplicate General JP
+    type: http
+    server: primary-general-jp.invalid.example
+    port: 21001

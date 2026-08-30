@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clash-relay.invalid/schema/subscriptions.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "subscriptions"],
+  "properties": {
+    "version": {"const": 1},
+    "subscriptions": {"type": "array", "items": {"$ref": "#/$defs/subscription"}}
+  },
+  "$defs": {
+    "capabilityList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+    },
+    "nodeMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "country": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "add_capabilities": {"$ref": "#/$defs/capabilityList"},
+        "remove_capabilities": {"$ref": "#/$defs/capabilityList"},
+        "cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+      }
+    },
+    "nameRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern"],
+      "properties": {
+        "pattern": {"type": "string", "minLength": 1, "maxLength": 500},
+        "country": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "add_capabilities": {"$ref": "#/$defs/capabilityList"},
+        "remove_capabilities": {"$ref": "#/$defs/capabilityList"},
+        "cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "allow_restricted_capabilities": {"type": "boolean", "default": false}
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "display_name", "enabled", "required", "secret_name", "priority", "on_error",
+        "allowed_uses", "allowed_countries", "default_capabilities", "default_cost_level"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 100},
+        "enabled": {"type": "boolean"},
+        "required": {"type": "boolean"},
+        "secret_name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
+        "priority": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "on_error": {"enum": ["fail", "skip"]},
+        "allowed_uses": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(?:\\*|[a-z][a-z0-9_]*)$"}
+        },
+        "allowed_countries": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(?:\\*|[A-Z][A-Z0-9_]*)$"}
+        },
+        "default_capabilities": {"$ref": "#/$defs/capabilityList"},
+        "default_cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "node_metadata": {
+          "type": "object",
+          "propertyNames": {"minLength": 1, "maxLength": 256},
+          "additionalProperties": {"$ref": "#/$defs/nodeMetadata"}
+        },
+        "name_rules": {"type": "array", "items": {"$ref": "#/$defs/nameRule"}}
+      }
+    }
+  }
+}

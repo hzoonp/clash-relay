@@ -1,0 +1,9 @@
+version: 1
+rules:
+  - {type: DOMAIN, value: localhost}
+  - {type: IP-CIDR, value: 127.0.0.0/8, options: [no-resolve]}
+  - {type: IP-CIDR, value: 10.0.0.0/8, options: [no-resolve]}
+  - {type: IP-CIDR, value: 172.16.0.0/12, options: [no-resolve]}
+  - {type: IP-CIDR, value: 192.168.0.0/16, options: [no-resolve]}
+  - {type: IP-CIDR6, value: "::1/128", options: [no-resolve]}
+  - {type: IP-CIDR6, value: fc00::/7, options: [no-resolve]}

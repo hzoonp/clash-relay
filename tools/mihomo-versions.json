@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "repository": "MetaCubeX/mihomo",
+  "stable": [
+    {
+      "tag": "v1.19.30",
+      "asset_patterns": {
+        "linux-amd64": "^mihomo-linux-amd64-v1\\.19\\.30\\.gz$",
+        "linux-arm64": "^mihomo-linux-arm64-v1\\.19\\.30\\.gz$"
+      }
+    },
+    {
+      "tag": "v1.19.29",
+      "asset_patterns": {
+        "linux-amd64": "^mihomo-linux-amd64-v1\\.19\\.29\\.gz$",
+        "linux-arm64": "^mihomo-linux-arm64-v1\\.19\\.29\\.gz$"
+      }
+    }
+  ],
+  "prerelease": [
+    {
+      "tag": "Prerelease-Alpha",
+      "asset_patterns": {
+        "linux-amd64": "^mihomo-linux-amd64-alpha-.*\\.gz$",
+        "linux-arm64": "^mihomo-linux-arm64-alpha-.*\\.gz$"
+      }
+    }
+  ]
+}

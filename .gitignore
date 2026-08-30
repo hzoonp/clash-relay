@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secret material: never commit
+.env
+.env.*
+!.env.example
+.secrets/
+secrets.yaml
+secrets.yml
+secrets.json
+subscriptions.secret.yaml
+subscriptions.secret.yml
+subscriptions.secret.json
+
+# Public per-fork declarations may be committed; URLs still belong only in Secrets.
+
+# Generated output may contain proxy credentials
+dist/*
+!dist/.gitkeep
+.work/
+.cache/
+run/
+providers/
+proxy_providers/
+*.log
+
+# Downloaded binaries and archives
+bin/
+mihomo
+mihomo.exe
+*.tar.gz
+
+# Local public configuration variants (canonical config.yaml/subscriptions.yaml are intended to be committed)
+config.local.yaml
+subscriptions.local.yaml

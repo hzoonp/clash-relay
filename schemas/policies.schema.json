@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clash-relay.invalid/schema/policies.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "capabilities", "cost_levels", "country_classification", "probes", "pools", "chains"],
+  "properties": {
+    "version": {"const": 1},
+    "capabilities": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["description", "restricted"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1},
+          "restricted": {"type": "boolean"}
+        }
+      }
+    },
+    "cost_levels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}},
+    "country_classification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["default", "aliases"],
+      "properties": {
+        "default": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "aliases": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
+          "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "maxLength": 500}}
+        }
+      }
+    },
+    "probes": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"$ref": "#/$defs/probe"}
+    },
+    "pools": {"type": "array", "items": {"$ref": "#/$defs/pool"}},
+    "chains": {"type": "array", "items": {"$ref": "#/$defs/chain"}}
+  },
+  "$defs": {
+    "stringList": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "probe": {
+      "type": "object", "additionalProperties": false,
+      "required": ["url", "method", "expected_status", "interval", "timeout", "lazy", "tolerance"],
+      "properties": {
+        "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "method": {"const": "HEAD"},
+        "expected_status": {"type": "string", "pattern": "^[0-9*/ ,\\-]+$"},
+        "interval": {"type": "integer", "minimum": 10, "maximum": 86400},
+        "timeout": {"type": "integer", "minimum": 100, "maximum": 60000},
+        "lazy": {"type": "boolean"},
+        "tolerance": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "selector": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_use", "capabilities_any", "capabilities_all", "excluded_capabilities", "allowed_cost_levels", "countries"],
+      "properties": {
+        "source_use": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "capabilities_any": {"$ref": "#/$defs/stringList"},
+        "capabilities_all": {"$ref": "#/$defs/stringList"},
+        "excluded_capabilities": {"$ref": "#/$defs/stringList"},
+        "allowed_cost_levels": {"$ref": "#/$defs/stringList"},
+        "countries": {"$ref": "#/$defs/stringList"}
+      }
+    },
+    "pool": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "id", "display_name", "module", "source_use", "regions", "fallback_order",
+        "capabilities_any", "capabilities_all", "excluded_capabilities", "allowed_cost_levels",
+        "on_empty", "probe", "rule_priority", "rules"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 100},
+        "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "source_use": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "regions": {"$ref": "#/$defs/stringList"},
+        "fallback_order": {"$ref": "#/$defs/stringList"},
+        "capabilities_any": {"$ref": "#/$defs/stringList"},
+        "capabilities_all": {"$ref": "#/$defs/stringList"},
+        "excluded_capabilities": {"$ref": "#/$defs/stringList"},
+        "allowed_cost_levels": {"$ref": "#/$defs/stringList"},
+        "on_empty": {"enum": ["error", "reject"]},
+        "probe": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "rule_priority": {"type": "integer", "minimum": 0},
+        "rules": {"type": ["string", "null"]}
+      }
+    },
+    "chain": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "display_name", "module", "on_empty", "probe", "entry", "exit"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 100},
+        "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "on_empty": {"enum": ["error", "reject"]},
+        "probe": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "entry": {"$ref": "#/$defs/selector"},
+        "exit": {"$ref": "#/$defs/selector"}
+      }
+    }
+  }
+}

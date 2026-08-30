@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - {type: DOMAIN-SUFFIX, value: play.googleapis.com}
+  - {type: DOMAIN-SUFFIX, value: android.clients.google.com}
+  - {type: DOMAIN-SUFFIX, value: gvt1.com}
+  - {type: DOMAIN-SUFFIX, value: gvt2.com}

@@ -1,0 +1,17 @@
+proxies:
+  - name: Fictional Residential US 01
+    type: http
+    server: special-residential-us.invalid.example
+    port: 23001
+  - name: Fictional EMBY SG 01
+    type: http
+    server: special-emby-sg.invalid.example
+    port: 23002
+  - name: Fictional High JP 01
+    type: http
+    server: special-high-jp.invalid.example
+    port: 23003
+  - name: Fictional Chain Exit US 01
+    type: http
+    server: special-chain-us.invalid.example
+    port: 23004

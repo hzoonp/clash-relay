@@ -1,0 +1,23 @@
+name: Policy or service request
+description: Propose a data-driven service, pool, capability, or rule change.
+title: "[policy] "
+labels: [enhancement]
+body:
+  - type: input
+    id: use_case
+    attributes:
+      label: Business use case
+    validations:
+      required: true
+  - type: textarea
+    id: declaration
+    attributes:
+      label: Proposed sanitized YAML declaration
+    validations:
+      required: true
+  - type: textarea
+    id: isolation
+    attributes:
+      label: Required fail-closed and isolation behavior
+    validations:
+      required: true

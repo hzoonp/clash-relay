@@ -1,0 +1,51 @@
+version: 1
+runtime:
+  mixed_port: 17890
+  allow_lan: false
+  bind_address: 127.0.0.1
+  mode: rule
+  log_level: warning
+  ipv6: false
+  unified_delay: true
+  tcp_concurrent: true
+  profile:
+    store_selected: false
+    store_fake_ip: false
+  dns:
+    enabled: false
+    enhanced_mode: fake-ip
+    listen: 127.0.0.1:11053
+    nameservers: [https://1.1.1.1/dns-query]
+    fallback_nameservers: []
+modules:
+  general: true
+  chatgpt: true
+  claude: true
+  gemini: true
+  google_play: true
+  bulk: true
+  residential: true
+  emby: true
+  high_multiplier: true
+  chain: true
+generation:
+  minimum_successful_subscriptions: 1
+  minimum_usable_nodes: 1
+  fetch_timeout_seconds: 5
+  max_subscription_bytes: 1048576
+  invalid_proxy_policy: error
+  duplicate_policy: keep_first
+  allow_http_subscription_urls: false
+  allow_file_subscription_urls: true
+  reject_private_proxy_hosts: true
+  fail_on_required_subscription_error: true
+  node_name_prefix: source_id
+  generated_header: true
+publishing:
+  artifact: true
+  github_release:
+    enabled: false
+    allow_sensitive_public_release: false
+  gist:
+    enabled: false
+    allow_sensitive_unlisted_gist: false

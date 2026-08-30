@@ -1,0 +1,75 @@
+version: 1
+subscriptions:
+  - id: primary
+    display_name: Fictional Primary
+    enabled: true
+    required: true
+    secret_name: SUB_PRIMARY
+    priority: 100
+    on_error: fail
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    node_metadata:
+      Fictional AI US 01:
+        country: US
+        add_capabilities: [ai]
+      Fictional Bulk JP 01:
+        country: JP
+        add_capabilities: [bulk]
+        cost_level: low
+      Fictional General JP 01:
+        country: JP
+        cost_level: low
+      Fictional General SG 01:
+        country: SG
+    name_rules: []
+  - id: secondary
+    display_name: Fictional Secondary
+    enabled: true
+    required: false
+    secret_name: SUB_SECONDARY
+    priority: 200
+    on_error: skip
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    node_metadata:
+      Fictional AI JP 01:
+        country: JP
+        add_capabilities: [ai]
+      Fictional AI SG 01:
+        country: SG
+        add_capabilities: [ai]
+      Fictional General US 01:
+        country: US
+    name_rules: []
+  - id: special
+    display_name: Fictional Special
+    enabled: true
+    required: false
+    secret_name: SUB_SPECIAL
+    priority: 300
+    on_error: skip
+    allowed_uses: [residential, emby, high_multiplier, chain]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: []
+    default_cost_level: premium
+    node_metadata:
+      Fictional Residential US 01:
+        country: US
+        add_capabilities: [residential]
+      Fictional EMBY SG 01:
+        country: SG
+        add_capabilities: [emby]
+      Fictional High JP 01:
+        country: JP
+        add_capabilities: [high_multiplier]
+        cost_level: expensive
+      Fictional Chain Exit US 01:
+        country: US
+        add_capabilities: [chain]
+        cost_level: premium
+    name_rules: []

@@ -1,0 +1,166 @@
+version: 1
+
+capabilities:
+  general:
+    description: Ordinary egress suitable for normal browsing.
+    restricted: false
+  ai:
+    description: Explicitly approved for AI services.
+    restricted: false
+  bulk:
+    description: Suitable for sustained video, download, file, or CDN traffic.
+    restricted: false
+  residential:
+    description: Residential or home IP; opt-in only.
+    restricted: true
+  emby:
+    description: Dedicated EMBY route; opt-in only.
+    restricted: true
+  high_multiplier:
+    description: Expensive or high-ratio route; opt-in only.
+    restricted: true
+  chain:
+    description: Explicit chain exit route; opt-in only.
+    restricted: true
+
+cost_levels: [free, low, standard, premium, expensive]
+
+country_classification:
+  default: OTHER
+  aliases:
+    US:
+      - "(?i)(?:^|[ _|\\-])(?:US|USA|United States|美国|美國)(?:$|[ _|\\-])"
+    JP:
+      - "(?i)(?:^|[ _|\\-])(?:JP|Japan|Tokyo|日本)(?:$|[ _|\\-])"
+    SG:
+      - "(?i)(?:^|[ _|\\-])(?:SG|Singapore|新加坡|狮城|獅城)(?:$|[ _|\\-])"
+
+probes:
+  connectivity:
+    url: https://www.gstatic.com/generate_204
+    method: HEAD
+    expected_status: "204"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  google_play:
+    url: https://play.googleapis.com/generate_204
+    method: HEAD
+    expected_status: "200/204/401/404"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+
+pools:
+  - id: general
+    display_name: Proxy
+    module: general
+    source_use: general
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: [ai, residential, emby, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard]
+    on_empty: error
+    probe: connectivity
+    rule_priority: 1000
+    rules: null
+
+  - id: google_play
+    display_name: Google Play
+    module: google_play
+    source_use: bulk
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: [general, bulk]
+    capabilities_all: []
+    excluded_capabilities: [ai, residential, emby, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard]
+    on_empty: reject
+    probe: google_play
+    rule_priority: 200
+    rules: rules/google_play.yaml
+
+  - id: bulk
+    display_name: Video & Downloads
+    module: bulk
+    source_use: bulk
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: [general, bulk]
+    capabilities_all: []
+    excluded_capabilities: [ai, residential, emby, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 300
+    rules: rules/bulk.yaml
+
+  - id: residential
+    display_name: Residential
+    module: residential
+    source_use: residential
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: []
+    capabilities_all: [residential]
+    excluded_capabilities: [ai, emby, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard, premium, expensive]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 500
+    rules: null
+
+  - id: emby
+    display_name: EMBY
+    module: emby
+    source_use: emby
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: []
+    capabilities_all: [emby]
+    excluded_capabilities: [ai, residential, high_multiplier, chain]
+    allowed_cost_levels: [free, low, standard, premium, expensive]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 250
+    rules: rules/emby.yaml
+
+  - id: high_multiplier
+    display_name: High Multiplier
+    module: high_multiplier
+    source_use: high_multiplier
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: []
+    capabilities_all: [high_multiplier]
+    excluded_capabilities: [ai, residential, emby, chain]
+    allowed_cost_levels: [premium, expensive]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 600
+    rules: null
+
+chains:
+  - id: chain
+    display_name: Chain
+    module: chain
+    on_empty: reject
+    probe: connectivity
+    entry:
+      source_use: general
+      capabilities_any: [general]
+      capabilities_all: []
+      excluded_capabilities: [ai, residential, emby, high_multiplier, chain]
+      allowed_cost_levels: [free, low, standard]
+      countries: [JP, SG, OTHER]
+    exit:
+      source_use: chain
+      capabilities_any: []
+      capabilities_all: [chain]
+      excluded_capabilities: [ai, residential, emby, high_multiplier]
+      allowed_cost_levels: [premium, expensive]
+      countries: [US, JP, SG, OTHER]

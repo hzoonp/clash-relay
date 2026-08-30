@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible generator, validator, or workflow problem.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never paste subscription URLs, node credentials, generated config.yaml, or workflow secrets.
+  - type: input
+    id: version
+    attributes:
+      label: clash-relay version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal sanitized reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior (redacted)
+    validations:
+      required: true

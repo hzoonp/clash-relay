@@ -1,0 +1,5 @@
+version: 1
+rules:
+  - {type: DOMAIN-SUFFIX, value: gemini.google.com}
+  - {type: DOMAIN-SUFFIX, value: generativelanguage.googleapis.com}
+  - {type: DOMAIN-SUFFIX, value: ai.google.dev}

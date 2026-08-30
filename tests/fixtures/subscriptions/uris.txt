@@ -1,0 +1,5 @@
+ss://YWVzLTEyOC1nY206Zml4dHVyZS1wYXNzd29yZA==@ss.invalid.example:31001#Fixture%20SS
+vmess://eyJ2IjoiMiIsInBzIjoiRml4dHVyZSBWTWVzcyIsImFkZCI6InZtZXNzLmludmFsaWQuZXhhbXBsZSIsInBvcnQiOiIzMTAwMiIsImlkIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0bHMiOiIifQ==
+vless://00000000-0000-4000-8000-000000000002@vless.invalid.example:31003?security=tls&type=ws&host=edge.invalid.example&path=%2Fws#Fixture%20VLESS
+trojan://fixture-password@trojan.invalid.example:31004?sni=trojan.invalid.example#Fixture%20Trojan
+hysteria2://fixture-password@hy2.invalid.example:31005?sni=hy2.invalid.example#Fixture%20HY2

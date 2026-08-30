@@ -1,0 +1,6 @@
+version: 1
+rules:
+  - {type: DOMAIN-SUFFIX, value: openai.com}
+  - {type: DOMAIN-SUFFIX, value: chatgpt.com}
+  - {type: DOMAIN-SUFFIX, value: oaistatic.com}
+  - {type: DOMAIN-SUFFIX, value: oaiusercontent.com}

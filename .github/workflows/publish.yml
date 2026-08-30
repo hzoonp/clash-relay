@@ -1,0 +1,267 @@
+name: Generate, validate, and publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "config.yaml"
+      - "subscriptions.yaml"
+      - "services.yaml"
+      - "policies.yaml"
+      - "rules/**"
+      - "schemas/**"
+      - "src/**"
+      - "requirements.lock"
+      - "tools/mihomo-versions.json"
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clash-relay-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check fork configuration
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.detect.outputs.configured }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: detect
+        name: Detect canonical user declarations
+        shell: bash
+        run: |
+          if [[ -f config.yaml && -f subscriptions.yaml ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Publication skipped until config.yaml and subscriptions.yaml are committed."
+          fi
+
+  candidate:
+    name: Generate private candidate
+    needs: prepare
+    if: needs.prepare.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - name: Generate and statically validate candidate
+        env:
+          CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
+        run: |
+          clash-relay generate \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --output .work/candidate/config.yaml \
+            --report .work/candidate/build-report.json
+      - name: Enforce Artifact publication declaration
+        run: |
+          clash-relay publication-gate \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --mode artifact
+      - uses: actions/upload-artifact@v5
+        with:
+          name: candidate-${{ github.run_id }}
+          path: .work/candidate/
+          retention-days: 1
+          if-no-files-found: error
+
+  validate:
+    name: Validate with Mihomo ${{ matrix.tag }}
+    needs:
+      - prepare
+      - candidate
+    if: needs.prepare.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [v1.19.30, v1.19.29]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - uses: actions/download-artifact@v6
+        with:
+          name: candidate-${{ github.run_id }}
+          path: .work/candidate
+      - name: Download and verify pinned official Mihomo asset
+        run: |
+          python scripts/download_mihomo.py \
+            --channel stable \
+            --tag "${{ matrix.tag }}" \
+            --output .work/bin/mihomo
+      - name: Load and start candidate in real Mihomo
+        run: |
+          clash-relay validate \
+            --candidate .work/candidate/config.yaml \
+            --mihomo-bin .work/bin/mihomo \
+            --startup-seconds 1.5 \
+            > ".work/validation-${{ matrix.tag }}.json"
+      - name: Verify provider HEAD behavior with the same core
+        env:
+          MIHOMO_BIN: .work/bin/mihomo
+        run: pytest -q -m integration
+      - uses: actions/upload-artifact@v5
+        with:
+          name: validation-${{ matrix.tag }}-${{ github.run_id }}
+          path: .work/validation-${{ matrix.tag }}.json
+          retention-days: 14
+          if-no-files-found: error
+
+  promote:
+    name: Promote validated bytes
+    needs:
+      - prepare
+      - candidate
+      - validate
+    if: needs.prepare.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      release_enabled: ${{ steps.backends.outputs.release_enabled }}
+      gist_enabled: ${{ steps.backends.outputs.gist_enabled }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - uses: actions/download-artifact@v6
+        with:
+          name: candidate-${{ github.run_id }}
+          path: .work/candidate
+      - name: Revalidate exactly the bytes being promoted
+        run: clash-relay validate --candidate .work/candidate/config.yaml
+      - id: backends
+        name: Resolve optional publication backends
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import yaml
+          data = yaml.safe_load(open("config.yaml", encoding="utf-8"))
+          publishing = data["publishing"]
+          print(f"release_enabled={str(bool(publishing['github_release']['enabled'])).lower()}")
+          print(f"gist_enabled={str(bool(publishing['gist']['enabled'])).lower()}")
+          PY
+      - name: Create immutable production Artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: clash-relay-production-${{ github.run_number }}-${{ github.sha }}
+          path: .work/candidate/
+          retention-days: 90
+          if-no-files-found: error
+
+  publish-gist:
+    name: Publish optional Gist
+    needs:
+      - prepare
+      - candidate
+      - validate
+      - promote
+    if: >-
+      needs.prepare.outputs.configured == 'true' &&
+      needs.promote.outputs.gist_enabled == 'true' &&
+      vars.PUBLISH_UNLISTED_GIST == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - uses: actions/download-artifact@v6
+        with:
+          name: candidate-${{ github.run_id }}
+          path: .work/candidate
+      - name: Update Gist only after stable validation
+        env:
+          GITHUB_GIST_TOKEN: ${{ secrets.GITHUB_GIST_TOKEN }}
+          GITHUB_GIST_ID: ${{ secrets.GITHUB_GIST_ID }}
+          PUBLICATION_ACKNOWLEDGEMENT: ${{ vars.CLASH_RELAY_PUBLICATION_ACKNOWLEDGEMENT }}
+        run: |
+          clash-relay publish-gist \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/candidate/config.yaml \
+            --gist-id "$GITHUB_GIST_ID" \
+            --acknowledgement "$PUBLICATION_ACKNOWLEDGEMENT"
+
+  publish-release:
+    name: Publish optional public Release
+    needs:
+      - prepare
+      - candidate
+      - validate
+      - promote
+    if: >-
+      needs.prepare.outputs.configured == 'true' &&
+      needs.promote.outputs.release_enabled == 'true' &&
+      vars.PUBLISH_PUBLIC_RELEASE == 'true'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - uses: actions/download-artifact@v6
+        with:
+          name: candidate-${{ github.run_id }}
+          path: .work/candidate
+      - name: Enforce explicit public credential disclosure acknowledgement
+        env:
+          PUBLICATION_ACKNOWLEDGEMENT: ${{ vars.CLASH_RELAY_PUBLICATION_ACKNOWLEDGEMENT }}
+        run: |
+          clash-relay publication-gate \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --mode github_release \
+            --acknowledgement "$PUBLICATION_ACKNOWLEDGEMENT"
+      - name: Create draft, upload assets, then atomically mark latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:12}"
+          tag="config-${GITHUB_RUN_NUMBER}-${short_sha}"
+          gh release create "$tag" \
+            --draft \
+            --title "Validated config ${GITHUB_RUN_NUMBER}" \
+            --notes "Generated from ${GITHUB_SHA}; validated with every pinned stable Mihomo version."
+          gh release upload "$tag" \
+            .work/candidate/config.yaml \
+            .work/candidate/build-report.json
+          gh release edit "$tag" --draft=false --latest
