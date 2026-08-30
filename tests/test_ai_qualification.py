@@ -4,7 +4,7 @@ import copy
 
 import pytest
 
-from clash_relay.ai_qualification import apply_ai_qualification
+from clash_relay.ai_qualification import apply_ai_qualification, load_ai_probe_specs
 from clash_relay.errors import ValidationError
 
 
@@ -88,6 +88,49 @@ def _config() -> dict:
             },
         ],
     }
+
+
+def test_ai_probe_loader_preserves_declared_head_method(tmp_path) -> None:
+    policies = tmp_path / "policies.yaml"
+    policies.write_text(
+        """probes:
+  ai_openai:
+    url: https://chatgpt.com/
+    method: HEAD
+    expected_status: '200-399'
+    timeout: 5000
+""",
+        encoding="utf-8",
+    )
+
+    specs = load_ai_probe_specs(policies, names=("ai_openai",))
+
+    assert specs == (
+        {
+            "name": "ai_openai",
+            "url": "https://chatgpt.com/",
+            "method": "HEAD",
+            "expected_status": "200-399",
+            "timeout": 5000,
+        },
+    )
+
+
+def test_ai_probe_loader_rejects_method_drift(tmp_path) -> None:
+    policies = tmp_path / "policies.yaml"
+    policies.write_text(
+        """probes:
+  ai_openai:
+    url: https://chatgpt.com/
+    method: GET
+    expected_status: '200-399'
+    timeout: 5000
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="must use HEAD"):
+        load_ai_probe_specs(policies, names=("ai_openai",))
 
 
 def test_ai_qualification_keeps_only_live_nodes_and_prunes_empty_countries() -> None:
