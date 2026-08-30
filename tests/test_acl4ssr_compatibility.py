@@ -46,9 +46,7 @@ def test_legacy_rule_is_omitted_only_with_exact_pinned_provider_evidence() -> No
     assert report is not None
     assert report["verified_compatibility_omissions"] == 1
     assert report["unverified_legacy_rules"] == 0
-    assert report["sources"][0]["mihomo_compatibility_path"] == (
-        "Clash/Providers/Fixture.yaml"
-    )
+    assert report["sources"][0]["mihomo_compatibility_path"] == ("Clash/Providers/Fixture.yaml")
 
 
 def test_legacy_rule_fails_closed_when_provider_does_not_document_exact_omission() -> None:
