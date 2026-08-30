@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import yaml
-
 
 AI_COUNTRY_GROUPS = [
     "AI · 新加坡",
