@@ -26,12 +26,31 @@
           },
           "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
           "excluded_sources": {"$ref": "#/$defs/sourceIdList"},
+          "hidden": {"type": "boolean"},
+          "type": {"enum": ["select", "url-test"]},
+          "provider_pool": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "filter": {"type": "string", "minLength": 1, "maxLength": 512},
+          "url": {"type": "string", "pattern": "^https?://"},
+          "interval": {"type": "integer", "minimum": 1, "maximum": 86400},
+          "tolerance": {"type": "integer", "minimum": 0, "maximum": 10000},
+          "timeout": {"type": "integer", "minimum": 1, "maximum": 120000},
+          "lazy": {"type": "boolean"},
+          "expected_status": {"type": ["string", "integer"]},
           "members": {
             "type": "array",
-            "minItems": 1,
             "items": {"$ref": "#/$defs/groupMember"}
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"type": {"const": "url-test"}}, "required": ["type"]},
+            "then": {"required": ["provider_pool", "url", "interval", "tolerance"]}
+          },
+          {
+            "if": {"properties": {"members": {"maxItems": 0}}},
+            "then": {"required": ["provider_pool"]}
+          }
+        ]
       }
     },
     "final_target": {
