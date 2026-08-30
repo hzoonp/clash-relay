@@ -79,9 +79,7 @@ def apply_acl4ssr_source_exclusions(
                 return True
         return False
 
-    def clone_hidden_anchor(
-        anchor_name: str, excluded_sources: tuple[str, ...]
-    ) -> str | None:
+    def clone_hidden_anchor(anchor_name: str, excluded_sources: tuple[str, ...]) -> str | None:
         cache_key = (anchor_name, excluded_sources)
         if cache_key in clone_cache:
             return clone_cache[cache_key]
@@ -159,9 +157,7 @@ def apply_acl4ssr_source_exclusions(
     def filtered_reference(reference: str, excluded_sources: tuple[str, ...]) -> str:
         referenced = by_name.get(reference)
         if referenced is None:
-            raise GenerationError(
-                f"source-filtered route references unknown group {reference!r}"
-            )
+            raise GenerationError(f"source-filtered route references unknown group {reference!r}")
         if referenced.get("hidden", False):
             filtered = clone_hidden_anchor(reference, excluded_sources)
             return filtered or fail_closed(excluded_sources)
