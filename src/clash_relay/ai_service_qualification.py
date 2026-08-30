@@ -100,7 +100,9 @@ def _provider_routes(
 
 def _quote_re2_literal(value: str) -> str:
     """Quote one runtime proxy name for Mihomo's Go/RE2-compatible regex parser."""
-    return "".join(f"\\{character}" if character in _RE2_META else character for character in value)
+    return "".join(
+        f"\\{character}" if character in _RE2_META else character for character in value
+    )
 
 
 def _exact_filter(names: set[str]) -> str:
@@ -206,7 +208,9 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     if not isinstance(ai_provider, dict) or not isinstance(ai_provider.get("payload"), list):
         raise ValidationError("AI service routing requires the pinned ACL4SSR AI provider")
     openai_provider = rule_providers.get(_ACL4SSR_OPENAI_PROVIDER)
-    if not isinstance(openai_provider, dict) or not isinstance(openai_provider.get("payload"), list):
+    if not isinstance(openai_provider, dict) or not isinstance(
+        openai_provider.get("payload"), list
+    ):
         raise ValidationError("AI service routing requires the pinned ACL4SSR OpenAI provider")
 
     ai_payload = {str(rule) for rule in ai_provider["payload"]}
@@ -294,7 +298,9 @@ def apply_ai_service_qualification(
         }
         for service in _SERVICE_ORDER
     }
-    union_names = set().union(*(set(qualified_by_probe[service]) for service in _SERVICE_ORDER))
+    union_names = set().union(
+        *(set(qualified_by_probe[service]) for service in _SERVICE_ORDER)
+    )
     if not union_names:
         raise ValidationError(
             "no nodes passed any AI service qualification probe; refusing to replace the published profile"
