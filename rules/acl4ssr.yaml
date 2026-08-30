@@ -4,17 +4,245 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# Production keeps the complete pinned ACL4SSR Online Full rule coverage. AI
-# rules route through country-scoped candidate pools that are live-qualified on
-# the trusted runner before the final candidate is validated and published.
+# Routing targets and policy member order mirror ACL4SSR_Online_Full.ini at the
+# pinned ref. FlClash-only containers are never rule targets. AI is the sole
+# semantic extension: its candidate countries are live-qualified per service.
 groups:
+  # ACL4SSR shared selectors -------------------------------------------------
+  - id: policy_auto
+    display_name: 自动选择
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '.*'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_manual
+    display_name: 手动切换
+    module: general
+    hidden: true
+    type: select
+    provider_pool: general
+    filter: '.*'
+    members: []
+
+  - id: policy_hk
+    display_name: 香港节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(港|HK|hk|Hong Kong|HongKong|hongkong)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_tw
+    display_name: 台湾节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(台|新北|彰化|TW|Taiwan)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_sg
+    display_name: 新加坡节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(新加坡|坡|狮城|SG|Singapore)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_jp
+    display_name: 日本节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(日本|川日|东京|大阪|泉日|埼玉|沪日|深日|JP|Japan)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_us
+    display_name: 美国节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(美|波特兰|达拉斯|俄勒冈|凤凰城|费利蒙|硅谷|拉斯维加斯|洛杉矶|圣何塞|圣克拉拉|西雅图|芝加哥|US|United States)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 150
+    members: []
+
+  - id: policy_kr
+    display_name: 韩国节点
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '(KR|Korea|KOR|首尔|韩|韓)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_netflix_nodes
+    display_name: 奈飞节点
+    module: general
+    hidden: true
+    type: select
+    provider_pool: general
+    filter: '(NF|奈飞|解锁|Netflix|NETFLIX|Media)'
+    members: []
+
+  - id: policy_node_selection
+    display_name: 节点选择
+    module: general
+    members:
+      - {group: 自动选择}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  # ACL4SSR rule-target groups ----------------------------------------------
+  - id: policy_global_direct
+    display_name: 全球直连
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 自动选择}
+
   - id: policy_block
     display_name: 广告拦截
     module: general
+    hidden: true
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
 
+  - id: policy_program_ad
+    display_name: 应用净化
+    module: general
+    hidden: true
+    members:
+      - {builtin: REJECT}
+      - {builtin: DIRECT}
+
+  - id: policy_google_fcm
+    display_name: 谷歌FCM
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_bing
+    display_name: 微软Bing
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_onedrive
+    display_name: 微软云盘
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_microsoft
+    display_name: 微软服务
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_apple
+    display_name: 苹果服务
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_telegram
+    display_name: 电报消息
+    module: general
+    hidden: true
+    members:
+      - {group: 节点选择}
+      - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  # AI is intentionally presentation-compatible but live-qualified per service.
   - id: policy_ai
     display_name: 人工智能
     module: general
@@ -28,41 +256,176 @@ groups:
       - {group: AI · 其他地区}
       - {builtin: DIRECT}
 
-  - id: policy_streaming
+  - id: policy_netease
+    display_name: 网易音乐
+    module: general
+    hidden: true
+    type: select
+    provider_pool: general
+    filter: '(网易|音乐|解锁|Music|NetEase)'
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 自动选择}
+
+  - id: policy_games
+    display_name: 游戏平台
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 节点选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  - id: policy_youtube
+    display_name: 油管视频
+    module: general
+    hidden: true
+    members:
+      - {group: 节点选择}
+      - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  - id: policy_netflix
+    display_name: 奈飞视频
+    module: general
+    hidden: true
+    members:
+      - {group: 奈飞节点}
+      - {group: 节点选择}
+      - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  - id: policy_bahamut
+    display_name: 巴哈姆特
+    module: general
+    hidden: true
+    members:
+      - {group: 台湾节点}
+      - {group: 节点选择}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  - id: policy_bilibili
+    display_name: 哔哩哔哩
+    module: general
+    hidden: true
+    members:
+      - {group: 全球直连}
+      - {group: 台湾节点}
+      - {group: 香港节点}
+
+  - id: policy_china_media
+    display_name: 国内媒体
+    module: general
+    hidden: true
+    members:
+      - {builtin: DIRECT}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 手动切换}
+
+  - id: policy_proxy_media
+    display_name: 国外媒体
+    module: general
+    hidden: true
+    members:
+      - {group: 节点选择}
+      - {group: 自动选择}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
+
+  - id: policy_final
+    display_name: 漏网之鱼
+    module: general
+    hidden: true
+    members:
+      - {group: 节点选择}
+      - {group: 自动选择}
+      - {builtin: DIRECT}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+
+  # FlClash presentation-only containers. No ACL4SSR rule targets these groups.
+  - id: ui_streaming
     display_name: 流媒体
     module: general
-    excluded_sources: [subscription_1]
     members:
-      - {group: 节点选择}
-      - {builtin: DIRECT}
+      - {group: 油管视频}
+      - {group: 奈飞视频}
+      - {group: 巴哈姆特}
+      - {group: 哔哩哔哩}
+      - {group: 国内媒体}
+      - {group: 国外媒体}
 
-  - id: policy_domestic_services
+  - id: ui_domestic
     display_name: 国内服务
     module: general
-    excluded_sources: [subscription_1]
     members:
-      - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 谷歌FCM}
+      - {group: 微软Bing}
+      - {group: 微软云盘}
+      - {group: 微软服务}
+      - {group: 苹果服务}
+      - {group: 游戏平台}
+      - {group: 网易音乐}
 
-# Subscription 1 is allowed only for the explicit general-web ProxyGFWlist path
-# and the live-qualified AI country pools. Application-specific Telegram and
-# unmatched final traffic use a hidden source-filtered anchor that excludes it.
-final_target: 节点选择
-final_excluded_sources: [subscription_1]
+  - id: ui_more
+    display_name: 更多策略
+    module: general
+    members:
+      - {group: 电报消息}
+      - {group: 全球直连}
+      - {group: 广告拦截}
+      - {group: 应用净化}
+      - {group: 漏网之鱼}
 
-# Rule fragments mirror ACL4SSR_Online_Full.ini order, but fetch from the pinned
-# immutable commit above instead of the moving master branch. Groups are
-# intentionally consolidated for a compact FlClash policy UI.
+final_target: 漏网之鱼
+
+# Rule fragment order mirrors ACL4SSR_Online_Full.ini at the pinned commit.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list
-    target: DIRECT
+    target: 全球直连
     priority: 10
     module: general
 
   - id: unban
     path: Clash/UnBan.list
-    target: DIRECT
+    target: 全球直连
     priority: 15
     module: general
 
@@ -74,58 +437,57 @@ sources:
 
   - id: ban_program_ad
     path: Clash/BanProgramAD.list
-    target: 广告拦截
+    target: 应用净化
     priority: 30
     module: general
 
   - id: google_fcm
     path: Clash/Ruleset/GoogleFCM.list
-    target: 国内服务
+    target: 谷歌FCM
     priority: 40
     module: general
 
   - id: google_cn
     path: Clash/GoogleCN.list
-    target: DIRECT
+    target: 全球直连
     priority: 50
     module: general
 
   - id: steam_cn
     path: Clash/Ruleset/SteamCN.list
-    target: DIRECT
+    target: 全球直连
     priority: 60
     module: general
 
   - id: bing
     path: Clash/Bing.list
-    target: 国内服务
+    target: 微软Bing
     priority: 70
     module: general
 
   - id: onedrive
     path: Clash/OneDrive.list
-    target: 国内服务
+    target: 微软云盘
     priority: 80
     module: general
 
   - id: microsoft
     path: Clash/Microsoft.list
-    target: 国内服务
+    target: 微软服务
     priority: 90
     module: general
 
   - id: apple
     path: Clash/Apple.list
-    target: 国内服务
+    target: 苹果服务
     priority: 100
     module: general
 
   - id: telegram
     path: Clash/Telegram.list
-    target: 节点选择
+    target: 电报消息
     priority: 110
     module: general
-    excluded_sources: [subscription_1]
 
   - id: ai
     path: Clash/Ruleset/AI.list
@@ -141,79 +503,79 @@ sources:
 
   - id: netease_music
     path: Clash/Ruleset/NetEaseMusic.list
-    target: 国内服务
+    target: 网易音乐
     priority: 130
     module: general
 
   - id: epic
     path: Clash/Ruleset/Epic.list
-    target: 国内服务
+    target: 游戏平台
     priority: 140
     module: general
 
   - id: origin
     path: Clash/Ruleset/Origin.list
-    target: 国内服务
+    target: 游戏平台
     priority: 145
     module: general
 
   - id: sony
     path: Clash/Ruleset/Sony.list
-    target: 国内服务
+    target: 游戏平台
     priority: 150
     module: general
 
   - id: steam
     path: Clash/Ruleset/Steam.list
-    target: 国内服务
+    target: 游戏平台
     priority: 155
     module: general
 
   - id: nintendo
     path: Clash/Ruleset/Nintendo.list
-    target: 国内服务
+    target: 游戏平台
     priority: 160
     module: general
 
   - id: youtube
     path: Clash/Ruleset/YouTube.list
-    target: 流媒体
+    target: 油管视频
     priority: 170
     module: general
 
   - id: netflix
     path: Clash/Ruleset/Netflix.list
-    target: 流媒体
+    target: 奈飞视频
     priority: 180
     module: general
 
   - id: bahamut
     path: Clash/Ruleset/Bahamut.list
-    target: 流媒体
+    target: 巴哈姆特
     priority: 190
     module: general
 
   - id: bilibili_hmt
     path: Clash/Ruleset/BilibiliHMT.list
-    target: 国内服务
+    target: 哔哩哔哩
     priority: 200
     module: general
 
   - id: bilibili
     path: Clash/Ruleset/Bilibili.list
-    target: 国内服务
+    target: 哔哩哔哩
     priority: 210
     module: general
 
   - id: china_media
     path: Clash/ChinaMedia.list
-    target: 国内服务
+    target: 国内媒体
     priority: 220
     module: general
 
   - id: proxy_media
     path: Clash/ProxyMedia.list
-    target: 流媒体
+    target: 国外媒体
     priority: 230
     module: general
 
@@ -225,19 +587,19 @@ sources:
 
   - id: china_domain
     path: Clash/ChinaDomain.list
-    target: DIRECT
+    target: 全球直连
     priority: 900
     module: general
 
   - id: china_company_ip
     path: Clash/ChinaCompanyIp.list
-    target: DIRECT
+    target: 全球直连
     priority: 910
     module: general
 
   - id: download
     path: Clash/Download.list
-    target: DIRECT
+    target: 全球直连
     priority: 915
     module: general
 
@@ -245,7 +607,7 @@ inline_rules:
   - id: geoip_cn
     type: GEOIP
     value: CN
-    target: DIRECT
+    target: 全球直连
     priority: 920
     module: general
     options: [no-resolve]
