@@ -1,0 +1,104 @@
+version: 1
+
+# This tracked file contains metadata only. Real subscription URLs are resolved
+# from the CLASH_RELAY_SUBSCRIPTIONS GitHub Actions secret.
+subscriptions:
+  - id: subscription_1
+    display_name: Subscription 1
+    enabled: true
+    required: true
+    secret_name: SUBSCRIPTION_1_URL
+    priority: 100
+    on_error: fail
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    name_rules:
+      - pattern: '(?i)(?:chatgpt|openai|claude|anthropic|gemini|(?:^|[^a-z])ai(?:$|[^a-z]))'
+        add_capabilities: [ai]
+      - pattern: '(?i)(?:residential|home[ _-]?ip|住宅|家宽|家寬)'
+        add_capabilities: [residential]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:^|[^a-z])emby(?:$|[^a-z])'
+        add_capabilities: [emby]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:高倍|高倍率|high[ _-]?multiplier)'
+        add_capabilities: [high_multiplier]
+        cost_level: expensive
+        allow_restricted_capabilities: true
+
+  - id: subscription_2
+    display_name: Subscription 2
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_2_URL
+    priority: 200
+    on_error: skip
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    name_rules:
+      - pattern: '(?i)(?:chatgpt|openai|claude|anthropic|gemini|(?:^|[^a-z])ai(?:$|[^a-z]))'
+        add_capabilities: [ai]
+      - pattern: '(?i)(?:residential|home[ _-]?ip|住宅|家宽|家寬)'
+        add_capabilities: [residential]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:^|[^a-z])emby(?:$|[^a-z])'
+        add_capabilities: [emby]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:高倍|高倍率|high[ _-]?multiplier)'
+        add_capabilities: [high_multiplier]
+        cost_level: expensive
+        allow_restricted_capabilities: true
+
+  - id: subscription_3
+    display_name: Subscription 3
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_3_URL
+    priority: 300
+    on_error: skip
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    name_rules:
+      - pattern: '(?i)(?:chatgpt|openai|claude|anthropic|gemini|(?:^|[^a-z])ai(?:$|[^a-z]))'
+        add_capabilities: [ai]
+      - pattern: '(?i)(?:residential|home[ _-]?ip|住宅|家宽|家寬)'
+        add_capabilities: [residential]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:^|[^a-z])emby(?:$|[^a-z])'
+        add_capabilities: [emby]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:高倍|高倍率|high[ _-]?multiplier)'
+        add_capabilities: [high_multiplier]
+        cost_level: expensive
+        allow_restricted_capabilities: true
+
+  - id: subscription_4
+    display_name: Subscription 4
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_4_URL
+    priority: 400
+    on_error: skip
+    allowed_uses: [general, ai, bulk]
+    allowed_countries: [US, JP, SG, OTHER]
+    default_capabilities: [general]
+    default_cost_level: standard
+    name_rules:
+      - pattern: '(?i)(?:chatgpt|openai|claude|anthropic|gemini|(?:^|[^a-z])ai(?:$|[^a-z]))'
+        add_capabilities: [ai]
+      - pattern: '(?i)(?:residential|home[ _-]?ip|住宅|家宽|家寬)'
+        add_capabilities: [residential]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:^|[^a-z])emby(?:$|[^a-z])'
+        add_capabilities: [emby]
+        allow_restricted_capabilities: true
+      - pattern: '(?i)(?:高倍|高倍率|high[ _-]?multiplier)'
+        add_capabilities: [high_multiplier]
+        cost_level: expensive
+        allow_restricted_capabilities: true
