@@ -289,7 +289,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 errors.append("generated rules must be strings")
                 continue
             parts = rule.split(",")
-            if parts[0] == "RULE-SET" and (len(parts) < 3 or parts[1] not in rule_providers):
+            if parts[0] == "RULE-SET" and (
+                len(parts) < 3 or parts[1] not in rule_providers
+            ):
                 errors.append(f"RULE-SET references unknown rule provider in {rule!r}")
                 continue
             try:
