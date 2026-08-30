@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 from clash_relay.config_loader import load_project
+from clash_relay.util import load_yaml_file
 
 
 AI_COUNTRY_GROUPS = [
@@ -19,7 +18,9 @@ AI_COUNTRY_GROUPS = [
 
 
 def _load(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    document = load_yaml_file(path)
+    assert isinstance(document, dict)
+    return document
 
 
 def test_production_ai_candidates_are_country_classified_and_live_gated(repo_root: Path) -> None:
