@@ -1,0 +1,27 @@
+name: Temporary nested AI Ruff preview
+
+on:
+  push:
+    branches:
+      - fix/nested-hidden-provider-groups
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Show Ruff formatter diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff format tests/test_ai_service_qualification.py
+          git diff -- tests/test_ai_service_qualification.py
