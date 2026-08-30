@@ -184,9 +184,8 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
 
             provider_backed = bool(uses)
             if provider_backed:
-                if (
-                    len(public_refs) != 1
-                    or not str(public_refs[0]).startswith("__CR_SERVICE_FALLBACK_")
+                if len(public_refs) != 1 or not str(public_refs[0]).startswith(
+                    "__CR_SERVICE_FALLBACK_"
                 ):
                     errors.append(
                         f"provider-backed public group {name!r} must point only to its hidden "
