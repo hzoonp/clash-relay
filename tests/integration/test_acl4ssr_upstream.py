@@ -84,6 +84,95 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
 
 
 @pytest.mark.integration
+def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    secret_file = tmp_path / "subscriptions.yaml"
+    secret_file.write_text(
+        yaml.safe_dump(
+            {
+                f"SUBSCRIPTION_{index}_URL": f"https://fixture.invalid/subscription-{index}"
+                for index in range(1, 5)
+            },
+            allow_unicode=True,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_subscription(url: str, **_kwargs) -> str:
+        source_number = int(url.rsplit("-", 1)[1])
+        base_port = 20000 + source_number * 100
+        names = ["香港", "台湾", "新加坡", "日本", "美国", "韩国", "其他"]
+        proxies = [
+            {
+                "name": f"{name} Fixture {source_number}",
+                "type": "http",
+                "server": "example.com",
+                "port": base_port + offset,
+            }
+            for offset, name in enumerate(names, start=1)
+        ]
+        return yaml.safe_dump({"proxies": proxies}, allow_unicode=True, sort_keys=False)
+
+    result = build_candidate(
+        config_path=repo_root / "config.yaml",
+        subscriptions_path=repo_root / "subscriptions.yaml",
+        services_path=repo_root / "services.yaml",
+        policies_path=repo_root / "policies.yaml",
+        secret_file=secret_file,
+        env={},
+        fetcher=fake_subscription,
+    )
+
+    groups = {item["name"]: item for item in result.config["proxy-groups"]}
+    visible = {
+        item["name"] for item in result.config["proxy-groups"] if not item.get("hidden", False)
+    }
+    assert visible == {"节点选择", "人工智能", "流媒体", "国内服务", "更多策略"}
+    assert groups["节点选择"]["proxies"] == [
+        "自动选择",
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "手动切换",
+        "DIRECT",
+    ]
+    assert groups["哔哩哔哩"]["proxies"] == ["全球直连", "台湾节点", "香港节点"]
+    assert groups["哔哩哔哩"]["hidden"] is True
+    assert groups["广告拦截"]["proxies"] == ["REJECT", "DIRECT"]
+    assert groups["广告拦截"]["hidden"] is True
+    assert result.config["rules"][-1] == "MATCH,漏网之鱼"
+    assert "GEOIP,CN,全球直连,no-resolve" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_bilibili_hmt,哔哩哔哩" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_bilibili,哔哩哔哩" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_telegram,电报消息" in result.config["rules"]
+
+    presentation_only = {"流媒体", "国内服务", "更多策略"}
+    rule_targets = {
+        rule.split(",")[1] if rule.startswith("MATCH,") else rule.split(",")[2]
+        for rule in result.config["rules"]
+    }
+    assert presentation_only.isdisjoint(rule_targets)
+    assert result.report["rule_sources"]["acl4ssr"]["skipped_legacy_rules"] == 0
+    assert "source_exclusions" not in result.report
+
+    candidate = tmp_path / "canonical-strict.yaml"
+    candidate.write_text(result.yaml_text, encoding="utf-8")
+    validation = validate_with_mihomo(
+        Path(os.environ["MIHOMO_BIN"]),
+        candidate,
+        secret_values=result.secret_values,
+    )
+    assert validation["config_test"] == "passed"
+    assert validation["startup_smoke"] == "passed"
+
+
+@pytest.mark.integration
 def test_canonical_acl4ssr_pin_skips_no_legacy_rules(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
     _providers, _directives, report = load_acl4ssr_rules(
