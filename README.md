@@ -233,7 +233,7 @@ Because the complete Worker URL is itself a credential, keep it private and rota
 
 ## Project status
 
-This is an initial public architecture. Current limitations include no DNS-resolution pinning against hostname rebinding during subscription fetches, a deliberately small bundled rule set, and best-effort support for uncommon protocol extensions. Real Mihomo validation remains the final authority for proxy fields not modeled by the parser.
+This is an initial public architecture. Current limitations include no DNS-resolution pinning against hostname rebinding during subscription fetches, build-time dependence on availability of the pinned ACL4SSR source when refreshing rules, and best-effort support for uncommon protocol extensions. Real Mihomo validation remains the final authority for proxy fields not modeled by the parser.
 
 ## License
 
