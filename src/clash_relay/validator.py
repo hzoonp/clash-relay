@@ -198,7 +198,9 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         group_rows[name] = group
 
     hidden_names = {name for name, group in group_rows.items() if bool(group.get("hidden", False))}
+    nested_hidden_names = {name for name in hidden_names if not name.startswith("__CR_")}
     graph: dict[str, set[str]] = defaultdict(set)
+    visible_parents: dict[str, list[str]] = defaultdict(list)
     for name, group in group_rows.items():
         references = group.get("proxies", [])
         if references is not None and not isinstance(references, list):
@@ -230,6 +232,10 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 errors.append(f"public group {name!r} must have at least one proxy/group reference")
                 public_refs = []
 
+            for reference in public_refs:
+                if reference in nested_hidden_names:
+                    visible_parents[str(reference)].append(name)
+
             provider_backed = bool(uses)
             if provider_backed:
                 if len(public_refs) != 1 or public_refs[0] not in hidden_names:
@@ -249,7 +255,8 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 unsafe_hidden_refs = [
                     reference
                     for reference in hidden_refs
-                    if not str(reference).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
+                    if reference not in nested_hidden_names
+                    and not str(reference).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
                 ]
                 if unsafe_hidden_refs:
                     errors.append(
@@ -257,7 +264,24 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                         f"{unsafe_hidden_refs}"
                     )
         elif not name.startswith("__CR_"):
-            errors.append(f"hidden internal group {name!r} lacks the reserved __CR_ prefix")
+            nested_refs = group.get("proxies", [])
+            valid_nested_selector = (
+                group.get("type") == "select"
+                and not uses
+                and isinstance(nested_refs, list)
+                and len(nested_refs) == 1
+                and nested_refs[0] in hidden_names
+                and str(nested_refs[0]).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
+            )
+            if not valid_nested_selector:
+                errors.append(f"hidden internal group {name!r} lacks the reserved __CR_ prefix")
+
+    for name in sorted(nested_hidden_names):
+        parents = visible_parents.get(name, [])
+        if len(parents) != 1:
+            errors.append(
+                f"nested hidden group {name!r} must be referenced by exactly one public parent group"
+            )
 
     for provider_name, provider in providers.items():
         if not isinstance(provider, dict):
@@ -299,6 +323,10 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 continue
             if target not in group_names and target not in _BUILTINS:
                 errors.append(f"rule references unknown target {target!r}")
+            elif target in nested_hidden_names:
+                errors.append(
+                    f"rule targets nested hidden group {target!r}; target its public parent instead"
+                )
 
     serialized = stable_json(config)
     for value in secret_urls:
