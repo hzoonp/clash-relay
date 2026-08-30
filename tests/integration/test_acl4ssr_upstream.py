@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
+from clash_relay.acl4ssr import load_acl4ssr_rules
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
 
@@ -79,3 +81,17 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
     )
     assert validation["config_test"] == "passed"
     assert validation["startup_smoke"] == "passed"
+
+
+@pytest.mark.integration
+def test_canonical_acl4ssr_pin_skips_no_legacy_rules(repo_root: Path) -> None:
+    manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
+    _providers, _directives, report = load_acl4ssr_rules(
+        manifest,
+        modules={"general": True},
+        timeout=20,
+    )
+
+    assert report is not None
+    assert report["ref"] == "c498ae4911f15b19c5ceaef6f8737ca8705b4430"
+    assert report["skipped_legacy_rules"] == 0
