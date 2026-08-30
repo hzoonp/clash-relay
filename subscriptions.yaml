@@ -2,9 +2,9 @@ version: 1
 
 # No URL belongs in this tracked file. Real subscription URLs are resolved from
 # CLASH_RELAY_SUBSCRIPTIONS. Production uses one shared general node inventory;
-# ACL4SSR policy groups may further restrict which subscription sources are
-# eligible for a specific traffic class. AI is permissive at declaration time
-# and fail-closed at publication time: every AI candidate must pass live probes.
+# subscription declarations control node admission only and do not rewrite
+# canonical non-AI ACL4SSR routing. AI remains permissive at declaration time
+# and fail-closed at publication time through live service qualification.
 subscriptions:
   - id: subscription_1
     display_name: 订阅源 1
