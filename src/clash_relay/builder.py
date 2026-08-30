@@ -199,6 +199,9 @@ def build_candidate(
         if project.acl4ssr and project.acl4ssr.get("final_target")
         else None
     )
+    final_excluded_sources = (
+        list(project.acl4ssr.get("final_excluded_sources", [])) if project.acl4ssr else []
+    )
     output, generator_report = generate_config(
         root=project.root,
         config=project.config,
@@ -214,6 +217,9 @@ def build_candidate(
         output,
         group_specs=acl_groups,
         known_source_ids={spec.id for spec in enabled_specs},
+        rule_specs=external_rules,
+        final_target=final_target,
+        final_excluded_sources=final_excluded_sources,
     )
     _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
     validate_generated_config(output, secret_urls=secret_values)
