@@ -30,13 +30,24 @@ For every non-AI rule path, the canonical manifest preserves:
 
 The project must not collapse Bilibili into a generic domestic group, Telegram into generic node selection, media applications into one routing target, or `MATCH` into a project-defined source-filtered path.
 
-The adapter can count legacy rule types unsupported by the pinned Mihomo versions. Integration CI fetches the real canonical pinned sources and requires:
+The pinned Full lists contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`. clash-relay does **not** invent approximate `DOMAIN-REGEX` replacements. Instead, an omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit.
+
+Canonical CI therefore requires:
 
 ```text
-skipped_legacy_rules == 0
+verified_compatibility_omissions == 9
+unverified_legacy_rules == 0
 ```
 
-A future ACL4SSR pin that would require silently dropping a canonical rule therefore fails validation instead of being treated as strict compatibility.
+The nine verified omissions are:
+
+```text
+Download.list   -> Clash/Providers/Download.yaml   -> 7
+ChinaMedia.list -> Clash/Providers/ChinaMedia.yaml -> 1
+ProxyMedia.list -> Clash/Providers/ProxyMedia.yaml -> 1
+```
+
+If a future pin introduces another Mihomo-incompatible rule, changes one of those exact rules, removes the matching upstream Provider comment, or moves compatibility evidence outside `Clash/Providers/`, generation fails closed. This makes the compatibility boundary explicit and upstream-grounded rather than silently dropping rules.
 
 ## Canonical routing map
 
@@ -201,7 +212,7 @@ Changes to the canonical rule graph must pass all of the following before produc
 - Ruff and Python 3.11/3.12 unit tests;
 - repository safety audit;
 - deterministic byte-for-byte fictional generation;
-- real fetch of the canonical ACL4SSR pin with zero skipped legacy rules;
+- real fetch of the canonical ACL4SSR pin with exactly nine same-pin, upstream-verified compatibility omissions and zero unverified legacy rules;
 - Mihomo v1.19.30 configuration/startup integration;
 - Mihomo v1.19.29 configuration/startup integration;
 - private AI qualification;
