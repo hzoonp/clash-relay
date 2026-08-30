@@ -222,6 +222,11 @@ def load_project(
                 allowed_countries=frozenset(row["allowed_countries"]),
                 default_capabilities=frozenset(row["default_capabilities"]),
                 default_cost_level=row["default_cost_level"],
+                max_node_multiplier=(
+                    float(row["max_node_multiplier"])
+                    if row.get("max_node_multiplier") is not None
+                    else None
+                ),
                 node_metadata=dict(row.get("node_metadata", {})),
                 name_rules=tuple(row.get("name_rules", [])),
             )

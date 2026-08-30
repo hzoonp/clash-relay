@@ -19,6 +19,7 @@ class SubscriptionSpec:
     allowed_countries: frozenset[str]
     default_capabilities: frozenset[str]
     default_cost_level: str
+    max_node_multiplier: float | None = None
     node_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     name_rules: tuple[dict[str, Any], ...] = ()
 

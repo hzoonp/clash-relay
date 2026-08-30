@@ -13,7 +13,9 @@ from .errors import FetchError, GenerationError, SubscriptionError
 from .fetch import fetch_subscription
 from .generator import generate_config
 from .models import BuildResult, Node, SubscriptionSpec
+from .node_policy import filter_proxies_by_multiplier
 from .redact import redact_text
+from .routing_policy import apply_acl4ssr_source_exclusions
 from .secrets import resolve_subscription_urls
 from .subscription_parser import parse_subscription
 from .util import dump_yaml, sha256_text, unique
@@ -119,6 +121,7 @@ def build_candidate(
     nodes: list[Node] = []
     source_reports: list[dict[str, Any]] = []
     successful = 0
+    multiplier_filtered_nodes = 0
     for spec in sorted(enabled_specs, key=lambda item: (item.priority, item.id)):
         try:
             text = fetcher(
@@ -135,18 +138,27 @@ def build_candidate(
             )
             if not parsed.proxies:
                 raise SubscriptionError("subscription contains no usable proxies")
-            classified = [classify_proxy(proxy, spec, project.policies) for proxy in parsed.proxies]
+
+            admitted, rejected_multiplier = filter_proxies_by_multiplier(
+                parsed.proxies,
+                max_multiplier=spec.max_node_multiplier,
+            )
+            classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
             nodes.extend(classified)
             successful += 1
-            source_reports.append(
-                {
-                    "id": spec.id,
-                    "display_name": spec.display_name,
-                    "status": "ok",
-                    "nodes": len(classified),
-                    "skipped_invalid_nodes": parsed.skipped_items,
-                }
-            )
+            multiplier_filtered_nodes += rejected_multiplier
+
+            source_report: dict[str, Any] = {
+                "id": spec.id,
+                "display_name": spec.display_name,
+                "status": "ok",
+                "nodes": len(classified),
+                "skipped_invalid_nodes": parsed.skipped_items,
+                "filtered_over_multiplier": rejected_multiplier,
+            }
+            if spec.max_node_multiplier is not None:
+                source_report["max_node_multiplier"] = spec.max_node_multiplier
+            source_reports.append(source_report)
         except (FetchError, SubscriptionError, OSError, ValueError) as exc:
             safe_error = redact_text(str(exc), secret_values)
             source_reports.append(
@@ -181,6 +193,9 @@ def build_candidate(
         if project.acl4ssr and project.acl4ssr.get("final_target")
         else None
     )
+    final_excluded_sources = (
+        list(project.acl4ssr.get("final_excluded_sources", [])) if project.acl4ssr else []
+    )
     output, generator_report = generate_config(
         root=project.root,
         config=project.config,
@@ -191,6 +206,14 @@ def build_candidate(
         external_rules=external_rules,
         external_groups=acl_groups,
         final_target=final_target,
+    )
+    source_exclusions = apply_acl4ssr_source_exclusions(
+        output,
+        group_specs=acl_groups,
+        known_source_ids={spec.id for spec in enabled_specs},
+        rule_specs=external_rules,
+        final_target=final_target,
+        final_excluded_sources=final_excluded_sources,
     )
     _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
     validate_generated_config(output, secret_urls=secret_values)
@@ -211,8 +234,11 @@ def build_candidate(
         "parsed_nodes": len(nodes),
         "usable_nodes": len(deduplicated),
         "duplicates_removed": duplicate_count,
+        "multiplier_filtered_nodes": multiplier_filtered_nodes,
         **generator_report,
     }
     if acl_report is not None:
         report["rule_sources"] = {"acl4ssr": acl_report}
+    if source_exclusions:
+        report["source_exclusions"] = source_exclusions
     return BuildResult(output, yaml_text, report, secret_values)

@@ -26,6 +26,7 @@ groups:
   - id: policy_streaming
     display_name: 流媒体
     module: general
+    excluded_sources: [subscription_1]
     members:
       - {group: 节点选择}
       - {builtin: DIRECT}
@@ -33,11 +34,16 @@ groups:
   - id: policy_domestic_services
     display_name: 国内服务
     module: general
+    excluded_sources: [subscription_1]
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
 
+# Subscription 1 is allowed only for the explicit general-web ProxyGFWlist path
+# and AI policy path. Application-specific Telegram and unmatched final traffic
+# use a hidden source-filtered anchor that excludes subscription_1.
 final_target: 节点选择
+final_excluded_sources: [subscription_1]
 
 # Rule fragments mirror ACL4SSR_Online_Full.ini order, but fetch from the pinned
 # immutable commit above instead of the moving master branch. Groups are
@@ -114,6 +120,7 @@ sources:
     target: 节点选择
     priority: 110
     module: general
+    excluded_sources: [subscription_1]
 
   - id: ai
     path: Clash/Ruleset/AI.list

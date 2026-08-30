@@ -16,18 +16,16 @@ The repository's production declarations are intentionally smaller than the gene
 
 ```text
 4 private subscription URLs
-  ├─ 订阅源 1
-  ├─ 订阅源 2
-  ├─ 订阅源 3
-  └─ 订阅源 4
           ↓
- single general node inventory
+subscription-scoped admission policies
+          ↓
+single general node inventory
           ↓
         节点选择
           ↓
 pinned ACL4SSR Online Full rules
           ↓
-17 Chinese visible policy groups
+5 visible FlClash policy groups
           ↓
 Mihomo v1.19.30 + v1.19.29
           ↓
@@ -47,35 +45,31 @@ modules:
 
 ## Visible FlClash groups
 
-The canonical profile exposes exactly 17 Chinese groups:
+The canonical profile exposes exactly five groups:
 
 ```text
 节点选择
-直连
-广告拦截
-谷歌FCM
-微软服务
-苹果服务
-电报消息
 人工智能
-网易音乐
-游戏平台
-油管视频
-奈飞视频
-巴哈姆特
-哔哩哔哩
-国内媒体
-国外媒体
-漏网之鱼
+流媒体
+国内服务
+广告拦截
 ```
 
-Four redundant selectors were removed or merged:
+Only `节点选择` owns proxy credentials through an inline proxy provider. The other four are lightweight routing policies and do not duplicate nodes. Direct-only rules use Mihomo `DIRECT` directly, and unmatched traffic is routed by the configured final policy without adding another visible selector.
 
-- `Auto` is unnecessary because production has one automatic anchor, `__CR_AUTO_GENERAL_ANY`;
-- `App Purify` is merged into `广告拦截`;
-- `Microsoft Bing` and `Microsoft OneDrive` are merged into `微软服务`.
+## Subscription-scoped policies
 
-Only `节点选择` owns proxy credentials through an inline proxy provider. ACL4SSR service/media groups are lightweight selectors and do not duplicate nodes.
+A subscription may declare an optional `max_node_multiplier`. The filter evaluates only explicit multiplier markers in node names, such as `2x`, `x2.5`, `3倍`, or `倍率:4`. A ceiling of `2.0` removes nodes explicitly marked above 2x before classification and provider generation; nodes without an explicit multiplier marker are retained rather than guessed.
+
+Canonical production additionally restricts `subscription_1` to the explicit generic-web and AI routes:
+
+- ACL4SSR `ProxyGFWlist` may use `subscription_1`;
+- ACL4SSR `AI` and `OpenAi` may use `subscription_1` through `人工智能`;
+- `流媒体`, `国内服务`, Telegram, and final unmatched traffic exclude `subscription_1` from their proxy route.
+
+Source exclusions reuse the existing inline proxy provider through hidden Mihomo `exclude-filter` routing anchors. They do not create another credential-bearing provider. If a restricted route has no permitted proxy left, it fails closed to `REJECT`.
+
+This is rule-routing policy, not process identification: it does not attempt to prove that the originating executable is a web browser.
 
 ## ACL4SSR rule model
 
@@ -90,11 +84,11 @@ rule-providers:
 
 rules:
   - RULE-SET,acl4ssr_ai,人工智能
-  - GEOIP,CN,直连,no-resolve
-  - MATCH,漏网之鱼
+  - GEOIP,CN,DIRECT,no-resolve
+  - MATCH,<source-filtered-final-anchor>
 ```
 
-The final profile therefore remains standalone: generated rule providers contain no `url` or `path`, and FlClash/Mihomo does not fetch ACL4SSR at runtime. See [Routing rules and ACL4SSR](docs/rules.md).
+The final profile remains standalone: generated rule providers contain no `url` or `path`, and FlClash/Mihomo does not fetch ACL4SSR at runtime. See [Routing rules and ACL4SSR](docs/rules.md).
 
 ## Security architecture
 
@@ -108,7 +102,7 @@ Public GitHub repository
             ↓
       per-subscription ::add-mask::
             ↓
-      fetch + parse + deduplicate
+      fetch + parse + admission filter + deduplicate
             ↓
       fetch pinned ACL4SSR fragments
             ↓
