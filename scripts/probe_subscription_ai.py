@@ -84,7 +84,7 @@ def wait_for_controller(base: str, secret: str, *, deadline: float = 20.0) -> No
         except (OSError, URLError):
             pass
         time.sleep(0.25)
-    raise RuntimeError("Mihomo controller did not become ready")
+    raise RuntimeError("controller_not_ready")
 
 
 def select_proxy(base: str, secret: str, group: str, member: str) -> None:
@@ -96,7 +96,7 @@ def select_proxy(base: str, secret: str, group: str, member: str) -> None:
         {"name": member},
     )
     if status not in {200, 204}:
-        raise RuntimeError("Mihomo rejected a private proxy selection")
+        raise RuntimeError(f"selection_status_{status}")
 
 
 def fetch_through_proxy(
@@ -134,15 +134,11 @@ def classify(service: str, status: int | None, body: str | None) -> str:
     if service == "openai":
         if status in {200, 401, 429}:
             return "reachable"
-        if status == 403:
-            return "uncertain"
         return "uncertain"
 
     if service == "anthropic":
         if status in {200, 400, 401, 429}:
             return "reachable"
-        if status == 403:
-            return "uncertain"
         return "uncertain"
 
     if service == "gemini":
@@ -166,19 +162,16 @@ def subscription_node_names(candidate: Path, source_id: str) -> list[str]:
     providers = document.get("proxy-providers", {})
     provider = providers.get("cr_general_any")
     if not isinstance(provider, dict):
-        raise RuntimeError("general provider is missing")
+        raise RuntimeError("general_provider_missing")
     payload = provider.get("payload", [])
     prefix = f"[GENERAL:ANY] {source_id}/"
-    names = [
+    return [
         str(proxy["name"])
         for proxy in payload
         if isinstance(proxy, dict)
         and isinstance(proxy.get("name"), str)
         and str(proxy["name"]).startswith(prefix)
     ]
-    if not names:
-        raise RuntimeError("the requested subscription has no generated nodes")
-    return names
 
 
 def main() -> int:
@@ -188,21 +181,24 @@ def main() -> int:
     parser.add_argument("--controller", default="http://127.0.0.1:19090")
     parser.add_argument("--controller-secret", default="local-probe-only")
     parser.add_argument("--proxy", default="http://127.0.0.1:17890")
+    parser.add_argument("--group", default="__AI_PROBE_RAW")
     parser.add_argument("--timeout", type=float, default=4.0)
     args = parser.parse_args()
 
     nodes = subscription_node_names(args.candidate, args.source_id)
+    print(f"source={args.source_id}")
+    print(f"nodes_found={len(nodes)}")
+    if not nodes:
+        raise RuntimeError("source_has_no_generated_nodes")
+
     wait_for_controller(args.controller, args.controller_secret)
-    select_proxy(args.controller, args.controller_secret, "人工智能", "节点选择")
+    print("controller_ready=1")
 
     counters = {service: Counter() for service in SERVICES}
     all_three_reachable = 0
 
-    print(f"source={args.source_id}")
-    print(f"nodes_tested={len(nodes)}")
-
     for index, node_name in enumerate(nodes, start=1):
-        select_proxy(args.controller, args.controller_secret, "节点选择", node_name)
+        select_proxy(args.controller, args.controller_secret, args.group, node_name)
         time.sleep(0.1)
         per_node: dict[str, str] = {}
         for service, spec in SERVICES.items():
@@ -235,6 +231,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:  # noqa: BLE001 - diagnostic wrapper must not print private values
-        print(f"probe_failed={type(exc).__name__}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - diagnostic wrapper prints only safe class/reason
+        reason = str(exc)
+        if not reason.startswith(("controller_", "selection_status_", "source_", "general_")):
+            reason = type(exc).__name__
+        print(f"probe_failed={reason}", file=sys.stderr)
         raise SystemExit(2) from None
