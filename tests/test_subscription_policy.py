@@ -114,7 +114,9 @@ def test_builder_applies_multiplier_ceiling_before_provider_generation(
     runtime_names = [item["name"] for item in payload]
     assert any("Keep 2x" in name for name in runtime_names)
     assert all("Drop 3x" not in name for name in runtime_names)
-    primary_report = next(item for item in result.report["subscriptions"] if item["id"] == "primary")
+    primary_report = next(
+        item for item in result.report["subscriptions"] if item["id"] == "primary"
+    )
     assert primary_report["filtered_over_multiplier"] == 1
     assert result.report["multiplier_filtered_nodes"] == 1
 
