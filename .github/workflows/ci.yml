@@ -136,40 +136,39 @@ jobs:
           from pathlib import Path
 
           path = Path("scripts/repository_audit.py")
-          text = path.read_text()
-          old = '''        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")}:
-              if "external-controller:" in text or "secret:" in text:
-                  failures.append(f"private controller material found in {relative}")
-          '''
-          new = '''        if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")} and (
-              "external-controller:" in text or "secret:" in text
-          ):
-              failures.append(f"private controller material found in {relative}")
-          '''
-          if old not in text:
-              raise SystemExit("repository_audit remediation target not found")
-          path.write_text(text.replace(old, new))
+          lines = path.read_text().splitlines(keepends=True)
+          index = next(i for i, line in enumerate(lines) if 'if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")}:' in line)
+          indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+          assert lines[index + 1].strip() == 'if "external-controller:" in text or "secret:" in text:'
+          assert lines[index + 2].strip() == 'failures.append(f"private controller material found in {relative}")'
+          lines[index : index + 3] = [
+              indent + 'if relative in {Path("config.example.yaml"), Path("subscriptions.example.yaml")} and (\n',
+              indent + '    "external-controller:" in text or "secret:" in text\n',
+              indent + '):\n',
+              indent + '    failures.append(f"private controller material found in {relative}")\n',
+          ]
+          path.write_text("".join(lines))
 
           path = Path("src/clash_relay/validator.py")
-          text = path.read_text()
-          old = '''            if isinstance(proxy, dict) and "dialer-proxy" in proxy:
-                  if proxy["dialer-proxy"] not in group_names:
-                      errors.append(
-                          f"provider {provider_name!r} dialer-proxy references an unknown group"
-                      )
-          '''
-          new = '''            if (
-                  isinstance(proxy, dict)
-                  and "dialer-proxy" in proxy
-                  and proxy["dialer-proxy"] not in group_names
-              ):
-                  errors.append(
-                      f"provider {provider_name!r} dialer-proxy references an unknown group"
-                  )
-          '''
-          if old not in text:
-              raise SystemExit("validator remediation target not found")
-          path.write_text(text.replace(old, new))
+          lines = path.read_text().splitlines(keepends=True)
+          index = next(i for i, line in enumerate(lines) if line.strip() == 'if isinstance(proxy, dict) and "dialer-proxy" in proxy:')
+          indent = lines[index][: len(lines[index]) - len(lines[index].lstrip())]
+          assert lines[index + 1].strip() == 'if proxy["dialer-proxy"] not in group_names:'
+          assert lines[index + 2].strip() == 'errors.append('
+          message = lines[index + 3].strip()
+          assert 'dialer-proxy references an unknown group' in message
+          assert lines[index + 4].strip() == ')'
+          lines[index : index + 5] = [
+              indent + 'if (\n',
+              indent + '    isinstance(proxy, dict)\n',
+              indent + '    and "dialer-proxy" in proxy\n',
+              indent + '    and proxy["dialer-proxy"] not in group_names\n',
+              indent + '):\n',
+              indent + '    errors.append(\n',
+              indent + '        ' + message + '\n',
+              indent + '    )\n',
+          ]
+          path.write_text("".join(lines))
 
           path = Path("tests/test_config_loader.py")
           text = path.read_text()
@@ -178,17 +177,13 @@ jobs:
           path.write_text(text.replace('match="direct.yaml"', 'match=r"direct\\.yaml"'))
 
           path = Path("tests/test_status_and_security.py")
-          text = path.read_text()
-          old_import = "from clash_relay.errors import FetchError, GenerationError, PublicationError, SecretError"
-          new_import = "from clash_relay.errors import ConfigurationError, FetchError, GenerationError, PublicationError, SecretError"
-          if old_import not in text:
-              raise SystemExit("status-test import remediation target not found")
-          text = text.replace(old_import, new_import)
-          old_raise = "with pytest.raises(Exception):\n        parse_expected_status(expression)"
-          new_raise = "with pytest.raises(ConfigurationError):\n        parse_expected_status(expression)"
-          if old_raise not in text:
-              raise SystemExit("status-test exception remediation target not found")
-          path.write_text(text.replace(old_raise, new_raise))
+          lines = path.read_text().splitlines(keepends=True)
+          import_index = next(i for i, line in enumerate(lines) if line.startswith("from clash_relay.errors import "))
+          if "ConfigurationError" not in lines[import_index]:
+              lines[import_index] = lines[import_index].replace("import ", "import ConfigurationError, ", 1)
+          raise_index = next(i for i, line in enumerate(lines) if line.strip() == "with pytest.raises(Exception):")
+          lines[raise_index] = lines[raise_index].replace("Exception", "ConfigurationError")
+          path.write_text("".join(lines))
 
           path = Path(".github/workflows/ci.yml")
           text = path.read_text()
