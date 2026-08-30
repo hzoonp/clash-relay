@@ -157,9 +157,7 @@ def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
 
     token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
     account_id = args.account_id or os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
-    namespace_title = args.namespace_title or os.environ.get(
-        "CLOUDFLARE_KV_NAMESPACE_TITLE", ""
-    )
+    namespace_title = args.namespace_title or os.environ.get("CLOUDFLARE_KV_NAMESPACE_TITLE", "")
     key_name = args.key or project.config["publishing"]["cloudflare_kv"]["key"]
     result = CloudflareKVPublisher(
         token=token,
