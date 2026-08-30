@@ -213,6 +213,8 @@ This file owns canonical non-AI routing behavior. It declares:
 
 The only intentional semantic extension is the `人工智能` scheduling layer: candidate country groups are live-qualified per service, and private post-processing inserts service-specific OpenAI/Claude/Gemini routes before the generic ACL4SSR AI rule.
 
+The pinned Full lists also contain nine legacy `URL-REGEX` entries that Mihomo 1.19.x cannot express as classical rules. Canonical generation permits those omissions only when the exact same lines are explicitly commented out by ACL4SSR's own `Clash/Providers/*.yaml` files at the same pinned commit. The expected compatibility boundary is seven verified omissions from `Download`, one from `ChinaMedia`, and one from `ProxyMedia`; any unverified omission fails closed.
+
 ## Output visibility
 
 After successful AI qualification, the intended FlClash top level is:
@@ -229,4 +231,4 @@ ACL4SSR semantic groups hidden under the presentation containers still receive t
 
 ## Validation
 
-Canonical changes must pass schema validation, Python 3.11/3.12 quality checks, deterministic generation, repository audit, real fetch of the pinned ACL4SSR sources with zero skipped legacy rules, and Mihomo v1.19.30/v1.19.29 integration before the exact private candidate may be published.
+Canonical changes must pass schema validation, Python 3.11/3.12 quality checks, deterministic generation, repository audit, real fetch of the pinned ACL4SSR sources with exactly nine same-pin upstream-verified compatibility omissions and `unverified_legacy_rules == 0`, and Mihomo v1.19.30/v1.19.29 integration before the exact private candidate may be published.
