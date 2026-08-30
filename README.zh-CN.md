@@ -14,18 +14,16 @@
 
 ```text
 4 个私密订阅 URL
-  ├─ 订阅源 1
-  ├─ 订阅源 2
-  ├─ 订阅源 3
-  └─ 订阅源 4
           ↓
-     单一 general 节点库存
+订阅源级节点准入策略
+          ↓
+单一 general 节点库存
           ↓
         节点选择
           ↓
 ACL4SSR Online Full（固定 commit）
           ↓
-17 个中文可见策略组
+5 个 FlClash 可见策略组
           ↓
 Mihomo v1.19.30 + v1.19.29
           ↓
@@ -45,36 +43,37 @@ modules:
 
 ## 当前 FlClash 可见策略组
 
-生产配置共有 17 个中文可见组：
+生产配置只保留 5 个可见组：
 
 ```text
 节点选择
-直连
-广告拦截
-谷歌FCM
-微软服务
-苹果服务
-电报消息
 人工智能
-网易音乐
-游戏平台
-油管视频
-奈飞视频
-巴哈姆特
-哔哩哔哩
-国内媒体
-国外媒体
-漏网之鱼
+流媒体
+国内服务
+广告拦截
 ```
 
-这次精简删除了 4 个重复选择层：
+真正的节点凭据只由 `节点选择` 对应的 inline `proxy-provider` 持有。其它 4 个组只是轻量策略选择器，不复制节点凭据。无需人工切换的直连规则直接使用 Mihomo `DIRECT`，最终兜底也不再为了 UI 单独制造一个“漏网之鱼”组。
 
-- `Auto`：与唯一 `__CR_AUTO_GENERAL_ANY` 自动锚点重复；
-- `App Purify`：合并到 `广告拦截`；
-- `Microsoft Bing`：合并到 `微软服务`；
-- `Microsoft OneDrive`：合并到 `微软服务`。
+## 订阅源级策略
 
-真正的节点凭据只由 `节点选择` 对应的 inline `proxy-provider` 持有。其它 ACL4SSR 组只是轻量策略选择器，不复制节点凭据。
+每个订阅可以声明可选的 `max_node_multiplier`。过滤器只识别节点名称中明确写出的倍率，例如 `2x`、`x2.5`、`3倍`、`倍率:4`。当上限设为 `2.0` 时：
+
+- 明确倍率 `<= 2.0`：保留；
+- 明确倍率 `> 2.0`：在分类和 provider 生成前直接剔除；
+- 名称没有明确倍率标记：保留，不猜测。
+
+canonical 生产进一步把 `subscription_1` 限制在明确的通用网页与 AI 路径：
+
+- ACL4SSR `ProxyGFWlist` 可以使用 `subscription_1`；
+- ACL4SSR `AI` / `OpenAi` 通过 `人工智能` 可以使用 `subscription_1`；
+- `流媒体`、`国内服务` 的代理路径排除 `subscription_1`；
+- Telegram 排除 `subscription_1`；
+- 未命中的最终 `MATCH` 流量排除 `subscription_1`。
+
+这些限制不会复制节点。生成器只克隆隐藏的路由锚点，并通过 Mihomo `exclude-filter` 过滤共享 provider 中带有对应订阅源前缀的运行时节点。如果受限路由已经没有其它允许节点，则 fail closed 到隐藏的 `REJECT`，不会偷偷回退到被禁止的订阅源。
+
+这里约束的是**规则路由场景**，不是进程识别；项目不会声称能够仅凭域名证明发起流量的可执行程序一定是浏览器。
 
 ## ACL4SSR 规则模型
 
@@ -89,8 +88,8 @@ rule-providers:
 
 rules:
   - RULE-SET,acl4ssr_ai,人工智能
-  - GEOIP,CN,直连,no-resolve
-  - MATCH,漏网之鱼
+  - GEOIP,CN,DIRECT,no-resolve
+  - MATCH,<source-filtered-final-anchor>
 ```
 
 因此：
@@ -115,7 +114,7 @@ Public GitHub
              ↓
       每个订阅 URL ::add-mask::
              ↓
-      获取 / 解析 / 去重
+      获取 / 解析 / 准入过滤 / 去重
              ↓
       获取固定 ACL4SSR 规则
              ↓
@@ -217,7 +216,7 @@ clash-relay generate \
   --output .work/config.yaml
 ```
 
-CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置与启动集成验证。
+CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置与启动集成验证，包括 source-filtered `exclude-filter` 路由。
 
 详细说明：
 
