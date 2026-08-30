@@ -21,9 +21,11 @@
           ↓
 AI 候选池：SG / JP / US / HK / TW / KR / OTHER
           ↓
-可信 Runner 逐节点实际访问 ChatGPT / Claude / Gemini
+可信 Runner 对每个节点分别探测 ChatGPT / Claude / Gemini
           ↓
-只保留三项都通过的 AI 节点
+AI 国家库存保留至少通过一个服务的节点并集
+          ↓
+隐藏的 OpenAI / Claude / Gemini 路由只使用各自通过实测的节点
           ↓
 ACL4SSR Online Full（固定 commit）
           ↓
@@ -41,7 +43,7 @@ modules:
   general: true
 ```
 
-`services.yaml` 在生产中为空。`policies.yaml` 保留一个通用 `general` 节点池，并增加 7 个 AI 国家/地区候选池；它们仍属于同一个 `general` 模块，不恢复旧的 ChatGPT、Claude、Gemini 独立服务模块。旧的 Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明仍保持移除。通用生成引擎的其它能力继续在 `tests/fixtures/project/` 中独立测试。
+`services.yaml` 在生产中为空。`policies.yaml` 保留一个通用 `general` 节点池，并增加 7 个 AI 国家/地区候选池；它们仍属于同一个 `general` 模块，不恢复旧的 ChatGPT、Claude、Gemini 声明期独立服务模块。旧的 Google Play、Bulk、Residential、EMBY、High Multiplier、Chain 生产声明仍保持移除。通用生成引擎的其它能力继续在 `tests/fixtures/project/` 中独立测试。
 
 ## AI 节点资格与国家分组
 
@@ -59,7 +61,7 @@ OTHER 其它/无法可靠识别
 
 这不是 GeoIP 探测，也不声称节点出口 IP 一定与名称一致；它只是根据常见中文/英文地区名、机场码、国旗和边界明确的地区缩写进行分类。无法可靠识别时进入 `OTHER`，不会猜测。
 
-所有订阅都可以提供 AI **候选**节点，但候选资格本身不等于可用。可信 `main` Runner 会为候选节点启动临时 Mihomo，使用 Core API 把临时 selector 固定到具体节点，再让 Python 通过该 Mihomo 的本地 mixed-port 实际请求：
+所有订阅都可以提供 AI **候选**节点，但候选资格本身不等于可用。可信 `main` Runner 会为候选节点启动临时 Mihomo，使用 Core API 把临时 selector 固定到具体节点，再让 Python 通过该 Mihomo 的本地 mixed-port 实际发送 `HEAD` 请求：
 
 ```text
 https://chatgpt.com/
@@ -67,15 +69,18 @@ https://claude.ai/
 https://gemini.google.com/
 ```
 
-当前要求三项请求都返回配置允许的 HTTP 状态范围（生产为 `200-399`）。网络失败、超时、4xx/5xx 或任何一项不通过都会把该节点从 AI 池移除。普通 `节点选择` 不受 AI 资格筛选影响。
+三个服务会**分别判定资格**。某个节点只有在对应服务的 probe 返回配置允许的 HTTP 状态范围时，才算通过该服务；生产当前要求 `200-399`。网络错误、超时、TLS 失败或非允许状态，只会让节点在该服务上失败，不再因为另一家服务的限制而把整个节点错误判定为“所有 AI 都不可用”。
 
-为了避免几百个节点完全串行测试，候选 provider 会被分片并以有上限的并发临时 Mihomo 进程执行；节点名称、服务器、凭据和单节点探测结果不会输出到公开 Actions 日志。最终只记录安全的聚合数量。
+最终 AI 国家 provider 保留 OpenAI、Claude、Gemini 三个通过集合的**并集**。随后由隐藏的服务专用路由锚点对这些共享国家 provider 做精确过滤：OpenAI 流量只使用 OpenAI 实测通过的节点，Claude 只使用 Claude 通过节点，Gemini 只使用 Gemini 通过节点。普通 `节点选择` 完全不受 AI 资格结果影响。
+
+为了避免几百个节点完全串行测试，候选 provider 会被分片并以有上限的并发临时 Mihomo 进程执行；节点名称、服务器、凭据和单节点探测结果不会输出到公开 Actions 日志。公开日志只保留安全的聚合信息，例如各 probe 的 HTTP 状态数量、timeout/TLS/network error 数量、selector failure 数量和各服务合格节点总数。
 
 资格筛选完成后：
 
-- 某国家/地区仍有合格节点：保留对应 `AI · <地区>` 组；
-- 某国家/地区没有合格节点：从最终 `人工智能` 组移除；
-- 所有地区都没有合格节点：生产发布 fail closed，不覆盖 Cloudflare KV 中上一版成功配置。
+- 某国家/地区仍有至少一个服务合格节点：保留对应 `AI · <地区>` 组；
+- 某国家/地区没有任何服务合格节点：从最终 `人工智能` 组移除；
+- 某一个服务没有任何合格节点：该服务的隐藏路由 fail closed 到 `REJECT`，不会影响其它已通过服务继续发布；
+- 三个受保护 AI 服务全部没有任何合格节点，或资格基础设施无法安全完成：生产发布整体 fail closed，不覆盖 Cloudflare KV 中上一版成功配置。
 
 因此最终 FlClash 可见组数量会随实际资格结果变化。核心策略组始终包括：
 
@@ -100,7 +105,7 @@ AI · 其他地区
 DIRECT
 ```
 
-通用节点由 `节点选择` 的 inline provider 持有；AI 国家组使用独立的私密 inline provider，以便在发布前安全删除未通过资格测试的具体节点。最终 YAML 仍只存在于私密发布链路中。
+OpenAI / Claude / Gemini 的服务专用路由是隐藏实现组，不会增加额外的 FlClash 用户选择器。通用节点由 `节点选择` 的 inline provider 持有；AI 国家组使用独立的私密 inline provider，以便在发布前删除对三个受保护 AI 服务都无资格的节点。最终 YAML 仍只存在于私密发布链路中。
 
 ## 订阅源级策略
 
@@ -113,7 +118,7 @@ DIRECT
 canonical 生产仍把 `subscription_1` 限制在明确的通用网页与 AI 路径：
 
 - ACL4SSR `ProxyGFWlist` 可以使用 `subscription_1`；
-- ACL4SSR `AI` / `OpenAi` 通过经过实时资格筛选的 AI 国家组可以使用 `subscription_1`；
+- OpenAI / Claude / Gemini 受保护流量只有通过对应服务实时资格筛选的隐藏路由才能使用 `subscription_1`，其它 ACL4SSR AI 流量继续通过 `人工智能`；
 - `流媒体`、`国内服务` 的普通代理路径排除 `subscription_1`；
 - Telegram 排除 `subscription_1`；
 - 未命中的最终 `MATCH` 流量排除 `subscription_1`。
@@ -124,7 +129,7 @@ canonical 生产仍把 `subscription_1` 限制在明确的通用网页与 AI 路
 
 ## ACL4SSR 规则模型
 
-ACL4SSR 固定到不可变 commit，而不是跟随移动的 `master`。构建时从该 commit 获取 Full 规则片段，并转换为：
+ACL4SSR 固定到不可变 commit，而不是跟随移动的 `master`。构建时从该 commit 获取 Full 规则片段，并转换为 inline classical rule-provider。私密 AI 资格阶段会从固定的 AI payload 中严格派生 Claude 与 Gemini 子集，并检查上游规则是否发生预期外漂移；固定的 OpenAI provider 与这两个派生子集会放在通用 AI 规则前面，使服务资格路由优先生效：
 
 ```yaml
 rule-providers:
@@ -134,6 +139,9 @@ rule-providers:
     payload: [...]
 
 rules:
+  - RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI
+  - RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE
+  - RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI
   - RULE-SET,acl4ssr_ai,人工智能
   - GEOIP,CN,DIRECT,no-resolve
   - MATCH,<source-filtered-final-anchor>
@@ -167,9 +175,9 @@ Public GitHub
              ↓
       生成私密 standalone YAML
              ↓
-      临时 Mihomo：逐节点 AI 实际 HTTP(S) 资格筛选
+      临时 Mihomo：逐节点、逐服务 AI 实际 HEAD 资格筛选
              ↓
-      删除不合格节点与空国家组
+      保留服务合格并集 + 构建隐藏服务路由 + 删除空国家组
              ↓
       Mihomo v1.19.30
              ↓
@@ -267,7 +275,7 @@ clash-relay generate \
   --output .work/config.yaml
 ```
 
-CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置、启动和 AI selector/mixed-port 状态验证。
+CI 在 Python 3.11/3.12 上运行单元测试与仓库审计，再做字节级确定性生成，并分别使用 Mihomo v1.19.30 / v1.19.29 做真实配置、启动、AI selector/mixed-port HEAD 状态和服务资格路由验证。
 
 详细说明：
 

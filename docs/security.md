@@ -22,9 +22,11 @@ The supported data path is:
 2. `CLASH_RELAY_SUBSCRIPTIONS` supplies private source URLs to the generation steps;
 3. each URL is registered with GitHub `::add-mask::` before any fetch;
 4. one GitHub-hosted runner generates the credential-bearing candidate locally;
-5. the same runner validates the exact candidate with both pinned stable Mihomo cores;
-6. only after both validations pass does a final step receive `CLOUDFLARE_API_TOKEN` and write the exact candidate bytes to private Cloudflare Workers KV;
-7. no credential-bearing Actions Artifact, GitHub Release, Gist, commit, or Pages asset is created.
+5. after generation, the same runner qualifies OpenAI, Claude, and Gemini independently by selecting each AI candidate through temporary loopback-only Mihomo instances and issuing the configured service `HEAD` requests through Mihomo;
+6. AI country inventories retain only the union of service-qualified nodes, and hidden service routes filter those shared providers so each protected service can use only nodes that passed its own probe;
+7. the same runner validates the exact service-qualified candidate with both pinned stable Mihomo cores;
+8. only after both validations pass does a final step receive `CLOUDFLARE_API_TOKEN` and write the exact candidate bytes to private Cloudflare Workers KV;
+9. no credential-bearing Actions Artifact, GitHub Release, Gist, commit, or Pages asset is created.
 
 The workflow only performs production deployment from `refs/heads/main`. Pull-request CI continues to use fictional fixtures and receives no production secrets.
 
@@ -33,11 +35,24 @@ The workflow only performs production deployment from `refs/heads/main`. Pull-re
 Secrets are scoped to the narrowest workflow steps:
 
 - `CLASH_RELAY_SUBSCRIPTIONS` is present only while registering masks and generating the candidate;
+- AI qualification receives the already-generated candidate and does not need the original subscription Secret;
 - `CLOUDFLARE_API_TOKEN` is present only in the final KV publication step;
-- Mihomo validation receives neither secret;
+- final Mihomo validation receives neither production Secret;
 - `PROFILE_TOKEN` never enters GitHub at all. It exists only as a Cloudflare Worker Secret and in the FlClash profile URL stored by the user.
 
+Temporary AI qualification controller secrets are generated or fixed only inside the ephemeral runner process context and are not publication credentials. Controller and mixed ports bind to `127.0.0.1` only.
+
 A user with write access to a repository can potentially modify trusted workflow/code paths before a future main-branch run. Protect `main`, require CI review, and restrict workflow changes before treating repository Secrets as production credentials.
+
+## AI qualification safety semantics
+
+The qualification gate is fail-closed without pretending that every protected AI service has identical network policy.
+
+OpenAI, Claude, and Gemini are tested independently. A node that receives a rejected response or transport failure from one service is excluded from that service route but can remain eligible for another service if it independently passes that service's probe. The accepted HTTP status range is not widened merely to make a release succeed.
+
+The country AI providers keep the union of service-qualified nodes. Hidden service-specific groups apply exact runtime-node filters to those shared providers. If one protected service has no qualified node, only that service route becomes hidden `REJECT`. If no node qualifies for any protected AI service, publication aborts and the previous Cloudflare KV value remains untouched.
+
+The service-routing rewrite also checks its rule assumptions against the immutable pinned ACL4SSR payload. If the expected Claude or Gemini subset is missing after an ACL4SSR pin change, the build fails closed and requires review instead of silently changing routing classification.
 
 ## Input handling
 
@@ -63,6 +78,8 @@ Build reports contain source IDs, counts, statuses, and a candidate digest, neve
 
 `CLASH_RELAY_SUBSCRIPTIONS` is a structured Secret containing multiple URL values. Before generation begins, the workflow parses that mapping in memory and emits a GitHub `::add-mask::` command for every individual URL. This makes each derived URL independently maskable even though GitHub originally received the bundle as one Secret value.
 
+AI qualification never prints node names, node servers, credentials, or per-node service results to the public Actions log. Its diagnostics are deliberately aggregate-only: tested/qualified counts, selector failure counts, accepted/rejected HTTP status totals, and coarse transport outcomes such as timeout, DNS, TLS, connection, or other network errors.
+
 Real Mihomo validation can theoretically include node details in unusual core failures. In the public production workflow, Mihomo stdout/stderr is therefore redirected to runner-local files and is not printed when a real candidate fails. The public log receives only a generic validation failure. Those local files are never uploaded.
 
 Cloudflare API failures also return generic application errors. The API token and candidate body are never included in exception text.
@@ -70,6 +87,8 @@ Cloudflare API failures also return generic application errors. The API token an
 ## Generated output is highest-sensitivity data
 
 The project deliberately emits inline providers so clients need no original subscription URL. This means the resulting file contains node credentials. Treat generated `config.yaml` as equivalent to a credential bundle.
+
+Service-aware qualification does not duplicate credentials into additional providers. Hidden service routes reuse the already-generated private AI country providers through Mihomo group filtering; the qualified private YAML remains the only credential-bearing artifact.
 
 The Cloudflare publication gate fails unless all credential-bearing GitHub publishers remain disabled:
 

@@ -23,17 +23,35 @@ The credential-bearing candidate never crosses a GitHub Artifact boundary. One d
 3. resolve subscriptions and generate `.work/private/config.yaml` once;
 4. statically validate the candidate during generation;
 5. download and verify pinned Mihomo v1.19.30 for private AI qualification;
-6. shard AI candidate providers across bounded temporary Mihomo processes, select each candidate node through the local Core API, and issue the configured ChatGPT / Claude / Gemini HTTP(S) requests through that process's local mixed port;
-7. prune every AI node that fails any required service probe and remove empty country groups; if no AI node survives, stop without publishing;
-8. validate the exact qualified candidate with pinned Mihomo v1.19.30;
-9. validate those same qualified candidate bytes with pinned Mihomo v1.19.29;
-10. only after both stable cores pass, provide the Cloudflare API token to the final publication step;
-11. resolve the configured Workers KV namespace by exact title and write the exact candidate to the configured key;
-12. remove the private candidate after successful publication. On any earlier failure, the ephemeral runner is destroyed without updating Cloudflare.
+6. shard AI candidate providers across bounded temporary Mihomo processes, select each candidate node through the local Core API, and independently issue the configured ChatGPT / Claude / Gemini `HEAD` requests through that process's local mixed port;
+7. collect a separate qualified-node set for OpenAI, Claude, and Gemini; retain the union in AI country inventories, prune empty country inventories, and build hidden service-specific routes that filter those shared providers to only the nodes qualified for that service;
+8. fail an individual service closed to a hidden `REJECT` route when that service has no qualified nodes; stop publication entirely only if no node qualifies for any protected AI service or the qualification infrastructure cannot complete safely;
+9. validate the exact service-qualified candidate with pinned Mihomo v1.19.30;
+10. validate those same qualified candidate bytes with pinned Mihomo v1.19.29;
+11. only after both stable cores pass, provide the Cloudflare API token to the final publication step;
+12. resolve the configured Workers KV namespace by exact title and write the exact candidate to the configured key;
+13. remove the private candidate after successful publication. On any earlier failure, the ephemeral runner is destroyed without updating Cloudflare.
 
-AI qualification receives the generated private candidate, not the original subscription Secret. Temporary Mihomo controller and mixed ports bind to loopback only. Node names, servers, credentials, and per-node service results stay runner-local; the public summary contains aggregate counts only.
+AI qualification receives the generated private candidate, not the original subscription Secret. Temporary Mihomo controller and mixed ports bind to loopback only. Node names, servers, credentials, and per-node service results stay runner-local; the public summary contains aggregate probe outcomes and qualified counts only.
 
 Mihomo failure output for a real candidate is redirected to runner-local files and deliberately not printed in the public Actions log. Those files are never uploaded.
+
+## Service-aware AI qualification
+
+The production qualification gate does not require one node to satisfy all three AI services. Each protected service is evaluated independently against its own configured endpoint and accepted HTTP status range.
+
+The country AI providers keep the union of nodes that qualify for at least one protected service. Hidden routing anchors then apply exact runtime-node filters:
+
+```text
+OpenAI rules → OpenAI-qualified hidden route → shared qualified country providers
+Claude rules → Claude-qualified hidden route → shared qualified country providers
+Gemini rules → Gemini-qualified hidden route → shared qualified country providers
+other AI rules → 人工智能 → visible qualified country selectors / DIRECT
+```
+
+The dedicated pinned ACL4SSR OpenAI rule provider and strict Claude/Gemini subsets derived from the immutable pinned ACL4SSR AI payload are placed before the generic AI rule. If the pinned AI payload no longer contains the expected Claude/Gemini subset, rewriting fails closed and requires review rather than silently changing service classification.
+
+A `403`, timeout, TLS error, or other rejected result for one service does not prove that a node is unusable for every other AI service. It only removes that node from the affected service route. The accepted status range itself is not widened to make publication succeed.
 
 ## Cloudflare Workers KV
 
@@ -85,8 +103,10 @@ This is enforced both by configuration and by workflow regression tests.
 
 ## Failure semantics
 
-Cloudflare is updated only after generation, AI qualification, and both pinned stable-core validations succeed. A subscription fetch error, schema failure, graph error, zero surviving AI nodes, AI probe infrastructure failure, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or KV API failure leaves the previously stored `production-config` untouched.
+Cloudflare is updated only after generation, AI qualification, and both pinned stable-core validations succeed. A subscription fetch error, schema failure, graph error, zero service-qualified AI nodes across all protected services, AI probe infrastructure failure, service-routing rewrite failure, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or KV API failure leaves the previously stored `production-config` untouched.
 
-A failure of one AI node does not abort the whole build: that node is removed from AI providers while ordinary `节点选择` remains unchanged. A country with no surviving AI nodes is removed from the `人工智能` selector. Publication aborts only if no AI-qualified node remains at all or if the qualification infrastructure itself cannot complete safely.
+A failure of one AI node for one service does not abort the whole build. That node is excluded only from the affected service route; it can remain available to another protected AI service if it independently passes that service's probe. AI country inventories retain the union of service-qualified nodes, and a country with no surviving qualified node is removed from the visible `人工智能` selector.
+
+If one protected service has zero qualified nodes, only that service route fails closed to `REJECT`. Publication aborts only if all protected AI service sets are empty or if the qualification infrastructure itself cannot complete safely.
 
 Because Workers KV is a distributed eventually consistent store, clients may briefly continue to receive an older successful value after a new write. The workflow never intentionally publishes an unqualified or unvalidated candidate.

@@ -21,9 +21,11 @@ general inventory + deterministic country classification from node names
           ↓
 AI candidate pools: SG / JP / US / HK / TW / KR / OTHER
           ↓
-trusted runner performs real ChatGPT / Claude / Gemini HTTP(S) requests per node
+trusted runner probes ChatGPT / Claude / Gemini independently per node
           ↓
-keep only nodes that pass all three AI probes
+keep the union of service-qualified nodes in country inventories
+          ↓
+hidden OpenAI / Claude / Gemini routes use only nodes qualified for that service
           ↓
 pinned ACL4SSR Online Full rules
           ↓
@@ -41,13 +43,13 @@ modules:
   general: true
 ```
 
-`services.yaml` remains empty. `policies.yaml` has one general pool plus seven country-scoped AI candidate pools under the same `general` module. This does not restore dedicated ChatGPT, Claude, or Gemini service modules. Legacy Google Play, bulk, residential, EMBY, high-multiplier, and chain production declarations remain removed. Generic engine capabilities continue to be exercised in `tests/fixtures/project/`.
+`services.yaml` remains empty. `policies.yaml` has one general pool plus seven country-scoped AI candidate pools under the same `general` module. This does not restore dedicated ChatGPT, Claude, or Gemini declaration-time service modules. Legacy Google Play, bulk, residential, EMBY, high-multiplier, and chain production declarations remain removed. Generic engine capabilities continue to be exercised in `tests/fixtures/project/`.
 
 ## AI qualification and country groups
 
 AI candidates are deterministically classified from **node names**, not from GeoIP. Production currently recognizes SG, JP, US, HK, TW, and KR from common Chinese/English location names, airport codes, flags, and unambiguous short-code boundaries. Unrecognized nodes go to `OTHER`; the project does not guess their location or claim that a label proves the actual egress IP location.
 
-Every subscription may provide AI **candidates**, but declaration-time eligibility is not enough. On trusted `main`, the workflow starts short-lived Mihomo processes, pins a temporary selector to each candidate node through the Core API, and then makes actual HTTP(S) requests through that Mihomo mixed port to:
+Every subscription may provide AI **candidates**, but declaration-time eligibility is not enough. On trusted `main`, the workflow starts short-lived Mihomo processes, pins a temporary selector to each candidate node through the Core API, and then makes actual `HEAD` requests through that Mihomo mixed port to:
 
 ```text
 https://chatgpt.com/
@@ -55,11 +57,13 @@ https://claude.ai/
 https://gemini.google.com/
 ```
 
-A node survives only if all configured probes return an accepted HTTP status range; production currently requires `200-399` for all three. Network errors, timeouts, or a non-accepted response fail that node. This qualification changes only the AI pools; the ordinary `节点选择` inventory is not pruned by AI results.
+The three services are qualified **independently**. For each service, a node qualifies only when that service probe returns the configured accepted HTTP status range; production currently requires `200-399`. Network errors, timeouts, TLS failures, or a non-accepted response fail that node for that service without falsely declaring the whole node unusable for every AI service.
 
-Candidates are sharded across a bounded number of isolated temporary Mihomo processes so hundreds of nodes do not have to be tested serially. Node names, servers, credentials, and per-node probe results are not printed to the public Actions log; only aggregate counts are emitted.
+The final country AI inventories retain the **union** of nodes that qualify for at least one of OpenAI, Claude, or Gemini. Hidden service-specific routing anchors then filter those shared country providers so OpenAI traffic can use only OpenAI-qualified nodes, Claude traffic only Claude-qualified nodes, and Gemini traffic only Gemini-qualified nodes. The ordinary `节点选择` inventory is never pruned by AI results.
 
-After qualification, an empty country group is removed from `人工智能`. If every country is empty, publication fails closed and the previous Cloudflare KV value is left untouched.
+Candidates are sharded across a bounded number of isolated temporary Mihomo processes so hundreds of nodes do not have to be tested serially. Node names, servers, credentials, and per-node probe results are not printed to the public Actions log. Public diagnostics contain only aggregate counts such as accepted/rejected status totals, timeout/TLS/network error counts, selector failures, and service-qualified node counts.
+
+After qualification, an empty country group is removed from `人工智能`. A service with zero qualified nodes fails closed through a hidden `REJECT` route while other successfully qualified services may still publish. Publication aborts only when **no node qualifies for any protected AI service** or when the qualification infrastructure itself cannot complete safely; in either case the previous Cloudflare KV value remains untouched.
 
 The core visible groups remain:
 
@@ -84,7 +88,7 @@ AI · 其他地区
 DIRECT
 ```
 
-The general inventory and AI country inventories use separate private inline providers so the trusted build can physically remove non-qualified AI nodes before final validation. The final credential-bearing YAML still exists only in the private publication path.
+The service-specific OpenAI / Claude / Gemini routes are hidden implementation groups, so service-aware qualification does not add extra user-facing selectors. The general inventory and AI country inventories use separate private inline providers so the trusted build can physically remove nodes that qualify for no protected AI service before final validation. The final credential-bearing YAML still exists only in the private publication path.
 
 ## Subscription-scoped policies
 
@@ -93,7 +97,7 @@ A subscription may declare an optional `max_node_multiplier`. The filter evaluat
 Canonical production still restricts `subscription_1` to explicit generic-web and AI routes:
 
 - ACL4SSR `ProxyGFWlist` may use `subscription_1`;
-- ACL4SSR `AI` and `OpenAi` may use it only through live-qualified AI country pools;
+- protected OpenAI / Claude / Gemini traffic may use it only through the corresponding live-qualified hidden service route, while remaining ACL4SSR AI traffic continues through `人工智能`;
 - `流媒体`, `国内服务`, Telegram, and final unmatched ordinary proxy traffic exclude `subscription_1`.
 
 Ordinary source exclusions reuse the general inline provider through hidden Mihomo `exclude-filter` routing anchors. If a restricted route has no permitted proxy left, it fails closed to `REJECT`.
@@ -102,7 +106,7 @@ This is rule-routing policy, not process identification: it does not attempt to 
 
 ## ACL4SSR rule model
 
-ACL4SSR is pinned to an immutable commit rather than the moving `master` branch. Trusted generation fetches the configured Full fragments and embeds each one as a Mihomo inline classical rule provider:
+ACL4SSR is pinned to an immutable commit rather than the moving `master` branch. Trusted generation fetches the configured Full fragments and embeds each one as a Mihomo inline classical rule provider. During private AI qualification, exact Claude and Gemini subsets are derived from that pinned AI payload and checked for upstream drift; the dedicated pinned OpenAI provider plus those derived subsets are placed before the generic AI rule so service-qualified routes take precedence.
 
 ```yaml
 rule-providers:
@@ -112,6 +116,9 @@ rule-providers:
     payload: [...]
 
 rules:
+  - RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI
+  - RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE
+  - RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI
   - RULE-SET,acl4ssr_ai,人工智能
   - GEOIP,CN,DIRECT,no-resolve
   - MATCH,<source-filtered-final-anchor>
@@ -137,9 +144,9 @@ Public GitHub repository
             ↓
       generate private standalone YAML
             ↓
-      per-node AI qualification through temporary Mihomo mixed ports
+      per-node, per-service AI qualification through temporary Mihomo mixed ports
             ↓
-      prune failed nodes and empty AI country groups
+      keep service-qualified union + build hidden service routes + prune empty countries
             ↓
       Mihomo v1.19.30 validation
             ↓
@@ -236,7 +243,7 @@ clash-relay generate \
   --output .work/config.yaml
 ```
 
-CI runs schema/lint/unit/repository-safety checks on Python 3.11 and 3.12, byte-for-byte deterministic generation, and real Mihomo v1.19.30/v1.19.29 configuration/startup integration tests, including selector-to-mixed-port AI status validation. Production runs only from trusted `main` and creates no credential-bearing GitHub Artifact.
+CI runs schema/lint/unit/repository-safety checks on Python 3.11 and 3.12, byte-for-byte deterministic generation, and real Mihomo v1.19.30/v1.19.29 configuration/startup integration tests, including selector-to-mixed-port AI status validation and service-aware post-qualification routing validation. Production runs only from trusted `main` and creates no credential-bearing GitHub Artifact.
 
 ## License
 
