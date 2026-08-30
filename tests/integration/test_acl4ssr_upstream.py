@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from clash_relay.acl4ssr import load_acl4ssr_rules
+from clash_relay.ai_service_qualification import apply_ai_service_qualification
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
 
@@ -126,6 +127,21 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         fetcher=fake_subscription,
     )
 
+    ai_names = {
+        str(proxy["name"])
+        for provider_name, provider in result.config["proxy-providers"].items()
+        if str(provider_name).startswith("cr_ai_")
+        for proxy in provider["payload"]
+    }
+    apply_ai_service_qualification(
+        result.config,
+        {
+            "ai_openai": set(ai_names),
+            "ai_claude": set(ai_names),
+            "ai_gemini": set(ai_names),
+        },
+    )
+
     groups = {item["name"]: item for item in result.config["proxy-groups"]}
     visible = {
         item["name"] for item in result.config["proxy-groups"] if not item.get("hidden", False)
@@ -162,7 +178,10 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     assert "source_exclusions" not in result.report
 
     candidate = tmp_path / "canonical-strict.yaml"
-    candidate.write_text(result.yaml_text, encoding="utf-8")
+    candidate.write_text(
+        yaml.safe_dump(result.config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
     validation = validate_with_mihomo(
         Path(os.environ["MIHOMO_BIN"]),
         candidate,
