@@ -15,26 +15,21 @@ def test_publish_runs_on_main_and_manual_dispatch() -> None:
     assert "      - main\n" in text
     assert "  workflow_dispatch:\n" in text
     assert "clash-relay-publish-${{ github.ref }}" in text
+    assert "github.ref == 'refs/heads/main'" in text
 
 
-def test_every_mutating_publish_stage_depends_on_the_configured_gate() -> None:
+def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storage() -> None:
     text = WORKFLOW.read_text()
-    assert "Publication skipped until config.yaml and subscriptions.yaml are committed" in text
-    assert text.count("needs.prepare.outputs.configured == 'true'") >= 4
+    assert "Build, validate, and publish private config" in text
+    assert "repository.private" not in text
+    assert "actions/upload-artifact" not in text
+    assert "actions/download-artifact" not in text
+    assert "gh release" not in text
+    assert "publish-gist" not in text
+    assert "GITHUB_GIST_TOKEN" not in text
+    assert "PUBLISH_PUBLIC_RELEASE" not in text
     assert "always()" not in text
     assert "continue-on-error" not in text
-    assert "needs:\n      - prepare\n      - candidate\n      - validate" in text
-
-
-def test_public_production_builds_fail_closed_before_secret_use() -> None:
-    text = WORKFLOW.read_text()
-    assert "REPOSITORY_PRIVATE: ${{ github.event.repository.private }}" in text
-    assert 'if [[ "$REPOSITORY_PRIVATE" != "true" ]]' in text
-    assert "Sensitive production build blocked" in text
-    assert "refuses to read subscription Secrets" in text
-    assert text.index("Sensitive production build blocked") < text.index(
-        "CLASH_RELAY_SUBSCRIPTIONS"
-    )
 
 
 def test_individual_subscription_urls_are_masked_before_generation() -> None:
@@ -42,15 +37,33 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
     assert "Mask individual subscription URLs" in text
     assert "from clash_relay.secrets import load_secret_mapping" in text
     assert 'print(f"::add-mask::{command_escape(value)}")' in text
-    assert text.index("Mask individual subscription URLs") < text.index(
-        "Generate and statically validate candidate"
-    )
+    assert text.index("Mask individual subscription URLs") < text.index("Generate private candidate")
 
 
-def test_sensitive_public_backends_are_disabled_by_default() -> None:
+def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
+    text = WORKFLOW.read_text()
+    assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
+    assert text.index("CLOUDFLARE_API_TOKEN") > text.index("validate_core v1.19.29")
+
+
+def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:
+    text = WORKFLOW.read_text()
+    assert "validate_core v1.19.30" in text
+    assert "validate_core v1.19.29" in text
+    assert "Detailed core output is intentionally suppressed" in text
+    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    assert text.index("validate_core v1.19.30") < publish
+    assert text.index("validate_core v1.19.29") < publish
+    assert "clash-relay publish-cloudflare-kv" in text
+
+
+def test_sensitive_github_backends_are_disabled_by_default() -> None:
     config = yaml.safe_load(CONFIG_EXAMPLE.read_text())
     publishing = config["publishing"]
+    assert publishing["artifact"] is False
     assert publishing["github_release"]["enabled"] is False
     assert publishing["github_release"]["allow_sensitive_public_release"] is False
     assert publishing["gist"]["enabled"] is False
     assert publishing["gist"]["allow_sensitive_unlisted_gist"] is False
+    assert publishing["cloudflare_kv"] == {"enabled": True, "key": "production-config"}

@@ -4,26 +4,40 @@
 
 - subscription URLs and tokens;
 - node usernames, passwords, UUID-bearing private links, or generated proxy payloads;
-- API keys and Gist tokens;
+- Cloudflare API tokens;
+- the Worker `PROFILE_TOKEN` or complete FlClash profile URL;
 - private controller addresses/secrets;
 - ignored local secret mappings;
 - generated `config.yaml` and build caches.
 
-The initial `.gitignore` covers common secret filenames, `.env*`, `.secrets/`, generated `dist/` content, downloaded cores, caches, and runtime provider directories. Public `config.yaml` and `subscriptions.yaml` are intentionally commit-able, so repository audit and code review must ensure they contain metadata only.
+The `.gitignore` covers common secret filenames, `.env*`, `.secrets/`, generated `dist/` content, downloaded cores, caches, and runtime provider directories. Tracked `config.yaml` and `subscriptions.yaml` are allowed only as public policy/metadata declarations and must contain no URL, token, username, password, or private endpoint.
 
-## Public source repository vs. private production repository
+## Public repository production model
 
-The public repository is source code and examples only. A production build that has both `config.yaml` and `subscriptions.yaml` is allowed only when GitHub reports the repository as private.
+Production generation is intentionally supported in a public GitHub repository, but the public repository is never used as storage or distribution for credential-bearing output.
 
-The publish workflow checks repository privacy in the `prepare` job before any step receives `CLASH_RELAY_SUBSCRIPTIONS`. If production declarations are present in a public or otherwise non-private repository, the workflow fails closed before subscription Secrets are read, candidate YAML is generated, or an Artifact can be uploaded.
+The supported data path is:
 
-Recommended deployment model:
+1. tracked public declarations contain metadata only;
+2. `CLASH_RELAY_SUBSCRIPTIONS` supplies private source URLs to the generation steps;
+3. each URL is registered with GitHub `::add-mask::` before any fetch;
+4. one GitHub-hosted runner generates the credential-bearing candidate locally;
+5. the same runner validates the exact candidate with both pinned stable Mihomo cores;
+6. only after both validations pass does a final step receive `CLOUDFLARE_API_TOKEN` and write the exact candidate bytes to private Cloudflare Workers KV;
+7. no credential-bearing Actions Artifact, GitHub Release, Gist, commit, or Pages asset is created.
 
-1. keep the upstream/template repository public;
-2. create a private repository for real production configuration;
-3. put only subscription metadata in tracked YAML;
-4. keep subscription URLs in GitHub Actions Secrets;
-5. generate and retain credential-bearing Artifacts only in that private repository.
+The workflow only performs production deployment from `refs/heads/main`. Pull-request CI continues to use fictional fixtures and receives no production secrets.
+
+## Secret separation
+
+Secrets are scoped to the narrowest workflow steps:
+
+- `CLASH_RELAY_SUBSCRIPTIONS` is present only while registering masks and generating the candidate;
+- `CLOUDFLARE_API_TOKEN` is present only in the final KV publication step;
+- Mihomo validation receives neither secret;
+- `PROFILE_TOKEN` never enters GitHub at all. It exists only as a Cloudflare Worker Secret and in the FlClash profile URL stored by the user.
+
+A user with write access to a repository can potentially modify trusted workflow/code paths before a future main-branch run. Protect `main`, require CI review, and restrict workflow changes before treating repository Secrets as production credentials.
 
 ## Input handling
 
@@ -41,53 +55,46 @@ All subscriptions are untrusted:
 - subscription-supplied chain/interface/routing controls are stripped;
 - output names are regenerated and globally unique.
 
-Current limitation: URL hostnames are not DNS-pinned throughout the HTTP connection, so a hostile resolver capable of rebinding remains outside the current standard-library fetcher threat model. Do not accept subscription URLs from untrusted strangers, and run production builds on hardened runners when this matters.
+Current limitation: URL hostnames are not DNS-pinned throughout the HTTP connection, so a hostile resolver capable of rebinding remains outside the current standard-library fetcher threat model. Do not accept subscription URLs from untrusted strangers.
 
 ## Logs and reports
 
 Build reports contain source IDs, counts, statuses, and a candidate digest, never source URLs or proxy payloads. Error paths redact full secret values, common query credentials, Authorization headers, and password fields. Workflows do not enable shell tracing and never echo the secret bundle.
 
-`CLASH_RELAY_SUBSCRIPTIONS` is a structured Secret containing multiple URL values. Before generation begins, the workflow parses that mapping in-memory and emits a GitHub `::add-mask::` command for every individual URL. This makes each derived URL independently maskable even though GitHub originally received the bundle as one Secret value.
+`CLASH_RELAY_SUBSCRIPTIONS` is a structured Secret containing multiple URL values. Before generation begins, the workflow parses that mapping in memory and emits a GitHub `::add-mask::` command for every individual URL. This makes each derived URL independently maskable even though GitHub originally received the bundle as one Secret value.
 
-Mihomo output is captured only for failure diagnosis and redacted against known secret URLs. Node credentials can still appear in unusual core errors; runner-side masking and private workflow access remain defense-in-depth, not a reason to publish logs.
+Real Mihomo validation can theoretically include node details in unusual core failures. In the public production workflow, Mihomo stdout/stderr is therefore redirected to runner-local files and is not printed when a real candidate fails. The public log receives only a generic validation failure. Those local files are never uploaded.
+
+Cloudflare API failures also return generic application errors. The API token and candidate body are never included in exception text.
 
 ## Generated output is highest-sensitivity data
 
-The project deliberately emits inline providers so clients need no private subscription URL. This means the resulting file contains node credentials. Treat generated `config.yaml` as equivalent to a credential bundle.
+The project deliberately emits inline providers so clients need no original subscription URL. This means the resulting file contains node credentials. Treat generated `config.yaml` as equivalent to a credential bundle.
 
-Security guarantees are therefore:
+The Cloudflare publication gate fails unless all credential-bearing GitHub publishers remain disabled:
 
-- no credential is committed to the source repository;
-- no subscription URL is written into candidate YAML or reports;
-- no failed candidate is promoted;
-- a production workflow in a non-private repository fails before Secret use;
-- public Release and Gist backends are disabled by default and remain behind explicit opt-in gates.
+- `publishing.artifact: false`;
+- `publishing.github_release.enabled: false`;
+- `publishing.gist.enabled: false`;
+- `publishing.cloudflare_kv.enabled: true`.
 
-They do **not** make a published standalone config non-sensitive.
+The production workflow itself contains no `upload-artifact`, Release, or Gist path for the generated config.
 
-### Artifact
+## Cloudflare Workers KV
 
-Artifact is the baseline transport only for a private production repository. Candidate Artifacts are retained for one day and promoted production Artifacts follow the configured workflow retention. Treat repository read access as config access.
+The GitHub Action uses a narrowly scoped Cloudflare API token with Workers KV edit/write permission. It resolves the configured namespace title exactly and writes the validated bytes to the configured key, normally `production-config`. The publisher enforces Cloudflare KV's 25 MiB value ceiling before attempting the write.
 
-A public repository with production declarations is intentionally blocked before candidate generation, so it cannot upload a credential-bearing candidate or production Artifact through the supported workflow.
+The Worker reads that key only after validating a high-entropy `PROFILE_TOKEN` carried in the URL path. The full profile URL is therefore a bearer credential: anyone who obtains it can download the generated configuration. Keep it out of GitHub, screenshots, analytics, referrers, support tickets, and logs. Rotate the token if it is exposed.
 
-### GitHub Release
-
-Release publication is disabled by default. It requires configuration consent, repository variable `PUBLISH_PUBLIC_RELEASE=true`, and the exact publication acknowledgement variable. Generated config remains sensitive even when the repository itself is private; changing repository visibility later can expose retained history and release assets, so do not use Release as the default delivery path.
-
-### Gist
-
-Gist publication is disabled by default. An unlisted Gist is not private. It requires a separate token, existing Gist ID, declaration consent, repository variable `PUBLISH_UNLISTED_GIST=true`, and the exact publication acknowledgement variable. Do not use it as the default delivery path for production credentials.
+Recommended Worker response controls include `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow, noarchive`, and invalid tokens should return a generic `404`.
 
 ## GitHub hardening before production
 
-- use a private repository for production generation and sensitive Artifacts;
 - protect `main` and require all PR status checks;
-- restrict who can modify workflows;
-- use environments/required reviewers for the `promote` job if available;
-- minimize Actions token permissions;
-- review Dependabot updates before merge;
+- restrict who can modify Actions workflows and production-relevant Python code;
+- keep Actions token permissions read-only unless a workflow explicitly requires more;
+- never use `pull_request_target` with production Secrets for untrusted code;
+- review dependency updates before merge;
 - consider pinning third-party Actions to full commit SHAs under your supply-chain policy;
-- enable private vulnerability reporting;
-- rotate any credential that ever appeared in repository history, logs, Artifacts, Releases, or Gists;
-- test from a new fictional secret before adding production subscriptions.
+- rotate any credential that ever appeared in repository history, logs, Artifacts, Releases, Gists, or screenshots;
+- test from fictional subscription data before enabling real production declarations.

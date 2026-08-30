@@ -76,7 +76,7 @@
     "publishing": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifact", "github_release", "gist"],
+      "required": ["artifact", "github_release", "gist", "cloudflare_kv"],
       "properties": {
         "artifact": {"type": "boolean"},
         "github_release": {
@@ -95,6 +95,20 @@
           "properties": {
             "enabled": {"type": "boolean"},
             "allow_sensitive_unlisted_gist": {"type": "boolean"}
+          }
+        },
+        "cloudflare_kv": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "key"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s]+$"
+            }
           }
         }
       }
