@@ -18,9 +18,7 @@ def test_pinned_acl4ssr_profile_validates_with_real_mihomo(
     root, paths = project_factory()
 
     def enable_acl4ssr(document):
-        document["rule_sources"] = {
-            "acl4ssr": {"enabled": True, "manifest": "rules/acl4ssr.yaml"}
-        }
+        document["rule_sources"] = {"acl4ssr": {"enabled": True, "manifest": "rules/acl4ssr.yaml"}}
 
     yaml_editor(paths["config_path"], enable_acl4ssr)
     result = build_candidate(**paths, env=fixture_env)
