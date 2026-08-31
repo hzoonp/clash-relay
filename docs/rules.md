@@ -109,49 +109,23 @@ DIRECT
 
 `自动选择`, `手动切换`, country selectors, and `奈飞节点` are provider-backed selectors over the same internal general inventory. Their production regexes and ordering are declared in `rules/acl4ssr.yaml` from the pinned Full configuration rather than inferred by clash-relay.
 
-Other semantic groups such as `全球直连`, `广告拦截`, `应用净化`, Microsoft groups, `电报消息`, `游戏平台`, media groups, and `漏网之鱼` preserve their upstream member order. They may be hidden from the FlClash top level, but rules still target the semantic groups themselves.
+Other semantic groups such as `全球直连`, `广告拦截`, `应用净化`, Microsoft groups, `电报消息`, `游戏平台`, media groups, and `漏网之鱼` preserve their upstream member order.
 
-## Presentation-only containers
+## FlClash presentation
 
-To keep FlClash compact, production exposes these top-level groups:
+Mihomo proxy groups are controls, not navigable folders. A presentation-only `select` group that contains another group does **not** provide a way to edit the child group's selection; changing that parent also has no routing effect when no rule targets it. For this reason canonical production does not create pseudo-folders such as `流媒体`, `国内服务`, or `更多策略`.
 
-```text
-节点选择
-人工智能
-流媒体
-国内服务
-更多策略
-```
-
-`流媒体`, `国内服务`, and `更多策略` are presentation-only containers. They are not ACL4SSR rule targets.
+Every actionable ACL4SSR `select` group remains visible in FlClash, including `手动切换`, `奈飞节点`, `全球直连`, application/media selectors, ad selectors, and `漏网之鱼`. This is required so the user can operate the exact group that ACL4SSR rules target. For example, Bilibili rules target the visible `哔哩哔哩` selector whose pinned order remains:
 
 ```text
-流媒体
-├─ 油管视频
-├─ 奈飞视频
-├─ 巴哈姆特
-├─ 哔哩哔哩
-├─ 国内媒体
-└─ 国外媒体
-
-国内服务
-├─ 谷歌FCM
-├─ 微软Bing
-├─ 微软云盘
-├─ 微软服务
-├─ 苹果服务
-├─ 游戏平台
-└─ 网易音乐
-
-更多策略
-├─ 电报消息
-├─ 全球直连
-├─ 广告拦截
-├─ 应用净化
-└─ 漏网之鱼
+全球直连
+台湾节点
+香港节点
 ```
 
-The validator permits a human-readable hidden semantic group only when it remains reachable from a visible presentation path. Internal `__CR_*` groups keep their separate safety constraints.
+Only automatic helper groups that do not require manual configuration are hidden from the top-level list: `自动选择` and the country `url-test` selectors. They remain usable as members of the visible ACL4SSR selectors.
+
+The display layer may change visibility and ordering, but it must not remap a rule target, change selector members, or change member order. Canonical integration tests require every non-AI rule target to be visible/actionable after generation.
 
 ## AI live qualification: the explicit exception
 
@@ -176,7 +150,7 @@ rules:
 
 `acl4ssr_openai` is the pinned upstream OpenAI provider. `cr_ai_rules_claude` and `cr_ai_rules_gemini` are exact subsets of the pinned upstream `AI.list`. Qualification verifies that every expected subset entry is still present; drift fails closed.
 
-AI country groups are hidden from the top level and nested only under `人工智能`. Empty country groups are removed. A protected service with no qualified nodes fails closed to `REJECT`; if all protected services are empty, publication aborts and the previous KV value remains untouched.
+AI country groups are hidden from the top level and exposed only through the `人工智能` selector. Empty country groups are removed. A protected service with no qualified node fails closed to `REJECT`; if all protected services are empty, publication aborts and the previous KV value remains untouched.
 
 ## Subscription admission is not routing
 
@@ -217,9 +191,3 @@ Changes to the canonical rule graph must pass all of the following before produc
 - Mihomo v1.19.29 configuration/startup integration;
 - private AI qualification;
 - final validation of the exact qualified candidate before KV publication.
-
-Any failure before publication leaves the previous Cloudflare KV value unchanged.
-
-## Licensing and attribution
-
-ACL4SSR is distributed under **CC-BY-SA-4.0**. The repository does not vendor the bulk upstream rule lists into its MIT-licensed source tree. Generated profiles include attribution with the exact upstream commit and license reference.
