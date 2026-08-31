@@ -307,7 +307,7 @@ def audit_routing_v2(
         for row in candidate.get("proxy-groups", [])
         if isinstance(row, dict) and not row.get("hidden", False)
     }
-    if _CANONICAL_VISIBLE <= set(groups):
+    if set(groups) >= _CANONICAL_VISIBLE:
         ai_wrapper_names = {
             str(pool["display_name"])
             for pool in project.policies["pools"]
@@ -317,7 +317,7 @@ def audit_routing_v2(
             allowed_visible = _CANONICAL_VISIBLE
         else:
             allowed_visible = _CANONICAL_VISIBLE | ai_wrapper_names
-        if not _CANONICAL_VISIBLE <= visible or not visible <= allowed_visible:
+        if not visible >= _CANONICAL_VISIBLE or not visible <= allowed_visible:
             raise ValidationError(
                 "canonical routing v2 profile exposes unexpected top-level groups"
             )
