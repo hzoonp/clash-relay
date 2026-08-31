@@ -85,7 +85,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "proxy_gfwlist": "网页浏览",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
-        "download": "全球直连",
+        "download": "下载流量",
     }
     sources = {item["id"]: item for item in manifest["sources"]}
     assert {
@@ -121,9 +121,9 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert groups["网页浏览"]["provider_pool"] == "browsing"
     assert groups["网页自动"]["provider_pool"] == "browsing"
     assert _group_members(groups["人工智能"]) == [
+        "AI · 美国",
         "AI · 新加坡",
         "AI · 日本",
-        "AI · 美国",
         "AI · 台湾",
         "AI · 韩国",
         "AI · 其他地区",
