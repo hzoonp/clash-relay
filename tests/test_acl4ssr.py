@@ -46,7 +46,7 @@ def test_parse_acl4ssr_list_rejects_unknown_rule_types() -> None:
         parse_acl4ssr_list("FUTURE-RULE,example.com\n", source_id="fixture")
 
 
-def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) -> None:
+def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
     assert manifest["repository"] == "ACL4SSR/ACL4SSR"
     assert manifest["ref"] == "c498ae4911f15b19c5ceaef6f8737ca8705b4430"
@@ -82,7 +82,7 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
         "bilibili": "哔哩哔哩",
         "china_media": "国内媒体",
         "proxy_media": "国外媒体",
-        "proxy_gfwlist": "节点选择",
+        "proxy_gfwlist": "网页浏览",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
         "download": "全球直连",
@@ -117,6 +117,9 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
         "手动切换",
         "DIRECT",
     ]
+    assert _group_members(groups["网页浏览"]) == ["网页自动", "DIRECT"]
+    assert groups["网页浏览"]["provider_pool"] == "browsing"
+    assert groups["网页自动"]["provider_pool"] == "browsing"
     assert _group_members(groups["哔哩哔哩"]) == ["全球直连", "台湾节点", "香港节点"]
     assert _group_members(groups["全球直连"]) == ["DIRECT", "节点选择", "自动选择"]
     assert _group_members(groups["广告拦截"]) == ["REJECT", "DIRECT"]
@@ -151,6 +154,7 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
     hidden_groups = {name for name, group in groups.items() if group.get("hidden", False)}
     assert hidden_groups == {
         "自动选择",
+        "网页自动",
         "香港节点",
         "台湾节点",
         "新加坡节点",
@@ -160,7 +164,9 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
     }
 
 
-def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> None:
+def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
+    repo_root: Path,
+) -> None:
     config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
     assert config["rule_sources"]["acl4ssr"]["enabled"] is True
     assert config["modules"] == {"general": True}
@@ -177,6 +183,7 @@ def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> No
     pools = {item["id"]: item for item in policies["pools"]}
     assert set(pools) == {
         "general",
+        "browsing",
         "ai_sg",
         "ai_jp",
         "ai_us",
@@ -186,9 +193,13 @@ def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> No
         "ai_other",
     }
     general = pools["general"]
+    browsing = pools["browsing"]
     assert general["display_name"] == "__CR_GENERAL_INVENTORY"
     assert general["source_use"] == "general"
     assert general["excluded_capabilities"] == []
+    assert browsing["display_name"] == "__CR_BROWSING_INVENTORY"
+    assert browsing["source_use"] == "browsing"
+    assert browsing["excluded_capabilities"] == []
     assert {pools[item]["source_use"] for item in pools if item.startswith("ai_")} == {"ai"}
 
     for relative in (
