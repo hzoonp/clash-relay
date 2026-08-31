@@ -11,7 +11,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import tempfile
 import urllib.error
 import urllib.request
