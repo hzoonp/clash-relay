@@ -23,11 +23,13 @@ from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
+BROWSING_AUTO_PROVIDER_PREFIX = "cr_browsing_auto_"
 BROWSING_POOL_ID = "browsing"
 _PROBE_GROUP = "__CR_BROWSING_QUALIFICATION"
 _DEFAULT_ATTEMPTS = 3
 _DEFAULT_REQUIRED_SUCCESSES = 2
 _DEFAULT_WORKERS = 12
+_MIN_STABLE_AUTO_NODES = 3
 
 
 def _free_port() -> int:
@@ -43,6 +45,19 @@ def _comment_header(text: str) -> str:
             break
         lines.append(line)
     return "\n".join(lines) + ("\n" if lines else "")
+
+
+def _is_canonical_browsing_provider(name: str) -> bool:
+    return name.startswith(BROWSING_PROVIDER_PREFIX) and not name.startswith(
+        BROWSING_AUTO_PROVIDER_PREFIX
+    )
+
+
+def _auto_provider_name(name: str) -> str:
+    if not _is_canonical_browsing_provider(name):
+        raise ValidationError(f"invalid canonical browsing provider name {name!r}")
+    suffix = name[len(BROWSING_PROVIDER_PREFIX) :]
+    return f"{BROWSING_AUTO_PROVIDER_PREFIX}{suffix}"
 
 
 def load_browsing_probe_spec(policies_path: Path) -> dict[str, Any]:
@@ -94,7 +109,7 @@ def _browsing_provider_payloads(
         raise ValidationError("candidate proxy-providers must be a mapping")
     result: dict[str, tuple[dict[str, Any], ...]] = {}
     for provider_name in sorted(providers):
-        if not provider_name.startswith(BROWSING_PROVIDER_PREFIX):
+        if not _is_canonical_browsing_provider(provider_name):
             continue
         provider = providers[provider_name]
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
@@ -257,12 +272,12 @@ def _group_delay_probe(
     return delays, "success"
 
 
-def _qualified_from_group_samples(
+def _stability_tiers_from_group_samples(
     node_names: tuple[str, ...],
     samples: tuple[dict[str, int], ...],
     *,
     required_successes: int,
-) -> tuple[set[str], list[float]]:
+) -> tuple[set[str], set[str], list[float]]:
     delays_by_node: dict[str, list[int]] = {name: [] for name in node_names}
     for sample in samples:
         for node_name in node_names:
@@ -275,10 +290,29 @@ def _qualified_from_group_samples(
         for node_name, delays in delays_by_node.items()
         if len(delays) >= required_successes
     }
+    stable = {
+        node_name
+        for node_name, delays in delays_by_node.items()
+        if len(delays) == len(samples) and len(delays) >= required_successes
+    }
     qualified_medians = [
         float(median(delays_by_node[node_name])) for node_name in sorted(qualified)
     ]
-    return qualified, qualified_medians
+    return qualified, stable, qualified_medians
+
+
+def _qualified_from_group_samples(
+    node_names: tuple[str, ...],
+    samples: tuple[dict[str, int], ...],
+    *,
+    required_successes: int,
+) -> tuple[set[str], list[float]]:
+    qualified, _, medians = _stability_tiers_from_group_samples(
+        node_names,
+        samples,
+        required_successes=required_successes,
+    )
+    return qualified, medians
 
 
 def _latency_summary(values: list[float]) -> dict[str, float | int | None]:
@@ -303,8 +337,8 @@ def probe_browsing_nodes(
     attempts: int = _DEFAULT_ATTEMPTS,
     required_successes: int = _DEFAULT_REQUIRED_SUCCESSES,
     diagnostics: dict[str, Any] | None = None,
-) -> set[str]:
-    """Return browsing runtime names that pass repeatable group-level HTTPS delay probes."""
+) -> tuple[set[str], set[str]]:
+    """Return qualified and fully stable browsing runtime names."""
     if attempts < 1:
         raise ValidationError("browsing qualification attempts must be positive")
     if required_successes < 1 or required_successes > attempts:
@@ -401,7 +435,7 @@ def probe_browsing_nodes(
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
 
-    qualified, qualified_medians = _qualified_from_group_samples(
+    qualified, stable, qualified_medians = _stability_tiers_from_group_samples(
         node_names,
         tuple(samples),
         required_successes=required_successes,
@@ -417,6 +451,8 @@ def probe_browsing_nodes(
         "required_successes": required_successes,
         "tested_nodes": len(node_names),
         "qualified_nodes": len(qualified),
+        "stable_nodes": len(stable),
+        "reserve_nodes": len(qualified - stable),
         "failed_nodes": len(node_names) - len(qualified),
         "successful_samples": successful_samples,
         "failed_samples": failed_samples,
@@ -426,24 +462,55 @@ def probe_browsing_nodes(
     if diagnostics is not None:
         diagnostics.clear()
         diagnostics.update(summary)
-    return qualified
+    return qualified, stable
+
+
+def _rewrite_automatic_browsing_groups(
+    config: dict[str, Any],
+    provider_mapping: dict[str, str],
+) -> int:
+    groups = config.get("proxy-groups")
+    if not isinstance(groups, list):
+        raise ValidationError("candidate proxy group structure is invalid")
+    rewrites = 0
+    for group in groups:
+        if not isinstance(group, dict) or group.get("type") != "url-test":
+            continue
+        uses = group.get("use")
+        if not isinstance(uses, list):
+            continue
+        rewritten = [provider_mapping.get(str(name), str(name)) for name in uses]
+        if rewritten != uses:
+            group["use"] = rewritten
+            rewrites += 1
+    if rewrites == 0:
+        raise ValidationError("browsing qualification found no automatic browsing group to tier")
+    return rewrites
 
 
 def apply_browsing_qualification(
     config: dict[str, Any],
     qualified_names: set[str],
+    stable_names: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Prune browsing providers to nodes that passed the pre-publish probe."""
+    """Prune browsing inventory and give automatic selection a stable-only tier."""
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
         raise ValidationError("candidate proxy provider structure is invalid")
 
+    effective_stable = qualified_names if stable_names is None else stable_names & qualified_names
     tested = 0
     qualified = 0
-    provider_counts: dict[str, dict[str, int]] = {}
+    stable = 0
+    automatic = 0
+    automatic_fallback_providers = 0
+    provider_counts: dict[str, dict[str, int | bool]] = {}
+    automatic_providers: dict[str, dict[str, Any]] = {}
+    provider_mapping: dict[str, str] = {}
     found = False
+
     for provider_name in sorted(providers):
-        if not provider_name.startswith(BROWSING_PROVIDER_PREFIX):
+        if not _is_canonical_browsing_provider(provider_name):
             continue
         found = True
         provider = providers[provider_name]
@@ -460,19 +527,49 @@ def apply_browsing_qualification(
                 f"browsing qualification left provider {provider_name!r} empty; "
                 "refusing to replace the published profile"
             )
+        stable_kept = [
+            proxy for proxy in kept if str(proxy.get("name", "")) in effective_stable
+        ]
+        stable_threshold = min(_MIN_STABLE_AUTO_NODES, len(kept))
+        use_stable_only = len(stable_kept) >= stable_threshold
+        automatic_kept = stable_kept if use_stable_only else kept
+        auto_provider_name = _auto_provider_name(provider_name)
+        auto_provider = dict(provider)
+        auto_provider["payload"] = list(automatic_kept)
+        automatic_providers[auto_provider_name] = auto_provider
+        provider_mapping[provider_name] = auto_provider_name
+
         provider["payload"] = kept
         tested += len(payload)
         qualified += len(kept)
-        provider_counts[provider_name] = {"tested": len(payload), "qualified": len(kept)}
+        stable += len(stable_kept)
+        automatic += len(automatic_kept)
+        if not use_stable_only:
+            automatic_fallback_providers += 1
+        provider_counts[provider_name] = {
+            "tested": len(payload),
+            "qualified": len(kept),
+            "stable": len(stable_kept),
+            "automatic": len(automatic_kept),
+            "automatic_fallback": not use_stable_only,
+        }
 
     if not found:
         raise ValidationError("candidate contains no browsing providers")
     if qualified == 0:
         raise ValidationError("no nodes passed browsing qualification")
+
+    providers.update(automatic_providers)
+    automatic_groups = _rewrite_automatic_browsing_groups(config, provider_mapping)
     return {
         "tested_nodes": tested,
         "qualified_nodes": qualified,
+        "stable_nodes": stable,
+        "reserve_nodes": qualified - stable,
         "failed_nodes": tested - qualified,
+        "automatic_nodes": automatic,
+        "automatic_fallback_providers": automatic_fallback_providers,
+        "automatic_groups": automatic_groups,
         "providers": provider_counts,
     }
 
@@ -480,6 +577,7 @@ def apply_browsing_qualification(
 def rewrite_browsing_qualified_candidate(
     candidate_path: Path,
     qualified_names: set[str],
+    stable_names: set[str] | None = None,
 ) -> dict[str, Any]:
     try:
         original = candidate_path.read_text(encoding="utf-8")
@@ -488,7 +586,7 @@ def rewrite_browsing_qualified_candidate(
     config = load_yaml_file(candidate_path)
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
-    report = apply_browsing_qualification(config, qualified_names)
+    report = apply_browsing_qualification(config, qualified_names, stable_names)
     validate_generated_config(config)
     atomic_write(candidate_path, _comment_header(original) + dump_yaml(config))
     return report
