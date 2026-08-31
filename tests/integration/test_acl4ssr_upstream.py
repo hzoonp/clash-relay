@@ -220,8 +220,31 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "手动切换",
         "DIRECT",
     ]
-    assert groups["哔哩哔哩"]["proxies"] == ["全球直连", "台湾节点", "香港节点"]
-    assert groups["广告拦截"]["proxies"] == ["REJECT", "DIRECT"]
+
+    deterministic = {
+        "全球直连": "DIRECT",
+        "广告拦截": "REJECT",
+        "应用净化": "REJECT",
+        "谷歌FCM": "DIRECT",
+        "微软Bing": "DIRECT",
+        "微软云盘": "DIRECT",
+        "微软服务": "DIRECT",
+        "苹果服务": "DIRECT",
+        "电报消息": "代理选择",
+        "网易音乐": "DIRECT",
+        "游戏平台": "DIRECT",
+        "油管视频": "代理选择",
+        "巴哈姆特": "台湾节点",
+        "哔哩哔哩": "DIRECT",
+        "国内媒体": "DIRECT",
+        "国外媒体": "代理选择",
+        "漏网之鱼": "代理选择",
+    }
+    for name, destination in deterministic.items():
+        assert groups[name]["proxies"] == [destination]
+
+    assert groups["奈飞视频"]["type"] == "fallback"
+    assert groups["奈飞视频"]["hidden"] is True
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_HIDDEN_ROUTING_GROUPS)
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_AI_COUNTRY_GROUPS)
     assert "AI · 香港" not in groups
