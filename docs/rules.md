@@ -1,6 +1,11 @@
 # Routing rules and ACL4SSR
 
-Production follows one rule: **ACL4SSR owns non-AI routing semantics; clash-relay owns presentation and live AI qualification.**
+Production uses pinned ACL4SSR Full rule data as the base routing model, then applies two explicit scheduler boundaries owned by clash-relay:
+
+1. generic `ProxyGFWlist` traffic is routed to a dedicated `网页浏览` inventory;
+2. AI traffic is routed through live-qualified AI inventories.
+
+All other application-specific ACL4SSR targets and the final `MATCH` path remain on the general inventory.
 
 ## Canonical source
 
@@ -12,48 +17,30 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 ```
 
-The build fetches the selected `ACL4SSR_Online_Full.ini` rule fragments from that immutable commit, parses supported classical Clash rules, and embeds every fragment as a `type: inline`, `behavior: classical` Mihomo rule provider. The final private profile therefore has no runtime dependency on GitHub or ACL4SSR.
+The build fetches selected rule fragments from that immutable commit, parses supported classical Clash rules, and embeds them as `type: inline`, `behavior: classical` Mihomo rule providers. The final private profile has no runtime dependency on GitHub or ACL4SSR.
 
 Canonical production has no local rule prelude: `rules/direct.yaml` intentionally contains an empty rule list.
 
-## What “strict” means
+## Source-policy boundary
 
-For every non-AI rule path, the canonical manifest preserves:
-
-- upstream Full source order;
-- upstream rule target;
-- upstream semantic policy group;
-- upstream policy member order;
-- upstream country/manual/automatic selector regex and ordering;
-- upstream `GEOIP,CN` target;
-- upstream final `MATCH` target.
-
-The project must not collapse Bilibili into a generic domestic group, Telegram into generic node selection, media applications into one routing target, or `MATCH` into a project-defined source-filtered path.
-
-The pinned Full lists contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`. clash-relay does **not** invent approximate `DOMAIN-REGEX` replacements. Instead, an omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit.
-
-Canonical CI therefore requires:
+The important distinction is between **routing target** and **node inventory**.
 
 ```text
-verified_compatibility_omissions == 9
-unverified_legacy_rules == 0
+subscription_1
+  allowed_uses: browsing, ai
+  max_node_multiplier: 2.0
+
+subscription_2+
+  allowed_uses: general, browsing, ai
 ```
 
-The nine verified omissions are:
-
-```text
-Download.list   -> Clash/Providers/Download.yaml   -> 7
-ChinaMedia.list -> Clash/Providers/ChinaMedia.yaml -> 1
-ProxyMedia.list -> Clash/Providers/ProxyMedia.yaml -> 1
-```
-
-If a future pin introduces another Mihomo-incompatible rule, changes one of those exact rules, removes the matching upstream Provider comment, or moves compatibility evidence outside `Clash/Providers/`, generation fails closed. This makes the compatibility boundary explicit and upstream-grounded rather than silently dropping rules.
+The selector checks `allowed_uses` before generating providers. Therefore `subscription_1` is structurally absent from `general` providers. No post-generation source exclusion is required to keep it out of media, games, downloads, messaging, cloud services, or the final fallback path.
 
 ## Canonical routing map
 
-The pinned Full semantics used by production are:
+The production semantic targets are:
 
-| Order | ACL4SSR source | Semantic target |
+| Order | ACL4SSR source | Production target |
 | ---: | --- | --- |
 | 10 | `LocalAreaNetwork` | `全球直连` |
 | 15 | `UnBan` | `全球直连` |
@@ -82,54 +69,64 @@ The pinned Full semantics used by production are:
 | 210 | `Bilibili` | `哔哩哔哩` |
 | 220 | `ChinaMedia` | `国内媒体` |
 | 230 | `ProxyMedia` | `国外媒体` |
-| 800 | `ProxyGFWlist` | `节点选择` |
+| 800 | `ProxyGFWlist` | `网页浏览` |
 | 900 | `ChinaDomain` | `全球直连` |
 | 910 | `ChinaCompanyIp` | `全球直连` |
 | 915 | `Download` | `全球直连` |
 | 920 | `GEOIP,CN` | `全球直连` |
 | final | `MATCH` | `漏网之鱼` |
 
-AI qualification intentionally inserts three protected service routes immediately before generic `AI`; that is the sole routing-semantic extension described below.
+`ProxyGFWlist -> 网页浏览` is deliberate: it is the generic web route allowed to use the browsing inventory, including eligible `subscription_1` nodes.
 
-## ACL4SSR policy groups
+`MATCH -> 漏网之鱼` deliberately remains general. An unmatched flow is not proven to be web browsing, so allowing it into the browsing inventory would weaken the source permission boundary.
 
-The public `节点选择` policy keeps the upstream order:
+## Browsing policy groups
+
+The browsing path has its own provider-backed groups:
 
 ```text
-自动选择
-香港节点
-台湾节点
-新加坡节点
-日本节点
-美国节点
-韩国节点
-手动切换
-DIRECT
+网页浏览
+  ├─ 网页自动   # hidden url-test over browsing inventory
+  └─ DIRECT
 ```
 
-`自动选择`, `手动切换`, country selectors, and `奈飞节点` are provider-backed selectors over the same internal general inventory. Their production regexes and ordering are declared in `rules/acl4ssr.yaml` from the pinned Full configuration rather than inferred by clash-relay.
+The browsing inventory is generated from `source_use: browsing`. It may include subscription 1 and ordinary subscriptions that also allow browsing.
 
-Other semantic groups such as `全球直连`, `广告拦截`, `应用净化`, Microsoft groups, `电报消息`, `游戏平台`, media groups, and `漏网之鱼` preserve their upstream member order.
+General selectors remain backed by `source_use: general`:
+
+```text
+节点选择
+自动选择
+手动切换
+香港节点 / 台湾节点 / 新加坡节点 / 日本节点 / 美国节点 / 韩国节点
+奈飞节点
+```
+
+Because subscription 1 does not allow `general`, these groups cannot expose it.
+
+## Application-specific routing
+
+Application rules retain dedicated ACL4SSR-style policy groups. Examples:
+
+```text
+Telegram -> 电报消息
+YouTube  -> 油管视频
+Netflix  -> 奈飞视频
+Games    -> 游戏平台
+Bilibili -> 哔哩哔哩
+```
+
+Those groups ultimately reference the general provider-backed selectors, not the browsing inventory. This is what prevents a browsing-only subscription from leaking into streaming, gaming, messaging, or media traffic.
 
 ## FlClash presentation
 
-Mihomo proxy groups are controls, not navigable folders. A presentation-only `select` group that contains another group does **not** provide a way to edit the child group's selection; changing that parent also has no routing effect when no rule targets it. For this reason canonical production does not create pseudo-folders such as `流媒体`, `国内服务`, or `更多策略`.
+Mihomo proxy groups are controls, not folders. Canonical production therefore avoids unreferenced pseudo-containers.
 
-Every actionable ACL4SSR `select` group remains visible in FlClash, including `手动切换`, `奈飞节点`, `全球直连`, application/media selectors, ad selectors, and `漏网之鱼`. This is required so the user can operate the exact group that ACL4SSR rules target. For example, Bilibili rules target the visible `哔哩哔哩` selector whose pinned order remains:
+Actionable groups remain visible, including `网页浏览`, `人工智能`, `手动切换`, application/media selectors, and `漏网之鱼`. Automatic helper groups such as `自动选择`, `网页自动`, and country `url-test` selectors may be hidden while still participating as real members.
 
-```text
-全球直连
-台湾节点
-香港节点
-```
+## AI live qualification
 
-Only automatic helper groups that do not require manual configuration are hidden from the top-level list: `自动选择` and the country `url-test` selectors. They remain usable as members of the visible ACL4SSR selectors.
-
-The display layer may change visibility and ordering, but it must not remap a rule target, change selector members, or change member order. Canonical integration tests require every non-AI rule target to be visible/actionable after generation.
-
-## AI live qualification: the explicit exception
-
-ACL4SSR remains the source of AI domain rules. Production then performs an explicit, private service-aware extension:
+ACL4SSR remains the source of AI domain rules. Production then performs a private service-aware extension:
 
 1. candidate nodes are divided into SG / JP / US / HK / TW / KR / OTHER inventories;
 2. every candidate is tested independently against OpenAI, Claude, and Gemini through temporary Mihomo;
@@ -138,7 +135,7 @@ ACL4SSR remains the source of AI domain rules. Production then performs an expli
 5. Claude traffic uses only Claude-qualified nodes;
 6. Gemini traffic uses only Gemini-qualified nodes.
 
-After qualification, the effective protected AI prefix is:
+After qualification, the protected AI prefix is shaped like:
 
 ```yaml
 rules:
@@ -148,46 +145,60 @@ rules:
   - RULE-SET,acl4ssr_ai,人工智能
 ```
 
-`acl4ssr_openai` is the pinned upstream OpenAI provider. `cr_ai_rules_claude` and `cr_ai_rules_gemini` are exact subsets of the pinned upstream `AI.list`. Qualification verifies that every expected subset entry is still present; drift fails closed.
+A protected service with no qualified node fails closed to `REJECT`; if all protected services are empty, publication aborts and the previous KV value remains untouched.
 
-AI country groups are hidden from the top level and exposed only through the `人工智能` selector. Empty country groups are removed. A protected service with no qualified node fails closed to `REJECT`; if all protected services are empty, publication aborts and the previous KV value remains untouched.
+## Multiplier admission
 
-## Subscription admission is not routing
+`max_node_multiplier` is applied before classification and deduplication. For canonical subscription 1:
 
-`subscriptions.yaml` may restrict node admission with fields such as `max_node_multiplier` and `allowed_uses`. These affect which inventory a node can enter.
-
-Canonical production does **not** translate those declarations into non-AI ACL4SSR source exclusions. There are no canonical `excluded_sources` or `final_excluded_sources` declarations. Once a node is admitted to the general inventory, non-AI traffic follows the ACL4SSR policy graph above.
-
-The generic `apply_acl4ssr_source_exclusions()` engine capability remains covered by isolated fixture tests for reuse, but canonical production deliberately does not invoke it with any exclusions.
-
-## Standalone rule-provider model
-
-Each enabled ACL4SSR fragment receives a deterministic provider name, for example:
-
-```yaml
-rule-providers:
-  acl4ssr_bilibili:
-    type: inline
-    behavior: classical
-    payload:
-      - DOMAIN-SUFFIX,bilibili.com
-
-rules:
-  - RULE-SET,acl4ssr_bilibili,哔哩哔哩
+```text
+2x       accepted
+2.01x    rejected
+3倍      rejected
+unmarked accepted
 ```
 
-The real payload is fetched from the exact pinned commit. Rule providers contain no runtime `url` or `path` and the private generated YAML includes ACL4SSR attribution.
+The filter recognizes explicit multiplier syntax only and does not infer an unmarked node's commercial billing ratio.
+
+## No canonical source-exclusion rewrite
+
+The generic `apply_acl4ssr_source_exclusions()` capability remains available and tested for custom projects, but canonical production does not need `excluded_sources` or `final_excluded_sources` for subscription 1 isolation.
+
+Inventory admission is the stronger invariant:
+
+```text
+subscription_1 not admitted to general
+        ↓
+no general provider contains subscription_1
+        ↓
+no general application route can select subscription_1
+```
+
+## ACL4SSR compatibility boundary
+
+The pinned Full lists contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`.
+
+An omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit. Canonical CI requires:
+
+```text
+verified_compatibility_omissions == 9
+unverified_legacy_rules == 0
+```
+
+Any unverified compatibility drift fails closed.
 
 ## Validation contract
 
-Changes to the canonical rule graph must pass all of the following before production publication:
+Changes to the canonical rule graph must pass:
 
 - schema validation;
+- source-use isolation tests;
+- multiplier admission tests;
+- explicit `ProxyGFWlist -> 网页浏览` routing tests;
+- application-route non-browsing tests;
 - Ruff and Python 3.11/3.12 unit tests;
-- repository safety audit;
 - deterministic byte-for-byte fictional generation;
-- real fetch of the canonical ACL4SSR pin with exactly nine same-pin, upstream-verified compatibility omissions and zero unverified legacy rules;
-- Mihomo v1.19.30 configuration/startup integration;
-- Mihomo v1.19.29 configuration/startup integration;
-- private AI qualification;
-- final validation of the exact qualified candidate before KV publication.
+- repository safety audit;
+- pinned ACL4SSR compatibility validation;
+- Mihomo v1.19.30 and v1.19.29 configuration/startup integration;
+- private AI qualification and final exact-candidate validation before KV publication.
