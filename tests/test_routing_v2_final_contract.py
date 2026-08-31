@@ -40,7 +40,7 @@ def test_final_routing_v2_permission_and_region_contract(repo_root: Path) -> Non
     assert subscription_1.allowed_uses == frozenset({"browsing", "ai"})
 
 
-def test_final_routing_v2_presentation_and_internal_routes(repo_root: Path) -> None:
+def test_final_routing_v2_presentation_and_acl_compatibility(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules" / "acl4ssr.yaml").read_text(encoding="utf-8"))
     groups = {row["display_name"]: row for row in manifest["groups"]}
 
@@ -54,14 +54,6 @@ def test_final_routing_v2_presentation_and_internal_routes(repo_root: Path) -> N
         "下载流量",
     }
 
-    for name, row in groups.items():
-        route = row.get("route")
-        if not isinstance(route, dict) or route.get("deterministic") is not True:
-            continue
-        assert row.get("hidden", False) is True, name
-        assert len(row["members"]) == 1, name
-        assert row["members"][0] == route["member"], name
-
     assert groups["媒体自动"]["hidden"] is True
     assert groups["媒体自动"]["provider_pool"] == "general"
     assert groups["通讯自动"]["hidden"] is True
@@ -72,10 +64,37 @@ def test_final_routing_v2_presentation_and_internal_routes(repo_root: Path) -> N
     assert groups["流媒体"]["members"][0] == {"group": "媒体自动"}
     assert groups["消息通讯"]["members"][0] == {"group": "通讯自动"}
     assert groups["下载流量"]["members"][0] == {"group": "下载自动"}
-    assert groups["奈飞视频"]["members"] == [
-        {"group": "奈飞节点"},
-        {"group": "流媒体"},
+
+    assert groups["全球直连"]["members"] == [
+        {"builtin": "DIRECT"},
+        {"group": "代理选择"},
+        {"group": "自动选择"},
     ]
+    assert groups["广告拦截"]["members"] == [
+        {"builtin": "REJECT"},
+        {"builtin": "DIRECT"},
+    ]
+    assert groups["谷歌FCM"]["members"] == [
+        {"group": "代理选择"},
+        {"group": "全球直连"},
+        {"group": "自动选择"},
+    ]
+    assert groups["微软服务"]["members"] == [
+        {"group": "全球直连"},
+        {"group": "代理选择"},
+    ]
+    assert groups["苹果服务"]["members"] == [
+        {"group": "代理选择"},
+        {"group": "全球直连"},
+    ]
+    assert groups["漏网之鱼"]["members"] == [
+        {"group": "代理选择"},
+        {"group": "全球直连"},
+        {"group": "自动选择"},
+    ]
+    assert "应用净化" not in groups
+    assert "奈飞视频" not in groups
+    assert "奈飞节点" not in groups
 
 
 def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> None:
@@ -83,18 +102,36 @@ def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> N
     sources = {row["id"]: row for row in manifest["sources"]}
     inline = {row["id"]: row for row in manifest["inline_rules"]}
 
-    assert sources["proxy_gfwlist"]["target"] == "网页浏览"
+    assert sources["proxy_lite"]["target"] == "网页浏览"
+    assert sources["proxy_media"]["target"] == "流媒体"
     assert sources["download"]["target"] == "下载流量"
-    assert sources["telegram"]["target"] == "电报消息"
-    assert sources["youtube"]["target"] == "油管视频"
-    assert sources["netflix"]["target"] == "奈飞视频"
+    assert sources["telegram"]["target"] == "消息通讯"
+    assert sources["microsoft"]["target"] == "微软服务"
+    assert sources["apple"]["target"] == "苹果服务"
+    assert sources["google_fcm"]["target"] == "谷歌FCM"
     assert manifest["final_target"] == "漏网之鱼"
+    assert "proxy_gfwlist" not in sources
+    assert "youtube" not in sources
+    assert "netflix" not in sources
 
-    download_priority = sources["download"]["priority"]
-    assert sources["china_domain"]["priority"] < download_priority
-    assert sources["china_company_ip"]["priority"] < download_priority
-    assert inline["geoip_cn"]["priority"] < download_priority
-    assert download_priority < sources["proxy_gfwlist"]["priority"]
+    assert (
+        sources["telegram"]["priority"]
+        < sources["ai"]["priority"]
+        < sources["proxy_media"]["priority"]
+    )
+    assert (
+        sources["telegram"]["priority"]
+        < sources["openai"]["priority"]
+        < sources["proxy_media"]["priority"]
+    )
+    assert (
+        sources["proxy_media"]["priority"]
+        < sources["download"]["priority"]
+        < sources["proxy_lite"]["priority"]
+        < sources["china_domain"]["priority"]
+        < sources["china_company_ip"]["priority"]
+        < inline["geoip_cn"]["priority"]
+    )
 
 
 def test_final_routing_v2_ai_inventory_has_no_hong_kong(repo_root: Path) -> None:
@@ -121,7 +158,11 @@ def test_final_routing_v2_drift_guard_is_healthy(repo_root: Path) -> None:
     assert summary["media"]["scheduler_applied"] is True
     assert summary["messaging"]["scheduler_applied"] is True
     assert summary["ai"]["policy_applied"] is True
+    assert summary["foreign_web"]["classifier"] == "ProxyLite"
     assert summary["foreign_web"]["classifier_widened"] is False
+    assert summary["acl4ssr_fidelity"]["compatibility_selectors_applied"] is True
+    assert summary["acl4ssr_fidelity"]["classification_order_applied"] is True
+    assert summary["acl4ssr_fidelity"]["ban_program_ad_disabled"] is True
 
 
 def test_shadow_era_state_names_are_removed_from_drift_guard(repo_root: Path) -> None:

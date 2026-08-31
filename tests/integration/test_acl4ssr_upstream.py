@@ -13,7 +13,6 @@ from clash_relay.mihomo import validate_with_mihomo
 from clash_relay.util import dump_yaml
 
 _EXPECTED_COMPATIBILITY_OMISSIONS = {
-    "china_media": (1, "Clash/Providers/ChinaMedia.yaml"),
     "proxy_media": (1, "Clash/Providers/ProxyMedia.yaml"),
     "download": (7, "Clash/Providers/Download.yaml"),
 }
@@ -29,6 +28,7 @@ _EXPECTED_PUBLIC_SCENARIOS = {
 _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "自动选择",
     "手动切换",
+    "网页自动",
     "香港节点",
     "台湾节点",
     "新加坡节点",
@@ -38,23 +38,11 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "媒体自动",
     "通讯自动",
     "下载自动",
-    "奈飞节点",
     "全球直连",
     "广告拦截",
     "谷歌FCM",
-    "微软Bing",
-    "微软云盘",
     "微软服务",
     "苹果服务",
-    "电报消息",
-    "网易音乐",
-    "游戏平台",
-    "油管视频",
-    "奈飞视频",
-    "巴哈姆特",
-    "哔哩哔哩",
-    "国内媒体",
-    "国外媒体",
     "漏网之鱼",
 }
 _EXPECTED_AI_COUNTRY_GROUPS = {
@@ -74,11 +62,33 @@ _PUBLIC_GENERAL_CHOICES = [
     "韩国节点",
     "DIRECT",
 ]
+_ACL_COMPATIBILITY_SELECTORS = {
+    "全球直连": ["DIRECT", "代理选择", "自动选择"],
+    "广告拦截": ["REJECT", "DIRECT"],
+    "谷歌FCM": ["代理选择", "全球直连", "自动选择"],
+    "微软服务": ["全球直连", "代理选择"],
+    "苹果服务": ["代理选择", "全球直连"],
+    "漏网之鱼": ["代理选择", "全球直连", "自动选择"],
+}
+_REMOVED_PRE_P10_GROUPS = {
+    "微软Bing",
+    "微软云盘",
+    "电报消息",
+    "网易音乐",
+    "游戏平台",
+    "油管视频",
+    "奈飞节点",
+    "奈飞视频",
+    "巴哈姆特",
+    "哔哩哔哩",
+    "国内媒体",
+    "国外媒体",
+}
 
 
 def _assert_canonical_compatibility_report(report: dict) -> None:
     assert report["unverified_legacy_rules"] == 0
-    assert report["verified_compatibility_omissions"] == 9
+    assert report["verified_compatibility_omissions"] == 8
     actual = {
         source["id"]: (
             source["verified_compatibility_omissions"],
@@ -246,41 +256,41 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         assert "use" not in groups[public_name]
         assert "filter" not in groups[public_name]
 
-    deterministic = {
-        "全球直连": "DIRECT",
-        "广告拦截": "REJECT",
-        "谷歌FCM": "DIRECT",
-        "微软Bing": "DIRECT",
-        "微软云盘": "DIRECT",
-        "微软服务": "DIRECT",
-        "苹果服务": "DIRECT",
-        "电报消息": "消息通讯",
-        "网易音乐": "DIRECT",
-        "游戏平台": "DIRECT",
-        "油管视频": "流媒体",
-        "巴哈姆特": "台湾节点",
-        "哔哩哔哩": "DIRECT",
-        "国内媒体": "DIRECT",
-        "国外媒体": "流媒体",
-        "漏网之鱼": "代理选择",
-    }
     assert "应用净化" not in groups
-    for name, destination in deterministic.items():
-        assert groups[name]["proxies"] == [destination]
+    assert _REMOVED_PRE_P10_GROUPS.isdisjoint(groups)
+    for name, expected in _ACL_COMPATIBILITY_SELECTORS.items():
+        assert groups[name]["type"] == "select"
+        assert groups[name]["hidden"] is True
+        assert groups[name]["proxies"] == expected
+        assert "use" not in groups[name]
+        assert "filter" not in groups[name]
 
-    assert groups["奈飞视频"]["type"] == "fallback"
-    assert groups["奈飞视频"]["hidden"] is True
-    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "流媒体"]
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_HIDDEN_ROUTING_GROUPS)
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_AI_COUNTRY_GROUPS)
     assert "AI · 香港" not in groups
     assert result.config["rules"][-1] == "MATCH,漏网之鱼"
-    assert "GEOIP,CN,全球直连,no-resolve" in result.config["rules"]
-    assert "RULE-SET,acl4ssr_bilibili_hmt,哔哩哔哩" in result.config["rules"]
-    assert "RULE-SET,acl4ssr_bilibili,哔哩哔哩" in result.config["rules"]
-    assert "RULE-SET,acl4ssr_telegram,电报消息" in result.config["rules"]
+    assert "GEOIP,CN,全球直连" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_telegram,消息通讯" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_proxy_media,流媒体" in result.config["rules"]
     assert "RULE-SET,acl4ssr_download,下载流量" in result.config["rules"]
-    assert "RULE-SET,acl4ssr_proxy_gfwlist,网页浏览" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_proxy_lite,网页浏览" in result.config["rules"]
+    assert all("acl4ssr_proxy_gfwlist" not in rule for rule in result.config["rules"])
+    assert all("acl4ssr_youtube" not in rule for rule in result.config["rules"])
+    assert all("acl4ssr_netflix" not in rule for rule in result.config["rules"])
+
+    rules = result.config["rules"]
+    assert rules.index("RULE-SET,acl4ssr_telegram,消息通讯") < rules.index(
+        "RULE-SET,acl4ssr_proxy_media,流媒体"
+    )
+    assert rules.index("RULE-SET,acl4ssr_proxy_media,流媒体") < rules.index(
+        "RULE-SET,acl4ssr_download,下载流量"
+    )
+    assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
+        "RULE-SET,acl4ssr_proxy_lite,网页浏览"
+    )
+    assert rules.index("RULE-SET,acl4ssr_proxy_lite,网页浏览") < rules.index(
+        "RULE-SET,acl4ssr_china_domain,全球直连"
+    )
 
     policy_rule_targets = {
         rule.split(",")[1] if rule.startswith("MATCH,") else rule.split(",")[2]

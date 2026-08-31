@@ -46,6 +46,14 @@ _GENERAL_REGION_CHOICES = [
     "韩国节点",
     "DIRECT",
 ]
+_ACL_COMPATIBILITY_SELECTORS = {
+    "全球直连": ["DIRECT", "代理选择", "自动选择"],
+    "广告拦截": ["REJECT", "DIRECT"],
+    "谷歌FCM": ["代理选择", "全球直连", "自动选择"],
+    "微软服务": ["全球直连", "代理选择"],
+    "苹果服务": ["代理选择", "全球直连"],
+    "漏网之鱼": ["代理选择", "全球直连", "自动选择"],
+}
 
 
 def _groups(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -182,6 +190,27 @@ def _audit_public_general_selector(
         )
 
 
+def _audit_acl_compatibility_selectors(groups: dict[str, dict[str, Any]]) -> None:
+    if "应用净化" in groups:
+        raise ValidationError("BanProgramAD/application cleanup must remain intentionally disabled")
+    for name, expected in _ACL_COMPATIBILITY_SELECTORS.items():
+        group = groups.get(name)
+        if not isinstance(group, dict):
+            raise ValidationError(f"ACL4SSR compatibility selector {name!r} is missing")
+        if group.get("hidden") is not True or group.get("type") != "select":
+            raise ValidationError(
+                f"ACL4SSR compatibility selector {name!r} must remain a hidden select group"
+            )
+        if group.get("use") or "filter" in group:
+            raise ValidationError(
+                f"ACL4SSR compatibility selector {name!r} must not attach providers directly"
+            )
+        if _group_proxies(groups, name) != expected:
+            raise ValidationError(
+                f"ACL4SSR compatibility selector {name!r} changed its reference member order"
+            )
+
+
 def _audit_cutover_routes(
     policy: RoutingPolicyV2,
     groups: dict[str, dict[str, Any]],
@@ -192,15 +221,7 @@ def _audit_cutover_routes(
     _audit_general_scheduler(groups, name="下载自动", purpose="download")
     _audit_public_general_selector(groups, name="流媒体", automatic="媒体自动")
     _audit_public_general_selector(groups, name="消息通讯", automatic="通讯自动")
-
-    if _group_proxies(groups, "油管视频") != ["流媒体"]:
-        raise ValidationError("YouTube must route only through the public media selector")
-    if _group_proxies(groups, "国外媒体") != ["流媒体"]:
-        raise ValidationError("foreign media must route only through the public media selector")
-    if _group_proxies(groups, "奈飞视频") != ["奈飞节点", "流媒体"]:
-        raise ValidationError("Netflix must use capability-first media fallback")
-    if _group_proxies(groups, "电报消息") != ["消息通讯"]:
-        raise ValidationError("Telegram must route only through the public messaging selector")
+    _audit_acl_compatibility_selectors(groups)
 
     if policy.download.mode == "general_auto":
         _audit_public_general_selector(groups, name="下载流量", automatic="下载自动")
@@ -208,24 +229,51 @@ def _audit_cutover_routes(
         raise ValidationError("direct download mode must route only to DIRECT")
 
     by_source = {str(row["source_id"]): row for row in bindings}
-    download = by_source.get("download")
-    foreign_web = by_source.get("proxy_gfwlist")
-    china_domain = by_source.get("china_domain")
-    china_ip = by_source.get("china_company_ip")
-    geoip = by_source.get("geoip_cn")
-    if not all(
-        isinstance(row, dict) for row in (download, foreign_web, china_domain, china_ip, geoip)
-    ):
-        raise ValidationError("Routing V2 cutover classification bindings are incomplete")
-    if download["target"] != "下载流量":
-        raise ValidationError("Download.list must target the download scenario route")
+    required_ids = {
+        "telegram",
+        "ai",
+        "openai",
+        "proxy_media",
+        "download",
+        "proxy_lite",
+        "china_domain",
+        "china_company_ip",
+        "geoip_cn",
+    }
+    if not required_ids <= set(by_source):
+        missing = ", ".join(sorted(required_ids - set(by_source)))
+        raise ValidationError(f"ACL4SSR fidelity classification bindings are incomplete: {missing}")
+
+    expected_targets = {
+        "telegram": "消息通讯",
+        "ai": "人工智能",
+        "openai": "人工智能",
+        "proxy_media": "流媒体",
+        "download": "下载流量",
+        "proxy_lite": "网页浏览",
+        "china_domain": "全球直连",
+        "china_company_ip": "全球直连",
+        "geoip_cn": "全球直连",
+    }
+    for source_id, expected_target in expected_targets.items():
+        if by_source[source_id]["target"] != expected_target:
+            raise ValidationError(
+                f"ACL4SSR fidelity binding {source_id!r} must target {expected_target!r}"
+            )
+
+    priorities = {source_id: int(by_source[source_id]["priority"]) for source_id in required_ids}
     if not (
-        int(china_domain["priority"]) < int(download["priority"]) < int(foreign_web["priority"])
-        and int(china_ip["priority"]) < int(download["priority"])
-        and int(geoip["priority"]) < int(download["priority"])
+        priorities["telegram"] < priorities["ai"] < priorities["proxy_media"]
+        and priorities["telegram"] < priorities["openai"] < priorities["proxy_media"]
+        and priorities["proxy_media"]
+        < priorities["download"]
+        < priorities["proxy_lite"]
+        < priorities["china_domain"]
+        < priorities["china_company_ip"]
+        < priorities["geoip_cn"]
     ):
         raise ValidationError(
-            "domestic classification must precede download and download must precede generic web"
+            "ACL4SSR fidelity order must keep AI before ProxyMedia and Download before ProxyLite"
         )
 
     ai_policy = _group_proxies(groups, "人工智能")
@@ -244,6 +292,8 @@ def _audit_cutover_routes(
         "messaging_scheduler": "通讯自动",
         "download_scheduler": "下载自动",
         "download_mode": policy.download.mode,
+        "acl4ssr_baseline": "ProxyMedia -> ProxyLite -> ChinaDomain -> ChinaCompanyIp -> GEOIP CN",
+        "intentional_deviations": ["BanProgramAD disabled", "AI extension", "Download extension"],
         "ai_region_order": ai_regions,
     }
 

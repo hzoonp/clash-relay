@@ -1,13 +1,8 @@
 # Routing rules and ACL4SSR
 
-Production uses pinned ACL4SSR Full rule data as the base routing model, then applies two explicit scheduler boundaries owned by clash-relay:
+Canonical production treats the pinned ACL4SSR Online profile as the classification source of truth. clash-relay adds source isolation, live qualification, regional scheduling, and exactly two classification extensions: AI and downloads.
 
-1. generic `ProxyGFWlist` traffic is routed to a dedicated `网页浏览` inventory;
-2. AI traffic is routed through live-qualified AI inventories.
-
-All other application-specific ACL4SSR targets and the final `MATCH` path remain on the general inventory.
-
-## Canonical source
+## Canonical ACL4SSR reference
 
 `rules/acl4ssr.yaml` pins:
 
@@ -15,190 +10,160 @@ All other application-specific ACL4SSR targets and the final `MATCH` path remain
 repository: ACL4SSR/ACL4SSR
 ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
+reference: Clash/config/ACL4SSR_Online.ini
 ```
 
-The build fetches selected rule fragments from that immutable commit, parses supported classical Clash rules, and embeds them as `type: inline`, `behavior: classical` Mihomo rule providers. The final private profile has no runtime dependency on GitHub or ACL4SSR.
+`rules/acl4ssr-online.reference.ini` vendors that immutable Online profile. `scripts/audit_acl4ssr_fidelity.py` verifies that the vendored copy still matches the pinned upstream file and that the canonical manifest preserves baseline ruleset order, baseline targets, and compatibility-selector defaults.
 
-Canonical production has no local rule prelude: `rules/direct.yaml` intentionally contains an empty rule list.
+The final private profile still embeds selected ACL4SSR fragments as inline Mihomo rule providers, so clients do not depend on GitHub or ACL4SSR at runtime.
+
+## Intentional deviations
+
+Only the following canonical deviations are allowed:
+
+1. `BanProgramAD.list` / `应用净化` is disabled because it caused confirmed mobile image/CDN failures. `BanAD.list` remains enabled.
+2. AI/OpenAI rules run before `ProxyMedia.list` so protected AI traffic reaches service-specific qualification instead of being swallowed by the broad media list.
+3. `Download.list` runs before `ProxyLite.list` so known download traffic reaches `下载流量` instead of generic browsing.
+4. ACL4SSR raw-node wildcards are adapted to source-aware scenario selectors. Raw nodes are not copied directly into public selectors because doing so would break multi-subscription source isolation.
+
+Any additional classification source or compatibility change must be declared in `rules/acl4ssr.yaml` and pass the parity gate.
+
+## Canonical rule order
+
+| Order | Source | Production target |
+| ---: | --- | --- |
+| 10 | `LocalAreaNetwork` | `全球直连` |
+| 20 | `UnBan` | `全球直连` |
+| 30 | `BanAD` | `广告拦截` |
+| disabled | `BanProgramAD` | intentionally disabled |
+| 50 | `GoogleFCM` | `谷歌FCM` |
+| 60 | `GoogleCN` | `全球直连` |
+| 70 | `SteamCN` | `全球直连` |
+| 80 | `Microsoft` | `微软服务` |
+| 90 | `Apple` | `苹果服务` |
+| 100 | `Telegram` | `消息通讯` |
+| 105 | `AI` | `人工智能` extension |
+| 106 | `OpenAi` | `人工智能` extension |
+| 110 | `ProxyMedia` | `流媒体` |
+| 115 | `Download` | `下载流量` extension |
+| 120 | `ProxyLite` | `网页浏览` |
+| 130 | `ChinaDomain` | `全球直连` |
+| 140 | `ChinaCompanyIp` | `全球直连` |
+| 150 | `GEOIP,CN` | `全球直连` |
+| final | `MATCH` | `漏网之鱼` |
+
+The old canonical `ProxyGFWlist` substitution and standalone YouTube/Netflix/game/Bilibili/ChinaMedia classification graph are deliberately removed. ACL4SSR Online decides the classification category; clash-relay decides which source-safe node inventory that category may use.
+
+## Six public controls
+
+FlClash exposes only the main scenario decisions:
+
+```text
+代理选择
+网页浏览
+人工智能
+流媒体
+消息通讯
+下载流量
+```
+
+`流媒体`, `消息通讯`, and `下载流量` are provider-free selectors whose defaults are the hidden `媒体自动`, `通讯自动`, and `下载自动` general-only schedulers. The familiar ACL4SSR compatibility selectors remain hidden:
+
+```text
+全球直连: DIRECT -> 代理选择 -> 自动选择
+广告拦截: REJECT -> DIRECT
+谷歌FCM: 代理选择 -> 全球直连 -> 自动选择
+微软服务: 全球直连 -> 代理选择
+苹果服务: 代理选择 -> 全球直连
+漏网之鱼: 代理选择 -> 全球直连 -> 自动选择
+```
+
+These member orders are parity-checked against the pinned Online profile.
 
 ## Source-policy boundary
 
-The important distinction is between **routing target** and **node inventory**.
+Routing category and node inventory are independent:
 
 ```text
 subscription_1
   allowed_uses: browsing, ai
+  EMBY-labelled nodes: excluded
   max_node_multiplier: 2.0
 
 subscription_2+
   allowed_uses: general, browsing, ai
 ```
 
-The selector checks `allowed_uses` before generating providers. Therefore `subscription_1` is structurally absent from `general` providers. No post-generation source exclusion is required to keep it out of media, games, downloads, messaging, cloud services, or the final fallback path.
+The selector checks `allowed_uses` before provider generation. Therefore subscription 1 is structurally absent from the general inventory used by media, messaging, downloads, final fallback, and compatibility selectors.
 
-## Canonical routing map
-
-The production semantic targets are:
-
-| Order | ACL4SSR source | Production target |
-| ---: | --- | --- |
-| 10 | `LocalAreaNetwork` | `全球直连` |
-| 15 | `UnBan` | `全球直连` |
-| 20 | `BanAD` | `广告拦截` |
-| 30 | `BanProgramAD` | `应用净化` |
-| 40 | `GoogleFCM` | `谷歌FCM` |
-| 50 | `GoogleCN` | `全球直连` |
-| 60 | `SteamCN` | `全球直连` |
-| 70 | `Bing` | `微软Bing` |
-| 80 | `OneDrive` | `微软云盘` |
-| 90 | `Microsoft` | `微软服务` |
-| 100 | `Apple` | `苹果服务` |
-| 110 | `Telegram` | `电报消息` |
-| 120 | `AI` | `人工智能` |
-| 125 | `OpenAi` | `人工智能` before private qualification |
-| 130 | `NetEaseMusic` | `网易音乐` |
-| 140 | `Epic` | `游戏平台` |
-| 145 | `Origin` | `游戏平台` |
-| 150 | `Sony` | `游戏平台` |
-| 155 | `Steam` | `游戏平台` |
-| 160 | `Nintendo` | `游戏平台` |
-| 170 | `YouTube` | `油管视频` |
-| 180 | `Netflix` | `奈飞视频` |
-| 190 | `Bahamut` | `巴哈姆特` |
-| 200 | `BilibiliHMT` | `哔哩哔哩` |
-| 210 | `Bilibili` | `哔哩哔哩` |
-| 220 | `ChinaMedia` | `国内媒体` |
-| 230 | `ProxyMedia` | `国外媒体` |
-| 800 | `ProxyGFWlist` | `网页浏览` |
-| 900 | `ChinaDomain` | `全球直连` |
-| 910 | `ChinaCompanyIp` | `全球直连` |
-| 915 | `Download` | `全球直连` |
-| 920 | `GEOIP,CN` | `全球直连` |
-| final | `MATCH` | `漏网之鱼` |
-
-`ProxyGFWlist -> 网页浏览` is deliberate: it is the generic web route allowed to use the browsing inventory, including eligible `subscription_1` nodes.
-
-`MATCH -> 漏网之鱼` deliberately remains general. An unmatched flow is not proven to be web browsing, so allowing it into the browsing inventory would weaken the source permission boundary.
-
-## Browsing policy groups
-
-The browsing path has its own provider-backed groups:
+ACL4SSR's single-subscription `.*` node wildcard is not reproduced literally. The canonical adaptation is:
 
 ```text
-网页浏览
-  ├─ 网页自动   # hidden url-test over browsing inventory
-  └─ DIRECT
+ACL4SSR classification
+        ↓
+scenario selector
+        ↓
+source_use inventory
+        ↓
+qualified/scheduled nodes
 ```
 
-The browsing inventory is generated from `source_use: browsing`. It may include subscription 1 and ordinary subscriptions that also allow browsing.
+This keeps ACL4SSR classification fidelity without weakening source permissions.
 
-General selectors remain backed by `source_use: general`:
+## Browsing scheduling
+
+`ProxyLite -> 网页浏览` uses the browsing inventory and preserves P8 regional scheduling:
 
 ```text
-节点选择
-自动选择
-手动切换
-香港节点 / 台湾节点 / 新加坡节点 / 日本节点 / 美国节点 / 韩国节点
-奈飞节点
+网页自动
+  US Stable -> US Reserve
+  -> SG Stable -> SG Reserve
+  -> JP -> TW -> KR -> HK -> OTHER
 ```
 
-Because subscription 1 does not allow `general`, these groups cannot expose it.
+Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 
-## Application-specific routing
+## Media, messaging, and download
 
-Application rules retain dedicated ACL4SSR-style policy groups. Examples:
+`ProxyMedia -> 流媒体`, `Telegram -> 消息通讯`, and `Download -> 下载流量` all use general-only schedulers. They cannot select subscription 1.
 
-```text
-Telegram -> 电报消息
-YouTube  -> 油管视频
-Netflix  -> 奈飞视频
-Games    -> 游戏平台
-Bilibili -> 哔哩哔哩
-```
-
-Those groups ultimately reference the general provider-backed selectors, not the browsing inventory. This is what prevents a browsing-only subscription from leaking into streaming, gaming, messaging, or media traffic.
-
-## FlClash presentation
-
-Mihomo proxy groups are controls, not folders. Canonical production therefore avoids unreferenced pseudo-containers.
-
-Actionable groups remain visible, including `网页浏览`, `人工智能`, `手动切换`, application/media selectors, and `漏网之鱼`. Automatic helper groups such as `自动选择`, `网页自动`, and country `url-test` selectors may be hidden while still participating as real members.
+Media service capability checks may influence node scheduling inside `流媒体`, but they must not redefine the ACL4SSR Online classification order. In particular, canonical routing no longer inserts standalone YouTube or Netflix rules ahead of `ProxyMedia`.
 
 ## AI live qualification
 
-ACL4SSR remains the source of AI domain rules. Production then performs a private service-aware extension:
+AI remains a protected clash-relay extension. Candidate nodes are qualified independently for OpenAI, Claude, and Gemini. Hong Kong is excluded before qualification, and each service follows its own qualified set in the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference order.
 
-1. candidate nodes are divided into SG / JP / US / HK / TW / KR / OTHER inventories;
-2. every candidate is tested independently against OpenAI, Claude, and Gemini through temporary Mihomo;
-3. country AI providers retain the union of nodes that passed at least one protected service;
-4. OpenAI traffic uses only OpenAI-qualified nodes;
-5. Claude traffic uses only Claude-qualified nodes;
-6. Gemini traffic uses only Gemini-qualified nodes.
+A protected service with no qualified node fails closed to `REJECT`; if protected AI qualification cannot satisfy the production contract, publication aborts and the previous KV value remains untouched.
 
-After qualification, the protected AI prefix is shaped like:
+## Multiplier and EMBY admission
 
-```yaml
-rules:
-  - RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI
-  - RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE
-  - RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI
-  - RULE-SET,acl4ssr_ai,人工智能
-```
-
-A protected service with no qualified node fails closed to `REJECT`; if all protected services are empty, publication aborts and the previous KV value remains untouched.
-
-## Multiplier admission
-
-`max_node_multiplier` is applied before classification and deduplication. For canonical subscription 1:
+Subscription 1 admission happens before classification and deduplication:
 
 ```text
 2x       accepted
 2.01x    rejected
 3倍      rejected
 unmarked accepted
+EMBY     rejected from subscription_1
 ```
 
-The filter recognizes explicit multiplier syntax only and does not infer an unmarked node's commercial billing ratio.
-
-## No canonical source-exclusion rewrite
-
-The generic `apply_acl4ssr_source_exclusions()` capability remains available and tested for custom projects, but canonical production does not need `excluded_sources` or `final_excluded_sources` for subscription 1 isolation.
-
-Inventory admission is the stronger invariant:
-
-```text
-subscription_1 not admitted to general
-        ↓
-no general provider contains subscription_1
-        ↓
-no general application route can select subscription_1
-```
-
-## ACL4SSR compatibility boundary
-
-The pinned Full lists contain nine legacy `URL-REGEX` rules that Mihomo 1.19.x cannot express as classical rules: seven in `Download.list`, one in `ChinaMedia.list`, and one in `ProxyMedia.list`.
-
-An omission is allowed only when the exact same rule is explicitly commented out by ACL4SSR's maintained `Clash/Providers/*.yaml` representation at the same immutable commit. Canonical CI requires:
-
-```text
-verified_compatibility_omissions == 9
-unverified_legacy_rules == 0
-```
-
-Any unverified compatibility drift fails closed.
+The multiplier filter reacts only to explicit markers and does not infer an unmarked commercial billing ratio.
 
 ## Validation contract
 
-Changes to the canonical rule graph must pass:
+Canonical routing changes must pass:
 
 - schema validation;
-- source-use isolation tests;
-- multiplier admission tests;
-- explicit `ProxyGFWlist -> 网页浏览` routing tests;
-- application-route non-browsing tests;
+- pinned ACL4SSR Online upstream/vendored parity;
+- baseline ruleset order/target parity;
+- explicit intentional-deviation checks;
+- source-use and end-to-end reachability audits;
+- subscription 1 EMBY and >2x admission tests;
+- six-group public-surface and provider-leakage tests;
+- browsing regional scheduling regression tests;
+- independent AI qualification tests;
 - Ruff and Python 3.11/3.12 unit tests;
-- deterministic byte-for-byte fictional generation;
-- repository safety audit;
-- pinned ACL4SSR compatibility validation;
-- Mihomo v1.19.30 and v1.19.29 configuration/startup integration;
-- private AI qualification and final exact-candidate validation before KV publication.
+- deterministic fictional generation;
+- Routing V2 Drift Guard;
+- Mihomo v1.19.30 and v1.19.29 startup/integration validation;
+- post-qualification production re-audit before Cloudflare KV publication.

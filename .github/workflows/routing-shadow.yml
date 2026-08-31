@@ -9,9 +9,11 @@ on:
       - "policies.yaml"
       - "rules/**"
       - "schemas/**"
+      - "src/clash_relay/acl4ssr_reference.py"
       - "src/clash_relay/routing_model.py"
       - "src/clash_relay/routing_policy_v2.py"
       - "src/clash_relay/routing_shadow.py"
+      - "scripts/audit_acl4ssr_fidelity.py"
       - "scripts/routing_shadow.py"
       - ".github/workflows/routing-shadow.yml"
   push:
@@ -24,9 +26,11 @@ on:
       - "policies.yaml"
       - "rules/**"
       - "schemas/**"
+      - "src/clash_relay/acl4ssr_reference.py"
       - "src/clash_relay/routing_model.py"
       - "src/clash_relay/routing_policy_v2.py"
       - "src/clash_relay/routing_shadow.py"
+      - "scripts/audit_acl4ssr_fidelity.py"
       - "scripts/routing_shadow.py"
       - ".github/workflows/routing-shadow.yml"
   workflow_dispatch:
@@ -50,6 +54,8 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
+      - name: Verify pinned ACL4SSR Online fidelity
+        run: python scripts/audit_acl4ssr_fidelity.py
       - name: Render aggregate drift evidence
         run: |
           python scripts/routing_shadow.py \
@@ -73,13 +79,17 @@ jobs:
               "This validates declarations/configuration graphs only; it does not inspect user traffic.",
               "",
               f"Routing state: **{data['status']}**  ",
-              f"Explicit foreign-web rule sources: **{data['foreign_web']['explicit_rule_sources']}**  ",
+              f"Foreign-web classifier: **{data['foreign_web']['classifier']}**  ",
               f"Foreign-web classifier widened: **{data['foreign_web']['classifier_widened']}**  ",
               f"Download mode: **{data['download']['mode']}**  ",
               f"Download scheduler applied: **{data['download']['scheduler_applied']}**  ",
-              f"Download rule sources: **{data['download']['rule_sources']}**  ",
-              f"Media auto-scheduler rule sources: **{data['media']['auto_scheduler_rule_sources']}**  ",
+              f"Media classifier: **{data['media']['classifier']}**  ",
               f"Media scheduler applied: **{data['media']['scheduler_applied']}**  ",
+              f"Messaging classifier: **{data['messaging']['classifier']}**  ",
+              f"Messaging scheduler applied: **{data['messaging']['scheduler_applied']}**  ",
+              f"ACL compatibility selectors applied: **{data['acl4ssr_fidelity']['compatibility_selectors_applied']}**  ",
+              f"ACL classification order applied: **{data['acl4ssr_fidelity']['classification_order_applied']}**  ",
+              f"BanProgramAD disabled: **{data['acl4ssr_fidelity']['ban_program_ad_disabled']}**  ",
               f"AI excluded regions: **{', '.join(data['ai']['excluded_regions'])}**  ",
               f"AI region policy applied: **{data['ai']['policy_applied']}**",
               "",

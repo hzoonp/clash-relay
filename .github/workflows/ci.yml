@@ -46,6 +46,8 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Verify pinned ACL4SSR Online fidelity
+        run: python scripts/audit_acl4ssr_fidelity.py
       - run: python scripts/make_fixture_sources.py
       - name: Generate twice and compare bytes
         run: |
