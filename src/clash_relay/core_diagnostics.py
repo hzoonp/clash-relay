@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,10 @@ from .util import dump_yaml, load_yaml_file
 _MAX_DIAGNOSTIC_CHARS = 1200
 _IPV4_RE = re.compile(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])")
 _LONG_TOKEN_RE = re.compile(r"(?i)\b[a-f0-9]{24,}\b")
+_INVALID_PAYLOAD_FIELD_RE = re.compile(
+    r"\b(?:filed|field) payload\[(\d+)\]\[([A-Za-z0-9_-]{1,64})\] invalid\b"
+)
+_PROVIDER_ERROR_RE = re.compile(r"\bparse proxy provider ([A-Za-z0-9_-]{1,128}) error:")
 
 
 def _collect_string_values(value: Any, target: set[str]) -> None:
@@ -48,6 +53,63 @@ def redact_core_output(text: str, candidate: dict[str, Any]) -> str:
     cleaned = cleaned.replace("\r", " ").replace("\n", " ")
     cleaned = " ".join(cleaned.split())
     return cleaned[:_MAX_DIAGNOSTIC_CHARS]
+
+
+def _value_shape(value: Any) -> dict[str, object]:
+    if isinstance(value, dict):
+        counts = Counter(type(item).__name__ for item in value.values())
+        return {
+            "type": "mapping",
+            "items": len(value),
+            "value_types": dict(sorted(counts.items())),
+        }
+    if isinstance(value, list):
+        counts = Counter(type(item).__name__ for item in value)
+        return {
+            "type": "list",
+            "items": len(value),
+            "value_types": dict(sorted(counts.items())),
+        }
+    if value is None:
+        return {"type": "null"}
+    return {"type": type(value).__name__}
+
+
+def _safe_structural_detail(
+    raw_output: str,
+    candidate: dict[str, Any],
+) -> dict[str, object]:
+    """Extract only core schema identifiers and Python type shapes, never values."""
+    field_match = _INVALID_PAYLOAD_FIELD_RE.search(raw_output)
+    provider_match = _PROVIDER_ERROR_RE.search(raw_output)
+    if field_match is None or provider_match is None:
+        return {}
+    index = int(field_match.group(1))
+    field = field_match.group(2)
+    provider_name = provider_match.group(1)
+    providers = candidate.get("proxy-providers")
+    provider = providers.get(provider_name) if isinstance(providers, dict) else None
+    payload = provider.get("payload") if isinstance(provider, dict) else None
+    if not isinstance(payload, list) or not 0 <= index < len(payload):
+        return {
+            "provider": provider_name,
+            "payload_index": index,
+            "invalid_field": field,
+        }
+    proxy = payload[index]
+    if not isinstance(proxy, dict):
+        return {
+            "provider": provider_name,
+            "payload_index": index,
+            "invalid_field": field,
+            "field_shape": {"type": type(proxy).__name__},
+        }
+    return {
+        "provider": provider_name,
+        "payload_index": index,
+        "invalid_field": field,
+        "field_shape": _value_shape(proxy.get(field)),
+    }
 
 
 def diagnose_browsing_core(candidate_path: Path, mihomo_bin: Path) -> dict[str, object]:
@@ -83,5 +145,6 @@ def diagnose_browsing_core(candidate_path: Path, mihomo_bin: Path) -> dict[str, 
     return {
         "status": "rejected",
         "returncode": result.returncode,
+        **_safe_structural_detail(result.stdout, candidate),
         "diagnostic": redact_core_output(result.stdout, candidate),
     }
