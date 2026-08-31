@@ -259,9 +259,7 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _hide_country_groups(
-    groups: list[dict[str, Any]], country_names: list[str]
-) -> None:
+def _hide_country_groups(groups: list[dict[str, Any]], country_names: list[str]) -> None:
     by_name = {
         str(group["name"]): group
         for group in groups
