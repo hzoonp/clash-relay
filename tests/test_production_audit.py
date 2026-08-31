@@ -16,6 +16,10 @@ def _project(project_paths):
     return load_project(**project_paths)
 
 
+def _group(candidate, name: str) -> dict:
+    return next(item for item in candidate["proxy-groups"] if item["name"] == name)
+
+
 def test_production_audit_reports_only_aggregate_source_counts(
     built_candidate, project_paths
 ) -> None:
@@ -30,11 +34,16 @@ def test_production_audit_reports_only_aggregate_source_counts(
     assert pools["general"]["source_use"] == "general"
     assert pools["general"]["nodes"] > 0
     assert "special" not in pools["general"]["sources"]
+    assert summary["reachability"]["status"] == "passed"
+    assert summary["reachability"]["groups_checked"] > 0
+    assert summary["reachability"]["routing_surfaces_checked"] > 0
+    assert summary["reachability"]["runtime_rules_checked"] > 0
 
     markdown = render_production_summary_markdown(summary)
     assert "Fictional General" not in markdown
     assert "example.invalid" not in markdown
     assert "Source-use policy: **passed**" in markdown
+    assert "Routing graph reachability: **passed**" in markdown
 
 
 def test_production_audit_fails_when_source_enters_disallowed_pool(
@@ -47,6 +56,44 @@ def test_production_audit_fails_when_source_enters_disallowed_pool(
     general.append(copy.deepcopy(residential[0]))
 
     with pytest.raises(ValidationError, match="source-use boundary violated"):
+        audit_production_candidate(_project(project_paths), candidate)
+
+
+def test_production_audit_fails_when_general_group_can_reach_restricted_pool(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    youtube = _group(candidate, "YouTube")
+    youtube["proxies"].append("Residential")
+
+    with pytest.raises(ValidationError, match="routing reachability boundary violated"):
+        audit_production_candidate(_project(project_paths), candidate)
+
+
+def test_production_audit_fails_when_ruleset_is_retargeted_to_restricted_pool(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    rules = candidate["rules"]
+    index = next(
+        index
+        for index, rule in enumerate(rules)
+        if rule.startswith("RULE-SET,acl4ssr_youtube,")
+    )
+    rules[index] = "RULE-SET,acl4ssr_youtube,Residential"
+
+    with pytest.raises(ValidationError, match="routing reachability boundary violated"):
+        audit_production_candidate(_project(project_paths), candidate)
+
+
+def test_production_audit_fails_when_final_fallback_can_reach_restricted_pool(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    final_group = _group(candidate, "Final")
+    final_group["proxies"].append("Residential")
+
+    with pytest.raises(ValidationError, match="routing reachability boundary violated"):
         audit_production_candidate(_project(project_paths), candidate)
 
 
