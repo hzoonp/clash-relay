@@ -84,6 +84,11 @@ def _sanitize_mapping(proxy: dict[str, Any]) -> dict[str, Any]:
         key = raw_key.strip()
         if key in _FORBIDDEN_FIELDS:
             continue
+        # Mihomo treats an explicitly null structured option block as invalid.
+        # Semantically, null means the subscription supplied no options, so
+        # normalize it to an absent field before any inventory sees the node.
+        if key.endswith("-opts") and value is None:
+            continue
         cleaned[key] = value
     return cleaned
 
@@ -98,7 +103,7 @@ def _validate_structured_options(proxy: dict[str, Any], *, name: str) -> None:
     """
 
     for key, value in proxy.items():
-        if not key.endswith("-opts") or value is None:
+        if not key.endswith("-opts"):
             continue
         if not isinstance(value, dict):
             raise SubscriptionError(f"proxy {name!r} has malformed structured option field {key!r}")
