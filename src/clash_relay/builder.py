@@ -8,6 +8,7 @@ from typing import Any
 
 from .acl4ssr import load_acl4ssr_rules
 from .acl4ssr_policy import apply_acl4ssr_group_semantics
+from .browsing_runtime import harden_browsing_runtime, validate_browsing_public_surface
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
 from .errors import FetchError, GenerationError, SubscriptionError
@@ -226,6 +227,10 @@ def build_candidate(
         final_excluded_sources=final_excluded_sources,
     )
     _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
+    browsing_runtime = (
+        harden_browsing_runtime(output, project.policies) if acl_groups else {"status": "not_applicable"}
+    )
+    validate_browsing_public_surface(output)
     validate_generated_config(output, secret_urls=secret_values)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
     yaml_text = _with_acl4ssr_attribution(
@@ -253,4 +258,6 @@ def build_candidate(
         report["acl4ssr_groups"] = acl_group_semantics
     if source_exclusions:
         report["source_exclusions"] = source_exclusions
+    if browsing_runtime.get("status") != "not_applicable":
+        report["browsing_runtime"] = browsing_runtime
     return BuildResult(output, yaml_text, report, secret_values)
