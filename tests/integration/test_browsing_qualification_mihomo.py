@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from clash_relay.browsing_qualification import probe_browsing_nodes
+from clash_relay.browsing_qualification import apply_browsing_qualification, probe_browsing_nodes
 
 pytestmark = pytest.mark.integration
 
@@ -101,3 +102,60 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_real_mihomo_accepts_qualified_stable_only_provider_filter(tmp_path: Path) -> None:
+    stable = {"Stable[1]", "Stable(2)", "Stable+3"}
+    candidate = {
+        "mixed-port": 7890,
+        "allow-lan": False,
+        "mode": "rule",
+        "log-level": "warning",
+        "proxy-providers": {
+            "cr_browsing_any": {
+                "type": "inline",
+                "payload": [
+                    {"name": name, "type": "direct"}
+                    for name in [*sorted(stable), "Reserve"]
+                ],
+            }
+        },
+        "proxy-groups": [
+            {
+                "name": "Browsing Auto",
+                "type": "url-test",
+                "use": ["cr_browsing_any"],
+                "filter": ".*",
+                "url": "http://www.gstatic.com/generate_204",
+                "interval": 300,
+            },
+            {
+                "name": "Browsing Manual",
+                "type": "select",
+                "use": ["cr_browsing_any"],
+            },
+        ],
+        "rules": ["MATCH,Browsing Manual"],
+    }
+
+    report = apply_browsing_qualification(candidate, stable | {"Reserve"}, stable)
+
+    assert report["automatic_nodes"] == 3
+    assert set(candidate["proxy-providers"]) == {"cr_browsing_any"}
+    assert candidate["proxy-groups"][0]["use"] == ["cr_browsing_any"]
+    assert candidate["proxy-groups"][0]["filter"] != ".*"
+
+    path = tmp_path / "stable-filter.yaml"
+    path.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
+    result = subprocess.run(
+        [str(_binary()), "-t", "-d", str(tmp_path), "-f", str(path)],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=30,
+        check=False,
+        env={**os.environ, "TZ": "UTC"},
+    )
+
+    assert result.returncode == 0, result.stdout
