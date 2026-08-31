@@ -76,9 +76,7 @@ def test_production_audit_fails_when_ruleset_is_retargeted_to_restricted_pool(
     candidate = copy.deepcopy(built_candidate.config)
     rules = candidate["rules"]
     index = next(
-        index
-        for index, rule in enumerate(rules)
-        if rule.startswith("RULE-SET,acl4ssr_youtube,")
+        index for index, rule in enumerate(rules) if rule.startswith("RULE-SET,acl4ssr_youtube,")
     )
     rules[index] = "RULE-SET,acl4ssr_youtube,Residential"
 
