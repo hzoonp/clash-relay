@@ -4,20 +4,31 @@ from pathlib import Path
 
 import yaml
 
-from clash_relay.acl4ssr_reference import parse_acl4ssr_online, validate_acl4ssr_fidelity
+from clash_relay.acl4ssr_reference import (
+    parse_acl4ssr_online,
+    validate_acl4ssr_fidelity,
+)
 
 
 def _canonical(repo_root: Path) -> tuple[dict, str]:
-    manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
-    reference = (repo_root / "rules/acl4ssr-online.reference.ini").read_text(encoding="utf-8")
+    manifest = yaml.safe_load(
+        (repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8")
+    )
+    reference = (repo_root / "rules/acl4ssr-online.reference.ini").read_text(
+        encoding="utf-8"
+    )
     return manifest, reference
 
 
-def test_pinned_acl4ssr_online_reference_is_parsed_as_the_baseline(repo_root: Path) -> None:
+def test_pinned_acl4ssr_online_reference_is_parsed_as_the_baseline(
+    repo_root: Path,
+) -> None:
     manifest, reference = _canonical(repo_root)
     parsed = parse_acl4ssr_online(reference, repository=manifest["repository"])
 
-    source_paths = [row["path"] for row in parsed["rulesets"] if row["kind"] == "source"]
+    source_paths = [
+        row["path"] for row in parsed["rulesets"] if row["kind"] == "source"
+    ]
     assert source_paths == [
         "Clash/LocalAreaNetwork.list",
         "Clash/UnBan.list",
@@ -35,14 +46,21 @@ def test_pinned_acl4ssr_online_reference_is_parsed_as_the_baseline(repo_root: Pa
         "Clash/ChinaCompanyIp.list",
     ]
     assert [row for row in parsed["rulesets"] if row["kind"] == "inline"] == [
-        {"kind": "inline", "type": "GEOIP", "value": "CN", "target": "🎯 全球直连"}
+        {
+            "kind": "inline",
+            "type": "GEOIP",
+            "value": "CN",
+            "target": "🎯 全球直连",
+        }
     ]
     assert [row for row in parsed["rulesets"] if row["kind"] == "final"] == [
         {"kind": "final", "target": "🐟 漏网之鱼"}
     ]
 
 
-def test_canonical_manifest_matches_reference_with_only_declared_deviations(repo_root: Path) -> None:
+def test_canonical_manifest_matches_reference_with_only_declared_deviations(
+    repo_root: Path,
+) -> None:
     manifest, reference = _canonical(repo_root)
     report = validate_acl4ssr_fidelity(manifest, reference_text=reference)
 
@@ -58,7 +76,9 @@ def test_canonical_manifest_matches_reference_with_only_declared_deviations(repo
     }
 
 
-def test_application_cleanup_is_the_only_disabled_acl4ssr_baseline_source(repo_root: Path) -> None:
+def test_application_cleanup_is_the_only_disabled_acl4ssr_baseline_source(
+    repo_root: Path,
+) -> None:
     manifest, _reference = _canonical(repo_root)
     assert manifest["reference"]["disabled_paths"] == ["Clash/BanProgramAD.list"]
     groups = {row["display_name"] for row in manifest["groups"]}
