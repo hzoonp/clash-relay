@@ -228,7 +228,9 @@ def build_candidate(
     )
     _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
     browsing_runtime = (
-        harden_browsing_runtime(output, project.policies) if acl_groups else {"status": "not_applicable"}
+        harden_browsing_runtime(output, project.policies)
+        if acl_groups
+        else {"status": "not_applicable"}
     )
     validate_browsing_public_surface(output)
     validate_generated_config(output, secret_urls=secret_values)
