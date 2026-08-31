@@ -109,7 +109,9 @@ def compile_routing_model(manifest: dict[str, Any] | None) -> dict[str, Any] | N
         service = (
             str(raw_service)
             if raw_service is not None
-            else target_meta.service if target_meta is not None else None
+            else target_meta.service
+            if target_meta is not None
+            else None
         )
         bindings.append(
             RouteBinding(
