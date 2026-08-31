@@ -53,6 +53,8 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert manifest["license"] == "CC-BY-SA-4.0"
     assert manifest["final_target"] == "漏网之鱼"
     assert "final_excluded_sources" not in manifest
+    assert manifest["reference"]["path"] == "Clash/config/ACL4SSR_Online.ini"
+    assert manifest["reference"]["disabled_paths"] == ["Clash/BanProgramAD.list"]
 
     expected_targets = {
         "local_area_network": "全球直连",
@@ -61,30 +63,16 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "google_fcm": "谷歌FCM",
         "google_cn": "全球直连",
         "steam_cn": "全球直连",
-        "bing": "微软Bing",
-        "onedrive": "微软云盘",
         "microsoft": "微软服务",
         "apple": "苹果服务",
-        "telegram": "电报消息",
+        "telegram": "消息通讯",
         "ai": "人工智能",
         "openai": "人工智能",
-        "netease_music": "网易音乐",
-        "epic": "游戏平台",
-        "origin": "游戏平台",
-        "sony": "游戏平台",
-        "steam": "游戏平台",
-        "nintendo": "游戏平台",
-        "youtube": "油管视频",
-        "netflix": "奈飞视频",
-        "bahamut": "巴哈姆特",
-        "bilibili_hmt": "哔哩哔哩",
-        "bilibili": "哔哩哔哩",
-        "china_media": "国内媒体",
-        "proxy_media": "国外媒体",
-        "proxy_gfwlist": "网页浏览",
+        "proxy_media": "流媒体",
+        "download": "下载流量",
+        "proxy_lite": "网页浏览",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
-        "download": "下载流量",
     }
     sources = {item["id"]: item for item in manifest["sources"]}
     assert {
@@ -98,11 +86,10 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
             "type": "GEOIP",
             "value": "CN",
             "target": "全球直连",
-            "priority": 720,
+            "priority": 150,
             "module": "general",
             "scenario": "direct",
             "service": "domestic_ip",
-            "options": ["no-resolve"],
         }
     ]
 
@@ -142,24 +129,40 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert _group_members(groups["流媒体"]) == ["媒体自动", *general_choices]
     assert _group_members(groups["消息通讯"]) == ["通讯自动", *general_choices]
     assert _group_members(groups["下载流量"]) == ["下载自动", *general_choices]
-    assert _group_members(groups["哔哩哔哩"]) == ["DIRECT"]
-    assert _group_members(groups["全球直连"]) == ["DIRECT"]
-    assert _group_members(groups["广告拦截"]) == ["REJECT"]
+
+    assert _group_members(groups["全球直连"]) == ["DIRECT", "代理选择", "自动选择"]
+    assert _group_members(groups["广告拦截"]) == ["REJECT", "DIRECT"]
+    assert _group_members(groups["谷歌FCM"]) == ["代理选择", "全球直连", "自动选择"]
+    assert _group_members(groups["微软服务"]) == ["全球直连", "代理选择"]
+    assert _group_members(groups["苹果服务"]) == ["代理选择", "全球直连"]
+    assert _group_members(groups["漏网之鱼"]) == ["代理选择", "全球直连", "自动选择"]
     assert "应用净化" not in groups
-    assert _group_members(groups["电报消息"]) == ["消息通讯"]
-    assert _group_members(groups["油管视频"]) == ["流媒体"]
-    assert _group_members(groups["国外媒体"]) == ["流媒体"]
-    assert _group_members(groups["奈飞视频"]) == ["奈飞节点", "流媒体"]
-    assert _group_members(groups["漏网之鱼"]) == ["代理选择"]
+
+    for removed in (
+        "微软Bing",
+        "微软云盘",
+        "电报消息",
+        "网易音乐",
+        "游戏平台",
+        "油管视频",
+        "奈飞节点",
+        "奈飞视频",
+        "巴哈姆特",
+        "哔哩哔哩",
+        "国内媒体",
+        "国外媒体",
+    ):
+        assert removed not in groups
 
     assert groups["自动选择"]["provider_pool"] == "general"
     assert groups["自动选择"]["filter"] == ".*"
     assert groups["自动选择"]["url"] == "http://www.gstatic.com/generate_204"
+    assert groups["自动选择"]["interval"] == 300
+    assert groups["自动选择"]["tolerance"] == 50
     assert groups["媒体自动"]["provider_pool"] == "general"
     assert groups["通讯自动"]["provider_pool"] == "general"
     assert groups["下载自动"]["provider_pool"] == "general"
     assert groups["美国节点"]["tolerance"] == 150
-    assert groups["奈飞节点"]["filter"] == "(NF|奈飞|解锁|Netflix|NETFLIX|Media)"
 
     pseudo_containers = {"国内服务", "更多策略"}
     assert pseudo_containers.isdisjoint(groups)
@@ -184,7 +187,6 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert groups["媒体自动"]["hidden"] is True
     assert groups["通讯自动"]["hidden"] is True
     assert groups["下载自动"]["hidden"] is True
-    assert groups["奈飞节点"]["hidden"] is True
 
 
 def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
