@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import copy
+
+import pytest
+
+from clash_relay.config_loader import load_project
+from clash_relay.errors import ValidationError
+from clash_relay.production_audit import (
+    audit_production_candidate,
+    render_production_summary_markdown,
+)
+
+
+def _project(project_paths):
+    return load_project(**project_paths)
+
+
+def test_production_audit_reports_only_aggregate_source_counts(
+    built_candidate, project_paths
+) -> None:
+    summary = audit_production_candidate(
+        _project(project_paths),
+        built_candidate.config,
+        build_report=built_candidate.report,
+    )
+
+    assert summary["status"] == "passed"
+    pools = {item["id"]: item for item in summary["pools"]}
+    assert pools["general"]["source_use"] == "general"
+    assert pools["general"]["nodes"] > 0
+    assert "special" not in pools["general"]["sources"]
+
+    markdown = render_production_summary_markdown(summary)
+    assert "Fictional General" not in markdown
+    assert "example.invalid" not in markdown
+    assert "Source-use policy: **passed**" in markdown
+
+
+def test_production_audit_fails_when_source_enters_disallowed_pool(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    providers = candidate["proxy-providers"]
+    general = providers["cr_general_any"]["payload"]
+    residential = providers["cr_residential_any"]["payload"]
+    general.append(copy.deepcopy(residential[0]))
+
+    with pytest.raises(ValidationError, match="source-use boundary violated"):
+        audit_production_candidate(_project(project_paths), candidate)
+
+
+def test_production_audit_includes_multiplier_filter_counts(built_candidate, project_paths) -> None:
+    report = copy.deepcopy(built_candidate.report)
+    primary = next(item for item in report["subscriptions"] if item["id"] == "primary")
+    primary["filtered_over_multiplier"] = 3
+    summary = audit_production_candidate(
+        _project(project_paths),
+        built_candidate.config,
+        build_report=report,
+    )
+    by_source = {item["id"]: item for item in summary["subscriptions"]}
+    assert by_source["primary"]["filtered_over_multiplier"] == 3

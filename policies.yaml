@@ -38,6 +38,17 @@ probes:
     timeout: 5000
     lazy: true
     tolerance: 50
+  # Browsing is latency-sensitive but should not flap between nearly equal nodes.
+  # Probe proactively, fail faster, and require a materially better candidate
+  # before automatic selection moves away from the current healthy node.
+  browsing:
+    url: https://www.gstatic.com/generate_204
+    method: HEAD
+    expected_status: "204"
+    interval: 180
+    timeout: 3000
+    lazy: false
+    tolerance: 150
   ai_openai:
     url: https://chatgpt.com/
     method: HEAD
@@ -96,7 +107,7 @@ pools:
     excluded_capabilities: []
     allowed_cost_levels: [standard]
     on_empty: error
-    probe: connectivity
+    probe: browsing
     rule_priority: 1010
     rules: null
 

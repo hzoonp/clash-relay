@@ -13,10 +13,17 @@ on:
       - "schemas/**"
       - "src/**"
       - "scripts/qualify_ai.py"
+      - "scripts/audit_production.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the validated candidate to Cloudflare KV
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -46,7 +53,7 @@ jobs:
           fi
 
   deploy:
-    name: Build, qualify, validate, and publish private config
+    name: Build, qualify, validate, and optionally publish private config
     needs: prepare
     if: needs.prepare.outputs.configured == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -98,6 +105,21 @@ jobs:
             --report .work/private/build-report.json \
             > .work/private/generation-summary.json
 
+      - name: Audit source-to-scenario isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_production.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/private/config.yaml \
+            --report .work/private/build-report.json \
+            --markdown .work/private/production-summary.md \
+            > .work/private/production-audit.json
+          cat .work/private/production-summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Download Mihomo for private AI qualification
         run: |
           python scripts/download_mihomo.py \
@@ -115,6 +137,52 @@ jobs:
             --policies policies.yaml \
             --mihomo-bin .work/bin/mihomo-ai \
             | tee .work/private/ai-qualification-summary.json
+
+      - name: Append safe AI qualification summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          path = ".work/private/ai-qualification-summary.json"
+          with open(path, encoding="utf-8") as handle:
+              data = json.load(handle)
+          diagnostics = data.get("diagnostics", {})
+          probes = diagnostics.get("probes", {})
+          lines = [
+              "## AI qualification",
+              "",
+              f"Tested nodes: **{int(diagnostics.get('tested_nodes', 0))}**  ",
+              f"Selector failures: **{int(diagnostics.get('selector_failures', 0))}**",
+              "",
+              "| Service probe | Qualified nodes |",
+              "| --- | ---: |",
+          ]
+          for name in sorted(probes):
+              summary = probes[name]
+              lines.append(f"| `{name}` | {int(summary.get('qualified_nodes', 0))} |")
+          lines.extend([
+              "",
+              "Only aggregate qualification counts are shown; node-level results remain private.",
+              "",
+          ])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("\n".join(lines))
+          PY
+
+      - name: Re-audit qualified candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/audit_production.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/private/config.yaml \
+            --report .work/private/build-report.json \
+            > .work/private/post-qualification-audit.json
 
       - name: Validate exact qualified candidate with both pinned Mihomo cores
         shell: bash
@@ -145,7 +213,19 @@ jobs:
           validate_core v1.19.30
           validate_core v1.19.29
 
+      - name: Record dry-run result
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
+        shell: bash
+        run: |
+          {
+            echo "## Publication"
+            echo
+            echo "Dry-run completed successfully. The validated private candidate was **not** written to Cloudflare KV."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish exact validated bytes to Cloudflare KV
+        if: github.event_name == 'push' || inputs.publish == true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -158,5 +238,17 @@ jobs:
             --policies policies.yaml \
             --candidate .work/private/config.yaml
 
-      - name: Remove private candidate after successful publication
+      - name: Record publication result
+        if: github.event_name == 'push' || inputs.publish == true
+        shell: bash
+        run: |
+          {
+            echo "## Publication"
+            echo
+            echo "The exact candidate validated by both pinned Mihomo cores was published to Cloudflare KV."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove private candidate
+        if: always()
         run: rm -rf .work/private
