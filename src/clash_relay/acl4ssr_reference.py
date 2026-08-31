@@ -55,7 +55,12 @@ def parse_acl4ssr_online(text: str, *, repository: str) -> dict[str, Any]:
                         f"ACL4SSR Online reference has an empty GEOIP value at line {line_number}"
                     )
                 rulesets.append(
-                    {"kind": "inline", "type": "GEOIP", "value": value, "target": target}
+                    {
+                        "kind": "inline",
+                        "type": "GEOIP",
+                        "value": value,
+                        "target": target,
+                    }
                 )
                 continue
             if source.startswith("[]"):
@@ -158,7 +163,9 @@ def validate_acl4ssr_fidelity(
         for reference_name, internal_name in contract.get("member_map", {}).items()
     }
 
-    ordered_sources = sorted(manifest["sources"], key=lambda row: (row["priority"], row["id"]))
+    ordered_sources = sorted(
+        manifest["sources"], key=lambda row: (row["priority"], row["id"])
+    )
     by_path: dict[str, dict[str, Any]] = {}
     for source in ordered_sources:
         path = str(source["path"])
@@ -168,7 +175,9 @@ def validate_acl4ssr_fidelity(
 
     baseline_paths: list[str] = []
     baseline_positions: list[int] = []
-    source_position = {str(row["id"]): index for index, row in enumerate(ordered_sources)}
+    source_position = {
+        str(row["id"]): index for index, row in enumerate(ordered_sources)
+    }
     for reference in parsed["rulesets"]:
         kind = str(reference["kind"])
         reference_target = str(reference["target"])
@@ -207,15 +216,20 @@ def validate_acl4ssr_fidelity(
                 raise GenerationError("ACL4SSR final target does not match the Online reference")
 
     if baseline_positions != sorted(baseline_positions):
-        raise GenerationError("ACL4SSR baseline source ordering drifted from ACL4SSR_Online.ini")
+        raise GenerationError(
+            "ACL4SSR baseline source ordering drifted from ACL4SSR_Online.ini"
+        )
 
     extensions = list(contract.get("extensions", []))
     extension_ids = {str(row["source_id"]) for row in extensions}
     baseline_ids = {str(by_path[path]["id"]) for path in baseline_paths}
-    unexpected = {str(row["id"]) for row in ordered_sources} - baseline_ids - extension_ids
+    unexpected = (
+        {str(row["id"]) for row in ordered_sources} - baseline_ids - extension_ids
+    )
     if unexpected:
         raise GenerationError(
-            "ACL4SSR manifest contains undeclared source extensions: " + ", ".join(sorted(unexpected))
+            "ACL4SSR manifest contains undeclared source extensions: "
+            + ", ".join(sorted(unexpected))
         )
     for extension in extensions:
         source_id = str(extension["source_id"])
@@ -237,7 +251,9 @@ def validate_acl4ssr_fidelity(
             )
 
     reference_groups = {str(row["name"]): row for row in parsed["groups"]}
-    manifest_groups = {str(row["display_name"]): row for row in manifest.get("groups", [])}
+    manifest_groups = {
+        str(row["display_name"]): row for row in manifest.get("groups", [])
+    }
     for reference_name, internal_name in disabled_groups.items():
         if reference_name not in reference_groups:
             raise GenerationError(
@@ -264,7 +280,8 @@ def validate_acl4ssr_fidelity(
         group = manifest_groups.get(internal_name)
         if reference is None or group is None:
             raise GenerationError(
-                f"ACL4SSR compatibility group mapping {reference_name!r} -> {internal_name!r} is invalid"
+                f"ACL4SSR compatibility group mapping {reference_name!r} -> "
+                f"{internal_name!r} is invalid"
             )
         if str(reference["type"]) != str(group.get("type", "select")):
             raise GenerationError(
@@ -272,9 +289,12 @@ def validate_acl4ssr_fidelity(
             )
         if reference["type"] == "select":
             expected_members = [
-                member_map.get(str(member), str(member)) for member in reference["members"]
+                member_map.get(str(member), str(member))
+                for member in reference["members"]
             ]
-            actual_members = [_manifest_member_name(member) for member in group["members"]]
+            actual_members = [
+                _manifest_member_name(member) for member in group["members"]
+            ]
             if actual_members != expected_members:
                 raise GenerationError(
                     f"ACL4SSR compatibility group {internal_name!r} changed selector defaults"
