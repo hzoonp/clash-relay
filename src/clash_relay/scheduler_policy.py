@@ -15,6 +15,7 @@ from .util import load_yaml_file
 class BrowsingSchedulerPolicy:
     attempts: int = 3
     reserve_successes: int = 2
+    region_switch_interval: int = 300
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         browsing=BrowsingSchedulerPolicy(
             attempts=int(browsing.get("attempts", 3)),
             reserve_successes=int(browsing.get("reserve_successes", 2)),
+            region_switch_interval=int(browsing.get("region_switch_interval", 300)),
         ),
         history=HistorySchedulerPolicy(
             min_runs=int(history.get("min_runs", 2)),
@@ -79,6 +81,10 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         or result.browsing.reserve_successes > result.browsing.attempts
     ):
         raise ValidationError("scheduler.browsing.reserve_successes must be within attempts")
+    if result.browsing.region_switch_interval < 60 or result.browsing.region_switch_interval > 3600:
+        raise ValidationError(
+            "scheduler.browsing.region_switch_interval must be between 60 and 3600 seconds"
+        )
     if result.history.min_runs < 1 or result.history.min_runs > 100:
         raise ValidationError("scheduler.history.min_runs must be between 1 and 100")
     if not 0.0 <= result.history.min_success_ema <= 1.0:
