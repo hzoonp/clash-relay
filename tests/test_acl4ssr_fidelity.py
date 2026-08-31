@@ -11,12 +11,8 @@ from clash_relay.acl4ssr_reference import (
 
 
 def _canonical(repo_root: Path) -> tuple[dict, str]:
-    manifest = yaml.safe_load(
-        (repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8")
-    )
-    reference = (repo_root / "rules/acl4ssr-online.reference.ini").read_text(
-        encoding="utf-8"
-    )
+    manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
+    reference = (repo_root / "rules/acl4ssr-online.reference.ini").read_text(encoding="utf-8")
     return manifest, reference
 
 
@@ -26,9 +22,7 @@ def test_pinned_acl4ssr_online_reference_is_parsed_as_the_baseline(
     manifest, reference = _canonical(repo_root)
     parsed = parse_acl4ssr_online(reference, repository=manifest["repository"])
 
-    source_paths = [
-        row["path"] for row in parsed["rulesets"] if row["kind"] == "source"
-    ]
+    source_paths = [row["path"] for row in parsed["rulesets"] if row["kind"] == "source"]
     assert source_paths == [
         "Clash/LocalAreaNetwork.list",
         "Clash/UnBan.list",
