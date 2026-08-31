@@ -5,8 +5,9 @@ license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
 # Routing targets and policy member order mirror ACL4SSR_Online_Full.ini at the
-# pinned ref. FlClash-only containers are never rule targets. AI is the sole
-# semantic extension: its candidate countries are live-qualified per service.
+# pinned ref. FlClash hides only automatic helper groups; every actionable
+# ACL4SSR select group remains visible. AI is the sole semantic extension: its
+# candidate countries are live-qualified per service.
 groups:
   # ACL4SSR shared selectors -------------------------------------------------
   - id: policy_auto
@@ -24,7 +25,6 @@ groups:
   - id: policy_manual
     display_name: 手动切换
     module: general
-    hidden: true
     type: select
     provider_pool: general
     filter: '.*'
@@ -105,7 +105,6 @@ groups:
   - id: policy_netflix_nodes
     display_name: 奈飞节点
     module: general
-    hidden: true
     type: select
     provider_pool: general
     filter: '(NF|奈飞|解锁|Netflix|NETFLIX|Media)'
@@ -129,7 +128,6 @@ groups:
   - id: policy_global_direct
     display_name: 全球直连
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -138,7 +136,6 @@ groups:
   - id: policy_block
     display_name: 广告拦截
     module: general
-    hidden: true
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -146,7 +143,6 @@ groups:
   - id: policy_program_ad
     display_name: 应用净化
     module: general
-    hidden: true
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -154,7 +150,6 @@ groups:
   - id: policy_google_fcm
     display_name: 谷歌FCM
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -169,7 +164,6 @@ groups:
   - id: policy_bing
     display_name: 微软Bing
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -184,7 +178,6 @@ groups:
   - id: policy_onedrive
     display_name: 微软云盘
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -199,7 +192,6 @@ groups:
   - id: policy_microsoft
     display_name: 微软服务
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -214,7 +206,6 @@ groups:
   - id: policy_apple
     display_name: 苹果服务
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -229,7 +220,6 @@ groups:
   - id: policy_telegram
     display_name: 电报消息
     module: general
-    hidden: true
     members:
       - {group: 节点选择}
       - {group: 自动选择}
@@ -259,7 +249,6 @@ groups:
   - id: policy_netease
     display_name: 网易音乐
     module: general
-    hidden: true
     type: select
     provider_pool: general
     filter: '(网易|音乐|解锁|Music|NetEase)'
@@ -271,7 +260,6 @@ groups:
   - id: policy_games
     display_name: 游戏平台
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 节点选择}
@@ -286,7 +274,6 @@ groups:
   - id: policy_youtube
     display_name: 油管视频
     module: general
-    hidden: true
     members:
       - {group: 节点选择}
       - {group: 自动选择}
@@ -302,7 +289,6 @@ groups:
   - id: policy_netflix
     display_name: 奈飞视频
     module: general
-    hidden: true
     members:
       - {group: 奈飞节点}
       - {group: 节点选择}
@@ -319,7 +305,6 @@ groups:
   - id: policy_bahamut
     display_name: 巴哈姆特
     module: general
-    hidden: true
     members:
       - {group: 台湾节点}
       - {group: 节点选择}
@@ -329,7 +314,6 @@ groups:
   - id: policy_bilibili
     display_name: 哔哩哔哩
     module: general
-    hidden: true
     members:
       - {group: 全球直连}
       - {group: 台湾节点}
@@ -338,7 +322,6 @@ groups:
   - id: policy_china_media
     display_name: 国内媒体
     module: general
-    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 香港节点}
@@ -350,7 +333,6 @@ groups:
   - id: policy_proxy_media
     display_name: 国外媒体
     module: general
-    hidden: true
     members:
       - {group: 节点选择}
       - {group: 自动选择}
@@ -366,7 +348,6 @@ groups:
   - id: policy_final
     display_name: 漏网之鱼
     module: general
-    hidden: true
     members:
       - {group: 节点选择}
       - {group: 自动选择}
@@ -378,40 +359,6 @@ groups:
       - {group: 美国节点}
       - {group: 韩国节点}
       - {group: 手动切换}
-
-  # FlClash presentation-only containers. No ACL4SSR rule targets these groups.
-  - id: ui_streaming
-    display_name: 流媒体
-    module: general
-    members:
-      - {group: 油管视频}
-      - {group: 奈飞视频}
-      - {group: 巴哈姆特}
-      - {group: 哔哩哔哩}
-      - {group: 国内媒体}
-      - {group: 国外媒体}
-
-  - id: ui_domestic
-    display_name: 国内服务
-    module: general
-    members:
-      - {group: 谷歌FCM}
-      - {group: 微软Bing}
-      - {group: 微软云盘}
-      - {group: 微软服务}
-      - {group: 苹果服务}
-      - {group: 游戏平台}
-      - {group: 网易音乐}
-
-  - id: ui_more
-    display_name: 更多策略
-    module: general
-    members:
-      - {group: 电报消息}
-      - {group: 全球直连}
-      - {group: 广告拦截}
-      - {group: 应用净化}
-      - {group: 漏网之鱼}
 
 final_target: 漏网之鱼
 
