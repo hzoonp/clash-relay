@@ -1,4 +1,4 @@
-name: Routing V2 Shadow
+name: Routing V2 Drift Guard
 
 on:
   pull_request:
@@ -35,12 +35,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: routing-v2-shadow-${{ github.ref }}
+  group: routing-v2-drift-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  shadow:
-    name: Compare declared Routing V2 cutover
+  drift:
+    name: Verify finalized Routing V2 graph
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -50,45 +50,47 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock
       - run: python -m pip install --requirement requirements.lock --editable .
-      - name: Render aggregate shadow evidence
+      - name: Render aggregate drift evidence
         run: |
           python scripts/routing_shadow.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
             --services services.yaml \
             --policies policies.yaml \
-            | tee .routing-v2-shadow.json
-      - name: Append privacy-safe summary
+            | tee .routing-v2-drift.json
+      - name: Append privacy-safe summary and reject drift
         shell: bash
         run: |
           python - <<'PY'
           import json
           import os
 
-          with open(".routing-v2-shadow.json", encoding="utf-8") as handle:
+          with open(".routing-v2-drift.json", encoding="utf-8") as handle:
               data = json.load(handle)
           lines = [
-              "## Routing V2 shadow",
+              "## Routing V2 drift guard",
               "",
-              "This compares declarations/configuration graphs only; it does not inspect user traffic.",
+              "This validates declarations/configuration graphs only; it does not inspect user traffic.",
               "",
               f"Routing state: **{data['status']}**  ",
               f"Explicit foreign-web rule sources: **{data['foreign_web']['explicit_rule_sources']}**  ",
               f"Foreign-web classifier widened: **{data['foreign_web']['classifier_widened']}**  ",
-              f"Download current → cutover: **{data['download']['current_mode']} → {data['download']['cutover_mode']}**  ",
-              f"Download cutover applied: **{data['download']['cutover_applied']}**  ",
-              f"Download rule sources affected: **{data['download']['affected_rule_sources']}**  ",
+              f"Download mode: **{data['download']['mode']}**  ",
+              f"Download scheduler applied: **{data['download']['scheduler_applied']}**  ",
+              f"Download rule sources: **{data['download']['rule_sources']}**  ",
               f"Media auto-scheduler rule sources: **{data['media']['auto_scheduler_rule_sources']}**  ",
-              f"Media cutover applied: **{data['media']['cutover_applied']}**  ",
+              f"Media scheduler applied: **{data['media']['scheduler_applied']}**  ",
               f"AI excluded regions: **{', '.join(data['ai']['excluded_regions'])}**  ",
-              f"AI region cutover applied: **{data['ai']['cutover_applied']}**",
+              f"AI region policy applied: **{data['ai']['policy_applied']}**",
               "",
               "No domain, node, endpoint, credential, subscription URL, or traffic record is collected.",
               "",
           ]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
               handle.write("\n".join(lines))
+          if data["status"] != "healthy":
+              raise SystemExit("Routing V2 configuration drift detected")
           PY
-      - name: Remove shadow output
+      - name: Remove drift output
         if: always()
-        run: rm -f .routing-v2-shadow.json
+        run: rm -f .routing-v2-drift.json
