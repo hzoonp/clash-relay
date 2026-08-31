@@ -28,6 +28,8 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "日本节点",
     "美国节点",
     "韩国节点",
+    "媒体自动",
+    "下载自动",
     "奈飞节点",
     "全球直连",
     "广告拦截",
@@ -46,6 +48,7 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "哔哩哔哩",
     "国内媒体",
     "国外媒体",
+    "下载流量",
     "漏网之鱼",
 }
 _EXPECTED_AI_COUNTRY_GROUPS = {
@@ -233,11 +236,12 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "电报消息": "代理选择",
         "网易音乐": "DIRECT",
         "游戏平台": "DIRECT",
-        "油管视频": "代理选择",
+        "油管视频": "媒体自动",
         "巴哈姆特": "台湾节点",
         "哔哩哔哩": "DIRECT",
         "国内媒体": "DIRECT",
-        "国外媒体": "代理选择",
+        "国外媒体": "媒体自动",
+        "下载流量": "下载自动",
         "漏网之鱼": "代理选择",
     }
     for name, destination in deterministic.items():
@@ -245,6 +249,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
 
     assert groups["奈飞视频"]["type"] == "fallback"
     assert groups["奈飞视频"]["hidden"] is True
+    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "媒体自动"]
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_HIDDEN_ROUTING_GROUPS)
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_AI_COUNTRY_GROUPS)
     assert "AI · 香港" not in groups
@@ -253,6 +258,8 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     assert "RULE-SET,acl4ssr_bilibili_hmt,哔哩哔哩" in result.config["rules"]
     assert "RULE-SET,acl4ssr_bilibili,哔哩哔哩" in result.config["rules"]
     assert "RULE-SET,acl4ssr_telegram,电报消息" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_download,下载流量" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_proxy_gfwlist,网页浏览" in result.config["rules"]
 
     policy_rule_targets = {
         rule.split(",")[1] if rule.startswith("MATCH,") else rule.split(",")[2]

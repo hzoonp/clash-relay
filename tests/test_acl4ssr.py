@@ -85,7 +85,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "proxy_gfwlist": "网页浏览",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
-        "download": "全球直连",
+        "download": "下载流量",
     }
     sources = {item["id"]: item for item in manifest["sources"]}
     assert {
@@ -99,8 +99,10 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
             "type": "GEOIP",
             "value": "CN",
             "target": "全球直连",
-            "priority": 920,
+            "priority": 720,
             "module": "general",
+            "scenario": "direct",
+            "service": "domestic_ip",
             "options": ["no-resolve"],
         }
     ]
@@ -121,34 +123,29 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert groups["网页浏览"]["provider_pool"] == "browsing"
     assert groups["网页自动"]["provider_pool"] == "browsing"
     assert _group_members(groups["人工智能"]) == [
+        "AI · 美国",
         "AI · 新加坡",
         "AI · 日本",
-        "AI · 美国",
         "AI · 台湾",
         "AI · 韩国",
         "AI · 其他地区",
         "DIRECT",
     ]
-    assert _group_members(groups["哔哩哔哩"]) == ["全球直连", "台湾节点", "香港节点"]
-    assert _group_members(groups["全球直连"]) == ["DIRECT", "代理选择", "自动选择"]
-    assert _group_members(groups["广告拦截"]) == ["REJECT", "DIRECT"]
-    assert _group_members(groups["应用净化"]) == ["REJECT", "DIRECT"]
-    assert _group_members(groups["漏网之鱼"]) == [
-        "代理选择",
-        "自动选择",
-        "DIRECT",
-        "香港节点",
-        "台湾节点",
-        "新加坡节点",
-        "日本节点",
-        "美国节点",
-        "韩国节点",
-        "手动切换",
-    ]
+    assert _group_members(groups["哔哩哔哩"]) == ["DIRECT"]
+    assert _group_members(groups["全球直连"]) == ["DIRECT"]
+    assert _group_members(groups["广告拦截"]) == ["REJECT"]
+    assert _group_members(groups["应用净化"]) == ["REJECT"]
+    assert _group_members(groups["油管视频"]) == ["媒体自动"]
+    assert _group_members(groups["国外媒体"]) == ["媒体自动"]
+    assert _group_members(groups["下载流量"]) == ["下载自动"]
+    assert _group_members(groups["奈飞视频"]) == ["奈飞节点", "媒体自动"]
+    assert _group_members(groups["漏网之鱼"]) == ["代理选择"]
 
     assert groups["自动选择"]["provider_pool"] == "general"
     assert groups["自动选择"]["filter"] == ".*"
     assert groups["自动选择"]["url"] == "http://www.gstatic.com/generate_204"
+    assert groups["媒体自动"]["provider_pool"] == "general"
+    assert groups["下载自动"]["provider_pool"] == "general"
     assert groups["美国节点"]["tolerance"] == 150
     assert groups["奈飞节点"]["filter"] == "(NF|奈飞|解锁|Netflix|NETFLIX|Media)"
 
@@ -165,6 +162,8 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert hidden_rule_targets
     assert all(groups[name].get("hidden", False) is True for name in hidden_rule_targets)
     assert groups["手动切换"]["hidden"] is True
+    assert groups["媒体自动"]["hidden"] is True
+    assert groups["下载自动"]["hidden"] is True
     assert groups["奈飞节点"]["hidden"] is True
 
 

@@ -7,7 +7,7 @@ from typing import Any
 from .config_loader import ProjectDefinition
 from .errors import ValidationError
 from .routing_model import compile_routing_model
-from .routing_policy_v2 import load_routing_policy_v2, routing_policy_summary
+from .routing_policy_v2 import RoutingPolicyV2, load_routing_policy_v2, routing_policy_summary
 
 _AI_SERVICE_PREFIXES = {
     "openai": "__CR_AI_OPENAI_",
@@ -28,6 +28,7 @@ _REGION_DISPLAY_NAMES = {
     "KR": ("AI · 韩国", "AI · KR"),
     "OTHER": ("AI · 其他地区", "AI · OTHER"),
 }
+_REGION_CANONICAL_DISPLAY = {region: names[0] for region, names in _REGION_DISPLAY_NAMES.items()}
 
 
 def _groups(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -40,6 +41,16 @@ def _groups(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise ValidationError("routing v2 audit found malformed proxy group")
         result[str(row["name"])] = row
     return result
+
+
+def _group_proxies(groups: dict[str, dict[str, Any]], name: str) -> list[str]:
+    group = groups.get(name)
+    if not isinstance(group, dict):
+        raise ValidationError(f"routing v2 required group {name!r} is missing")
+    proxies = group.get("proxies")
+    if not isinstance(proxies, list) or not all(isinstance(item, str) for item in proxies):
+        raise ValidationError(f"routing v2 group {name!r} has invalid proxy references")
+    return [str(item) for item in proxies]
 
 
 def _expected_member(route: dict[str, Any], project: ProjectDefinition) -> str:
@@ -127,6 +138,75 @@ def _audit_ai_materialization(
     }
 
 
+def _audit_cutover_routes(
+    policy: RoutingPolicyV2,
+    groups: dict[str, dict[str, Any]],
+    bindings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    media_auto = groups.get("媒体自动")
+    download_auto = groups.get("下载自动")
+    if not isinstance(media_auto, dict) or media_auto.get("hidden") is not True:
+        raise ValidationError("Routing V2 media scheduler must be hidden")
+    if media_auto.get("type") != "url-test" or not media_auto.get("use"):
+        raise ValidationError("Routing V2 media scheduler must be provider-backed url-test")
+    if not isinstance(download_auto, dict) or download_auto.get("hidden") is not True:
+        raise ValidationError("Routing V2 download scheduler must be hidden")
+    if download_auto.get("type") != "url-test" or not download_auto.get("use"):
+        raise ValidationError("Routing V2 download scheduler must be provider-backed url-test")
+
+    if _group_proxies(groups, "油管视频") != ["媒体自动"]:
+        raise ValidationError("YouTube must route only through the media scheduler")
+    if _group_proxies(groups, "国外媒体") != ["媒体自动"]:
+        raise ValidationError("foreign media must route only through the media scheduler")
+    if _group_proxies(groups, "奈飞视频") != ["奈飞节点", "媒体自动"]:
+        raise ValidationError("Netflix must use capability-first media fallback")
+
+    if policy.download.mode == "general_auto":
+        if _group_proxies(groups, "下载流量") != ["下载自动"]:
+            raise ValidationError("download cutover must route only through download scheduler")
+    elif _group_proxies(groups, "下载流量") != ["DIRECT"]:
+        raise ValidationError("direct download mode must route only to DIRECT")
+
+    by_source = {str(row["source_id"]): row for row in bindings}
+    download = by_source.get("download")
+    foreign_web = by_source.get("proxy_gfwlist")
+    china_domain = by_source.get("china_domain")
+    china_ip = by_source.get("china_company_ip")
+    geoip = by_source.get("geoip_cn")
+    if not all(
+        isinstance(row, dict) for row in (download, foreign_web, china_domain, china_ip, geoip)
+    ):
+        raise ValidationError("Routing V2 cutover classification bindings are incomplete")
+    if download["target"] != "下载流量":
+        raise ValidationError("Download.list must target the download scenario route")
+    if not (
+        int(china_domain["priority"]) < int(download["priority"]) < int(foreign_web["priority"])
+        and int(china_ip["priority"]) < int(download["priority"])
+        and int(geoip["priority"]) < int(download["priority"])
+    ):
+        raise ValidationError(
+            "domestic classification must precede download and download must precede generic web"
+        )
+
+    ai_policy = _group_proxies(groups, "人工智能")
+    preferred_names = [
+        _REGION_CANONICAL_DISPLAY[region]
+        for region in policy.ai.preferred_regions
+        if region in _REGION_CANONICAL_DISPLAY
+    ]
+    ai_regions = [name for name in ai_policy if name != "DIRECT"]
+    positions = [preferred_names.index(name) for name in ai_regions if name in preferred_names]
+    if len(positions) != len(ai_regions) or positions != sorted(positions):
+        raise ValidationError("generic AI country order does not follow Routing V2 preference")
+
+    return {
+        "media_scheduler": "媒体自动",
+        "download_scheduler": "下载自动",
+        "download_mode": policy.download.mode,
+        "ai_region_order": ai_regions,
+    }
+
+
 def audit_routing_v2(
     project: ProjectDefinition,
     candidate: dict[str, Any],
@@ -175,6 +255,7 @@ def audit_routing_v2(
             )
         deterministic_checked += 1
 
+    cutover = _audit_cutover_routes(policy, groups, model["bindings"])
     ai = _audit_ai_materialization(project, groups)
     visible = {
         str(row["name"])
@@ -205,5 +286,6 @@ def audit_routing_v2(
         "visible_groups": len(visible),
         "scenario_counts": model["scenario_counts"],
         "policy": routing_policy_summary(policy),
+        "cutover": cutover,
         "ai": ai,
     }

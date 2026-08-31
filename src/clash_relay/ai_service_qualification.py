@@ -22,6 +22,15 @@ _SERVICE_TARGETS = {
     "ai_claude": "__CR_AI_SERVICE_CLAUDE",
     "ai_gemini": "__CR_AI_SERVICE_GEMINI",
 }
+_REGION_PUBLIC_NAMES = {
+    "US": "AI · 美国",
+    "SG": "AI · 新加坡",
+    "JP": "AI · 日本",
+    "TW": "AI · 台湾",
+    "KR": "AI · 韩国",
+    "OTHER": "AI · 其他地区",
+}
+_LEGACY_COUNTRY_ORDER = ("SG", "JP", "US", "TW", "KR", "OTHER")
 _CLAUDE_RULE_PROVIDER = "cr_ai_rules_claude"
 _GEMINI_RULE_PROVIDER = "cr_ai_rules_gemini"
 _ACL4SSR_AI_PROVIDER = "acl4ssr_ai"
@@ -70,7 +79,7 @@ def _comment_header(text: str) -> str:
 def _provider_routes(
     groups: list[dict[str, Any]], provider_names: set[str]
 ) -> dict[str, tuple[str, str]]:
-    """Return provider -> (hidden country anchor, public country group)."""
+    """Return provider -> (hidden country anchor, country wrapper)."""
     anchor_by_provider: dict[str, str] = {}
     for group in groups:
         if not isinstance(group, dict) or not group.get("hidden", False):
@@ -250,9 +259,7 @@ def _rewrite_service_rules(config: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def _hide_country_groups_under_ai_policy(
-    groups: list[dict[str, Any]], country_names: list[str]
-) -> None:
+def _hide_country_groups(groups: list[dict[str, Any]], country_names: list[str]) -> None:
     by_name = {
         str(group["name"]): group
         for group in groups
@@ -261,13 +268,50 @@ def _hide_country_groups_under_ai_policy(
     for country_name in country_names:
         group = by_name.get(country_name)
         if not isinstance(group, dict):
-            raise ValidationError("AI policy references a missing country group")
+            raise ValidationError("AI qualification references a missing country group")
         group["hidden"] = True
+
+
+def _ordered_country_names(
+    provider_by_public: dict[str, str],
+    *,
+    preferred_regions: tuple[str, ...] | list[str] | None,
+    ai_policy: dict[str, Any],
+) -> list[str]:
+    available = set(provider_by_public)
+    if preferred_regions is not None:
+        ordered: list[str] = []
+        for region in preferred_regions:
+            public_name = _REGION_PUBLIC_NAMES.get(str(region))
+            if public_name is None:
+                raise ValidationError(f"AI routing uses unknown preferred region {region!r}")
+            if public_name in available and public_name not in ordered:
+                ordered.append(public_name)
+        # Preferred regions define order, not admission. Any future non-excluded
+        # region omitted by an older policy remains reachable after the declared
+        # preferences instead of being silently dropped.
+        legacy_names = [_REGION_PUBLIC_NAMES[region] for region in _LEGACY_COUNTRY_ORDER]
+        ordered.extend(name for name in legacy_names if name in available and name not in ordered)
+        ordered.extend(sorted(available - set(ordered)))
+        return ordered
+
+    references = ai_policy.get("proxies", [])
+    if isinstance(references, list):
+        ordered = [str(name) for name in references if str(name) in available]
+        if ordered:
+            ordered.extend(sorted(available - set(ordered)))
+            return ordered
+    legacy_names = [_REGION_PUBLIC_NAMES[region] for region in _LEGACY_COUNTRY_ORDER]
+    ordered = [name for name in legacy_names if name in available]
+    ordered.extend(sorted(available - set(ordered)))
+    return ordered
 
 
 def apply_ai_service_qualification(
     config: dict[str, Any],
     qualified_by_probe: dict[str, set[str]],
+    *,
+    preferred_regions: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     """Route each AI service only through nodes that passed that service's probe."""
     missing = set(_SERVICE_ORDER) - set(qualified_by_probe)
@@ -333,14 +377,18 @@ def apply_ai_service_qualification(
         ),
         None,
     )
-    if not isinstance(ai_policy, dict) or not isinstance(ai_policy.get("proxies"), list):
+    if not isinstance(ai_policy, dict):
         raise ValidationError("AI policy group is missing after qualification")
-    country_order = [str(name) for name in ai_policy["proxies"] if str(name) != "DIRECT"]
     provider_by_public = {
         public_name: provider_name
         for provider_name, (_, public_name) in routes.items()
         if provider_name in retained_providers
     }
+    country_order = _ordered_country_names(
+        provider_by_public,
+        preferred_regions=preferred_regions,
+        ai_policy=ai_policy,
+    )
 
     service_country_counts: dict[str, dict[str, int]] = {}
     service_counts: dict[str, int] = {}
@@ -381,7 +429,7 @@ def apply_ai_service_qualification(
             failed_closed.append(label)
 
     routing_report = _rewrite_service_rules(config)
-    _hide_country_groups_under_ai_policy(groups, country_order)
+    _hide_country_groups(groups, list(provider_by_public))
     validate_generated_config(config)
     return {
         "qualification_mode": "per-service",
@@ -393,12 +441,15 @@ def apply_ai_service_qualification(
         "service_country_groups": service_country_counts,
         "service_fail_closed": failed_closed,
         "service_rules": routing_report,
+        "preferred_regions": list(preferred_regions or ()),
     }
 
 
 def rewrite_ai_service_qualified_candidate(
     candidate_path: Path,
     qualified_by_probe: dict[str, set[str]],
+    *,
+    preferred_regions: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     try:
         original = candidate_path.read_text(encoding="utf-8")
@@ -407,6 +458,10 @@ def rewrite_ai_service_qualified_candidate(
     config = load_yaml_file(candidate_path)
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
-    report = apply_ai_service_qualification(config, qualified_by_probe)
+    report = apply_ai_service_qualification(
+        config,
+        qualified_by_probe,
+        preferred_regions=preferred_regions,
+    )
     atomic_write(candidate_path, _comment_header(original) + dump_yaml(config))
     return report

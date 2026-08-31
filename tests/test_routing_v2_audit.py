@@ -48,6 +48,28 @@ def _candidate(project) -> dict:
                 "proxies": [_member(route, project)],
             }
         )
+    groups.extend(
+        [
+            {
+                "name": "媒体自动",
+                "type": "url-test",
+                "hidden": True,
+                "use": ["fixture_general"],
+            },
+            {
+                "name": "下载自动",
+                "type": "url-test",
+                "hidden": True,
+                "use": ["fixture_general"],
+            },
+            {
+                "name": "奈飞视频",
+                "type": "fallback",
+                "hidden": True,
+                "proxies": ["奈飞节点", "媒体自动"],
+            },
+        ]
+    )
     return {"proxy-groups": groups}
 
 

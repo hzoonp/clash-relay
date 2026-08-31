@@ -6,9 +6,9 @@ from pathlib import Path
 import yaml
 
 AI_COUNTRY_GROUPS = [
+    "AI · 美国",
     "AI · 新加坡",
     "AI · 日本",
-    "AI · 美国",
     "AI · 台湾",
     "AI · 韩国",
     "AI · 其他地区",

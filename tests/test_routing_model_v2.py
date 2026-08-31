@@ -56,11 +56,11 @@ def test_internal_rule_targets_are_deterministic(repo_root: Path) -> None:
         "电报消息": "代理选择",
         "网易音乐": "DIRECT",
         "游戏平台": "DIRECT",
-        "油管视频": "代理选择",
+        "油管视频": "媒体自动",
         "巴哈姆特": "台湾节点",
         "哔哩哔哩": "DIRECT",
         "国内媒体": "DIRECT",
-        "国外媒体": "代理选择",
+        "国外媒体": "媒体自动",
         "漏网之鱼": "代理选择",
     }
     for name, destination in expected.items():
