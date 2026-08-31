@@ -106,9 +106,7 @@ def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path:
         encoding="utf-8",
     )
 
-    rewrites = apply_history_preference(
-        candidate, {"preferred-a", "preferred-b", "preferred-c"}
-    )
+    rewrites = apply_history_preference(candidate, {"preferred-a", "preferred-b", "preferred-c"})
     config = load_yaml_file(candidate)
     auto_filter = config["proxy-groups"][0]["filter"]
 
