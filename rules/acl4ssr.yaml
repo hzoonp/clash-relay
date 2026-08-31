@@ -5,8 +5,9 @@ license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
 # ACL4SSR owns classification content, while Routing Model V2 owns deterministic
-# route targets and scenario schedulers. Only 代理选择, 网页浏览, and 人工智能 are
-# user-facing; application targets and schedulers remain internal.
+# route targets and scenario schedulers. The user-facing selectors are 代理选择,
+# 网页浏览, 人工智能, 流媒体, 消息通讯, and 下载流量; application targets and
+# automatic schedulers remain internal.
 groups:
   # General / browsing helpers ------------------------------------------------
   - id: policy_auto
@@ -129,7 +130,7 @@ groups:
     members: []
 
   # Scenario-specific automatic schedulers all use the general inventory. This
-  # makes subscription_1 structurally unreachable from media/download.
+  # makes subscription_1 structurally unreachable from media/messaging/download.
   - id: policy_media_auto
     display_name: 媒体自动
     module: general
@@ -143,6 +144,21 @@ groups:
     route:
       scenario: media
       profile: media
+    members: []
+
+  - id: policy_messaging_auto
+    display_name: 通讯自动
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '.*'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 100
+    route:
+      scenario: general
+      profile: general
     members: []
 
   - id: policy_download_auto
@@ -292,10 +308,10 @@ groups:
       scenario: general
       service: telegram
       deterministic: true
-      member: {group: 代理选择}
+      member: {group: 消息通讯}
       profile: general
     members:
-      - {group: 代理选择}
+      - {group: 消息通讯}
 
   # Generic AI keeps the country wrappers for current UI compatibility, but the
   # order now matches the same declarative preference used by service-specific
@@ -314,6 +330,41 @@ groups:
       - {group: AI · 台湾}
       - {group: AI · 韩国}
       - {group: AI · 其他地区}
+      - {builtin: DIRECT}
+
+  # Public general-only scenario selectors -----------------------------------
+  - id: policy_media
+    display_name: 流媒体
+    module: general
+    type: select
+    route:
+      scenario: media
+      profile: media
+    members:
+      - {group: 媒体自动}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {builtin: DIRECT}
+
+  - id: policy_messaging
+    display_name: 消息通讯
+    module: general
+    type: select
+    route:
+      scenario: general
+      profile: general
+    members:
+      - {group: 通讯自动}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
       - {builtin: DIRECT}
 
   - id: policy_netease
@@ -350,10 +401,10 @@ groups:
       scenario: media
       service: youtube
       deterministic: true
-      member: {group: 媒体自动}
+      member: {group: 流媒体}
       profile: media
     members:
-      - {group: 媒体自动}
+      - {group: 流媒体}
 
   - id: policy_netflix
     display_name: 奈飞视频
@@ -371,7 +422,7 @@ groups:
       profile: media
     members:
       - {group: 奈飞节点}
-      - {group: 媒体自动}
+      - {group: 流媒体}
 
   - id: policy_bahamut
     display_name: 巴哈姆特
@@ -420,23 +471,28 @@ groups:
       scenario: media
       service: foreign_media
       deterministic: true
-      member: {group: 媒体自动}
+      member: {group: 流媒体}
       profile: media
     members:
-      - {group: 媒体自动}
+      - {group: 流媒体}
 
   - id: policy_download
     display_name: 下载流量
     module: general
-    hidden: true
+    type: select
     route:
       scenario: download
       service: download
-      deterministic: true
-      member: {group: 下载自动}
       profile: download
     members:
       - {group: 下载自动}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {builtin: DIRECT}
 
   - id: policy_final
     display_name: 漏网之鱼
