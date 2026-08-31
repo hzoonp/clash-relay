@@ -88,6 +88,24 @@ def _sanitize_mapping(proxy: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
+def _validate_structured_options(proxy: dict[str, Any], *, name: str) -> None:
+    """Reject malformed Mihomo option containers before they reach any inventory.
+
+    Clash/Mihomo option fields such as ws-opts, grpc-opts, h2-opts,
+    reality-opts, and plugin-opts are mappings. Accepting a scalar or list here
+    lets an otherwise plausible subscription node survive ingestion and later
+    makes Mihomo reject every generated provider that contains it.
+    """
+
+    for key, value in proxy.items():
+        if not key.endswith("-opts") or value is None:
+            continue
+        if not isinstance(value, dict):
+            raise SubscriptionError(
+                f"proxy {name!r} has malformed structured option field {key!r}"
+            )
+
+
 def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]:
     if not isinstance(proxy, dict):
         raise SubscriptionError("proxy entry must be a mapping")
@@ -115,6 +133,7 @@ def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]
     for field in _REQUIRED_FIELDS.get(proxy_type, ()):
         if cleaned.get(field) in {None, ""}:
             raise SubscriptionError(f"proxy {name!r} lacks required field {field!r}")
+    _validate_structured_options(cleaned, name=name)
     cleaned["name"] = name.strip()
     cleaned["type"] = proxy_type
     cleaned["server"] = server.strip()
