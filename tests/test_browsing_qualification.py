@@ -169,9 +169,7 @@ def test_apply_browsing_qualification_keeps_reserve_manual_but_not_automatic() -
     ]
     assert config["proxy-groups"][0]["use"] == ["cr_browsing_auto_any"]
     assert config["proxy-groups"][1]["use"] == ["cr_browsing_any"]
-    assert config["proxy-providers"]["cr_general_any"]["payload"] == [
-        {"name": "general-stays"}
-    ]
+    assert config["proxy-providers"]["cr_general_any"]["payload"] == [{"name": "general-stays"}]
     assert config["proxy-providers"]["cr_ai_us"]["payload"] == [{"name": "ai-stays"}]
     assert report["tested_nodes"] == 5
     assert report["qualified_nodes"] == 4
@@ -191,9 +189,7 @@ def test_apply_browsing_qualification_falls_back_when_stable_tier_is_too_small()
                 "payload": [{"name": "stable"}, {"name": "reserve-a"}, {"name": "reserve-b"}],
             }
         },
-        "proxy-groups": [
-            {"name": "Browsing Auto", "type": "url-test", "use": ["cr_browsing_any"]}
-        ],
+        "proxy-groups": [{"name": "Browsing Auto", "type": "url-test", "use": ["cr_browsing_any"]}],
     }
 
     report = apply_browsing_qualification(
