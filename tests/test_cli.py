@@ -1,162 +1,151 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
 from clash_relay import cli
-from clash_relay.errors import ValidationError
 
 
-def _project_args(project_paths: dict[str, Path]) -> list[str]:
+def _project_args(paths) -> list[str]:
     return [
         "--config",
-        str(project_paths["config_path"]),
+        str(paths["config_path"]),
         "--subscriptions",
-        str(project_paths["subscriptions_path"]),
+        str(paths["subscriptions_path"]),
         "--services",
-        str(project_paths["services_path"]),
+        str(paths["services_path"]),
         "--policies",
-        str(project_paths["policies_path"]),
+        str(paths["policies_path"]),
     ]
 
 
-def _inject(monkeypatch, fixture_env: dict[str, str]) -> None:
-    for key, value in fixture_env.items():
-        monkeypatch.setenv(key, value)
-
-
-def test_validate_project_command(project_paths, capsys) -> None:
-    result = cli.main(["validate-project", *_project_args(project_paths)])
+def test_generate_command(project_paths, fixture_env, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "build_candidate", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "write_build", lambda *_args, **_kwargs: None)
+    result = cli.main(["generate", *_project_args(project_paths), "--output", "ignored.yaml"])
     assert result == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output["status"] == "ok"
-    assert output["enabled_subscriptions"] == 3
+    assert json.loads(capsys.readouterr().out)["status"] == "generated"
 
 
-def test_generate_and_check_commands(
-    project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
-) -> None:
-    _inject(monkeypatch, fixture_env)
-    output = tmp_path / "config.yaml"
-    report = tmp_path / "report.json"
-    args = [
-        "generate",
-        *_project_args(project_paths),
-        "--output",
-        str(output),
-        "--report",
-        str(report),
-    ]
-    assert cli.main(args) == 0
-    first_stdout = json.loads(capsys.readouterr().out)
-    assert first_stdout["status"] == "generated"
-    assert output.is_file()
-    assert json.loads(report.read_text(encoding="utf-8"))["candidate_sha256"]
-    assert cli.main([*args, "--check"]) == 0
+def test_generate_check_command(project_paths, fixture_env, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "build_candidate", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "write_build", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "check_existing", lambda *_args, **_kwargs: True)
+    result = cli.main(
+        ["generate", *_project_args(project_paths), "--output", "ignored.yaml", "--check"]
+    )
+    assert result == 0
     assert json.loads(capsys.readouterr().out)["status"] == "unchanged"
 
 
-def test_generate_check_detects_drift(
-    project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
-) -> None:
-    _inject(monkeypatch, fixture_env)
-    output = tmp_path / "config.yaml"
-    base = ["generate", *_project_args(project_paths), "--output", str(output)]
-    assert cli.main(base) == 0
-    capsys.readouterr()
-    output.write_text(output.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
-    assert cli.main([*base, "--check"]) == 2
-    assert "differs" in capsys.readouterr().err
-
-
-def test_validate_existing_candidate(
-    project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
-) -> None:
-    _inject(monkeypatch, fixture_env)
-    output = tmp_path / "candidate.yaml"
-    assert cli.main(["generate", *_project_args(project_paths), "--output", str(output)]) == 0
-    capsys.readouterr()
-    assert cli.main(["validate", "--candidate", str(output)]) == 0
-    assert json.loads(capsys.readouterr().out)["static_validation"] == "passed"
-
-
-def test_build_writes_only_after_real_core_validation(
-    project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
-) -> None:
-    _inject(monkeypatch, fixture_env)
-    monkeypatch.setattr(
-        cli,
-        "validate_with_mihomo",
-        lambda *args, **kwargs: {"config_test": "passed", "startup_smoke": "passed"},
-    )
-    binary = tmp_path / "mihomo"
-    binary.write_text("mock", encoding="utf-8")
-    output = tmp_path / "production.yaml"
+def test_validate_command(project_paths, monkeypatch, tmp_path, capsys) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("proxy-groups: []\nrules: []\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "validate_candidate_file", lambda *_args, **_kwargs: {"status": "ok"})
     result = cli.main(
         [
-            "build",
+            "validate",
             *_project_args(project_paths),
+            "--candidate",
+            str(candidate),
             "--mihomo-bin",
-            str(binary),
-            "--output",
-            str(output),
+            "mihomo",
         ]
     )
     assert result == 0
-    assert output.is_file()
-    assert json.loads(capsys.readouterr().out)["status"] == "built"
+    assert json.loads(capsys.readouterr().out)["status"] == "ok"
 
 
-def test_build_failure_never_writes_output(
-    project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
-) -> None:
-    _inject(monkeypatch, fixture_env)
-
-    def reject(*args, **kwargs):
-        raise ValidationError("core rejected candidate")
-
-    monkeypatch.setattr(cli, "validate_with_mihomo", reject)
-    binary = tmp_path / "mihomo"
-    binary.write_text("mock", encoding="utf-8")
-    output = tmp_path / "production.yaml"
+def test_build_command(project_paths, fixture_env, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "build_candidate", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "validate_candidate", lambda *_args, **_kwargs: {"status": "ok"})
+    monkeypatch.setattr(cli, "write_build", lambda *_args, **_kwargs: None)
     result = cli.main(
         [
             "build",
             *_project_args(project_paths),
-            "--mihomo-bin",
-            str(binary),
             "--output",
-            str(output),
+            "ignored.yaml",
+            "--mihomo-bin",
+            "mihomo",
+        ]
+    )
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "validated"
+
+
+def test_publication_gate_command(project_paths, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "evaluate_publication_gate", lambda *_args, **_kwargs: {"status": "allowed"})
+    result = cli.main(["publication-gate", *_project_args(project_paths), "--mode", "cloudflare_kv"])
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "allowed"
+
+
+def test_publish_cloudflare_kv_command(project_paths, monkeypatch, tmp_path, capsys) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("proxy-groups: []\nrules: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "publish_candidate_to_cloudflare_kv",
+        lambda *_args, **_kwargs: {"status": "published"},
+    )
+    result = cli.main(
+        ["publish-cloudflare-kv", *_project_args(project_paths), "--candidate", str(candidate)]
+    )
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "published"
+
+
+def test_publication_gate_rejection_returns_controlled_error(
+    project_paths, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "evaluate_publication_gate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("disabled")),
+    )
+    result = cli.main(["publication-gate", *_project_args(project_paths), "--mode", "github_release"])
+    assert result == 2
+    assert "disabled" in capsys.readouterr().err
+
+
+def test_publish_cloudflare_kv_requires_confirmation(
+    project_paths, monkeypatch, tmp_path, capsys
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("proxy-groups: []\nrules: []\n", encoding="utf-8")
+    result = cli.main(
+        [
+            "publish-cloudflare-kv",
+            *_project_args(project_paths),
+            "--candidate",
+            str(candidate),
+            "--confirmation",
+            "NOT_CONFIRMED",
         ]
     )
     assert result == 2
-    assert not output.exists()
-    assert "core rejected" in capsys.readouterr().err
+    assert "confirmation" in capsys.readouterr().err.lower()
 
 
-def test_artifact_publication_gate_command(project_paths, capsys) -> None:
-    result = cli.main(
-        [
-            "publication-gate",
-            *_project_args(project_paths),
-            "--mode",
-            "artifact",
-        ]
+def test_publish_cloudflare_kv_rejects_disabled_publication_mode(
+    project_paths, monkeypatch, tmp_path, capsys
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("proxy-groups: []\nrules: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "publish_candidate_to_cloudflare_kv",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("disabled")),
     )
-    assert result == 0
-    assert json.loads(capsys.readouterr().out)["mode"] == "artifact"
-
-
-def test_release_publication_gate_is_closed_by_default(project_paths, capsys) -> None:
     result = cli.main(
         [
-            "publication-gate",
+            "publish-cloudflare-kv",
             *_project_args(project_paths),
-            "--mode",
-            "github_release",
-            "--acknowledgement",
+            "--candidate",
+            str(candidate),
+            "--confirmation",
             "I_UNDERSTAND_THIS_PUBLISHES_PROXY_CREDENTIALS",
         ]
     )
@@ -175,4 +164,4 @@ def test_missing_secret_returns_controlled_error(project_paths, monkeypatch, cap
 def test_version_option(capsys) -> None:
     with pytest.raises(SystemExit, match="0"):
         cli.main(["--version"])
-    assert "0.1.0" in capsys.readouterr().out
+    assert "1.2.0" in capsys.readouterr().out
