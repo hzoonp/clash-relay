@@ -4,14 +4,11 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# Routing targets and policy member order follow ACL4SSR_Online_Full.ini at the
-# pinned ref except for deliberate scenario boundaries: generic ProxyGFWlist
-# traffic is routed through the dedicated 网页浏览 inventory, AI traffic is routed
-# through live-qualified AI inventories, and application/rule-target helpers are
-# hidden from FlClash. The public policy surface is intentionally limited to
-# 代理选择, 网页浏览, and 人工智能.
+# ACL4SSR still owns classification order. Routing Model V2 makes the target
+# semantics explicit: scenario/service metadata is orthogonal to UI groups, and
+# hidden rule targets are deterministic unless they are an automatic scheduler.
 groups:
-  # General scenario ---------------------------------------------------------
+  # User-facing general scenario and helpers ---------------------------------
   - id: policy_auto
     display_name: 自动选择
     module: general
@@ -33,8 +30,6 @@ groups:
     filter: '.*'
     members: []
 
-  # Generic web browsing is intentionally backed by a separate inventory. This
-  # is the only non-AI policy surface that can admit subscription_1.
   - id: policy_browsing_auto
     display_name: 网页自动
     module: general
@@ -43,8 +38,8 @@ groups:
     provider_pool: browsing
     filter: '.*'
     url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50
+    interval: 180
+    tolerance: 150
     members: []
 
   - id: policy_browsing
@@ -53,11 +48,14 @@ groups:
     type: select
     provider_pool: browsing
     filter: '.*'
+    route:
+      scenario: browsing
+      profile: browsing
     members:
       - {group: 网页自动}
       - {builtin: DIRECT}
 
-  # Regions are dimensions under 代理选择, never top-level scenario groups.
+  # Regions are scheduling dimensions under 代理选择, never top-level scenarios.
   - id: policy_hk
     display_name: 香港节点
     module: general
@@ -134,14 +132,24 @@ groups:
     display_name: 奈飞节点
     module: general
     hidden: true
-    type: select
+    type: url-test
     provider_pool: general
     filter: '(NF|奈飞|解锁|Netflix|NETFLIX|Media)'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 150
+    route:
+      scenario: media
+      service: netflix
+      profile: media
     members: []
 
   - id: policy_node_selection
     display_name: 代理选择
     module: general
+    route:
+      scenario: general
+      profile: general
     members:
       - {group: 自动选择}
       - {group: 香港节点}
@@ -153,12 +161,17 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # ACL4SSR rule-target groups are routing implementation details. They remain
-  # fully addressable by rules/audits but are hidden from the top-level UI.
+  # Deterministic runtime targets retain the pinned ACL4SSR member lists below
+  # only as source/reference metadata. route.member is the runtime authority.
   - id: policy_global_direct
     display_name: 全球直连
     module: general
     hidden: true
+    route:
+      scenario: direct
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -168,6 +181,12 @@ groups:
     display_name: 广告拦截
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: adblock
+      deterministic: true
+      member: {builtin: REJECT}
+      profile: direct
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -176,6 +195,12 @@ groups:
     display_name: 应用净化
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: program_ad
+      deterministic: true
+      member: {builtin: REJECT}
+      profile: direct
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -184,6 +209,12 @@ groups:
     display_name: 谷歌FCM
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: google_fcm
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -199,6 +230,12 @@ groups:
     display_name: 微软Bing
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: bing
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -214,6 +251,12 @@ groups:
     display_name: 微软云盘
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: onedrive
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -229,6 +272,12 @@ groups:
     display_name: 微软服务
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: microsoft
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -244,6 +293,12 @@ groups:
     display_name: 苹果服务
     module: general
     hidden: true
+    route:
+      scenario: direct
+      service: apple
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -259,6 +314,12 @@ groups:
     display_name: 电报消息
     module: general
     hidden: true
+    route:
+      scenario: general
+      service: telegram
+      deterministic: true
+      member: {group: 代理选择}
+      profile: general
     members:
       - {group: 代理选择}
       - {group: 自动选择}
@@ -271,13 +332,16 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # AI is one public scenario. Countries remain hidden scheduling dimensions and
-  # OpenAI/Claude/Gemini remain independent hidden service qualification targets.
-  # HK is deliberately absent from this scenario.
+  # AI is one visible scenario. Country wrappers are temporary build-time
+  # dimensions; service qualification later materializes only non-empty
+  # service×country anchors. HK is excluded in policies.yaml before this stage.
   - id: policy_ai
     display_name: 人工智能
     module: general
     source_use: ai
+    route:
+      scenario: ai
+      profile: ai
     members:
       - {group: AI · 新加坡}
       - {group: AI · 日本}
@@ -291,9 +355,12 @@ groups:
     display_name: 网易音乐
     module: general
     hidden: true
-    type: select
-    provider_pool: general
-    filter: '(网易|音乐|解锁|Music|NetEase)'
+    route:
+      scenario: media
+      service: netease_music
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -303,6 +370,12 @@ groups:
     display_name: 游戏平台
     module: general
     hidden: true
+    route:
+      scenario: general
+      service: games
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 代理选择}
@@ -318,6 +391,12 @@ groups:
     display_name: 油管视频
     module: general
     hidden: true
+    route:
+      scenario: media
+      service: youtube
+      deterministic: true
+      member: {group: 代理选择}
+      profile: media
     members:
       - {group: 代理选择}
       - {group: 自动选择}
@@ -334,6 +413,16 @@ groups:
     display_name: 奈飞视频
     module: general
     hidden: true
+    type: fallback
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    timeout: 5000
+    lazy: false
+    expected_status: '204'
+    route:
+      scenario: media
+      service: netflix
+      profile: media
     members:
       - {group: 奈飞节点}
       - {group: 代理选择}
@@ -351,6 +440,12 @@ groups:
     display_name: 巴哈姆特
     module: general
     hidden: true
+    route:
+      scenario: media
+      service: bahamut
+      deterministic: true
+      member: {group: 台湾节点}
+      profile: media
     members:
       - {group: 台湾节点}
       - {group: 代理选择}
@@ -361,6 +456,12 @@ groups:
     display_name: 哔哩哔哩
     module: general
     hidden: true
+    route:
+      scenario: media
+      service: bilibili
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {group: 全球直连}
       - {group: 台湾节点}
@@ -370,6 +471,12 @@ groups:
     display_name: 国内媒体
     module: general
     hidden: true
+    route:
+      scenario: media
+      service: china_media
+      deterministic: true
+      member: {builtin: DIRECT}
+      profile: direct
     members:
       - {builtin: DIRECT}
       - {group: 香港节点}
@@ -382,6 +489,12 @@ groups:
     display_name: 国外媒体
     module: general
     hidden: true
+    route:
+      scenario: media
+      service: foreign_media
+      deterministic: true
+      member: {group: 代理选择}
+      profile: media
     members:
       - {group: 代理选择}
       - {group: 自动选择}
@@ -398,6 +511,11 @@ groups:
     display_name: 漏网之鱼
     module: general
     hidden: true
+    route:
+      scenario: final
+      deterministic: true
+      member: {group: 代理选择}
+      profile: general
     members:
       - {group: 代理选择}
       - {group: 自动选择}
@@ -412,80 +530,103 @@ groups:
 
 final_target: 漏网之鱼
 final_source_use: general
+final_scenario: final
 
-# Rule fragment order mirrors ACL4SSR_Online_Full.ini at the pinned commit.
+# Classification order remains pinned to ACL4SSR Online Full. Scenario/service
+# annotations are metadata for audits and future scheduler materialization.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list
     target: 全球直连
     priority: 10
     module: general
+    scenario: direct
 
   - id: unban
     path: Clash/UnBan.list
     target: 全球直连
     priority: 15
     module: general
+    scenario: direct
 
   - id: ban_ad
     path: Clash/BanAD.list
     target: 广告拦截
     priority: 20
     module: general
+    scenario: direct
+    service: adblock
 
   - id: ban_program_ad
     path: Clash/BanProgramAD.list
     target: 应用净化
     priority: 30
     module: general
+    scenario: direct
+    service: program_ad
 
   - id: google_fcm
     path: Clash/Ruleset/GoogleFCM.list
     target: 谷歌FCM
     priority: 40
     module: general
+    scenario: direct
+    service: google_fcm
 
   - id: google_cn
     path: Clash/GoogleCN.list
     target: 全球直连
     priority: 50
     module: general
+    scenario: direct
 
   - id: steam_cn
     path: Clash/Ruleset/SteamCN.list
     target: 全球直连
     priority: 60
     module: general
+    scenario: direct
+    service: steam_cn
 
   - id: bing
     path: Clash/Bing.list
     target: 微软Bing
     priority: 70
     module: general
+    scenario: direct
+    service: bing
 
   - id: onedrive
     path: Clash/OneDrive.list
     target: 微软云盘
     priority: 80
     module: general
+    scenario: direct
+    service: onedrive
 
   - id: microsoft
     path: Clash/Microsoft.list
     target: 微软服务
     priority: 90
     module: general
+    scenario: direct
+    service: microsoft
 
   - id: apple
     path: Clash/Apple.list
     target: 苹果服务
     priority: 100
     module: general
+    scenario: direct
+    service: apple
 
   - id: telegram
     path: Clash/Telegram.list
     target: 电报消息
     priority: 110
     module: general
+    scenario: general
+    service: telegram
 
   - id: ai
     path: Clash/Ruleset/AI.list
@@ -493,6 +634,8 @@ sources:
     priority: 120
     module: general
     source_use: ai
+    scenario: ai
+    service: generic_ai
 
   - id: openai
     path: Clash/Ruleset/OpenAi.list
@@ -500,84 +643,112 @@ sources:
     priority: 125
     module: general
     source_use: ai
+    scenario: ai
+    service: openai
 
   - id: netease_music
     path: Clash/Ruleset/NetEaseMusic.list
     target: 网易音乐
     priority: 130
     module: general
+    scenario: media
+    service: netease_music
 
   - id: epic
     path: Clash/Ruleset/Epic.list
     target: 游戏平台
     priority: 140
     module: general
+    scenario: general
+    service: games
 
   - id: origin
     path: Clash/Ruleset/Origin.list
     target: 游戏平台
     priority: 145
     module: general
+    scenario: general
+    service: games
 
   - id: sony
     path: Clash/Ruleset/Sony.list
     target: 游戏平台
     priority: 150
     module: general
+    scenario: general
+    service: games
 
   - id: steam
     path: Clash/Ruleset/Steam.list
     target: 游戏平台
     priority: 155
     module: general
+    scenario: general
+    service: games
 
   - id: nintendo
     path: Clash/Ruleset/Nintendo.list
     target: 游戏平台
     priority: 160
     module: general
+    scenario: general
+    service: games
 
   - id: youtube
     path: Clash/Ruleset/YouTube.list
     target: 油管视频
     priority: 170
     module: general
+    scenario: media
+    service: youtube
 
   - id: netflix
     path: Clash/Ruleset/Netflix.list
     target: 奈飞视频
     priority: 180
     module: general
+    scenario: media
+    service: netflix
 
   - id: bahamut
     path: Clash/Ruleset/Bahamut.list
     target: 巴哈姆特
     priority: 190
     module: general
+    scenario: media
+    service: bahamut
 
   - id: bilibili_hmt
     path: Clash/Ruleset/BilibiliHMT.list
     target: 哔哩哔哩
     priority: 200
     module: general
+    scenario: media
+    service: bilibili
 
   - id: bilibili
     path: Clash/Ruleset/Bilibili.list
     target: 哔哩哔哩
     priority: 210
     module: general
+    scenario: media
+    service: bilibili
 
   - id: china_media
     path: Clash/ChinaMedia.list
     target: 国内媒体
     priority: 220
     module: general
+    scenario: media
+    service: china_media
 
   - id: proxy_media
     path: Clash/ProxyMedia.list
     target: 国外媒体
     priority: 230
     module: general
+    scenario: media
+    service: foreign_media
 
   - id: proxy_gfwlist
     path: Clash/ProxyGFWlist.list
@@ -585,24 +756,32 @@ sources:
     priority: 800
     module: general
     source_use: browsing
+    scenario: browsing
+    service: foreign_web
 
   - id: china_domain
     path: Clash/ChinaDomain.list
     target: 全球直连
     priority: 900
     module: general
+    scenario: direct
+    service: domestic_web
 
   - id: china_company_ip
     path: Clash/ChinaCompanyIp.list
     target: 全球直连
     priority: 910
     module: general
+    scenario: direct
+    service: domestic_web
 
   - id: download
     path: Clash/Download.list
     target: 全球直连
     priority: 915
     module: general
+    scenario: download
+    service: download
 
 inline_rules:
   - id: geoip_cn

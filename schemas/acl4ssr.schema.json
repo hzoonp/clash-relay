@@ -28,7 +28,7 @@
           "source_use": {"$ref": "#/$defs/sourceUse"},
           "excluded_sources": {"$ref": "#/$defs/sourceIdList"},
           "hidden": {"type": "boolean"},
-          "type": {"enum": ["select", "url-test"]},
+          "type": {"enum": ["select", "url-test", "fallback"]},
           "provider_pool": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
           "filter": {"type": "string", "minLength": 1, "maxLength": 512},
           "url": {"type": "string", "pattern": "^https?://"},
@@ -37,6 +37,7 @@
           "timeout": {"type": "integer", "minimum": 1, "maximum": 120000},
           "lazy": {"type": "boolean"},
           "expected_status": {"type": ["string", "integer"]},
+          "route": {"$ref": "#/$defs/routeMetadata"},
           "members": {
             "type": "array",
             "items": {"$ref": "#/$defs/groupMember"}
@@ -46,6 +47,10 @@
           {
             "if": {"properties": {"type": {"const": "url-test"}}, "required": ["type"]},
             "then": {"required": ["provider_pool", "url", "interval", "tolerance"]}
+          },
+          {
+            "if": {"properties": {"type": {"const": "fallback"}}, "required": ["type"]},
+            "then": {"required": ["url", "interval"]}
           },
           {
             "if": {"properties": {"members": {"maxItems": 0}}},
@@ -61,6 +66,7 @@
       "pattern": "^[^,\\r\\n]+$"
     },
     "final_source_use": {"$ref": "#/$defs/sourceUse"},
+    "final_scenario": {"$ref": "#/$defs/scenario"},
     "final_excluded_sources": {"$ref": "#/$defs/sourceIdList"},
     "sources": {
       "type": "array",
@@ -81,6 +87,8 @@
           "priority": {"type": "integer", "minimum": 0, "maximum": 10000},
           "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
           "source_use": {"$ref": "#/$defs/sourceUse"},
+          "scenario": {"$ref": "#/$defs/scenario"},
+          "service": {"$ref": "#/$defs/service"},
           "excluded_sources": {"$ref": "#/$defs/sourceIdList"}
         }
       }
@@ -105,6 +113,8 @@
           "priority": {"type": "integer", "minimum": 0, "maximum": 10000},
           "module": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
           "source_use": {"$ref": "#/$defs/sourceUse"},
+          "scenario": {"$ref": "#/$defs/scenario"},
+          "service": {"$ref": "#/$defs/service"},
           "options": {"type": "array", "uniqueItems": true, "items": {"enum": ["no-resolve"]}}
         }
       }
@@ -115,11 +125,39 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
     },
+    "scenario": {
+      "enum": ["direct", "general", "browsing", "media", "download", "ai", "final"]
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
     "sourceIdList": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"}
+    },
+    "routeMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario"],
+      "properties": {
+        "scenario": {"$ref": "#/$defs/scenario"},
+        "service": {"$ref": "#/$defs/service"},
+        "deterministic": {"type": "boolean"},
+        "member": {"$ref": "#/$defs/groupMember"},
+        "profile": {"enum": ["direct", "general", "browsing", "media", "download", "ai"]}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"deterministic": {"const": true}},
+            "required": ["deterministic"]
+          },
+          "then": {"required": ["member"]}
+        }
+      ]
     },
     "groupMember": {
       "oneOf": [
