@@ -161,7 +161,8 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # Deterministic internal rule targets --------------------------------------
+  # Deterministic runtime targets retain the pinned ACL4SSR member lists below
+  # only as source/reference metadata. route.member is the runtime authority.
   - id: policy_global_direct
     display_name: 全球直连
     module: general
@@ -173,6 +174,8 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 自动选择}
 
   - id: policy_block
     display_name: 广告拦截
@@ -186,6 +189,7 @@ groups:
       profile: direct
     members:
       - {builtin: REJECT}
+      - {builtin: DIRECT}
 
   - id: policy_program_ad
     display_name: 应用净化
@@ -199,6 +203,7 @@ groups:
       profile: direct
     members:
       - {builtin: REJECT}
+      - {builtin: DIRECT}
 
   - id: policy_google_fcm
     display_name: 谷歌FCM
@@ -212,6 +217,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_bing
     display_name: 微软Bing
@@ -225,6 +238,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_onedrive
     display_name: 微软云盘
@@ -238,6 +259,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_microsoft
     display_name: 微软服务
@@ -251,6 +280,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_apple
     display_name: 苹果服务
@@ -264,6 +301,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_telegram
     display_name: 电报消息
@@ -277,6 +322,15 @@ groups:
       profile: general
     members:
       - {group: 代理选择}
+      - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
 
   # AI is one visible scenario. Country wrappers are temporary build-time
   # dimensions; service qualification later materializes only non-empty
@@ -309,6 +363,8 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 自动选择}
 
   - id: policy_games
     display_name: 游戏平台
@@ -322,6 +378,14 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 代理选择}
+      - {group: 美国节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
   - id: policy_youtube
     display_name: 油管视频
@@ -335,6 +399,15 @@ groups:
       profile: media
     members:
       - {group: 代理选择}
+      - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
 
   - id: policy_netflix
     display_name: 奈飞视频
@@ -352,7 +425,16 @@ groups:
       profile: media
     members:
       - {group: 奈飞节点}
+      - {group: 代理选择}
       - {group: 自动选择}
+      - {group: 新加坡节点}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
 
   - id: policy_bahamut
     display_name: 巴哈姆特
@@ -366,6 +448,9 @@ groups:
       profile: media
     members:
       - {group: 台湾节点}
+      - {group: 代理选择}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
 
   - id: policy_bilibili
     display_name: 哔哩哔哩
@@ -378,7 +463,9 @@ groups:
       member: {builtin: DIRECT}
       profile: direct
     members:
-      - {builtin: DIRECT}
+      - {group: 全球直连}
+      - {group: 台湾节点}
+      - {group: 香港节点}
 
   - id: policy_china_media
     display_name: 国内媒体
@@ -392,6 +479,11 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 手动切换}
 
   - id: policy_proxy_media
     display_name: 国外媒体
@@ -405,6 +497,15 @@ groups:
       profile: media
     members:
       - {group: 代理选择}
+      - {group: 自动选择}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
+      - {builtin: DIRECT}
 
   - id: policy_final
     display_name: 漏网之鱼
@@ -417,6 +518,15 @@ groups:
       profile: general
     members:
       - {group: 代理选择}
+      - {group: 自动选择}
+      - {builtin: DIRECT}
+      - {group: 香港节点}
+      - {group: 台湾节点}
+      - {group: 新加坡节点}
+      - {group: 日本节点}
+      - {group: 美国节点}
+      - {group: 韩国节点}
+      - {group: 手动切换}
 
 final_target: 漏网之鱼
 final_source_use: general
@@ -680,6 +790,4 @@ inline_rules:
     target: 全球直连
     priority: 920
     module: general
-    scenario: direct
-    service: domestic_ip
     options: [no-resolve]
