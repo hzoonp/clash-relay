@@ -80,8 +80,12 @@ def _validate_resolved_destination(url: str) -> None:
     try:
         answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
-        raise FetchError(f"subscription hostname could not be resolved for {redact_url(url)}") from exc
-    addresses = {str(answer[4][0]) for answer in answers if answer and len(answer) >= 5 and answer[4]}
+        raise FetchError(
+            f"subscription hostname could not be resolved for {redact_url(url)}"
+        ) from exc
+    addresses = {
+        str(answer[4][0]) for answer in answers if answer and len(answer) >= 5 and answer[4]
+    }
     if not addresses:
         raise FetchError("subscription hostname resolved to no usable address")
     if any(_is_private_literal(address) for address in addresses):
