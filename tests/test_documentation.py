@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +55,7 @@ def test_quickstart_locks_dry_run_browsing_history_ai_and_rollback_semantics() -
 
 def test_quickstart_examples_never_embed_real_subscription_urls() -> None:
     for document in _docs():
-        urls = [token.rstrip('`),."') for token in document.split() if token.startswith("https://")]
+        urls = re.findall(r"""https://[^\s"'`<>]+""", document)
         assert urls
         assert all("example.invalid/" in url for url in urls)
 
