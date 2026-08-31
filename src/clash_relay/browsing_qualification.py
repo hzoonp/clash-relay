@@ -14,7 +14,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -228,13 +227,12 @@ def _wait_for_members(
     raise ValidationError("browsing qualification providers did not populate their selector")
 
 
-def _delay_probe(
+def _group_delay_probe(
     controller_port: int,
     secret: str,
-    node_name: str,
     probe: dict[str, Any],
-) -> tuple[int | None, str]:
-    encoded_name = urllib.parse.quote(node_name, safe="")
+) -> tuple[dict[str, int], str]:
+    encoded_group = urllib.parse.quote(_PROBE_GROUP, safe="")
     query = urllib.parse.urlencode(
         {
             "url": str(probe["url"]),
@@ -242,38 +240,45 @@ def _delay_probe(
             "expected": str(probe["expected_status"]),
         }
     )
-    path = f"/proxies/{encoded_name}/delay?{query}"
-    timeout = (int(probe["timeout"]) / 1000) + 2
+    path = f"/group/{encoded_group}/delay?{query}"
+    timeout = (int(probe["timeout"]) / 1000) + 3
     try:
         response = _controller_json(controller_port, secret, path, timeout=timeout)
     except urllib.error.HTTPError as exc:
-        return None, f"controller_http_{exc.code}"
+        return {}, f"controller_http_{exc.code}"
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
-        return None, "probe_error"
+        return {}, "probe_error"
 
-    delay = response.get("delay")
-    if not isinstance(delay, int) or delay <= 0:
-        return None, "invalid_delay"
-    return delay, "success"
+    delays = {
+        str(name): delay
+        for name, delay in response.items()
+        if isinstance(name, str) and isinstance(delay, int) and delay >= 0
+    }
+    return delays, "success"
 
 
-def _probe_node(
-    controller_port: int,
-    secret: str,
-    node_name: str,
-    probe: dict[str, Any],
+def _qualified_from_group_samples(
+    node_names: tuple[str, ...],
+    samples: tuple[dict[str, int], ...],
     *,
-    attempts: int,
     required_successes: int,
-) -> tuple[bool, tuple[int, ...], dict[str, int]]:
-    delays: list[int] = []
-    outcomes: dict[str, int] = {}
-    for _ in range(attempts):
-        delay, outcome = _delay_probe(controller_port, secret, node_name, probe)
-        outcomes[outcome] = outcomes.get(outcome, 0) + 1
-        if delay is not None:
-            delays.append(delay)
-    return len(delays) >= required_successes, tuple(delays), outcomes
+) -> tuple[set[str], list[float]]:
+    delays_by_node: dict[str, list[int]] = {name: [] for name in node_names}
+    for sample in samples:
+        for node_name in node_names:
+            delay = sample.get(node_name)
+            if isinstance(delay, int) and delay >= 0:
+                delays_by_node[node_name].append(delay)
+
+    qualified = {
+        node_name
+        for node_name, delays in delays_by_node.items()
+        if len(delays) >= required_successes
+    }
+    qualified_medians = [
+        float(median(delays_by_node[node_name])) for node_name in sorted(qualified)
+    ]
+    return qualified, qualified_medians
 
 
 def _latency_summary(values: list[float]) -> dict[str, float | int | None]:
@@ -299,7 +304,7 @@ def probe_browsing_nodes(
     required_successes: int = _DEFAULT_REQUIRED_SUCCESSES,
     diagnostics: dict[str, Any] | None = None,
 ) -> set[str]:
-    """Return browsing runtime names that pass a repeatable live HTTPS probe."""
+    """Return browsing runtime names that pass repeatable group-level HTTPS delay probes."""
     if attempts < 1:
         raise ValidationError("browsing qualification attempts must be positive")
     if required_successes < 1 or required_successes > attempts:
@@ -315,15 +320,16 @@ def probe_browsing_nodes(
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
     provider_payloads = _browsing_provider_payloads(config)
-    node_names = [str(proxy["name"]) for payload in provider_payloads.values() for proxy in payload]
+    node_names = tuple(
+        str(proxy["name"]) for payload in provider_payloads.values() for proxy in payload
+    )
     if len(set(node_names)) != len(node_names):
         raise ValidationError("browsing qualification requires unique runtime proxy names")
 
-    qualified: set[str] = set()
     successful_samples = 0
     failed_samples = 0
-    qualified_medians: list[float] = []
     outcomes: dict[str, int] = {}
+    samples: list[dict[str, int]] = []
 
     with tempfile.TemporaryDirectory(prefix="clash-relay-browsing-") as temp_name:
         workdir = Path(temp_name)
@@ -369,30 +375,21 @@ def probe_browsing_nodes(
         try:
             _wait_for_controller(process, controller_port, secret)
             _wait_for_members(process, controller_port, secret, set(node_names))
-            worker_count = max(1, min(int(workers), len(node_names)))
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                futures = {
-                    executor.submit(
-                        _probe_node,
-                        controller_port,
-                        secret,
-                        node_name,
-                        probe,
-                        attempts=attempts,
-                        required_successes=required_successes,
-                    ): node_name
-                    for node_name in node_names
+            for _ in range(attempts):
+                sample, outcome = _group_delay_probe(controller_port, secret, probe)
+                known_sample = {
+                    node_name: sample[node_name] for node_name in node_names if node_name in sample
                 }
-                for future in as_completed(futures):
-                    node_name = futures[future]
-                    passed, delays, node_outcomes = future.result()
-                    successful_samples += len(delays)
-                    failed_samples += attempts - len(delays)
-                    for outcome, count in node_outcomes.items():
-                        outcomes[outcome] = outcomes.get(outcome, 0) + count
-                    if passed:
-                        qualified.add(node_name)
-                        qualified_medians.append(float(median(delays)))
+                samples.append(known_sample)
+                successes = len(known_sample)
+                failures = len(node_names) - successes
+                successful_samples += successes
+                failed_samples += failures
+                outcomes["success"] = outcomes.get("success", 0) + successes
+                if outcome == "success":
+                    outcomes["missing_delay"] = outcomes.get("missing_delay", 0) + failures
+                else:
+                    outcomes[outcome] = outcomes.get(outcome, 0) + failures
         finally:
             if process.poll() is None:
                 with contextlib.suppress(ProcessLookupError):
@@ -404,6 +401,11 @@ def probe_browsing_nodes(
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
 
+    qualified, qualified_medians = _qualified_from_group_samples(
+        node_names,
+        tuple(samples),
+        required_successes=required_successes,
+    )
     summary = {
         "qualification_mode": "pre_publish_browsing",
         "probe": {

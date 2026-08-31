@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import urllib.parse
 from pathlib import Path
 
 import pytest
 
 import clash_relay.browsing_qualification as browsing_qualification
 from clash_relay.browsing_qualification import (
+    _group_delay_probe,
     _latency_summary,
-    _probe_node,
+    _qualified_from_group_samples,
     apply_browsing_qualification,
     load_browsing_probe_spec,
 )
@@ -26,63 +28,73 @@ def test_canonical_browsing_probe_is_reused_for_pre_publish_qualification(
     }
 
 
-def test_browsing_qualification_requires_two_of_three_successful_samples(
+def test_group_delay_probe_uses_provider_compatible_group_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    outcomes = iter(
-        [
-            (110, "success"),
-            (None, "probe_error"),
-            (130, "success"),
-        ]
-    )
-    monkeypatch.setattr(
-        browsing_qualification,
-        "_delay_probe",
-        lambda *_args, **_kwargs: next(outcomes),
+    seen: dict[str, object] = {}
+
+    def fake_controller_json(
+        port: int,
+        secret: str,
+        path: str,
+        *,
+        timeout: float,
+    ) -> dict[str, object]:
+        seen.update(port=port, secret=secret, path=path, timeout=timeout)
+        return {"node-a": 0, "node-b": 240}
+
+    monkeypatch.setattr(browsing_qualification, "_controller_json", fake_controller_json)
+    sample, outcome = _group_delay_probe(
+        9090,
+        "secret",
+        {
+            "url": "https://www.gstatic.com/generate_204",
+            "timeout": 3000,
+            "expected_status": "204",
+        },
     )
 
-    passed, delays, counts = _probe_node(
-        1,
-        "secret",
-        "node",
-        {"url": "https://example.test", "timeout": 1000, "expected_status": "204"},
-        attempts=3,
+    path = str(seen["path"])
+    parsed = urllib.parse.urlsplit(path)
+    query = urllib.parse.parse_qs(parsed.query)
+    assert parsed.path == "/group/__CR_BROWSING_QUALIFICATION/delay"
+    assert query == {
+        "url": ["https://www.gstatic.com/generate_204"],
+        "timeout": ["3000"],
+        "expected": ["204"],
+    }
+    assert sample == {"node-a": 0, "node-b": 240}
+    assert outcome == "success"
+
+
+def test_browsing_qualification_requires_two_of_three_group_samples() -> None:
+    qualified, medians = _qualified_from_group_samples(
+        ("node-a", "node-b"),
+        (
+            {"node-a": 0, "node-b": 200},
+            {"node-b": 210},
+            {"node-a": 0},
+        ),
         required_successes=2,
     )
 
-    assert passed is True
-    assert delays == (110, 130)
-    assert counts == {"success": 2, "probe_error": 1}
+    assert qualified == {"node-a", "node-b"}
+    assert medians == [0.0, 205.0]
 
 
-def test_browsing_qualification_rejects_one_of_three_successful_samples(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    outcomes = iter(
-        [
-            (None, "probe_error"),
-            (120, "success"),
-            (None, "controller_http_504"),
-        ]
-    )
-    monkeypatch.setattr(
-        browsing_qualification,
-        "_delay_probe",
-        lambda *_args, **_kwargs: next(outcomes),
-    )
-
-    passed, delays, _counts = _probe_node(
-        1,
-        "secret",
-        "node",
-        {"url": "https://example.test", "timeout": 1000, "expected_status": "204"},
-        attempts=3,
+def test_browsing_qualification_rejects_one_of_three_group_samples() -> None:
+    qualified, medians = _qualified_from_group_samples(
+        ("node-a", "node-b"),
+        (
+            {"node-a": 120},
+            {},
+            {"node-b": 220},
+        ),
         required_successes=2,
     )
 
-    assert passed is False
-    assert delays == (120,)
+    assert qualified == set()
+    assert medians == []
 
 
 def test_apply_browsing_qualification_only_prunes_browsing_inventory() -> None:
