@@ -10,7 +10,10 @@ QUICKSTART_ZH = ROOT / "docs" / "quickstart.zh-CN.md"
 
 
 def _docs() -> tuple[str, str]:
-    return QUICKSTART.read_text(encoding="utf-8"), QUICKSTART_ZH.read_text(encoding="utf-8")
+    return (
+        QUICKSTART.read_text(encoding="utf-8"),
+        QUICKSTART_ZH.read_text(encoding="utf-8"),
+    )
 
 
 def test_readmes_surface_bilingual_fork_quickstart() -> None:
@@ -51,7 +54,11 @@ def test_quickstart_locks_dry_run_browsing_history_ai_and_rollback_semantics() -
 
 def test_quickstart_examples_never_embed_real_subscription_urls() -> None:
     for document in _docs():
-        urls = [token.rstrip("`),.\"") for token in document.split() if token.startswith("https://")]
+        urls = [
+            token.rstrip("`),.\"")
+            for token in document.split()
+            if token.startswith("https://")
+        ]
         assert urls
         assert all("example.invalid/" in url for url in urls)
 
