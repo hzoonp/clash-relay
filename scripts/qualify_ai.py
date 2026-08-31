@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
+import tempfile
 from pathlib import Path
 
-from clash_relay.ai_qualification import load_ai_probe_specs, probe_ai_nodes
+from clash_relay.ai_qualification import AI_PROVIDER_PREFIX, load_ai_probe_specs, probe_ai_nodes
+from clash_relay.ai_qualification_cache import (
+    ai_cache_summary,
+    ai_runtime_fingerprints,
+    cached_service_decisions,
+    parse_ai_cache_bytes,
+    update_ai_cache_service,
+)
 from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_candidate
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.util import dump_yaml, load_yaml_file
 
 
 def _path(value: str) -> Path:
@@ -22,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policies", type=_path, required=True)
     parser.add_argument("--mihomo-bin", type=_path, required=True)
     parser.add_argument("--workers", type=int, default=12)
+    parser.add_argument("--cache", type=_path)
+    parser.add_argument("--cache-key", type=_path)
+    parser.add_argument("--next-cache", type=_path)
     return parser
 
 
@@ -34,41 +47,204 @@ def _service_diagnostics() -> dict[str, object]:
     }
 
 
+def _cache_inputs(args: argparse.Namespace) -> tuple[dict, bytes, str] | None:
+    provided = (args.cache is not None, args.cache_key is not None, args.next_cache is not None)
+    if any(provided) and not all(provided):
+        raise ValidationError("AI qualification cache requires --cache, --cache-key, and --next-cache")
+    if not all(provided):
+        return None
+    try:
+        key_text = args.cache_key.read_text(encoding="ascii").strip()
+    except OSError as exc:
+        raise ValidationError("failed to read private AI cache fingerprint key") from exc
+    if not key_text:
+        return None
+    try:
+        key = bytes.fromhex(key_text)
+    except ValueError as exc:
+        raise ValidationError("private AI cache fingerprint key is invalid") from exc
+    try:
+        content = args.cache.read_bytes()
+    except OSError:
+        content = None
+    cache, status = parse_ai_cache_bytes(content)
+    return cache, key, status
+
+
+def _filtered_candidate(candidate: Path, live_names: set[str]) -> Path:
+    config = load_yaml_file(candidate)
+    if not isinstance(config, dict):
+        raise ValidationError("candidate is not a YAML mapping")
+    providers = config.get("proxy-providers")
+    if not isinstance(providers, dict):
+        raise ValidationError("candidate proxy-providers must be a mapping")
+    for provider_name, provider in providers.items():
+        if not str(provider_name).startswith(AI_PROVIDER_PREFIX):
+            continue
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            raise ValidationError("AI qualification provider payload is invalid")
+        provider["payload"] = [
+            proxy
+            for proxy in payload
+            if isinstance(proxy, dict) and str(proxy.get("name", "")) in live_names
+        ]
+    handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".yaml",
+        prefix="ai-live-",
+        dir=candidate.parent,
+        delete=False,
+    )
+    try:
+        handle.write(dump_yaml(config))
+        return Path(handle.name)
+    finally:
+        handle.close()
+
+
+def _empty_probe_summary(probe: dict[str, object]) -> dict[str, object]:
+    return {
+        "method": str(probe["method"]),
+        "expected_status": str(probe["expected_status"]),
+        "passed": 0,
+        "failed": 0,
+        "outcomes": {},
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics = _service_diagnostics()
     try:
         probes = load_ai_probe_specs(args.policies)
+        candidate_config = load_yaml_file(args.candidate)
+        if not isinstance(candidate_config, dict):
+            raise ValidationError("candidate is not a YAML mapping")
+        cache_inputs = _cache_inputs(args)
+        fingerprints: dict[str, str] | None = None
+        cache: dict | None = None
+        next_cache: dict | None = None
+        cache_status = "disabled"
+        if cache_inputs is not None:
+            cache, fingerprint_key, cache_status = cache_inputs
+            fingerprints = ai_runtime_fingerprints(candidate_config, fingerprint_key)
+            next_cache = cache
+            diagnostics["tested_nodes"] = len(fingerprints)
+
         qualified_by_probe: dict[str, set[str]] = {}
-        expected_tested_nodes: int | None = None
+        expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
+        total_live = 0
+        total_cache_pass = 0
+        total_cache_fail = 0
         for probe in probes:
-            probe_diagnostics: dict[str, object] = {}
-            qualified = probe_ai_nodes(
-                args.mihomo_bin,
-                args.candidate,
-                (probe,),
-                workers=args.workers,
-                diagnostics=probe_diagnostics,
-            )
             name = str(probe["name"])
-            tested_nodes = int(probe_diagnostics["tested_nodes"])
-            if expected_tested_nodes is None:
-                expected_tested_nodes = tested_nodes
-            elif tested_nodes != expected_tested_nodes:
-                raise ValidationError("AI service probes tested inconsistent node inventories")
+            cached_pass: set[str] = set()
+            cached_fail: set[str] = set()
+            live_names: set[str] | None = None
+            if cache is not None and fingerprints is not None:
+                cached_pass, cached_fail, live_names = cached_service_decisions(
+                    cache, fingerprints, name
+                )
+
+            probe_diagnostics: dict[str, object] = {}
+            live_qualified: set[str] = set()
+            temporary: Path | None = None
+            try:
+                if live_names is None:
+                    live_qualified = probe_ai_nodes(
+                        args.mihomo_bin,
+                        args.candidate,
+                        (probe,),
+                        workers=args.workers,
+                        diagnostics=probe_diagnostics,
+                    )
+                elif live_names:
+                    temporary = _filtered_candidate(args.candidate, live_names)
+                    live_qualified = probe_ai_nodes(
+                        args.mihomo_bin,
+                        temporary,
+                        (probe,),
+                        workers=args.workers,
+                        diagnostics=probe_diagnostics,
+                    )
+            finally:
+                if temporary is not None:
+                    with contextlib.suppress(OSError):
+                        temporary.unlink()
+
+            if live_names is None:
+                live_tested = int(probe_diagnostics["tested_nodes"])
+                if expected_candidate_nodes is None:
+                    expected_candidate_nodes = live_tested
+                    diagnostics["tested_nodes"] = live_tested
+                elif live_tested != expected_candidate_nodes:
+                    raise ValidationError("AI service probes tested inconsistent node inventories")
+                live_names_for_cache: set[str] = set()
+            else:
+                live_tested = len(live_names)
+                live_names_for_cache = live_names
+            qualified = cached_pass | live_qualified
             qualified_by_probe[name] = qualified
-            diagnostics["tested_nodes"] = tested_nodes
+
             diagnostics["selector_failures"] = int(diagnostics["selector_failures"]) + int(
-                probe_diagnostics["selector_failures"]
+                probe_diagnostics.get("selector_failures", 0)
             )
-            probe_summary = dict(probe_diagnostics["probes"][name])
+            if probe_diagnostics:
+                probe_summary = dict(probe_diagnostics["probes"][name])
+            else:
+                probe_summary = _empty_probe_summary(probe)
+            probe_summary["live_tested_nodes"] = live_tested
+            probe_summary["cache_pass_hits"] = len(cached_pass)
+            probe_summary["cache_fail_hits"] = len(cached_fail)
             probe_summary["qualified_nodes"] = len(qualified)
             diagnostics["probes"][name] = probe_summary
+            total_live += live_tested
+            total_cache_pass += len(cached_pass)
+            total_cache_fail += len(cached_fail)
+
+            if next_cache is not None and fingerprints is not None and live_names_for_cache:
+                next_cache = update_ai_cache_service(
+                    next_cache,
+                    fingerprints,
+                    name,
+                    checked_names=live_names_for_cache,
+                    passed_names=live_qualified,
+                )
+                cache = next_cache
+
+        cache_report: dict[str, object] = {
+            "status": cache_status,
+            "live_service_probes": total_live,
+            "cache_pass_hits": total_cache_pass,
+            "cache_fail_hits": total_cache_fail,
+            "records": 0,
+            "service_records": 0,
+        }
+        if next_cache is not None and args.next_cache is not None:
+            args.next_cache.parent.mkdir(parents=True, exist_ok=True)
+            args.next_cache.write_text(
+                json.dumps(
+                    next_cache,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cache_report.update(ai_cache_summary(next_cache))
 
         report = rewrite_ai_service_qualified_candidate(args.candidate, qualified_by_probe)
         print(
             json.dumps(
-                {"status": "qualified", "diagnostics": diagnostics, **report},
+                {
+                    "status": "qualified",
+                    "diagnostics": diagnostics,
+                    "qualification_cache": cache_report,
+                    **report,
+                },
                 ensure_ascii=False,
                 sort_keys=True,
             )
