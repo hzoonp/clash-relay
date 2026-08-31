@@ -25,8 +25,8 @@ def test_readmes_surface_bilingual_fork_quickstart() -> None:
     assert "[Fork 快速上手](docs/quickstart.zh-CN.md)" in chinese
     assert "publish=false" in english
     assert "publish=false" in chinese
-    assert "Roll back production config" in english
-    assert "Roll back production config" in chinese
+    assert "validated rollback" in english
+    assert "回滚" in chinese
 
 
 def test_quickstart_names_every_required_secret_and_variable() -> None:
