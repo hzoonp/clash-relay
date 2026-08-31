@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 _API_VERSION = "2022-11-28"
+_CACHE_DIRECTORY = ".mihomo-cache"
 
 
 def _request_json(url: str) -> Any:
@@ -77,6 +78,97 @@ def _load_entry(manifest: Path, channel: str, tag: str | None) -> tuple[str, dic
     return entry["tag"], entry["asset_patterns"], document["repository"]
 
 
+def _atomic_executable_write(output: Path, content: bytes) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o755)
+        os.replace(temporary, output)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+
+
+def _cache_paths(output: Path, *, tag: str, arch: str) -> tuple[Path, Path]:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{tag}-{arch}")
+    directory = output.parent / _CACHE_DIRECTORY
+    return directory / safe, directory / f"{safe}.json"
+
+
+def _reuse_verified_cache(
+    output: Path,
+    *,
+    tag: str,
+    arch: str,
+    repository: str,
+) -> dict[str, Any] | None:
+    executable_path, metadata_path = _cache_paths(output, tag=tag, arch=arch)
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        executable = executable_path.read_bytes()
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    expected = {
+        "tag": tag,
+        "arch": arch,
+        "repository": repository,
+    }
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        return None
+    executable_sha256 = hashlib.sha256(executable).hexdigest()
+    if metadata.get("executable_sha256") != executable_sha256:
+        return None
+    _atomic_executable_write(output, executable)
+    return {
+        "tag": tag,
+        "asset": metadata.get("asset"),
+        "compressed_sha256": metadata.get("compressed_sha256"),
+        "digest_verified": True,
+        "cache_hit": True,
+        "output": str(output),
+    }
+
+
+def _store_verified_cache(
+    output: Path,
+    *,
+    tag: str,
+    arch: str,
+    repository: str,
+    asset: str,
+    compressed_sha256: str,
+    executable: bytes,
+) -> None:
+    executable_path, metadata_path = _cache_paths(output, tag=tag, arch=arch)
+    executable_path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_executable_write(executable_path, executable)
+    metadata = {
+        "tag": tag,
+        "arch": arch,
+        "repository": repository,
+        "asset": asset,
+        "compressed_sha256": compressed_sha256,
+        "executable_sha256": hashlib.sha256(executable).hexdigest(),
+    }
+    fd, temporary = tempfile.mkstemp(prefix=f".{metadata_path.name}.", dir=metadata_path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, metadata_path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=Path("tools/mihomo-versions.json"))
@@ -94,6 +186,17 @@ def main() -> int:
     tag, patterns, repository = _load_entry(args.manifest, args.channel, args.tag)
     if arch not in patterns:
         raise RuntimeError(f"architecture {arch!r} is not pinned for {tag}")
+
+    cached = _reuse_verified_cache(
+        args.output,
+        tag=tag,
+        arch=arch,
+        repository=repository,
+    )
+    if cached is not None:
+        print(json.dumps(cached, sort_keys=True))
+        return 0
+
     release = _request_json(f"https://api.github.com/repos/{repository}/releases/tags/{tag}")
     if args.channel == "stable" and release.get("prerelease"):
         raise RuntimeError(f"pinned stable tag {tag} is marked prerelease by GitHub")
@@ -118,18 +221,17 @@ def main() -> int:
         executable = gzip.decompress(raw) if asset["name"].endswith(".gz") else raw
     except OSError as exc:
         raise RuntimeError("Mihomo release asset decompression failed") from exc
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{args.output.name}.", dir=args.output.parent)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(executable)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, 0o755)
-        os.replace(temporary, args.output)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary)
+    _atomic_executable_write(args.output, executable)
+    if digest:
+        _store_verified_cache(
+            args.output,
+            tag=tag,
+            arch=arch,
+            repository=repository,
+            asset=asset["name"],
+            compressed_sha256=actual,
+            executable=executable,
+        )
     print(
         json.dumps(
             {
@@ -137,6 +239,7 @@ def main() -> int:
                 "asset": asset["name"],
                 "compressed_sha256": actual,
                 "digest_verified": bool(digest),
+                "cache_hit": False,
                 "output": str(args.output),
             },
             sort_keys=True,
