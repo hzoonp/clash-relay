@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +29,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--required-successes", type=int, default=2)
     return parser
+
+
+def _emit_safe_core_diagnostic(args: argparse.Namespace) -> None:
+    script = Path(__file__).with_name("diagnose_browsing_core.py")
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--candidate",
+                str(args.candidate),
+                "--mihomo-bin",
+                str(args.mihomo_bin),
+            ],
+            check=False,
+            timeout=45,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        print('{"status":"unavailable","reason":"diagnostic_process_failed"}', file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:
                     sort_keys=True,
                 )
             )
+        if "Mihomo rejected the browsing qualification configuration" in str(exc):
+            _emit_safe_core_diagnostic(args)
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
