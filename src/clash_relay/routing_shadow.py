@@ -11,8 +11,24 @@ from .routing_policy_v2 import load_routing_policy_v2
 _MEDIA_AUTO_SERVICES = frozenset({"youtube", "foreign_media"})
 
 
+def _route_member(group: dict[str, Any] | None) -> str | None:
+    if not isinstance(group, dict):
+        return None
+    route = group.get("route")
+    if not isinstance(route, dict):
+        return None
+    member = route.get("member")
+    if not isinstance(member, dict):
+        return None
+    if "group" in member:
+        return str(member["group"])
+    if "builtin" in member:
+        return str(member["builtin"])
+    return None
+
+
 def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
-    """Describe prospective cutover changes without inspecting runtime traffic.
+    """Describe Routing V2 cutover state without inspecting runtime traffic.
 
     This is intentionally a declaration/config-graph shadow, not traffic
     telemetry. It never records domains, node names, addresses, credentials, or
@@ -35,14 +51,12 @@ def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
     download_rules = sum(1 for row in bindings if row["scenario"] == "download")
     browsing_rules = sum(1 for row in bindings if row["scenario"] == "browsing")
 
-    ai_group = next(
-        (
-            row
-            for row in project.acl4ssr.get("groups", [])
-            if str(row.get("display_name")) == "人工智能"
-        ),
-        None,
-    )
+    groups = {
+        str(row["display_name"]): row
+        for row in project.acl4ssr.get("groups", [])
+        if isinstance(row, dict) and isinstance(row.get("display_name"), str)
+    }
+    ai_group = groups.get("人工智能")
     current_ai_regions: list[str] = []
     if isinstance(ai_group, dict):
         for member in ai_group.get("members", []):
@@ -59,9 +73,17 @@ def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
         "香港": "HK",
     }
     current_codes = [label_to_code[name] for name in current_ai_regions if name in label_to_code]
+    media_cutover = all(
+        _route_member(groups.get(name)) == "媒体自动" for name in ("油管视频", "国外媒体")
+    )
+    download_cutover = (
+        policy.download.mode == "general_auto"
+        and _route_member(groups.get("下载流量")) == "下载自动"
+    )
+    ai_cutover = current_codes == list(policy.ai.preferred_regions)
 
     return {
-        "status": "shadow",
+        "status": "cutover" if media_cutover and download_cutover and ai_cutover else "shadow",
         "model_version": 2,
         "scenario_counts": dict(model["scenario_counts"]),
         "foreign_web": {
@@ -72,14 +94,17 @@ def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
             "current_mode": policy.download.mode,
             "cutover_mode": "general_auto",
             "affected_rule_sources": download_rules,
+            "cutover_applied": download_cutover,
         },
         "media": {
-            "auto_scheduler_candidate_rule_sources": media_auto,
+            "auto_scheduler_rule_sources": media_auto,
+            "cutover_applied": media_cutover,
         },
         "ai": {
             "current_region_order": current_codes,
             "cutover_region_order": list(policy.ai.preferred_regions),
             "excluded_regions": list(policy.ai.excluded_regions),
-            "region_order_would_change": current_codes != list(policy.ai.preferred_regions),
+            "region_order_would_change": not ai_cutover,
+            "cutover_applied": ai_cutover,
         },
     }
