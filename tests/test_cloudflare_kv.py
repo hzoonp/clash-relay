@@ -97,9 +97,7 @@ def test_cloudflare_publisher_reads_exact_private_value(monkeypatch) -> None:
         requests.append(request)
         if "/storage/kv/namespaces?" in request.full_url:
             return _Response(
-                _success(
-                    [{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1
-                )
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
             )
         return _RawResponse(value)
 
@@ -121,9 +119,7 @@ def test_cloudflare_publisher_returns_none_for_missing_private_value(monkeypatch
     def fake_urlopen(request, timeout):
         if "/storage/kv/namespaces?" in request.full_url:
             return _Response(
-                _success(
-                    [{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1
-                )
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
             )
         raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
 
