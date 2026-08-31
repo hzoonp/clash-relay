@@ -527,9 +527,7 @@ def apply_browsing_qualification(
                 f"browsing qualification left provider {provider_name!r} empty; "
                 "refusing to replace the published profile"
             )
-        stable_kept = [
-            proxy for proxy in kept if str(proxy.get("name", "")) in effective_stable
-        ]
+        stable_kept = [proxy for proxy in kept if str(proxy.get("name", "")) in effective_stable]
         stable_threshold = min(_MIN_STABLE_AUTO_NODES, len(kept))
         use_stable_only = len(stable_kept) >= stable_threshold
         automatic_kept = stable_kept if use_stable_only else kept
