@@ -3,7 +3,7 @@ from __future__ import annotations
 from clash_relay.config_loader import load_project
 from clash_relay.routing_model import compile_routing_model
 from clash_relay.routing_policy_v2 import load_routing_policy_v2
-from clash_relay.routing_shadow import routing_shadow_summary
+from clash_relay.routing_shadow import routing_drift_summary
 
 
 def _project(repo_root):
@@ -86,23 +86,26 @@ def test_specific_services_and_download_precede_generic_foreign_web(repo_root) -
     assert rows["geoip_cn"]["priority"] < rows["download"]["priority"]
 
 
-def test_cutover_keeps_foreign_web_classifier_narrow(repo_root) -> None:
-    shadow = routing_shadow_summary(_project(repo_root))
+def test_finalized_routing_v2_graph_has_no_declared_drift(repo_root) -> None:
+    drift = routing_drift_summary(_project(repo_root))
 
-    assert shadow["status"] == "cutover"
-    assert shadow["foreign_web"]["explicit_rule_sources"] == 1
-    assert shadow["foreign_web"]["classifier_widened"] is False
-    assert shadow["download"] == {
-        "current_mode": "general_auto",
-        "cutover_mode": "general_auto",
-        "affected_rule_sources": 1,
-        "cutover_applied": True,
+    assert drift["status"] == "healthy"
+    assert drift["foreign_web"] == {
+        "explicit_rule_sources": 1,
+        "classifier_widened": False,
     }
-    assert shadow["media"] == {
+    assert drift["download"] == {
+        "mode": "general_auto",
+        "rule_sources": 1,
+        "scheduler_applied": True,
+    }
+    assert drift["media"] == {
         "auto_scheduler_rule_sources": 2,
-        "cutover_applied": True,
+        "scheduler_applied": True,
     }
-    assert shadow["ai"]["excluded_regions"] == ["HK"]
-    assert shadow["ai"]["current_region_order"] == ["US", "SG", "JP", "TW", "KR", "OTHER"]
-    assert shadow["ai"]["cutover_applied"] is True
-    assert shadow["ai"]["region_order_would_change"] is False
+    assert drift["ai"] == {
+        "region_order": ["US", "SG", "JP", "TW", "KR", "OTHER"],
+        "declared_region_order": ["US", "SG", "JP", "TW", "KR", "OTHER"],
+        "excluded_regions": ["HK"],
+        "policy_applied": True,
+    }
