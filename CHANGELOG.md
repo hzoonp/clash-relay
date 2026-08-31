@@ -1,26 +1,34 @@
 # Changelog
 
-All notable changes will be documented here.
+All notable user-visible changes are documented here. This project follows Semantic Versioning after the v0.1.0 production baseline.
 
 ## [Unreleased]
 
 ### Changed
 
-- Restored pinned `ACL4SSR_Online_Full.ini` semantics as the canonical owner of all non-AI rule targets, policy groups, member order, and final routing.
-- Separated FlClash presentation-only containers from semantic ACL4SSR policy groups so UI nesting no longer changes rule behavior.
-- Removed the canonical local direct-rule prelude and subscription-source route exclusions that previously altered ACL4SSR behavior.
-- Kept service-aware OpenAI, Claude, and Gemini live qualification as the explicit routing-semantic extension.
-- Added canonical production-shaped Mihomo integration coverage and a fail-closed compatibility boundary requiring the pinned ACL4SSR Provider files to verify all nine legacy `URL-REGEX` omissions, with zero unverified legacy rules.
+- Future changes after the v0.1.0 production baseline.
 
-## [0.1.0] - 2026-08-30
+## [0.1.0] - 2026-08-31
 
 ### Added
 
-- From-scratch declaration, parser, classifier, generator, validator, and CLI architecture.
-- Arbitrary secret-injected subscriptions and explicit capability metadata.
-- Data-driven ChatGPT, Claude, and Gemini service scheduling.
-- General, Google Play, bulk, residential, EMBY, high-multiplier, and controlled chain pools.
-- Deterministic inline-provider generation and fail-closed empty behavior.
-- Static graph/security validation and real Mihomo load/start/HEAD integration tests.
-- PR, stable promotion, prerelease observation, Artifact, Release, and optional Gist workflows.
-- Public documentation, schemas, fixtures, and repository safety audit.
+- Deterministic aggregation of multiple private Mihomo subscriptions.
+- Declarative per-source `allowed_uses`, country permissions, and multiplier limits.
+- Canonical Subscription 1 isolation to browsing and AI only, with explicit multipliers above 2x rejected before classification and deduplication.
+- End-to-end source-to-route reachability auditing before and after live qualification.
+- Browsing Scheduler V2.1 with three live HTTPS samples: 3/3 stable automatic candidates, 2/3 manual reserve candidates, and fewer than 2/3 rejected.
+- Privacy-preserving browsing scheduler history stored as HMAC-SHA256 fingerprints and aggregate stability metadata.
+- Independent OpenAI, Claude, and Gemini live qualification with service-specific fail-closed behavior.
+- Validation of every production candidate with Mihomo v1.19.30 and v1.19.29.
+- Private Cloudflare Workers KV publication, previous-good snapshotting, and validated manual rollback.
+- Aggregate production proof without node names, servers, credentials, or subscription URLs.
+- English and Simplified Chinese Fork quickstarts.
+
+### Security
+
+- Generated private configurations are never published as GitHub Actions artifacts, Releases, Gists, Pages, or repository files.
+- Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
+- Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
+
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hzoonp/clash-relay/releases/tag/v0.1.0
