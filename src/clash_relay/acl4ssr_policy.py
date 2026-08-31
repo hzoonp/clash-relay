@@ -66,10 +66,10 @@ def apply_acl4ssr_group_semantics(
     country selectors, media-specific selectors) into Mihomo-native groups and
     applies the requested FlClash visibility flags.
 
-    Pool wrappers are inventories rather than policy surfaces when their display
-    name is reserved for clash-relay internals or when they are AI region pools.
-    AI countries are a scheduling dimension beneath the single AI scenario, so
-    they remain addressable by the AI policy while staying off the top-level UI.
+    Reserved ``__CR_`` pool wrappers are internal inventories. AI country
+    wrappers intentionally remain resolvable during build and are hidden only
+    after service-specific qualification has used them to construct independent
+    OpenAI, Claude, and Gemini routes.
     """
 
     providers = output.get("proxy-providers", {})
@@ -81,9 +81,7 @@ def apply_acl4ssr_group_semantics(
     hidden_inventories: list[str] = []
     for pool in pool_specs:
         display_name = str(pool["display_name"])
-        is_internal_name = display_name.startswith("__CR_")
-        is_ai_dimension = str(pool.get("source_use", "")) == "ai"
-        if not (is_internal_name or is_ai_dimension):
+        if not display_name.startswith("__CR_"):
             continue
         group = groups.get(display_name)
         if group is None:
