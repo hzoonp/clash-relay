@@ -61,14 +61,13 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     args.fingerprint_key_output.parent.mkdir(parents=True, exist_ok=True)
-    if token:
+    if token and transport_status in {"loaded", "missing"}:
         args.fingerprint_key_output.write_text(
             derive_fingerprint_key(token).hex() + "\n", encoding="ascii"
         )
-        os.chmod(args.fingerprint_key_output, 0o600)
     else:
         args.fingerprint_key_output.write_text("", encoding="ascii")
-        os.chmod(args.fingerprint_key_output, 0o600)
+    os.chmod(args.fingerprint_key_output, 0o600)
 
     nodes = history.get("nodes", {})
     print(
