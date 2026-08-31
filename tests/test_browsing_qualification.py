@@ -41,7 +41,7 @@ def test_group_delay_probe_uses_provider_compatible_group_api(
         timeout: float,
     ) -> dict[str, object]:
         seen.update(port=port, secret=secret, path=path, timeout=timeout)
-        return {"node-a": 120, "node-b": 240}
+        return {"node-a": 0, "node-b": 240}
 
     monkeypatch.setattr(browsing_qualification, "_controller_json", fake_controller_json)
     sample, outcome = _group_delay_probe(
@@ -63,7 +63,7 @@ def test_group_delay_probe_uses_provider_compatible_group_api(
         "timeout": ["3000"],
         "expected": ["204"],
     }
-    assert sample == {"node-a": 120, "node-b": 240}
+    assert sample == {"node-a": 0, "node-b": 240}
     assert outcome == "success"
 
 
@@ -71,15 +71,15 @@ def test_browsing_qualification_requires_two_of_three_group_samples() -> None:
     qualified, medians = _qualified_from_group_samples(
         ("node-a", "node-b"),
         (
-            {"node-a": 110, "node-b": 200},
+            {"node-a": 0, "node-b": 200},
             {"node-b": 210},
-            {"node-a": 130},
+            {"node-a": 0},
         ),
         required_successes=2,
     )
 
     assert qualified == {"node-a", "node-b"}
-    assert medians == [120.0, 205.0]
+    assert medians == [0.0, 205.0]
 
 
 def test_browsing_qualification_rejects_one_of_three_group_samples() -> None:
