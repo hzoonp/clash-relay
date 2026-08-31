@@ -18,6 +18,8 @@ on:
       - "scripts/render_production_proof.py"
       - "scripts/load_scheduler_history.py"
       - "scripts/publish_scheduler_history.py"
+      - "scripts/load_ai_qualification_cache.py"
+      - "scripts/publish_ai_qualification_cache.py"
       - "scripts/snapshot_previous_config.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
@@ -142,6 +144,23 @@ jobs:
             --fingerprint-key-output .work/private/scheduler-history.key \
             > .work/private/scheduler-history-load.json
 
+      - name: Load private AI qualification cache
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+        run: |
+          set -euo pipefail
+          python scripts/load_ai_qualification_cache.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --output .work/private/ai-qualification-cache.json \
+            --fingerprint-key-output .work/private/ai-qualification-cache.key \
+            > .work/private/ai-qualification-cache-load.json
+
       - name: Download Mihomo for private qualification
         run: |
           python scripts/download_mihomo.py \
@@ -210,6 +229,9 @@ jobs:
             --candidate .work/private/config.yaml \
             --policies policies.yaml \
             --mihomo-bin .work/bin/mihomo-qualification \
+            --cache .work/private/ai-qualification-cache.json \
+            --cache-key .work/private/ai-qualification-cache.key \
+            --next-cache .work/private/ai-qualification-cache-next.json \
             | tee .work/private/ai-qualification-summary.json
 
       - name: Append safe AI qualification summary
@@ -224,21 +246,26 @@ jobs:
               data = json.load(handle)
           diagnostics = data.get("diagnostics", {})
           probes = diagnostics.get("probes", {})
+          cache = data.get("qualification_cache", {})
           lines = [
               "## AI qualification",
               "",
-              f"Tested nodes: **{int(diagnostics.get('tested_nodes', 0))}**  ",
+              f"Candidate nodes: **{int(diagnostics.get('tested_nodes', 0))}**  ",
+              f"Live service probes: **{int(cache.get('live_service_probes', 0))}**  ",
+              f"Fresh cache pass/fail hits: **{int(cache.get('cache_pass_hits', 0))} / {int(cache.get('cache_fail_hits', 0))}**  ",
               f"Selector failures: **{int(diagnostics.get('selector_failures', 0))}**",
               "",
-              "| Service probe | Qualified nodes |",
-              "| --- | ---: |",
+              "| Service probe | Live tested | Qualified nodes |",
+              "| --- | ---: | ---: |",
           ]
           for name in sorted(probes):
               summary = probes[name]
-              lines.append(f"| `{name}` | {int(summary.get('qualified_nodes', 0))} |")
+              lines.append(
+                  f"| `{name}` | {int(summary.get('live_tested_nodes', 0))} | {int(summary.get('qualified_nodes', 0))} |"
+              )
           lines.extend([
               "",
-              "Only aggregate qualification counts are shown; node-level results remain private.",
+              "Only aggregate qualification/cache counts are shown; node-level results remain private.",
               "",
           ])
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
@@ -332,6 +359,21 @@ jobs:
             --services services.yaml \
             --policies policies.yaml \
             --candidate .work/private/config.yaml
+
+      - name: Persist private AI qualification cache
+        if: github.event_name == 'push' || inputs.publish == true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+        run: |
+          python scripts/publish_ai_qualification_cache.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --state .work/private/ai-qualification-cache-next.json \
+            > .work/private/ai-qualification-cache-publish.json
 
       - name: Persist private scheduler history
         if: github.event_name == 'push' || inputs.publish == true
