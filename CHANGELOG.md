@@ -4,6 +4,31 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-31
+
+### Added
+
+- Browsing Regional Scheduling partitions the canonical browsing inventory into `US`, `SG`, `JP`, `TW`, `KR`, `HK`, and `OTHER` before automatic selection.
+- Every available browsing region owns independent hidden Stable and Reserve schedulers, and FlClash exposes regional browsing choices without exposing raw runtime nodes or proxy providers.
+- `routing.browsing.preferred_regions` declares a browsing-only regional preference order independently from AI service routing.
+- Real Mihomo integration now verifies both same-region Stable-to-Reserve recovery and cross-region fallback only after the preferred region is unavailable.
+
+### Changed
+
+- `网页自动` now prefers regions in the canonical `US -> SG -> JP -> TW -> KR -> HK -> OTHER` order instead of racing all qualified browsing nodes globally.
+- Automatic browsing failover is ordered `preferred-region Stable -> same-region Reserve -> next-region Stable`; a healthy preferred region is not abandoned merely because another region has a lower instantaneous delay.
+- `网页浏览` now exposes `网页自动`, each currently available `网页 · <地区>` choice, and `DIRECT`. Regional choices remain provider-free and do not expand raw `[BROWSING:*]` nodes.
+- A manual regional browsing choice is region-pinned: it can fail over from Stable to Reserve inside that region but never silently crosses into another region.
+- Browsing history demotion is applied independently inside each region. A historically demoted but currently qualified node remains eligible through that same region's Reserve tier.
+- Completely unavailable browsing regions are removed from the published runtime graph after live qualification rather than making the whole publication fail, provided at least one browsing region remains qualified.
+- Regional re-evaluation uses the declared `scheduler.browsing.region_switch_interval` while node health checks retain the canonical browsing probe interval.
+
+### Security
+
+- Regional browsing groups can reference only their matching `cr_browsing_<region>` provider; general, media, download, final, and AI providers are not valid regional browsing inputs.
+- `subscription_1` remains browsing/AI-only and explicit multipliers strictly greater than 2x are still rejected before classification.
+- Source-to-scenario reachability audits, post-qualification audits, AI fail-closed qualification, previous-good preservation, and dual-Mihomo production validation remain mandatory.
+
 ## [1.0.1] - 2026-08-31
 
 ### Added
@@ -80,7 +105,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hzoonp/clash-relay/releases/tag/v1.0.0
 [0.1.0]: https://github.com/hzoonp/clash-relay/releases/tag/v0.1.0

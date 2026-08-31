@@ -11,9 +11,9 @@ def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.0.1"
+    assert project["version"] == "1.1.0"
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.0.1] - 2026-08-31" in changelog
+    assert "## [1.1.0] - 2026-08-31" in changelog
 
 
 def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
@@ -22,6 +22,7 @@ def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> 
     assert policy.declared is True
     assert policy.browsing.attempts == 3
     assert policy.browsing.reserve_successes == 2
+    assert policy.browsing.region_switch_interval == 300
     assert policy.history.min_runs == 2
     assert policy.history.min_success_ema == 0.8
     assert policy.history.max_age_seconds == 2592000
@@ -37,10 +38,12 @@ def test_v1_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) 
         "strictly greater than `2.0`",
         "ProxyGFWlist",
         "Final `MATCH`",
+        "preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]",
+        "preferred-region Stable, then same-region Reserve, then the next available region",
+        "manual regional browsing choice never crosses regions",
         "3/3 is Stable",
         "2/3 is Reserve",
-        "hidden fallback from the Stable automatic tier to the Reserve automatic tier",
-        "historically demoted but currently qualified node moves to Reserve",
+        "historically demoted but currently qualified node moves to Reserve inside the same region",
         "must never promote a current Reserve or live-failed node into Stable",
         "OpenAI, Claude, and Gemini",
         "Mihomo v1.19.30 and v1.19.29",
