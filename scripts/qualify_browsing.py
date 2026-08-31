@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from clash_relay.browsing_qualification import (
@@ -19,6 +20,10 @@ from clash_relay.scheduler_history import (
     parse_history_bytes,
     preferred_stable_names,
     update_history,
+)
+from clash_relay.scheduler_policy import (
+    load_scheduler_policy,
+    preferred_stable_names_from_policy,
 )
 from clash_relay.util import load_yaml_file
 
@@ -106,6 +111,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics: dict[str, object] = {}
     try:
+        scheduler_policy = load_scheduler_policy(args.policies)
+        attempts = (
+            scheduler_policy.browsing.attempts if scheduler_policy.declared else args.attempts
+        )
+        required_successes = (
+            scheduler_policy.browsing.reserve_successes
+            if scheduler_policy.declared
+            else args.required_successes
+        )
         candidate_before = load_yaml_file(args.candidate)
         if not isinstance(candidate_before, dict):
             raise ValidationError("candidate is not a YAML mapping")
@@ -116,8 +130,8 @@ def main(argv: list[str] | None = None) -> int:
             args.candidate,
             probe,
             workers=args.workers,
-            attempts=args.attempts,
-            required_successes=args.required_successes,
+            attempts=attempts,
+            required_successes=required_successes,
             diagnostics=diagnostics,
         )
 
@@ -137,7 +151,16 @@ def main(argv: list[str] | None = None) -> int:
         preferred = set(stable)
         if history_inputs is not None:
             history, fingerprint_key, load_status = history_inputs
-            preferred = preferred_stable_names(stable, history, fingerprint_key)
+            if scheduler_policy.declared:
+                preferred = preferred_stable_names_from_policy(
+                    stable,
+                    history,
+                    fingerprint_key,
+                    scheduler_policy.history,
+                    now_epoch=int(time.time()),
+                )
+            else:
+                preferred = preferred_stable_names(stable, history, fingerprint_key)
             next_history = update_history(
                 history,
                 all_names=all_names,
@@ -175,6 +198,11 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "status": "qualified",
                     "diagnostics": diagnostics,
+                    "scheduler_policy": {
+                        "declared": scheduler_policy.declared,
+                        "attempts": attempts,
+                        "reserve_successes": required_successes,
+                    },
                     "scheduler_history": scheduler_report,
                     **report,
                 },

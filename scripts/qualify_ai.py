@@ -17,6 +17,7 @@ from clash_relay.ai_qualification_cache import (
 )
 from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_candidate
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.scheduler_policy import load_scheduler_policy
 from clash_relay.util import dump_yaml, load_yaml_file
 
 
@@ -117,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics = _service_diagnostics()
     try:
+        scheduler_policy = load_scheduler_policy(args.policies)
         probes = load_ai_probe_specs(args.policies)
         candidate_config = load_yaml_file(args.candidate)
         if not isinstance(candidate_config, dict):
@@ -146,7 +148,11 @@ def main(argv: list[str] | None = None) -> int:
             live_names: set[str] | None = None
             if cache is not None and fingerprints is not None:
                 cached_pass, cached_fail, live_names = cached_service_decisions(
-                    cache, fingerprints, name
+                    cache,
+                    fingerprints,
+                    name,
+                    pass_ttl_seconds=scheduler_policy.ai_cache.pass_ttl_seconds,
+                    failure_ttl_seconds=scheduler_policy.ai_cache.failure_ttl_seconds,
                 )
 
             probe_diagnostics: dict[str, object] = {}
@@ -217,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
 
         cache_report: dict[str, object] = {
             "status": cache_status,
+            "pass_ttl_seconds": scheduler_policy.ai_cache.pass_ttl_seconds,
+            "failure_ttl_seconds": scheduler_policy.ai_cache.failure_ttl_seconds,
             "live_service_probes": total_live,
             "cache_pass_hits": total_cache_pass,
             "cache_fail_hits": total_cache_fail,

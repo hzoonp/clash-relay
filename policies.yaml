@@ -1,5 +1,17 @@
 version: 1
 
+scheduler:
+  browsing:
+    attempts: 3
+    reserve_successes: 2
+  history:
+    min_runs: 2
+    min_success_ema: 0.8
+    max_age_seconds: 2592000
+  ai_cache:
+    pass_ttl_seconds: 21600
+    failure_ttl_seconds: 3600
+
 capabilities:
   general:
     description: Ordinary egress suitable for ACL4SSR-managed routing.
