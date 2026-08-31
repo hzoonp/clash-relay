@@ -8,12 +8,40 @@ import yaml
 
 from clash_relay.builder import build_candidate
 from clash_relay.errors import GenerationError
+from clash_relay.models import Node
 from clash_relay.node_policy import filter_proxies_by_multiplier, node_name_multiplier
 from clash_relay.routing_policy import apply_acl4ssr_source_exclusions
+from clash_relay.selector import select_nodes
 
 
 def _proxy(name: str) -> dict:
     return {"name": name, "type": "http", "server": "example.invalid", "port": 443}
+
+
+def _node(source_id: str, allowed_uses: set[str], fingerprint: str) -> Node:
+    return Node(
+        source_id=source_id,
+        source_display_name=source_id,
+        source_priority=100 if source_id == "subscription_1" else 200,
+        source_allowed_uses=frozenset(allowed_uses),
+        source_allowed_countries=frozenset({"*"}),
+        original_name=f"{source_id} HK 1x",
+        proxy=_proxy(f"{source_id} HK 1x"),
+        country="HK",
+        capabilities=frozenset({"general"}),
+        cost_level="standard",
+        fingerprint=fingerprint,
+    )
+
+
+def _selector(source_use: str) -> dict:
+    return {
+        "source_use": source_use,
+        "capabilities_any": ["general"],
+        "capabilities_all": [],
+        "excluded_capabilities": [],
+        "allowed_cost_levels": ["standard"],
+    }
 
 
 def _routing_output(*, include_secondary: bool = True) -> dict:
@@ -74,6 +102,25 @@ def test_multiplier_filter_keeps_two_times_and_unmarked_nodes() -> None:
 
     assert [item["name"] for item in kept] == ["HK 1x", "JP 2x", "Unmarked"]
     assert rejected == 2
+
+
+def test_source_use_boundary_excludes_subscription_1_from_general() -> None:
+    nodes = [
+        _node("subscription_1", {"browsing", "ai"}, "111"),
+        _node("subscription_2", {"general", "browsing", "ai"}, "222"),
+    ]
+
+    assert [node.source_id for node in select_nodes(nodes, _selector("general"), "ANY")] == [
+        "subscription_2"
+    ]
+    assert [node.source_id for node in select_nodes(nodes, _selector("browsing"), "ANY")] == [
+        "subscription_1",
+        "subscription_2",
+    ]
+    assert [node.source_id for node in select_nodes(nodes, _selector("ai"), "ANY")] == [
+        "subscription_1",
+        "subscription_2",
+    ]
 
 
 def test_builder_applies_multiplier_ceiling_before_provider_generation(
@@ -211,14 +258,54 @@ def test_source_exclusion_rejects_unknown_subscription_ids() -> None:
         )
 
 
-def test_canonical_subscription_policy_does_not_override_acl4ssr_routing(repo_root: Path) -> None:
+def test_canonical_subscription_1_is_browsing_and_ai_only(repo_root: Path) -> None:
     subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in subscriptions["subscriptions"]}
+
     subscription_1 = by_id["subscription_1"]
+    assert subscription_1["secret_name"] == "SUBSCRIPTION_1_URL"
     assert subscription_1["max_node_multiplier"] == 2.0
-    assert set(subscription_1["allowed_uses"]) == {"general", "ai"}
+    assert set(subscription_1["allowed_uses"]) == {"browsing", "ai"}
+    assert "general" not in subscription_1["allowed_uses"]
+
+    for source_id in ("subscription_2", "subscription_3", "subscription_4"):
+        assert set(by_id[source_id]["allowed_uses"]) == {"general", "browsing", "ai"}
+
+
+def test_canonical_browsing_route_is_separate_from_application_routes(repo_root: Path) -> None:
+    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    pools = {item["id"]: item for item in policies["pools"]}
+    assert pools["general"]["source_use"] == "general"
+    assert pools["browsing"]["source_use"] == "browsing"
 
     acl4ssr = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
+    groups = {item["id"]: item for item in acl4ssr["groups"]}
+    sources = {item["id"]: item for item in acl4ssr["sources"]}
+
+    assert groups["policy_browsing_auto"]["provider_pool"] == "browsing"
+    assert groups["policy_browsing"]["provider_pool"] == "browsing"
+    assert groups["policy_browsing"]["display_name"] == "网页浏览"
+    assert sources["proxy_gfwlist"]["target"] == "网页浏览"
+
+    application_sources = {
+        "telegram",
+        "netease_music",
+        "epic",
+        "origin",
+        "sony",
+        "steam",
+        "nintendo",
+        "youtube",
+        "netflix",
+        "bahamut",
+        "bilibili_hmt",
+        "bilibili",
+        "china_media",
+        "proxy_media",
+        "download",
+    }
+    assert all(sources[source_id]["target"] != "网页浏览" for source_id in application_sources)
+    assert acl4ssr["final_target"] == "漏网之鱼"
     assert "final_excluded_sources" not in acl4ssr
     assert all("excluded_sources" not in group for group in acl4ssr["groups"])
     assert all("excluded_sources" not in source for source in acl4ssr["sources"])
