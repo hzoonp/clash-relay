@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .scheduler_history import fingerprint_runtime_name
 from .util import load_yaml_file
 
 
@@ -31,6 +32,7 @@ class AICachePolicy:
 
 @dataclass(frozen=True)
 class SchedulerPolicy:
+    declared: bool = False
     browsing: BrowsingSchedulerPolicy = BrowsingSchedulerPolicy()
     history: HistorySchedulerPolicy = HistorySchedulerPolicy()
     ai_cache: AICachePolicy = AICachePolicy()
@@ -48,12 +50,14 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
     document = load_yaml_file(path)
     if not isinstance(document, dict):
         raise ValidationError("policies document must be a mapping")
+    declared = "scheduler" in document
     scheduler = _mapping(document.get("scheduler"), "scheduler policy")
     browsing = _mapping(scheduler.get("browsing"), "scheduler.browsing")
     history = _mapping(scheduler.get("history"), "scheduler.history")
     ai_cache = _mapping(scheduler.get("ai_cache"), "scheduler.ai_cache")
 
     result = SchedulerPolicy(
+        declared=declared,
         browsing=BrowsingSchedulerPolicy(
             attempts=int(browsing.get("attempts", 3)),
             reserve_successes=int(browsing.get("reserve_successes", 2)),
@@ -91,3 +95,38 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
             "scheduler.ai_cache.failure_ttl_seconds must be between 60s and pass TTL"
         )
     return result
+
+
+def preferred_stable_names_from_policy(
+    stable_names: set[str],
+    history: dict[str, Any],
+    fingerprint_key: bytes,
+    policy: HistorySchedulerPolicy,
+    *,
+    now_epoch: int,
+) -> set[str]:
+    """Apply public history thresholds only inside the current live-stable set."""
+    nodes = history.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return set(stable_names)
+    preferred: set[str] = set()
+    for runtime_name in stable_names:
+        record = nodes.get(fingerprint_runtime_name(runtime_name, fingerprint_key))
+        if not isinstance(record, dict):
+            preferred.add(runtime_name)
+            continue
+        runs = int(record.get("runs", 0))
+        success_ema = float(record.get("success_ema", 1.0))
+        failures = int(record.get("consecutive_failed_runs", 0))
+        last_seen = int(record.get("last_seen_epoch", 0))
+        fresh = (
+            last_seen > 0
+            and now_epoch >= last_seen
+            and now_epoch - last_seen <= policy.max_age_seconds
+        )
+        if not fresh or runs < policy.min_runs:
+            preferred.add(runtime_name)
+            continue
+        if success_ema >= policy.min_success_ema and failures == 0:
+            preferred.add(runtime_name)
+    return preferred
