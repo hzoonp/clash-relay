@@ -107,6 +107,15 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     ]
 
     groups = {item["display_name"]: item for item in manifest["groups"]}
+    general_choices = [
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "DIRECT",
+    ]
     assert _group_members(groups["代理选择"]) == [
         "自动选择",
         "香港节点",
@@ -130,29 +139,40 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "AI · 其他地区",
         "DIRECT",
     ]
+    assert _group_members(groups["流媒体"]) == ["媒体自动", *general_choices]
+    assert _group_members(groups["消息通讯"]) == ["通讯自动", *general_choices]
+    assert _group_members(groups["下载流量"]) == ["下载自动", *general_choices]
     assert _group_members(groups["哔哩哔哩"]) == ["DIRECT"]
     assert _group_members(groups["全球直连"]) == ["DIRECT"]
     assert _group_members(groups["广告拦截"]) == ["REJECT"]
     assert "应用净化" not in groups
-    assert _group_members(groups["油管视频"]) == ["媒体自动"]
-    assert _group_members(groups["国外媒体"]) == ["媒体自动"]
-    assert _group_members(groups["下载流量"]) == ["下载自动"]
-    assert _group_members(groups["奈飞视频"]) == ["奈飞节点", "媒体自动"]
+    assert _group_members(groups["电报消息"]) == ["消息通讯"]
+    assert _group_members(groups["油管视频"]) == ["流媒体"]
+    assert _group_members(groups["国外媒体"]) == ["流媒体"]
+    assert _group_members(groups["奈飞视频"]) == ["奈飞节点", "流媒体"]
     assert _group_members(groups["漏网之鱼"]) == ["代理选择"]
 
     assert groups["自动选择"]["provider_pool"] == "general"
     assert groups["自动选择"]["filter"] == ".*"
     assert groups["自动选择"]["url"] == "http://www.gstatic.com/generate_204"
     assert groups["媒体自动"]["provider_pool"] == "general"
+    assert groups["通讯自动"]["provider_pool"] == "general"
     assert groups["下载自动"]["provider_pool"] == "general"
     assert groups["美国节点"]["tolerance"] == 150
     assert groups["奈飞节点"]["filter"] == "(NF|奈飞|解锁|Netflix|NETFLIX|Media)"
 
-    pseudo_containers = {"流媒体", "国内服务", "更多策略"}
+    pseudo_containers = {"国内服务", "更多策略"}
     assert pseudo_containers.isdisjoint(groups)
 
     visible_groups = {name for name, group in groups.items() if not group.get("hidden", False)}
-    assert visible_groups == {"代理选择", "网页浏览", "人工智能"}
+    assert visible_groups == {
+        "代理选择",
+        "网页浏览",
+        "人工智能",
+        "流媒体",
+        "消息通讯",
+        "下载流量",
+    }
 
     rule_targets = {item["target"] for item in manifest["sources"]}
     rule_targets.update(item["target"] for item in manifest["inline_rules"])
@@ -162,6 +182,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert all(groups[name].get("hidden", False) is True for name in hidden_rule_targets)
     assert groups["手动切换"]["hidden"] is True
     assert groups["媒体自动"]["hidden"] is True
+    assert groups["通讯自动"]["hidden"] is True
     assert groups["下载自动"]["hidden"] is True
     assert groups["奈飞节点"]["hidden"] is True
 
