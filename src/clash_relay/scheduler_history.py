@@ -11,6 +11,7 @@ from typing import Any
 
 from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
+from .validator import validate_generated_config
 
 _STATE_VERSION = 1
 _DOMAIN = b"clash-relay/browsing-scheduler-history/v1"
@@ -121,9 +122,7 @@ def preferred_stable_names(
         runs = int(record.get("runs", 0))
         success_ema = float(record.get("success_ema", 1.0))
         failures = int(record.get("consecutive_failed_runs", 0))
-        if runs < _MIN_HISTORY_RUNS or (
-            success_ema >= _MIN_SUCCESS_EMA and failures == 0
-        ):
+        if runs < _MIN_HISTORY_RUNS or (success_ema >= _MIN_SUCCESS_EMA and failures == 0):
             preferred.add(runtime_name)
     return preferred
 
@@ -157,11 +156,13 @@ def update_history(
         old_runs = int(old.get("runs", 0))
         old_ema = float(old.get("success_ema", 1.0))
         old_failures = int(old.get("consecutive_failed_runs", 0))
-        current_ratio = 1.0 if runtime_name in stable_names else (
-            2.0 / 3.0 if runtime_name in qualified_names else 0.0
+        current_ratio = (
+            1.0
+            if runtime_name in stable_names
+            else (2.0 / 3.0 if runtime_name in qualified_names else 0.0)
         )
-        success_ema = current_ratio if old_runs == 0 else (
-            old_ema * (1 - _ALPHA) + current_ratio * _ALPHA
+        success_ema = (
+            current_ratio if old_runs == 0 else (old_ema * (1 - _ALPHA) + current_ratio * _ALPHA)
         )
         nodes[fingerprint] = {
             "runs": old_runs + 1,
@@ -211,7 +212,7 @@ def _exact_filter(names: set[str]) -> str:
 
 
 def apply_history_preference(candidate_path: Path, preferred_names: set[str]) -> int:
-    """Narrow existing stable browsing auto filters when history has enough preferred nodes."""
+    """Narrow stable browsing auto filters only where three preferred nodes remain."""
     if len(preferred_names) < _MIN_PREFERRED_AUTO_NODES:
         return 0
     try:
@@ -222,8 +223,22 @@ def apply_history_preference(candidate_path: Path, preferred_names: set[str]) ->
     if not isinstance(config, dict):
         raise ValidationError("scheduler history candidate must be a YAML mapping")
     groups = config.get("proxy-groups")
-    if not isinstance(groups, list):
-        raise ValidationError("scheduler history requires proxy groups")
+    providers = config.get("proxy-providers")
+    if not isinstance(groups, list) or not isinstance(providers, dict):
+        raise ValidationError("scheduler history requires proxy groups and providers")
+
+    provider_names: dict[str, set[str]] = {}
+    for provider_name, provider in providers.items():
+        if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIX):
+            continue
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            raise ValidationError("scheduler history found an invalid qualified browsing provider")
+        provider_names[str(provider_name)] = {
+            str(proxy["name"])
+            for proxy in payload
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+        }
 
     rewrites = 0
     for group in groups:
@@ -232,11 +247,16 @@ def apply_history_preference(candidate_path: Path, preferred_names: set[str]) ->
         uses = group.get("use")
         if not isinstance(uses, list) or not uses:
             continue
-        if not all(str(name).startswith(_BROWSING_PROVIDER_PREFIX) for name in uses):
+        if not all(str(name) in provider_names for name in uses):
             continue
-        group["filter"] = _exact_filter(preferred_names)
+        available = set().union(*(provider_names[str(name)] for name in uses))
+        group_preferred = preferred_names & available
+        if len(group_preferred) < _MIN_PREFERRED_AUTO_NODES:
+            continue
+        group["filter"] = _exact_filter(group_preferred)
         rewrites += 1
     if rewrites:
+        validate_generated_config(config)
         header_lines: list[str] = []
         for line in original.splitlines():
             if not line.startswith("#"):
