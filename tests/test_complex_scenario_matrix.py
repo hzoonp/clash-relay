@@ -15,7 +15,9 @@ def _project(repo_root):
     )
 
 
-def test_complex_concurrent_scenarios_have_independent_route_intent(repo_root) -> None:
+def test_complex_concurrent_scenarios_have_independent_route_intent(
+    repo_root,
+) -> None:
     project = _project(repo_root)
     model = compile_routing_model(project.acl4ssr)
     assert model is not None
@@ -38,7 +40,13 @@ def test_complex_concurrent_scenarios_have_independent_route_intent(repo_root) -
         assert row.get("service") == service
         assert row["target"] == target
 
-    for removed in ("proxy_gfwlist", "youtube", "netflix", "bilibili", "china_media"):
+    for removed in (
+        "proxy_gfwlist",
+        "youtube",
+        "netflix",
+        "bilibili",
+        "china_media",
+    ):
         assert removed not in rows
 
 
@@ -47,7 +55,9 @@ def test_scenario_permissions_prevent_browsing_source_from_media_download_and_fi
 ) -> None:
     project = _project(repo_root)
     policy = load_routing_policy_v2(project.policies)
-    subscription_1 = next(item for item in project.subscriptions if item.id == "subscription_1")
+    subscription_1 = next(
+        item for item in project.subscriptions if item.id == "subscription_1"
+    )
 
     assert subscription_1.allowed_uses == frozenset({"browsing", "ai"})
     allowed_scenarios = {
@@ -64,7 +74,11 @@ def test_acl4ssr_baseline_extensions_have_explicit_order(repo_root) -> None:
     assert model is not None
     rows = {row["source_id"]: row for row in model["bindings"]}
 
-    assert rows["telegram"]["priority"] < rows["ai"]["priority"] < rows["proxy_media"]["priority"]
+    assert (
+        rows["telegram"]["priority"]
+        < rows["ai"]["priority"]
+        < rows["proxy_media"]["priority"]
+    )
     assert (
         rows["telegram"]["priority"]
         < rows["openai"]["priority"]
