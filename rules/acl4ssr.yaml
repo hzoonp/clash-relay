@@ -219,19 +219,6 @@ groups:
     members:
       - {builtin: REJECT}
 
-  - id: policy_program_ad
-    display_name: 应用净化
-    module: general
-    hidden: true
-    route:
-      scenario: direct
-      service: program_ad
-      deterministic: true
-      member: {builtin: REJECT}
-      profile: direct
-    members:
-      - {builtin: REJECT}
-
   - id: policy_google_fcm
     display_name: 谷歌FCM
     module: general
@@ -493,14 +480,6 @@ sources:
     module: general
     scenario: direct
     service: adblock
-
-  - id: ban_program_ad
-    path: Clash/BanProgramAD.list
-    target: 应用净化
-    priority: 30
-    module: general
-    scenario: direct
-    service: program_ad
 
   - id: google_fcm
     path: Clash/Ruleset/GoogleFCM.list

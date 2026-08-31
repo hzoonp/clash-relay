@@ -19,6 +19,11 @@ subscriptions:
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
+    # EMBY-labelled nodes are media-specialized and are intentionally excluded
+    # from subscription_1's browsing/AI inventories before pool selection.
+    name_rules:
+      - pattern: '(?i)emby'
+        remove_capabilities: [general]
     # Explicit multiplier markers above 2x are rejected before classification.
     # Exactly 2x and nodes without an explicit multiplier marker are retained.
     max_node_multiplier: 2.0

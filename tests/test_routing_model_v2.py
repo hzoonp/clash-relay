@@ -47,7 +47,6 @@ def test_internal_rule_targets_are_deterministic(repo_root: Path) -> None:
     expected = {
         "全球直连": "DIRECT",
         "广告拦截": "REJECT",
-        "应用净化": "REJECT",
         "谷歌FCM": "DIRECT",
         "微软Bing": "DIRECT",
         "微软云盘": "DIRECT",
@@ -63,6 +62,7 @@ def test_internal_rule_targets_are_deterministic(repo_root: Path) -> None:
         "国外媒体": "媒体自动",
         "漏网之鱼": "代理选择",
     }
+    assert "应用净化" not in targets
     for name, destination in expected.items():
         route = targets[name]
         assert route["deterministic"] is True
