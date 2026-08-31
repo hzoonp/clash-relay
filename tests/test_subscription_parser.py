@@ -133,6 +133,26 @@ def test_malformed_structured_proxy_options_rejected(field: str, bad_value) -> N
         parse_subscription(yaml.safe_dump({"proxies": [proxy]}), invalid_policy="error")
 
 
+def test_null_structured_proxy_options_are_removed_as_absent() -> None:
+    proxy = {
+        "name": "Null WebSocket options",
+        "type": "vless",
+        "server": "vless.invalid.example",
+        "port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000099",
+        "network": "ws",
+        "ws-opts": None,
+        "reality-opts": None,
+    }
+
+    result = parse_subscription(yaml.safe_dump({"proxies": [proxy]}), invalid_policy="error")
+
+    assert len(result.proxies) == 1
+    assert "ws-opts" not in result.proxies[0]
+    assert "reality-opts" not in result.proxies[0]
+    assert result.skipped_items == 0
+
+
 def test_malformed_structured_proxy_options_are_skipped_before_inventory_admission() -> None:
     malformed = {
         "name": "Malformed gRPC",
