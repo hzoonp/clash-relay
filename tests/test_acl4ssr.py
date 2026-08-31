@@ -58,7 +58,6 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "local_area_network": "全球直连",
         "unban": "全球直连",
         "ban_ad": "广告拦截",
-        "ban_program_ad": "应用净化",
         "google_fcm": "谷歌FCM",
         "google_cn": "全球直连",
         "steam_cn": "全球直连",
@@ -134,7 +133,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert _group_members(groups["哔哩哔哩"]) == ["DIRECT"]
     assert _group_members(groups["全球直连"]) == ["DIRECT"]
     assert _group_members(groups["广告拦截"]) == ["REJECT"]
-    assert _group_members(groups["应用净化"]) == ["REJECT"]
+    assert "应用净化" not in groups
     assert _group_members(groups["油管视频"]) == ["媒体自动"]
     assert _group_members(groups["国外媒体"]) == ["媒体自动"]
     assert _group_members(groups["下载流量"]) == ["下载自动"]
@@ -173,6 +172,14 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
     assert config["rule_sources"]["acl4ssr"]["enabled"] is True
     assert config["modules"] == {"general": True}
+
+    subscriptions = yaml.safe_load(
+        (repo_root / "subscriptions.yaml").read_text(encoding="utf-8")
+    )["subscriptions"]
+    subscription_1 = next(item for item in subscriptions if item["id"] == "subscription_1")
+    assert subscription_1["name_rules"] == [
+        {"pattern": "(?i)emby", "remove_capabilities": ["general"]}
+    ]
 
     services = yaml.safe_load((repo_root / "services.yaml").read_text(encoding="utf-8"))
     assert services["services"] == []
