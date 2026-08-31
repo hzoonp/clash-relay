@@ -11,9 +11,9 @@ def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.1.0"
+    assert project["version"] == "1.2.0"
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.1.0] - 2026-08-31" in changelog
+    assert "## [1.2.0] - 2026-09-01" in changelog
 
 
 def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
@@ -36,16 +36,18 @@ def test_v1_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) 
     for phrase in (
         "allowed_uses: [browsing, ai]",
         "strictly greater than `2.0`",
+        "ProxyLite.list",
         "ProxyGFWlist",
         "Final `MATCH`",
-        "preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]",
+        "US -> SG -> JP -> TW -> KR -> HK -> OTHER",
         "preferred-region Stable, then same-region Reserve, then the next available region",
         "manual regional browsing choice never crosses regions",
         "3/3 is Stable",
         "2/3 is Reserve",
         "historically demoted but currently qualified node moves to Reserve inside the same region",
-        "must never promote a current Reserve or live-failed node into Stable",
+        "never promote a current Reserve or live-failed node into Stable",
         "OpenAI, Claude, and Gemini",
+        "BanProgramAD.list",
         "Mihomo v1.19.30 and v1.19.29",
         "Manual rollback requires explicit confirmation",
         "not attached to GitHub Releases",
