@@ -4,10 +4,11 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# Routing targets and policy member order mirror ACL4SSR_Online_Full.ini at the
-# pinned ref. FlClash hides only automatic helper groups; every actionable
-# ACL4SSR select group remains visible. AI is the sole semantic extension: its
-# candidate countries are live-qualified per service.
+# Routing targets and policy member order follow ACL4SSR_Online_Full.ini at the
+# pinned ref except for two deliberate scheduler boundaries: generic
+# ProxyGFWlist traffic is routed through the dedicated 网页浏览 inventory, and AI
+# traffic is routed through live-qualified AI inventories. FlClash hides only
+# automatic helper groups; every actionable select group remains visible.
 groups:
   # ACL4SSR shared selectors -------------------------------------------------
   - id: policy_auto
@@ -29,6 +30,30 @@ groups:
     provider_pool: general
     filter: '.*'
     members: []
+
+  # Generic web browsing is intentionally backed by a separate inventory. This
+  # is the only non-AI policy surface that can admit subscription_1.
+  - id: policy_browsing_auto
+    display_name: 网页自动
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: browsing
+    filter: '.*'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+    members: []
+
+  - id: policy_browsing
+    display_name: 网页浏览
+    module: general
+    type: select
+    provider_pool: browsing
+    filter: '.*'
+    members:
+      - {group: 网页自动}
+      - {builtin: DIRECT}
 
   - id: policy_hk
     display_name: 香港节点
@@ -528,7 +553,7 @@ sources:
 
   - id: proxy_gfwlist
     path: Clash/ProxyGFWlist.list
-    target: 节点选择
+    target: 网页浏览
     priority: 800
     module: general
 

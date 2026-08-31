@@ -1,10 +1,12 @@
 version: 1
 
 # No URL belongs in this tracked file. Real subscription URLs are resolved from
-# CLASH_RELAY_SUBSCRIPTIONS. Production uses one shared general node inventory;
-# subscription declarations control node admission only and do not rewrite
-# canonical non-AI ACL4SSR routing. AI remains permissive at declaration time
-# and fail-closed at publication time through live service qualification.
+# CLASH_RELAY_SUBSCRIPTIONS. Subscription declarations are hard source-policy
+# boundaries: a node may enter only the inventories named by allowed_uses.
+#
+# subscription_1 is intentionally constrained to generic web browsing and AI.
+# It never enters the general inventory used by media, games, messaging, cloud
+# services, fallback routing, or other non-browsing application groups.
 subscriptions:
   - id: subscription_1
     display_name: 订阅源 1
@@ -13,11 +15,12 @@ subscriptions:
     secret_name: SUBSCRIPTION_1_URL
     priority: 100
     on_error: skip
-    allowed_uses: [general, ai]
+    allowed_uses: [browsing, ai]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
     # Explicit multiplier markers above 2x are rejected before classification.
+    # Exactly 2x and nodes without an explicit multiplier marker are retained.
     max_node_multiplier: 2.0
 
   - id: subscription_2
@@ -27,7 +30,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_2_URL
     priority: 200
     on_error: skip
-    allowed_uses: [general, ai]
+    allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
@@ -39,7 +42,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_3_URL
     priority: 300
     on_error: skip
-    allowed_uses: [general, ai]
+    allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
@@ -51,7 +54,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_4_URL
     priority: 400
     on_error: skip
-    allowed_uses: [general, ai]
+    allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard

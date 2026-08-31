@@ -4,18 +4,33 @@ version: 1
 # from CLASH_RELAY_SUBSCRIPTIONS, a same-named environment variable, or an
 # ignored local --secret-file.
 subscriptions:
-  - id: primary
-    display_name: 示例订阅源
+  - id: subscription_1
+    display_name: 示例订阅源 1
     enabled: true
-    required: true
-    secret_name: SUB_PRIMARY
+    required: false
+    secret_name: SUBSCRIPTION_1_URL
     priority: 100
-    on_error: fail
-    allowed_uses: [general]
-    allowed_countries: [OTHER]
+    on_error: skip
+    # Source-level permission boundary: this source may only feed generic web
+    # browsing and AI inventories. It cannot enter the general application pool.
+    allowed_uses: [browsing, ai]
+    allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
     # Optional admission ceiling. Only explicit multiplier markers in node names
     # are evaluated (for example 2x, x2.5, 3倍, 倍率:4). Nodes without an explicit
     # marker are retained. A value of 2.0 rejects only nodes strictly above 2x.
     max_node_multiplier: 2.0
+
+  - id: subscription_2
+    display_name: 示例订阅源 2
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_2_URL
+    priority: 200
+    on_error: skip
+    # Ordinary sources may participate in every production inventory.
+    allowed_uses: [general, browsing, ai]
+    allowed_countries: ['*']
+    default_capabilities: [general]
+    default_cost_level: standard
