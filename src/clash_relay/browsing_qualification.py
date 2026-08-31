@@ -23,13 +23,13 @@ from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
-BROWSING_AUTO_PROVIDER_PREFIX = "cr_browsing_auto_"
 BROWSING_POOL_ID = "browsing"
 _PROBE_GROUP = "__CR_BROWSING_QUALIFICATION"
 _DEFAULT_ATTEMPTS = 3
 _DEFAULT_REQUIRED_SUCCESSES = 2
 _DEFAULT_WORKERS = 12
 _MIN_STABLE_AUTO_NODES = 3
+_RE2_META = frozenset("\\.+*?()|[]{}^$")
 
 
 def _free_port() -> int:
@@ -48,16 +48,18 @@ def _comment_header(text: str) -> str:
 
 
 def _is_canonical_browsing_provider(name: str) -> bool:
-    return name.startswith(BROWSING_PROVIDER_PREFIX) and not name.startswith(
-        BROWSING_AUTO_PROVIDER_PREFIX
-    )
+    return name.startswith(BROWSING_PROVIDER_PREFIX)
 
 
-def _auto_provider_name(name: str) -> str:
-    if not _is_canonical_browsing_provider(name):
-        raise ValidationError(f"invalid canonical browsing provider name {name!r}")
-    suffix = name[len(BROWSING_PROVIDER_PREFIX) :]
-    return f"{BROWSING_AUTO_PROVIDER_PREFIX}{suffix}"
+def _quote_re2_literal(value: str) -> str:
+    """Quote one runtime proxy name for Mihomo's Go/RE2-compatible filter parser."""
+    return "".join(f"\\{character}" if character in _RE2_META else character for character in value)
+
+
+def _exact_filter(names: set[str]) -> str:
+    if not names:
+        raise ValidationError("automatic browsing filter cannot be empty")
+    return "^(" + "|".join(_quote_re2_literal(name) for name in sorted(names)) + ")$"
 
 
 def load_browsing_probe_spec(policies_path: Path) -> dict[str, Any]:
@@ -467,7 +469,7 @@ def probe_browsing_nodes(
 
 def _rewrite_automatic_browsing_groups(
     config: dict[str, Any],
-    provider_mapping: dict[str, str],
+    automatic_names_by_provider: dict[str, set[str]],
 ) -> int:
     groups = config.get("proxy-groups")
     if not isinstance(groups, list):
@@ -479,10 +481,23 @@ def _rewrite_automatic_browsing_groups(
         uses = group.get("use")
         if not isinstance(uses, list):
             continue
-        rewritten = [provider_mapping.get(str(name), str(name)) for name in uses]
-        if rewritten != uses:
-            group["use"] = rewritten
-            rewrites += 1
+        browsing_uses = [str(name) for name in uses if str(name) in automatic_names_by_provider]
+        if not browsing_uses:
+            continue
+        if len(browsing_uses) != len(uses):
+            raise ValidationError(
+                "automatic browsing group must not mix browsing and non-browsing providers"
+            )
+        current_filter = group.get("filter")
+        if current_filter not in (None, "", ".*"):
+            raise ValidationError(
+                "automatic browsing group has a custom filter that cannot be safely composed"
+            )
+        allowed_names: set[str] = set()
+        for provider_name in browsing_uses:
+            allowed_names.update(automatic_names_by_provider[provider_name])
+        group["filter"] = _exact_filter(allowed_names)
+        rewrites += 1
     if rewrites == 0:
         raise ValidationError("browsing qualification found no automatic browsing group to tier")
     return rewrites
@@ -493,7 +508,7 @@ def apply_browsing_qualification(
     qualified_names: set[str],
     stable_names: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Prune browsing inventory and give automatic selection a stable-only tier."""
+    """Prune browsing inventory and filter automatic selection to the stable tier."""
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
         raise ValidationError("candidate proxy provider structure is invalid")
@@ -505,8 +520,7 @@ def apply_browsing_qualification(
     automatic = 0
     automatic_fallback_providers = 0
     provider_counts: dict[str, dict[str, int | bool]] = {}
-    automatic_providers: dict[str, dict[str, Any]] = {}
-    provider_mapping: dict[str, str] = {}
+    automatic_names_by_provider: dict[str, set[str]] = {}
     found = False
 
     for provider_name in sorted(providers):
@@ -531,11 +545,11 @@ def apply_browsing_qualification(
         stable_threshold = min(_MIN_STABLE_AUTO_NODES, len(kept))
         use_stable_only = len(stable_kept) >= stable_threshold
         automatic_kept = stable_kept if use_stable_only else kept
-        auto_provider_name = _auto_provider_name(provider_name)
-        auto_provider = dict(provider)
-        auto_provider["payload"] = list(automatic_kept)
-        automatic_providers[auto_provider_name] = auto_provider
-        provider_mapping[provider_name] = auto_provider_name
+        automatic_names_by_provider[provider_name] = {
+            str(proxy["name"])
+            for proxy in automatic_kept
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+        }
 
         provider["payload"] = kept
         tested += len(payload)
@@ -557,8 +571,7 @@ def apply_browsing_qualification(
     if qualified == 0:
         raise ValidationError("no nodes passed browsing qualification")
 
-    providers.update(automatic_providers)
-    automatic_groups = _rewrite_automatic_browsing_groups(config, provider_mapping)
+    automatic_groups = _rewrite_automatic_browsing_groups(config, automatic_names_by_provider)
     return {
         "tested_nodes": tested,
         "qualified_nodes": qualified,
