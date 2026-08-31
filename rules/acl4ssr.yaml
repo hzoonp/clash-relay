@@ -4,11 +4,11 @@ ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
 license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
-# ACL4SSR still owns classification order. Routing Model V2 makes the target
-# semantics explicit: scenario/service metadata is orthogonal to UI groups, and
-# hidden rule targets are deterministic unless they are an automatic scheduler.
+# ACL4SSR owns classification content, while Routing Model V2 owns deterministic
+# route targets and scenario schedulers. Only 代理选择, 网页浏览, and 人工智能 are
+# user-facing; application targets and schedulers remain internal.
 groups:
-  # User-facing general scenario and helpers ---------------------------------
+  # General / browsing helpers ------------------------------------------------
   - id: policy_auto
     display_name: 自动选择
     module: general
@@ -55,7 +55,7 @@ groups:
       - {group: 网页自动}
       - {builtin: DIRECT}
 
-  # Regions are scheduling dimensions under 代理选择, never top-level scenarios.
+  # Region is a scheduling dimension under the general user control.
   - id: policy_hk
     display_name: 香港节点
     module: general
@@ -128,6 +128,38 @@ groups:
     tolerance: 50
     members: []
 
+  # Scenario-specific automatic schedulers all use the general inventory. This
+  # makes subscription_1 structurally unreachable from media/download.
+  - id: policy_media_auto
+    display_name: 媒体自动
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '.*'
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 150
+    route:
+      scenario: media
+      profile: media
+    members: []
+
+  - id: policy_download_auto
+    display_name: 下载自动
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: general
+    filter: '.*'
+    url: http://www.gstatic.com/generate_204
+    interval: 600
+    tolerance: 300
+    route:
+      scenario: download
+      profile: download
+    members: []
+
   - id: policy_netflix_nodes
     display_name: 奈飞节点
     module: general
@@ -161,8 +193,7 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # Deterministic runtime targets retain the pinned ACL4SSR member lists below
-  # only as source/reference metadata. route.member is the runtime authority.
+  # Deterministic internal route targets --------------------------------------
   - id: policy_global_direct
     display_name: 全球直连
     module: general
@@ -174,8 +205,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 自动选择}
 
   - id: policy_block
     display_name: 广告拦截
@@ -189,7 +218,6 @@ groups:
       profile: direct
     members:
       - {builtin: REJECT}
-      - {builtin: DIRECT}
 
   - id: policy_program_ad
     display_name: 应用净化
@@ -203,7 +231,6 @@ groups:
       profile: direct
     members:
       - {builtin: REJECT}
-      - {builtin: DIRECT}
 
   - id: policy_google_fcm
     display_name: 谷歌FCM
@@ -217,14 +244,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_bing
     display_name: 微软Bing
@@ -238,14 +257,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_onedrive
     display_name: 微软云盘
@@ -259,14 +270,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_microsoft
     display_name: 微软服务
@@ -280,14 +283,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_apple
     display_name: 苹果服务
@@ -301,14 +296,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_telegram
     display_name: 电报消息
@@ -322,19 +309,31 @@ groups:
       profile: general
     members:
       - {group: 代理选择}
-      - {group: 自动选择}
-      - {group: 新加坡节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 日本节点}
-      - {group: 美国节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
-      - {builtin: DIRECT}
 
-  # AI is one visible scenario. Country wrappers are temporary build-time
-  # dimensions; service qualification later materializes only non-empty
-  # service×country anchors. HK is excluded in policies.yaml before this stage.
+  # Generic AI uses one hidden fallback in the same region preference used to
+  # materialize service-specific OpenAI/Claude/Gemini fallbacks. HK is absent.
+  - id: policy_ai_auto
+    display_name: AI 自动
+    module: general
+    hidden: true
+    type: fallback
+    source_use: ai
+    url: http://www.gstatic.com/generate_204
+    interval: 300
+    timeout: 5000
+    lazy: false
+    expected_status: '204'
+    route:
+      scenario: ai
+      profile: ai
+    members:
+      - {group: AI · 美国}
+      - {group: AI · 新加坡}
+      - {group: AI · 日本}
+      - {group: AI · 台湾}
+      - {group: AI · 韩国}
+      - {group: AI · 其他地区}
+
   - id: policy_ai
     display_name: 人工智能
     module: general
@@ -343,12 +342,7 @@ groups:
       scenario: ai
       profile: ai
     members:
-      - {group: AI · 新加坡}
-      - {group: AI · 日本}
-      - {group: AI · 美国}
-      - {group: AI · 台湾}
-      - {group: AI · 韩国}
-      - {group: AI · 其他地区}
+      - {group: AI 自动}
       - {builtin: DIRECT}
 
   - id: policy_netease
@@ -363,8 +357,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 自动选择}
 
   - id: policy_games
     display_name: 游戏平台
@@ -378,14 +370,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 代理选择}
-      - {group: 美国节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
   - id: policy_youtube
     display_name: 油管视频
@@ -395,19 +379,10 @@ groups:
       scenario: media
       service: youtube
       deterministic: true
-      member: {group: 代理选择}
+      member: {group: 媒体自动}
       profile: media
     members:
-      - {group: 代理选择}
-      - {group: 自动选择}
-      - {group: 新加坡节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 日本节点}
-      - {group: 美国节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
-      - {builtin: DIRECT}
+      - {group: 媒体自动}
 
   - id: policy_netflix
     display_name: 奈飞视频
@@ -425,16 +400,7 @@ groups:
       profile: media
     members:
       - {group: 奈飞节点}
-      - {group: 代理选择}
-      - {group: 自动选择}
-      - {group: 新加坡节点}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 日本节点}
-      - {group: 美国节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
-      - {builtin: DIRECT}
+      - {group: 媒体自动}
 
   - id: policy_bahamut
     display_name: 巴哈姆特
@@ -448,9 +414,6 @@ groups:
       profile: media
     members:
       - {group: 台湾节点}
-      - {group: 代理选择}
-      - {group: 手动切换}
-      - {builtin: DIRECT}
 
   - id: policy_bilibili
     display_name: 哔哩哔哩
@@ -463,9 +426,7 @@ groups:
       member: {builtin: DIRECT}
       profile: direct
     members:
-      - {group: 全球直连}
-      - {group: 台湾节点}
-      - {group: 香港节点}
+      - {builtin: DIRECT}
 
   - id: policy_china_media
     display_name: 国内媒体
@@ -479,11 +440,6 @@ groups:
       profile: direct
     members:
       - {builtin: DIRECT}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 手动切换}
 
   - id: policy_proxy_media
     display_name: 国外媒体
@@ -493,19 +449,23 @@ groups:
       scenario: media
       service: foreign_media
       deterministic: true
-      member: {group: 代理选择}
+      member: {group: 媒体自动}
       profile: media
     members:
-      - {group: 代理选择}
-      - {group: 自动选择}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 美国节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
-      - {builtin: DIRECT}
+      - {group: 媒体自动}
+
+  - id: policy_download
+    display_name: 下载流量
+    module: general
+    hidden: true
+    route:
+      scenario: download
+      service: download
+      deterministic: true
+      member: {group: 下载自动}
+      profile: download
+    members:
+      - {group: 下载自动}
 
   - id: policy_final
     display_name: 漏网之鱼
@@ -518,22 +478,15 @@ groups:
       profile: general
     members:
       - {group: 代理选择}
-      - {group: 自动选择}
-      - {builtin: DIRECT}
-      - {group: 香港节点}
-      - {group: 台湾节点}
-      - {group: 新加坡节点}
-      - {group: 日本节点}
-      - {group: 美国节点}
-      - {group: 韩国节点}
-      - {group: 手动切换}
 
 final_target: 漏网之鱼
 final_source_use: general
 final_scenario: final
 
-# Classification order remains pinned to ACL4SSR Online Full. Scenario/service
-# annotations are metadata for audits and future scheduler materialization.
+# Specific application/service rules stay ahead of generic web. Routing V2
+# moves known domestic rules ahead of download, then download ahead of generic
+# ProxyGFWlist. This prevents a known download from being swallowed by the
+# generic foreign-web rule while keeping final MATCH semantics unchanged.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list
@@ -750,6 +703,31 @@ sources:
     scenario: media
     service: foreign_media
 
+  - id: china_domain
+    path: Clash/ChinaDomain.list
+    target: 全球直连
+    priority: 700
+    module: general
+    scenario: direct
+    service: domestic_web
+
+  - id: china_company_ip
+    path: Clash/ChinaCompanyIp.list
+    target: 全球直连
+    priority: 710
+    module: general
+    scenario: direct
+    service: domestic_web
+
+  - id: download
+    path: Clash/Download.list
+    target: 下载流量
+    priority: 750
+    module: general
+    source_use: general
+    scenario: download
+    service: download
+
   - id: proxy_gfwlist
     path: Clash/ProxyGFWlist.list
     target: 网页浏览
@@ -759,35 +737,13 @@ sources:
     scenario: browsing
     service: foreign_web
 
-  - id: china_domain
-    path: Clash/ChinaDomain.list
-    target: 全球直连
-    priority: 900
-    module: general
-    scenario: direct
-    service: domestic_web
-
-  - id: china_company_ip
-    path: Clash/ChinaCompanyIp.list
-    target: 全球直连
-    priority: 910
-    module: general
-    scenario: direct
-    service: domestic_web
-
-  - id: download
-    path: Clash/Download.list
-    target: 全球直连
-    priority: 915
-    module: general
-    scenario: download
-    service: download
-
 inline_rules:
   - id: geoip_cn
     type: GEOIP
     value: CN
     target: 全球直连
-    priority: 920
+    priority: 720
     module: general
+    scenario: direct
+    service: domestic_ip
     options: [no-resolve]
