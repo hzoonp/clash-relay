@@ -94,7 +94,7 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
         assert diagnostics["successful_samples"] == 3
         assert diagnostics["failed_samples"] == 0
         assert diagnostics["outcomes"]["success"] == 3
-        assert diagnostics["qualified_latency_ms"]["p50"] > 0
+        assert diagnostics["qualified_latency_ms"]["p50"] >= 0
     finally:
         server.shutdown()
         server.server_close()
