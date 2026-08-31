@@ -32,6 +32,35 @@ _GEMINI_RULES = [
     "DOMAIN-SUFFIX,notebooklm.google",
     "DOMAIN-SUFFIX,notebooklm.google.com",
 ]
+_PROBES = {
+    "ai_openai": {
+        "url": "https://chatgpt.com/",
+        "method": "HEAD",
+        "expected_status": "200-399",
+        "interval": 3600,
+        "timeout": 5000,
+        "lazy": False,
+        "tolerance": 50,
+    },
+    "ai_claude": {
+        "url": "https://claude.ai/",
+        "method": "HEAD",
+        "expected_status": "200-399",
+        "interval": 3600,
+        "timeout": 5000,
+        "lazy": False,
+        "tolerance": 50,
+    },
+    "ai_gemini": {
+        "url": "https://gemini.google.com/",
+        "method": "HEAD",
+        "expected_status": "200-399",
+        "interval": 3600,
+        "timeout": 5000,
+        "lazy": False,
+        "tolerance": 50,
+    },
+}
 
 
 def _binary() -> Path:
@@ -130,6 +159,7 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(
             "ai_claude": {"us-claude"},
             "ai_gemini": {"sg-gemini"},
         },
+        _PROBES,
     )
     groups = {group["name"]: group for group in candidate["proxy-groups"]}
     assert groups["人工智能"].get("hidden", False) is False
@@ -137,6 +167,15 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(
     assert groups["AI · 新加坡"]["use"] == ["cr_ai_sg_sg"]
     assert groups["AI · 美国"]["hidden"] is True
     assert groups["AI · 美国"]["use"] == ["cr_ai_us_us"]
+
+    openai_anchor = groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0]
+    claude_anchor = groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0]
+    gemini_anchor = groups["__CR_AI_SERVICE_GEMINI"]["proxies"][0]
+    assert groups[openai_anchor]["url"] == "https://chatgpt.com/"
+    assert groups[claude_anchor]["url"] == "https://claude.ai/"
+    assert groups[gemini_anchor]["url"] == "https://gemini.google.com/"
+    assert groups[openai_anchor]["expected-status"] == "200-399"
+    assert groups[openai_anchor]["lazy"] is False
 
     path = tmp_path / "qualified.yaml"
     path.write_text(
