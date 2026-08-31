@@ -33,7 +33,6 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "奈飞节点",
     "全球直连",
     "广告拦截",
-    "应用净化",
     "谷歌FCM",
     "微软Bing",
     "微软云盘",
@@ -227,7 +226,6 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     deterministic = {
         "全球直连": "DIRECT",
         "广告拦截": "REJECT",
-        "应用净化": "REJECT",
         "谷歌FCM": "DIRECT",
         "微软Bing": "DIRECT",
         "微软云盘": "DIRECT",
@@ -244,6 +242,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "下载流量": "下载自动",
         "漏网之鱼": "代理选择",
     }
+    assert "应用净化" not in groups
     for name, destination in deterministic.items():
         assert groups[name]["proxies"] == [destination]
 
