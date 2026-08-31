@@ -7,6 +7,9 @@ on:
       - "pyproject.toml"
       - "CHANGELOG.md"
       - "docs/versioning.md"
+      - "rules/**"
+      - "src/clash_relay/acl4ssr_reference.py"
+      - "scripts/audit_acl4ssr_fidelity.py"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -35,6 +38,8 @@ jobs:
       - run: ruff format --check .
       - run: pytest -m "not integration"
       - run: python scripts/repository_audit.py
+      - name: Verify pinned ACL4SSR Online fidelity
+        run: python scripts/audit_acl4ssr_fidelity.py
       - id: version
         name: Resolve release version
         shell: bash
