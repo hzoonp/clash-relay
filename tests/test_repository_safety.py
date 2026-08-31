@@ -109,11 +109,15 @@ def test_workflows_parse_as_yaml(repo_root: Path) -> None:
 
 
 def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> None:
-    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
     assert "always()" not in ci
     assert "continue-on-error" not in ci
 
-    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(
+        encoding="utf-8"
+    )
     assert "continue-on-error" not in publish
     assert publish.count("always()") == 1
     assert (
@@ -122,7 +126,9 @@ def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> No
         "        run: rm -rf .work/private"
     ) in publish
 
-    publication_start = publish.index("- name: Publish exact validated bytes to Cloudflare KV")
+    publication_start = publish.index(
+        "- name: Publish exact validated bytes to Cloudflare KV"
+    )
     publication_end = publish.index("- name: Record publication result")
     publication_block = publish[publication_start:publication_end]
     assert "always()" not in publication_block
