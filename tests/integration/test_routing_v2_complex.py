@@ -81,9 +81,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     )
 
     groups = {row["name"]: row for row in candidate["proxy-groups"]}
-    visible = {
-        row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)
-    }
+    visible = {row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)}
     assert visible == {
         "代理选择",
         "网页浏览",
