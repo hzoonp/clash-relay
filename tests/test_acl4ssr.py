@@ -140,12 +140,24 @@ def test_acl4ssr_manifest_is_immutable_attributed_and_strict(repo_root: Path) ->
     assert groups["美国节点"]["tolerance"] == 150
     assert groups["奈飞节点"]["filter"] == "(NF|奈飞|解锁|Netflix|NETFLIX|Media)"
 
-    ui_only = {"流媒体", "国内服务", "更多策略"}
+    pseudo_containers = {"流媒体", "国内服务", "更多策略"}
+    assert pseudo_containers.isdisjoint(groups)
+
     rule_targets = {item["target"] for item in manifest["sources"]}
     rule_targets.update(item["target"] for item in manifest["inline_rules"])
     rule_targets.add(manifest["final_target"])
-    assert ui_only.isdisjoint(rule_targets)
-    assert all(groups[name].get("hidden", False) is False for name in ui_only)
+    assert all(groups[name].get("hidden", False) is False for name in rule_targets)
+
+    hidden_groups = {name for name, group in groups.items() if group.get("hidden", False)}
+    assert hidden_groups == {
+        "自动选择",
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+    }
 
 
 def test_canonical_production_routes_only_through_acl4ssr(repo_root: Path) -> None:
