@@ -173,9 +173,9 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     assert config["rule_sources"]["acl4ssr"]["enabled"] is True
     assert config["modules"] == {"general": True}
 
-    subscriptions = yaml.safe_load(
-        (repo_root / "subscriptions.yaml").read_text(encoding="utf-8")
-    )["subscriptions"]
+    subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))[
+        "subscriptions"
+    ]
     subscription_1 = next(item for item in subscriptions if item["id"] == "subscription_1")
     assert subscription_1["name_rules"] == [
         {"pattern": "(?i)emby", "remove_capabilities": ["general"]},
