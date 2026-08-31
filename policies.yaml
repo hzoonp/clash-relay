@@ -12,6 +12,26 @@ scheduler:
     pass_ttl_seconds: 21600
     failure_ttl_seconds: 3600
 
+# Routing V2 keeps classification, source permissions, service qualification,
+# region policy, and scheduling as separate dimensions. The current download
+# mode remains direct during shadow validation; Phase 14 promotes the validated
+# general_auto policy after evidence from production shadow runs.
+routing:
+  version: 2
+  scenarios:
+    direct: {source_use: general, scheduler_profile: direct}
+    general: {source_use: general, scheduler_profile: connectivity}
+    browsing: {source_use: browsing, scheduler_profile: browsing}
+    media: {source_use: general, scheduler_profile: media}
+    download: {source_use: general, scheduler_profile: download}
+    ai: {source_use: ai, scheduler_profile: ai}
+    final: {source_use: general, scheduler_profile: connectivity}
+  ai:
+    excluded_regions: [HK]
+    preferred_regions: [US, SG, JP, TW, KR, OTHER]
+  download:
+    mode: direct
+
 capabilities:
   general:
     description: Ordinary egress suitable for ACL4SSR-managed routing.

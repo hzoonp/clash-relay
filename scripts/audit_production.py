@@ -13,6 +13,7 @@ from clash_relay.production_audit import (
     audit_production_candidate,
     render_production_summary_markdown,
 )
+from clash_relay.routing_v2_audit import audit_routing_v2
 from clash_relay.util import atomic_write
 
 
@@ -41,6 +42,7 @@ def main() -> int:
     if args.report is not None:
         build_report = json.loads(args.report.read_text(encoding="utf-8"))
     summary = audit_production_candidate(project, candidate, build_report=build_report)
+    summary["routing_v2"] = audit_routing_v2(project, candidate)
     if args.markdown is not None:
         atomic_write(args.markdown, render_production_summary_markdown(summary))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
