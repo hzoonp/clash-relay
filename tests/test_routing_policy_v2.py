@@ -28,7 +28,7 @@ def test_canonical_routing_v2_policy_is_explicit_and_safe(repo_root) -> None:
     assert policy.ai.excluded_regions == ("HK",)
     assert policy.ai.preferred_regions == ("US", "SG", "JP", "TW", "KR", "OTHER")
     assert "HK" not in policy.ai.preferred_regions
-    assert policy.download.mode == "direct"
+    assert policy.download.mode == "general_auto"
 
 
 def test_routing_v2_defaults_preserve_safe_legacy_contract() -> None:
