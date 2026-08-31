@@ -17,6 +17,7 @@ from clash_relay.ai_qualification_cache import (
 )
 from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_candidate
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.routing_policy_v2 import load_routing_policy_v2
 from clash_relay.scheduler_policy import load_scheduler_policy
 from clash_relay.util import dump_yaml, load_yaml_file
 
@@ -119,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     diagnostics = _service_diagnostics()
     try:
         scheduler_policy = load_scheduler_policy(args.policies)
+        policies_document = load_yaml_file(args.policies)
+        if not isinstance(policies_document, dict):
+            raise ValidationError("policies document must be a YAML mapping")
+        routing_policy = load_routing_policy_v2(policies_document)
         probes = load_ai_probe_specs(args.policies)
         candidate_config = load_yaml_file(args.candidate)
         if not isinstance(candidate_config, dict):
@@ -245,7 +250,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             cache_report.update(ai_cache_summary(next_cache))
 
-        report = rewrite_ai_service_qualified_candidate(args.candidate, qualified_by_probe)
+        report = rewrite_ai_service_qualified_candidate(
+            args.candidate,
+            qualified_by_probe,
+            preferred_regions=routing_policy.ai.preferred_regions,
+        )
         print(
             json.dumps(
                 {
