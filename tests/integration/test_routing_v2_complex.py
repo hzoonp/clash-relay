@@ -80,9 +80,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     )
 
     groups = {row["name"]: row for row in candidate["proxy-groups"]}
-    visible = {
-        row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)
-    }
+    visible = {row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)}
     assert visible == {"代理选择", "网页浏览", "人工智能"}
     assert groups["油管视频"]["proxies"] == ["代理选择"]
     assert groups["国外媒体"]["proxies"] == ["代理选择"]
@@ -93,6 +91,9 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0].startswith("__CR_AI_OPENAI_")
     assert groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0].startswith("__CR_AI_CLAUDE_")
     assert groups["__CR_AI_SERVICE_GEMINI"]["proxies"][0].startswith("__CR_AI_GEMINI_")
+    assert sum(name.startswith("__CR_AI_OPENAI_") for name in groups) == 1
+    assert sum(name.startswith("__CR_AI_CLAUDE_") for name in groups) == 1
+    assert sum(name.startswith("__CR_AI_GEMINI_") for name in groups) == 1
 
     rules = candidate["rules"]
     assert "RULE-SET,acl4ssr_youtube,油管视频" in rules
