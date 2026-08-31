@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     diagnostics: dict[str, object] = {}
     try:
         probe = load_browsing_probe_spec(args.policies)
-        qualified = probe_browsing_nodes(
+        qualified, stable = probe_browsing_nodes(
             args.mihomo_bin,
             args.candidate,
             probe,
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             required_successes=args.required_successes,
             diagnostics=diagnostics,
         )
-        report = rewrite_browsing_qualified_candidate(args.candidate, qualified)
+        report = rewrite_browsing_qualified_candidate(args.candidate, qualified, stable)
         print(
             json.dumps(
                 {"status": "qualified", "diagnostics": diagnostics, **report},
