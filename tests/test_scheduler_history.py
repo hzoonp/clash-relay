@@ -102,9 +102,9 @@ def test_stale_history_cannot_demote_a_current_stable_node() -> None:
         },
     }
 
-    assert preferred_stable_names(
-        {"stable-now"}, history, key, now_epoch=40 * 24 * 60 * 60
-    ) == {"stable-now"}
+    assert preferred_stable_names({"stable-now"}, history, key, now_epoch=40 * 24 * 60 * 60) == {
+        "stable-now"
+    }
 
 
 def test_history_update_contains_no_runtime_names_and_tracks_cohort_latency() -> None:
