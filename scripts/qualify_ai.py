@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     diagnostics = _service_diagnostics()
     try:
         probes = load_ai_probe_specs(args.policies)
+        probe_specs_by_name = {str(probe["name"]): probe for probe in probes}
         qualified_by_probe: dict[str, set[str]] = {}
         expected_tested_nodes: int | None = None
         for probe in probes:
@@ -65,7 +66,11 @@ def main(argv: list[str] | None = None) -> int:
             probe_summary["qualified_nodes"] = len(qualified)
             diagnostics["probes"][name] = probe_summary
 
-        report = rewrite_ai_service_qualified_candidate(args.candidate, qualified_by_probe)
+        report = rewrite_ai_service_qualified_candidate(
+            args.candidate,
+            qualified_by_probe,
+            probe_specs_by_name,
+        )
         print(
             json.dumps(
                 {"status": "qualified", "diagnostics": diagnostics, **report},
