@@ -68,7 +68,7 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
         url = f"http://browsing-probe.invalid:{server.server_port}/probe"
         diagnostics: dict = {}
 
-        qualified = probe_browsing_nodes(
+        qualified, stable = probe_browsing_nodes(
             _binary(),
             path,
             {
@@ -87,9 +87,12 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
             "diagnostics": diagnostics,
             "requests": requests,
         }
+        assert stable == {"Browsing Direct"}
         assert len(requests) == 3
         assert diagnostics["tested_nodes"] == 1
         assert diagnostics["qualified_nodes"] == 1
+        assert diagnostics["stable_nodes"] == 1
+        assert diagnostics["reserve_nodes"] == 0
         assert diagnostics["failed_nodes"] == 0
         assert diagnostics["successful_samples"] == 3
         assert diagnostics["failed_samples"] == 0
