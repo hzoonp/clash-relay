@@ -15,7 +15,7 @@ FlClash consumes the token-protected Worker URL. It does not need runtime access
 Production has one intentionally narrow contract:
 
 1. **ACL4SSR owns all non-AI routing behavior.** Rule order, rule targets, policy membership, and policy default order mirror the pinned `ACL4SSR_Online_Full.ini` semantics.
-2. **FlClash presentation may differ without changing routing.** Semantic ACL4SSR groups may be hidden and nested under compact presentation-only containers, but those containers are never rule targets.
+2. **FlClash presentation may differ, but real controls must stay operable.** Automatic/country `url-test` helper groups may be hidden; actionable ACL4SSR `select` groups stay visible. Mihomo `select` groups are controls rather than folders, so production does not emulate navigation with unreferenced presentation-only parent groups.
 3. **AI live qualification is the only routing-semantic extension.** OpenAI, Claude, and Gemini are tested through real candidate nodes, and protected service traffic is routed only through nodes that passed that service's probe.
 4. **No local rule prelude is allowed ahead of ACL4SSR.** Canonical `rules/direct.yaml` is intentionally empty.
 5. **Subscription policy is admission policy, not a hidden routing rewrite.** Multiplier limits and `allowed_uses` may decide whether a node enters an inventory, but canonical non-AI ACL4SSR routes do not exclude a subscription source after admission.
@@ -91,47 +91,22 @@ See [Routing rules and ACL4SSR](docs/rules.md).
 
 ## FlClash presentation
 
-Presentation is deliberately compact while routing remains ACL4SSR-compatible. The intended top-level groups are:
+Mihomo proxy groups are controls, not navigable folders. If an unreferenced parent `select` contains `哔哩哔哩`, choosing that child only changes the parent's own selection; it does not change the real `哔哩哔哩` group targeted by Bilibili rules. Hiding the real child therefore removes the user's ability to override ACL4SSR's default.
+
+Canonical production consequently keeps every actionable ACL4SSR `select` group visible, including `手动切换`, `奈飞节点`, application/media selectors, ad selectors, `全球直连`, and `漏网之鱼`. Only automatic helper groups such as `自动选择` and country `url-test` selectors are hidden from the top-level list.
+
+Bilibili remains exactly the pinned ACL4SSR policy:
 
 ```text
-节点选择
-人工智能
-流媒体
-国内服务
-更多策略
+BilibiliHMT / Bilibili -> 哔哩哔哩
+
+哔哩哔哩
+├─ 全球直连   # ACL4SSR default
+├─ 台湾节点
+└─ 香港节点
 ```
 
-`流媒体`, `国内服务`, and `更多策略` are **presentation-only containers**. No ACL4SSR rule targets them. They expose hidden semantic groups so a user can still reach the original policy when a manual override is needed.
-
-For example:
-
-```text
-流媒体
-├─ 油管视频
-├─ 奈飞视频
-├─ 巴哈姆特
-├─ 哔哩哔哩
-├─ 国内媒体
-└─ 国外媒体
-
-国内服务
-├─ 谷歌FCM
-├─ 微软Bing
-├─ 微软云盘
-├─ 微软服务
-├─ 苹果服务
-├─ 游戏平台
-└─ 网易音乐
-
-更多策略
-├─ 电报消息
-├─ 全球直连
-├─ 广告拦截
-├─ 应用净化
-└─ 漏网之鱼
-```
-
-Hiding or nesting a semantic group is a UI decision only; its ACL4SSR rule target and member order remain unchanged.
+The `哔哩哔哩` selector itself is visible in FlClash so a user can choose Taiwan or Hong Kong when direct routing is unsuitable for the current network or content region. This changes presentation only: rule targets, default member, and member order remain unchanged.
 
 ## AI qualification and country groups
 
@@ -157,7 +132,7 @@ Gemini traffic -> Gemini-qualified nodes only
 
 The pinned ACL4SSR OpenAI provider and exact Claude/Gemini subsets derived from pinned `AI.list` are placed immediately before the generic ACL4SSR AI rule. The generic AI rule itself remains present for the rest of ACL4SSR AI coverage.
 
-AI country groups are hidden from the top level and are exposed only under `人工智能`:
+AI country groups are hidden from the top level and participate as automatic members of the visible `人工智能` policy:
 
 ```text
 人工智能
