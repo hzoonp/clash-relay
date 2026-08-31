@@ -88,6 +88,13 @@ def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path:
         "proxy-providers:\n"
         "  cr_browsing_any:\n"
         "    type: inline\n"
+        "    health-check:\n"
+        "      enable: true\n"
+        "      url: https://www.gstatic.com/generate_204\n"
+        "      interval: 180\n"
+        "      timeout: 3000\n"
+        "      lazy: false\n"
+        "      expected-status: '204'\n"
         "    payload:\n"
         "      - {name: preferred-a, type: direct}\n"
         "      - {name: preferred-b, type: direct}\n"
@@ -97,14 +104,16 @@ def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path:
         "proxy-groups:\n"
         "  - name: Browsing Auto\n"
         "    type: url-test\n"
+        "    hidden: true\n"
         "    use: [cr_browsing_any]\n"
         "    filter: '^(preferred-a|preferred-b|preferred-c|historical-bad)$'\n"
         "    url: http://www.gstatic.com/generate_204\n"
         "    interval: 300\n"
         "  - name: Browsing Manual\n"
         "    type: select\n"
-        "    use: [cr_browsing_any]\n"
-        "rules: [MATCH,Browsing Manual]\n",
+        "    proxies: [Browsing Auto, DIRECT]\n"
+        "rules:\n"
+        "  - MATCH,Browsing Manual\n",
         encoding="utf-8",
     )
 
@@ -119,6 +128,7 @@ def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path:
     assert re.fullmatch(auto_filter, "historical-bad") is None
     assert re.fullmatch(auto_filter, "reserve") is None
     assert len(config["proxy-providers"]["cr_browsing_any"]["payload"]) == 5
+    assert config["proxy-groups"][1]["proxies"] == ["Browsing Auto", "DIRECT"]
 
 
 def test_history_preference_keeps_current_stable_filter_when_pool_is_too_small(
