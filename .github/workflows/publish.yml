@@ -21,6 +21,7 @@ on:
       - "scripts/load_ai_qualification_cache.py"
       - "scripts/publish_ai_qualification_cache.py"
       - "scripts/snapshot_previous_config.py"
+      - "scripts/download_mihomo.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
