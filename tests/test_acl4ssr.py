@@ -178,7 +178,7 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     )["subscriptions"]
     subscription_1 = next(item for item in subscriptions if item["id"] == "subscription_1")
     assert subscription_1["name_rules"] == [
-        {"pattern": "(?i)emby", "remove_capabilities": ["general"]}
+        {"pattern": "(?i)emby", "remove_capabilities": ["general"]},
     ]
 
     services = yaml.safe_load((repo_root / "services.yaml").read_text(encoding="utf-8"))
