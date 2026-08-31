@@ -252,7 +252,7 @@ def _group_delay_probe(
     delays = {
         str(name): delay
         for name, delay in response.items()
-        if isinstance(name, str) and isinstance(delay, int) and delay > 0
+        if isinstance(name, str) and isinstance(delay, int) and delay >= 0
     }
     return delays, "success"
 
@@ -267,7 +267,7 @@ def _qualified_from_group_samples(
     for sample in samples:
         for node_name in node_names:
             delay = sample.get(node_name)
-            if isinstance(delay, int) and delay > 0:
+            if isinstance(delay, int) and delay >= 0:
                 delays_by_node[node_name].append(delay)
 
     qualified = {
