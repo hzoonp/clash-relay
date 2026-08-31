@@ -10,6 +10,7 @@ from clash_relay.browsing_qualification import (
     _group_delay_probe,
     _latency_summary,
     _qualified_from_group_samples,
+    _stability_tiers_from_group_samples,
     apply_browsing_qualification,
     load_browsing_probe_spec,
 )
@@ -82,6 +83,22 @@ def test_browsing_qualification_requires_two_of_three_group_samples() -> None:
     assert medians == [0.0, 205.0]
 
 
+def test_browsing_stability_tiers_keep_two_of_three_as_reserve() -> None:
+    qualified, stable, medians = _stability_tiers_from_group_samples(
+        ("stable", "reserve", "failed"),
+        (
+            {"stable": 100, "reserve": 200, "failed": 300},
+            {"stable": 110, "reserve": 210},
+            {"stable": 120},
+        ),
+        required_successes=2,
+    )
+
+    assert qualified == {"stable", "reserve"}
+    assert stable == {"stable"}
+    assert medians == [205.0, 110.0]
+
+
 def test_browsing_qualification_rejects_one_of_three_group_samples() -> None:
     qualified, medians = _qualified_from_group_samples(
         ("node-a", "node-b"),
@@ -97,12 +114,18 @@ def test_browsing_qualification_rejects_one_of_three_group_samples() -> None:
     assert medians == []
 
 
-def test_apply_browsing_qualification_only_prunes_browsing_inventory() -> None:
+def test_apply_browsing_qualification_keeps_reserve_manual_but_not_automatic() -> None:
     config = {
         "proxy-providers": {
             "cr_browsing_any": {
                 "type": "inline",
-                "payload": [{"name": "keep"}, {"name": "drop"}],
+                "payload": [
+                    {"name": "stable-a"},
+                    {"name": "stable-b"},
+                    {"name": "stable-c"},
+                    {"name": "reserve"},
+                    {"name": "drop"},
+                ],
             },
             "cr_general_any": {
                 "type": "inline",
@@ -112,20 +135,76 @@ def test_apply_browsing_qualification_only_prunes_browsing_inventory() -> None:
                 "type": "inline",
                 "payload": [{"name": "ai-stays"}],
             },
-        }
+        },
+        "proxy-groups": [
+            {
+                "name": "Browsing Auto",
+                "type": "url-test",
+                "use": ["cr_browsing_any"],
+            },
+            {
+                "name": "Browsing Manual",
+                "type": "select",
+                "use": ["cr_browsing_any"],
+            },
+        ],
     }
 
-    report = apply_browsing_qualification(config, {"keep"})
+    report = apply_browsing_qualification(
+        config,
+        {"stable-a", "stable-b", "stable-c", "reserve"},
+        {"stable-a", "stable-b", "stable-c"},
+    )
 
-    assert config["proxy-providers"]["cr_browsing_any"]["payload"] == [{"name": "keep"}]
-    assert config["proxy-providers"]["cr_general_any"]["payload"] == [{"name": "general-stays"}]
+    assert config["proxy-providers"]["cr_browsing_any"]["payload"] == [
+        {"name": "stable-a"},
+        {"name": "stable-b"},
+        {"name": "stable-c"},
+        {"name": "reserve"},
+    ]
+    assert config["proxy-providers"]["cr_browsing_auto_any"]["payload"] == [
+        {"name": "stable-a"},
+        {"name": "stable-b"},
+        {"name": "stable-c"},
+    ]
+    assert config["proxy-groups"][0]["use"] == ["cr_browsing_auto_any"]
+    assert config["proxy-groups"][1]["use"] == ["cr_browsing_any"]
+    assert config["proxy-providers"]["cr_general_any"]["payload"] == [
+        {"name": "general-stays"}
+    ]
     assert config["proxy-providers"]["cr_ai_us"]["payload"] == [{"name": "ai-stays"}]
-    assert report == {
-        "tested_nodes": 2,
-        "qualified_nodes": 1,
-        "failed_nodes": 1,
-        "providers": {"cr_browsing_any": {"tested": 2, "qualified": 1}},
+    assert report["tested_nodes"] == 5
+    assert report["qualified_nodes"] == 4
+    assert report["stable_nodes"] == 3
+    assert report["reserve_nodes"] == 1
+    assert report["failed_nodes"] == 1
+    assert report["automatic_nodes"] == 3
+    assert report["automatic_fallback_providers"] == 0
+    assert report["automatic_groups"] == 1
+
+
+def test_apply_browsing_qualification_falls_back_when_stable_tier_is_too_small() -> None:
+    config = {
+        "proxy-providers": {
+            "cr_browsing_any": {
+                "type": "inline",
+                "payload": [{"name": "stable"}, {"name": "reserve-a"}, {"name": "reserve-b"}],
+            }
+        },
+        "proxy-groups": [
+            {"name": "Browsing Auto", "type": "url-test", "use": ["cr_browsing_any"]}
+        ],
     }
+
+    report = apply_browsing_qualification(
+        config,
+        {"stable", "reserve-a", "reserve-b"},
+        {"stable"},
+    )
+
+    assert len(config["proxy-providers"]["cr_browsing_auto_any"]["payload"]) == 3
+    assert report["automatic_fallback_providers"] == 1
+    assert report["automatic_nodes"] == 3
 
 
 def test_apply_browsing_qualification_fails_closed_when_provider_becomes_empty() -> None:
@@ -139,7 +218,7 @@ def test_apply_browsing_qualification_fails_closed_when_provider_becomes_empty()
     }
 
     with pytest.raises(ValidationError, match="left provider 'cr_browsing_any' empty"):
-        apply_browsing_qualification(config, set())
+        apply_browsing_qualification(config, set(), set())
 
 
 def test_latency_summary_is_aggregate_only() -> None:
