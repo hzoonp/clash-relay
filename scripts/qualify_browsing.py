@@ -92,6 +92,16 @@ def _history_inputs(args: argparse.Namespace) -> tuple[dict, bytes, str] | None:
     return history, fingerprint_key, status
 
 
+def _cohort_latency(diagnostics: dict[str, object]) -> float | None:
+    latency = diagnostics.get("qualified_latency_ms")
+    if not isinstance(latency, dict):
+        return None
+    value = latency.get("p50")
+    if isinstance(value, (int, float)) and value >= 0:
+        return float(value)
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics: dict[str, object] = {}
@@ -114,11 +124,14 @@ def main(argv: list[str] | None = None) -> int:
         history_inputs = _history_inputs(args)
         scheduler_report: dict[str, object] = {
             "status": "disabled",
+            "state_version": 2,
             "records_before": 0,
             "records_after": 0,
             "stable_nodes": len(stable),
             "preferred_stable_nodes": len(stable),
             "historically_demoted_nodes": 0,
+            "cohort_latency_ema_ms": None,
+            "cohort_runs": 0,
             "preference_groups": 0,
         }
         preferred = set(stable)
@@ -131,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
                 qualified_names=qualified,
                 stable_names=stable,
                 fingerprint_key=fingerprint_key,
+                cohort_latency_ms=_cohort_latency(diagnostics),
             )
             args.next_history.parent.mkdir(parents=True, exist_ok=True)
             args.next_history.write_text(
