@@ -15,7 +15,9 @@ def _module(repo_root: Path):
     return module
 
 
-def test_verified_mihomo_cache_is_reused_without_network_metadata(repo_root: Path, tmp_path: Path) -> None:
+def test_verified_mihomo_cache_is_reused_without_network_metadata(
+    repo_root: Path, tmp_path: Path
+) -> None:
     module = _module(repo_root)
     first_output = tmp_path / "mihomo-qualification"
     executable = b"verified-mihomo-binary"
@@ -48,9 +50,7 @@ def test_verified_mihomo_cache_is_reused_without_network_metadata(repo_root: Pat
 def test_tampered_mihomo_cache_is_never_reused(repo_root: Path, tmp_path: Path) -> None:
     module = _module(repo_root)
     output = tmp_path / "mihomo"
-    executable_path, metadata_path = module._cache_paths(
-        output, tag="v1.19.30", arch="linux-amd64"
-    )
+    executable_path, metadata_path = module._cache_paths(output, tag="v1.19.30", arch="linux-amd64")
     executable_path.parent.mkdir(parents=True)
     executable_path.write_bytes(b"tampered")
     metadata_path.write_text(
