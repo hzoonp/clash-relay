@@ -17,7 +17,10 @@ def test_public_dns_answers_are_allowed(monkeypatch) -> None:
     monkeypatch.setattr(
         socket,
         "getaddrinfo",
-        lambda *args, **kwargs: [_answer("93.184.216.34"), _answer("2606:2800:220:1:248:1893:25c8:1946")],
+        lambda *args, **kwargs: [
+            _answer("93.184.216.34"),
+            _answer("2606:2800:220:1:248:1893:25c8:1946"),
+        ],
     )
 
     _validate_resolved_destination("https://subscription.example/path")
