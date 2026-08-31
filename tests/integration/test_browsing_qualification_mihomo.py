@@ -83,7 +83,10 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
             diagnostics=diagnostics,
         )
 
-        assert qualified == {"Browsing Direct"}
+        assert qualified == {"Browsing Direct"}, {
+            "diagnostics": diagnostics,
+            "requests": requests,
+        }
         assert len(requests) == 3
         assert diagnostics["tested_nodes"] == 1
         assert diagnostics["qualified_nodes"] == 1
