@@ -28,9 +28,7 @@ _REGION_DISPLAY_NAMES = {
     "KR": ("AI · 韩国", "AI · KR"),
     "OTHER": ("AI · 其他地区", "AI · OTHER"),
 }
-_REGION_CANONICAL_DISPLAY = {
-    region: names[0] for region, names in _REGION_DISPLAY_NAMES.items()
-}
+_REGION_CANONICAL_DISPLAY = {region: names[0] for region, names in _REGION_DISPLAY_NAMES.items()}
 
 
 def _groups(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
