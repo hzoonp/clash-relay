@@ -46,7 +46,7 @@ def test_public_scenario_selectors_are_explicit_and_general_only_where_required(
     assert visible == {
         "代理选择",
         "网页浏览",
- "人工智能",
+        "人工智能",
         "流媒体",
         "消息通讯",
         "下载流量",
