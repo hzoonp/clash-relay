@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from clash_relay.browsing_qualification import load_browsing_probe_spec, probe_browsing_nodes
+from clash_relay.browsing_regions import provider_region
 from clash_relay.browsing_runtime import (
     apply_browsing_history_preference,
     rewrite_hardened_browsing_qualified_candidate,
@@ -25,6 +26,8 @@ from clash_relay.scheduler_policy import (
     preferred_stable_names_from_policy,
 )
 from clash_relay.util import load_yaml_file
+
+_MIN_PREFERRED_STABLE_NODES = 3
 
 
 def _path(value: str) -> Path:
@@ -106,6 +109,87 @@ def _cohort_latency(diagnostics: dict[str, object]) -> float | None:
     return None
 
 
+def _runtime_names_by_region(candidate: dict) -> dict[str, set[str]]:
+    providers = candidate.get("proxy-providers")
+    if not isinstance(providers, dict):
+        raise ValidationError("browsing regional qualification requires proxy-providers")
+    result: dict[str, set[str]] = {}
+    for provider_name, provider in providers.items():
+        region = provider_region(str(provider_name))
+        if region is None:
+            continue
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            raise ValidationError("browsing regional qualification found an invalid provider")
+        names = {
+            str(proxy["name"])
+            for proxy in payload
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+        }
+        if names:
+            result[region] = names
+    if not result:
+        raise ValidationError("browsing regional qualification found no regional inventory")
+    return result
+
+
+def _regional_history_summary(
+    names_by_region: dict[str, set[str]],
+    *,
+    qualified: set[str],
+    stable: set[str],
+    preferred: set[str],
+) -> dict[str, dict[str, int]]:
+    result: dict[str, dict[str, int]] = {}
+    for region, names in sorted(names_by_region.items()):
+        qualified_region = qualified & names
+        stable_region = stable & names
+        preferred_region = preferred & stable_region
+        result[region] = {
+            "tested": len(names),
+            "qualified": len(qualified_region),
+            "stable": len(stable_region),
+            "preferred_stable": len(preferred_region),
+            "historically_demoted": len(stable_region - preferred_region),
+        }
+    return result
+
+
+def _apply_history_counts(
+    report: dict[str, object],
+    *,
+    names_by_region: dict[str, set[str]],
+    qualified: set[str],
+    stable: set[str],
+    preferred: set[str],
+) -> None:
+    regions = report.get("regions")
+    if not isinstance(regions, dict):
+        return
+    stable_auto = 0
+    reserve_auto = 0
+    for region, names in names_by_region.items():
+        region_report = regions.get(region)
+        if not isinstance(region_report, dict):
+            continue
+        qualified_region = qualified & names
+        stable_region = stable & qualified_region
+        preferred_region = preferred & stable_region
+        if len(preferred_region) >= _MIN_PREFERRED_STABLE_NODES:
+            effective_stable = preferred_region
+        else:
+            effective_stable = stable_region or qualified_region
+        reserve_region = qualified_region - effective_stable
+        if qualified_region and not reserve_region:
+            reserve_region = set(qualified_region)
+        region_report["stable_automatic"] = len(effective_stable)
+        region_report["reserve_automatic"] = len(reserve_region)
+        stable_auto += len(effective_stable)
+        reserve_auto += len(reserve_region)
+    report["stable_automatic_nodes"] = stable_auto
+    report["reserve_automatic_nodes"] = reserve_auto
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics: dict[str, object] = {}
@@ -123,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(candidate_before, dict):
             raise ValidationError("candidate is not a YAML mapping")
         all_names = browsing_runtime_names(candidate_before)
+        names_by_region = _runtime_names_by_region(candidate_before)
         probe = load_browsing_probe_spec(args.policies)
         qualified, stable = probe_browsing_nodes(
             args.mihomo_bin,
@@ -146,6 +231,12 @@ def main(argv: list[str] | None = None) -> int:
             "cohort_latency_ema_ms": None,
             "cohort_runs": 0,
             "preference_groups": 0,
+            "regions": _regional_history_summary(
+                names_by_region,
+                qualified=qualified,
+                stable=stable,
+                preferred=stable,
+            ),
         }
         preferred = set(stable)
         if history_inputs is not None:
@@ -186,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
                 stable_names=stable,
                 preferred_names=preferred,
             )
+            scheduler_report["preference_groups"] = 0
+            scheduler_report["regions"] = _regional_history_summary(
+                names_by_region,
+                qualified=qualified,
+                stable=stable,
+                preferred=preferred,
+            )
 
         report = rewrite_hardened_browsing_qualified_candidate(
             args.candidate,
@@ -201,12 +299,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             scheduler_report["preference_groups"] = preference_groups
             if preference_groups:
-                effective_preferred = preferred & stable & qualified
-                reserve = qualified - effective_preferred
-                if not reserve:
-                    reserve = set(qualified)
-                report["stable_automatic_nodes"] = len(effective_preferred)
-                report["reserve_automatic_nodes"] = len(reserve)
+                _apply_history_counts(
+                    report,
+                    names_by_region=names_by_region,
+                    qualified=qualified,
+                    stable=stable,
+                    preferred=preferred,
+                )
 
         print(
             json.dumps(
@@ -217,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
                         "declared": scheduler_policy.declared,
                         "attempts": attempts,
                         "reserve_successes": required_successes,
+                        "region_switch_interval": scheduler_policy.browsing.region_switch_interval,
                     },
                     "scheduler_history": scheduler_report,
                     **report,

@@ -52,7 +52,8 @@
           "additionalProperties": false,
           "properties": {
             "attempts": {"type": "integer", "minimum": 1, "maximum": 10},
-            "reserve_successes": {"type": "integer", "minimum": 1, "maximum": 10}
+            "reserve_successes": {"type": "integer", "minimum": 1, "maximum": 10},
+            "region_switch_interval": {"type": "integer", "minimum": 60, "maximum": 3600}
           }
         },
         "history": {
@@ -83,10 +84,23 @@
         "scheduler_profile": {"enum": ["direct", "connectivity", "browsing", "media", "download", "ai"]}
       }
     },
+    "regionPreference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preferred_regions"],
+      "properties": {
+        "preferred_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}
+        }
+      }
+    },
     "routingV2": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "scenarios", "ai", "download"],
+      "required": ["version", "scenarios", "browsing", "ai", "download"],
       "properties": {
         "version": {"const": 2},
         "scenarios": {
@@ -103,6 +117,7 @@
             "final": {"$ref": "#/$defs/routingScenario"}
           }
         },
+        "browsing": {"$ref": "#/$defs/regionPreference"},
         "ai": {
           "type": "object",
           "additionalProperties": false,

@@ -4,6 +4,7 @@ scheduler:
   browsing:
     attempts: 3
     reserve_successes: 2
+    region_switch_interval: 300
   history:
     min_runs: 2
     min_success_ema: 0.8
@@ -13,9 +14,9 @@ scheduler:
     failure_ttl_seconds: 3600
 
 # Routing V2 keeps classification, source permissions, service qualification,
-# region policy, and scheduling as separate dimensions. Shadow evidence has
-# validated the download cutover; it now uses the general-only download
-# scheduler while remaining unreachable from browsing-only sources.
+# region policy, and scheduling as separate dimensions. Browsing owns an
+# independent regional preference order so web egress stays in one region until
+# that region is unavailable; AI keeps its own service-specific region policy.
 routing:
   version: 2
   scenarios:
@@ -26,6 +27,8 @@ routing:
     download: {source_use: general, scheduler_profile: download}
     ai: {source_use: ai, scheduler_profile: ai}
     final: {source_use: general, scheduler_profile: connectivity}
+  browsing:
+    preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]
   ai:
     excluded_regions: [HK]
     preferred_regions: [US, SG, JP, TW, KR, OTHER]
@@ -123,8 +126,8 @@ pools:
     display_name: __CR_BROWSING_INVENTORY
     module: general
     source_use: browsing
-    regions: [ANY]
-    fallback_order: [ANY]
+    regions: [US, SG, JP, TW, KR, HK, OTHER]
+    fallback_order: [US, SG, JP, TW, KR, HK, OTHER]
     capabilities_any: [general]
     capabilities_all: []
     excluded_capabilities: []
