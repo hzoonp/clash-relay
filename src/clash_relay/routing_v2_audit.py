@@ -74,7 +74,7 @@ def _audit_ai_materialization(
         if str(pool["source_use"]) == policy.scenario_use("ai")
     ]
     for pool in ai_pools:
-        if set(str(region) for region in pool["regions"]) & excluded:
+        if {str(region) for region in pool["regions"]} & excluded:
             raise ValidationError(
                 f"routing v2 AI pool {pool['id']!r} materializes an excluded region"
             )
