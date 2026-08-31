@@ -65,6 +65,11 @@ def apply_acl4ssr_group_semantics(
     only turns declarative provider-backed groups (manual switch, auto-select,
     country selectors, media-specific selectors) into Mihomo-native groups and
     applies the requested FlClash visibility flags.
+
+    Pool wrappers are inventories rather than policy surfaces when their display
+    name is reserved for clash-relay internals or when they are AI region pools.
+    AI countries are a scheduling dimension beneath the single AI scenario, so
+    they remain addressable by the AI policy while staying off the top-level UI.
     """
 
     providers = output.get("proxy-providers", {})
@@ -73,11 +78,12 @@ def apply_acl4ssr_group_semantics(
     groups = _groups_by_name(output)
     pool_display_names = {str(pool["id"]): str(pool["display_name"]) for pool in pool_specs}
 
-    # Pools whose public wrapper intentionally uses a reserved internal name are
-    # inventories, not user-facing policy groups.
     hidden_inventories: list[str] = []
-    for display_name in pool_display_names.values():
-        if not display_name.startswith("__CR_"):
+    for pool in pool_specs:
+        display_name = str(pool["display_name"])
+        is_internal_name = display_name.startswith("__CR_")
+        is_ai_dimension = str(pool.get("source_use", "")) == "ai"
+        if not (is_internal_name or is_ai_dimension):
             continue
         group = groups.get(display_name)
         if group is None:
