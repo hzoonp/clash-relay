@@ -9,7 +9,6 @@ from .errors import ValidationError
 from .routing_model import compile_routing_model
 from .routing_policy_v2 import load_routing_policy_v2, routing_policy_summary
 
-_BUILTINS = frozenset({"DIRECT", "REJECT", "PASS", "COMPATIBLE"})
 _AI_SERVICE_PREFIXES = {
     "openai": "__CR_AI_OPENAI_",
     "claude": "__CR_AI_CLAUDE_",
@@ -19,6 +18,15 @@ _AI_SERVICE_TARGETS = {
     "openai": "__CR_AI_SERVICE_OPENAI",
     "claude": "__CR_AI_SERVICE_CLAUDE",
     "gemini": "__CR_AI_SERVICE_GEMINI",
+}
+_REGION_DISPLAY_NAMES = {
+    "HK": ("AI · 香港", "AI · HK"),
+    "TW": ("AI · 台湾", "AI · TW"),
+    "SG": ("AI · 新加坡", "AI · SG"),
+    "JP": ("AI · 日本", "AI · JP"),
+    "US": ("AI · 美国", "AI · US"),
+    "KR": ("AI · 韩国", "AI · KR"),
+    "OTHER": ("AI · 其他地区", "AI · OTHER"),
 }
 
 
@@ -71,11 +79,21 @@ def _audit_ai_materialization(
                 f"routing v2 AI pool {pool['id']!r} materializes an excluded region"
             )
 
-    for name in groups:
-        if any(f"AI · {region}" == name for region in excluded):
-            raise ValidationError("routing v2 generated an excluded AI region group")
+    excluded_display_names = {
+        display_name
+        for region in excluded
+        for display_name in _REGION_DISPLAY_NAMES.get(region, (f"AI · {region}",))
+    }
+    if excluded_display_names & set(groups):
+        raise ValidationError("routing v2 generated an excluded AI region group")
 
-    service_targets_checked = 0
+    present_targets = {
+        service for service, target in _AI_SERVICE_TARGETS.items() if target in groups
+    }
+    post_qualification = bool(present_targets)
+    if post_qualification and present_targets != set(_AI_SERVICE_TARGETS):
+        raise ValidationError("routing v2 candidate contains an incomplete AI service target set")
+
     materialized_anchors = 0
     for service, target in _AI_SERVICE_TARGETS.items():
         group = groups.get(target)
@@ -86,7 +104,6 @@ def _audit_ai_materialization(
             raise ValidationError(f"AI service target {service!r} has no runtime references")
         prefix = _AI_SERVICE_PREFIXES[service]
         if references == ["REJECT"]:
-            service_targets_checked += 1
             continue
         for reference in references:
             if not isinstance(reference, str) or not reference.startswith(prefix):
@@ -99,13 +116,13 @@ def _audit_ai_materialization(
                     f"AI service target {service!r} references a missing/non-hidden anchor"
                 )
             materialized_anchors += 1
-        service_targets_checked += 1
 
     return {
+        "stage": "post_qualification" if post_qualification else "pre_qualification",
         "excluded_regions": sorted(excluded),
         "preferred_regions": list(policy.ai.preferred_regions),
         "ai_pools": len(ai_pools),
-        "service_targets_checked": service_targets_checked,
+        "service_targets_checked": len(present_targets),
         "materialized_service_regions": materialized_anchors,
     }
 
@@ -158,16 +175,26 @@ def audit_routing_v2(
             )
         deterministic_checked += 1
 
+    ai = _audit_ai_materialization(project, groups)
     visible = {
         str(row["name"])
         for row in candidate.get("proxy-groups", [])
         if isinstance(row, dict) and not row.get("hidden", False)
     }
     canonical_visible = {"代理选择", "网页浏览", "人工智能"}
-    if canonical_visible <= set(groups) and visible != canonical_visible:
-        raise ValidationError("canonical routing v2 profile exposes unexpected top-level groups")
+    if canonical_visible <= set(groups):
+        ai_wrapper_names = {
+            str(pool["display_name"])
+            for pool in project.policies["pools"]
+            if str(pool["source_use"]) == policy.scenario_use("ai")
+        }
+        if ai["stage"] == "post_qualification":
+            allowed_visible = canonical_visible
+        else:
+            allowed_visible = canonical_visible | ai_wrapper_names
+        if not canonical_visible <= visible or not visible <= allowed_visible:
+            raise ValidationError("canonical routing v2 profile exposes unexpected top-level groups")
 
-    ai = _audit_ai_materialization(project, groups)
     return {
         "status": "passed",
         "model_version": 2,
