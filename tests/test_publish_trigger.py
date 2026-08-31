@@ -40,7 +40,9 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
     assert "Mask individual subscription URLs" in text
     assert "from clash_relay.secrets import load_secret_mapping" in text
     assert 'print(f"::add-mask::{command_escape(value)}")' in text
-    assert text.index("Mask individual subscription URLs") < text.index("Generate private candidate")
+    assert text.index("Mask individual subscription URLs") < text.index(
+        "Generate private candidate"
+    )
 
 
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
@@ -54,7 +56,15 @@ def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     publish = text.index("Publish exact validated bytes to Cloudflare KV")
     persist_cache = text.index("Persist private AI qualification cache")
     persist_history = text.index("Persist private scheduler history")
-    assert load_history < load_ai_cache < browsing < snapshot < publish < persist_cache < persist_history
+    assert (
+        load_history
+        < load_ai_cache
+        < browsing
+        < snapshot
+        < publish
+        < persist_cache
+        < persist_history
+    )
 
 
 def test_production_audit_runs_before_and_after_private_qualification() -> None:
