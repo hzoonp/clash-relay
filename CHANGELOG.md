@@ -6,7 +6,34 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ### Changed
 
-- Future changes after the v0.1.0 production baseline.
+- Future changes after the v1.0.0 compatibility contract.
+
+## [1.0.0] - 2026-08-31
+
+### Added
+
+- Browsing scheduler history v2 with backward migration, freshness limits, anonymous success EMA, and aggregate latency EMA.
+- Private incremental OpenAI, Claude, and Gemini qualification cache with full-proxy HMAC fingerprints, shorter failure TTLs, and live fallback for changed, expired, missing, or corrupt records.
+- Same-run reuse of already digest-verified Mihomo binaries without cross-run or GitHub artifact caching.
+- A tested production failure/degradation matrix covering subscription, browsing, AI, reachability, Mihomo, Cloudflare, auxiliary-state, and rollback failures.
+- A private 30-run aggregate production metrics ring for configuration size/SHA, browsing health trends, scheduler demotions, and AI qualification/cache counts.
+- Optional declarative scheduler controls in `policies.yaml` for browsing sampling, history maturity/freshness thresholds, and AI cache TTLs; omitted blocks keep the v0.1.0-compatible defaults.
+- DNS-level subscription destination validation that rejects localhost and any hostname resolution containing private or special-use IPv4/IPv6 addresses.
+- Expanded public security guidance for Cloudflare token scope, private operational state, parser/input limits, workflow trust, source permissions, and recovery.
+
+### Changed
+
+- The canonical production policy now explicitly declares the existing 3-attempt / 2-success browsing boundary, historical thresholds, and AI cache TTLs in YAML without changing routing behavior.
+- Production path filtering now treats `scripts/download_mihomo.py` as a production-critical change and runs the real production workflow when it changes.
+- Package maturity is declared Production/Stable for the 1.0 compatibility contract.
+
+### Security
+
+- Source-use admission and end-to-end route reachability remain mandatory before and after live qualification.
+- Historical browsing state cannot promote reserve or live-failed nodes.
+- AI cache reuse cannot survive a provider/protocol/endpoint/credential payload change because the full private proxy payload participates in the HMAC fingerprint.
+- Subscription DNS resolution fails closed on private/special-use destinations and is repeated across redirects/final URLs.
+- Generated production bytes, previous-good recovery data, scheduler history, AI cache, and metrics remain private Cloudflare KV/runtime data and are not GitHub Release assets.
 
 ## [0.1.0] - 2026-08-31
 
@@ -30,5 +57,6 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/hzoonp/clash-relay/releases/tag/v1.0.0
 [0.1.0]: https://github.com/hzoonp/clash-relay/releases/tag/v0.1.0
