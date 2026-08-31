@@ -48,12 +48,13 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 3
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 4
     load = text.index("Load private scheduler history")
     browsing = text.index("Qualify browsing nodes")
+    snapshot = text.index("Preserve previous validated production config")
     publish = text.index("Publish exact validated bytes to Cloudflare KV")
     persist = text.index("Persist private scheduler history")
-    assert load < browsing < publish < persist
+    assert load < browsing < snapshot < publish < persist
 
 
 def test_production_audit_runs_before_and_after_private_qualification() -> None:
@@ -102,6 +103,18 @@ def test_scheduler_history_is_private_optional_and_committed_only_after_config_p
     assert "github.event_name == 'push' || inputs.publish == true" in persist_block
     assert "scheduler-state-v1" not in text
     assert "actions/upload-artifact" not in text
+
+
+def test_previous_config_is_snapshotted_after_validation_and_before_publication() -> None:
+    text = WORKFLOW.read_text()
+    snapshot = text.index("Preserve previous validated production config")
+    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    assert "python scripts/snapshot_previous_config.py" in text
+    assert text.index("validate_core v1.19.30") < snapshot
+    assert text.index("validate_core v1.19.29") < snapshot
+    assert snapshot < publish
+    snapshot_block = text[snapshot:publish]
+    assert "github.event_name == 'push' || inputs.publish == true" in snapshot_block
 
 
 def test_ai_qualification_precedes_final_validation() -> None:
