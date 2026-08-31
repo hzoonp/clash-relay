@@ -65,6 +65,11 @@ def apply_acl4ssr_group_semantics(
     only turns declarative provider-backed groups (manual switch, auto-select,
     country selectors, media-specific selectors) into Mihomo-native groups and
     applies the requested FlClash visibility flags.
+
+    Reserved ``__CR_`` pool wrappers are internal inventories. AI country
+    wrappers intentionally remain resolvable during build and are hidden only
+    after service-specific qualification has used them to construct independent
+    OpenAI, Claude, and Gemini routes.
     """
 
     providers = output.get("proxy-providers", {})
@@ -73,10 +78,9 @@ def apply_acl4ssr_group_semantics(
     groups = _groups_by_name(output)
     pool_display_names = {str(pool["id"]): str(pool["display_name"]) for pool in pool_specs}
 
-    # Pools whose public wrapper intentionally uses a reserved internal name are
-    # inventories, not user-facing policy groups.
     hidden_inventories: list[str] = []
-    for display_name in pool_display_names.values():
+    for pool in pool_specs:
+        display_name = str(pool["display_name"])
         if not display_name.startswith("__CR_"):
             continue
         group = groups.get(display_name)

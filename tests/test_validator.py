@@ -192,26 +192,19 @@ def test_orphan_hidden_presentation_group_rejected(built_candidate) -> None:
             "proxies": ["DIRECT"],
         }
     )
-    with pytest.raises(ValidationError, match="reachable from a public parent group"):
+    with pytest.raises(ValidationError, match="public group or an active rule target"):
         validate_generated_config(config)
 
 
-def test_rule_may_target_hidden_presentation_group_when_ui_reachable(built_candidate) -> None:
+def test_rule_may_target_hidden_presentation_group_without_ui_parent(built_candidate) -> None:
     config = _candidate(built_candidate)
-    config["proxy-groups"].extend(
-        [
-            {
-                "name": "Hidden Semantic Policy",
-                "type": "select",
-                "hidden": True,
-                "proxies": ["DIRECT"],
-            },
-            {
-                "name": "Presentation Container",
-                "type": "select",
-                "proxies": ["Hidden Semantic Policy"],
-            },
-        ]
+    config["proxy-groups"].append(
+        {
+            "name": "Hidden Semantic Policy",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["DIRECT"],
+        }
     )
     config["rules"].insert(-1, "DOMAIN,example.invalid,Hidden Semantic Policy")
     validate_generated_config(config)

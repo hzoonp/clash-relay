@@ -106,7 +106,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     ]
 
     groups = {item["display_name"]: item for item in manifest["groups"]}
-    assert _group_members(groups["节点选择"]) == [
+    assert _group_members(groups["代理选择"]) == [
         "自动选择",
         "香港节点",
         "台湾节点",
@@ -120,12 +120,21 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert _group_members(groups["网页浏览"]) == ["网页自动", "DIRECT"]
     assert groups["网页浏览"]["provider_pool"] == "browsing"
     assert groups["网页自动"]["provider_pool"] == "browsing"
+    assert _group_members(groups["人工智能"]) == [
+        "AI · 新加坡",
+        "AI · 日本",
+        "AI · 美国",
+        "AI · 台湾",
+        "AI · 韩国",
+        "AI · 其他地区",
+        "DIRECT",
+    ]
     assert _group_members(groups["哔哩哔哩"]) == ["全球直连", "台湾节点", "香港节点"]
-    assert _group_members(groups["全球直连"]) == ["DIRECT", "节点选择", "自动选择"]
+    assert _group_members(groups["全球直连"]) == ["DIRECT", "代理选择", "自动选择"]
     assert _group_members(groups["广告拦截"]) == ["REJECT", "DIRECT"]
     assert _group_members(groups["应用净化"]) == ["REJECT", "DIRECT"]
     assert _group_members(groups["漏网之鱼"]) == [
-        "节点选择",
+        "代理选择",
         "自动选择",
         "DIRECT",
         "香港节点",
@@ -146,22 +155,17 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     pseudo_containers = {"流媒体", "国内服务", "更多策略"}
     assert pseudo_containers.isdisjoint(groups)
 
+    visible_groups = {name for name, group in groups.items() if not group.get("hidden", False)}
+    assert visible_groups == {"代理选择", "网页浏览", "人工智能"}
+
     rule_targets = {item["target"] for item in manifest["sources"]}
     rule_targets.update(item["target"] for item in manifest["inline_rules"])
     rule_targets.add(manifest["final_target"])
-    assert all(groups[name].get("hidden", False) is False for name in rule_targets)
-
-    hidden_groups = {name for name, group in groups.items() if group.get("hidden", False)}
-    assert hidden_groups == {
-        "自动选择",
-        "网页自动",
-        "香港节点",
-        "台湾节点",
-        "新加坡节点",
-        "日本节点",
-        "美国节点",
-        "韩国节点",
-    }
+    hidden_rule_targets = rule_targets - visible_groups
+    assert hidden_rule_targets
+    assert all(groups[name].get("hidden", False) is True for name in hidden_rule_targets)
+    assert groups["手动切换"]["hidden"] is True
+    assert groups["奈飞节点"]["hidden"] is True
 
 
 def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
@@ -187,7 +191,6 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
         "ai_sg",
         "ai_jp",
         "ai_us",
-        "ai_hk",
         "ai_tw",
         "ai_kr",
         "ai_other",
@@ -200,7 +203,17 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     assert browsing["display_name"] == "__CR_BROWSING_INVENTORY"
     assert browsing["source_use"] == "browsing"
     assert browsing["excluded_capabilities"] == []
-    assert {pools[item]["source_use"] for item in pools if item.startswith("ai_")} == {"ai"}
+    ai_pools = [pools[item] for item in pools if item.startswith("ai_")]
+    assert {pool["source_use"] for pool in ai_pools} == {"ai"}
+    assert {region for pool in ai_pools for region in pool["regions"]} == {
+        "SG",
+        "JP",
+        "US",
+        "TW",
+        "KR",
+        "OTHER",
+    }
+    assert all("HK" not in pool["regions"] for pool in ai_pools)
 
     for relative in (
         "rules/bulk.yaml",

@@ -344,13 +344,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
     if cycle_list:
         errors.append(f"proxy group reference cycle detected: {cycle_list[0]}")
 
-    reachable_from_ui = _reachable_groups(visible_names, dict(graph))
-    for name in sorted(presentation_hidden_names):
-        if name not in reachable_from_ui:
-            errors.append(
-                f"hidden presentation group {name!r} must be reachable from a public parent group"
-            )
-
+    rule_targets: set[str] = set()
     rules = config.get("rules", [])
     if not isinstance(rules, list) or not rules:
         errors.append("rules must be a non-empty list")
@@ -374,6 +368,18 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 continue
             if target not in group_names and target not in _BUILTINS:
                 errors.append(f"rule references unknown target {target!r}")
+            elif target in group_names:
+                rule_targets.add(target)
+
+    reachable_from_ui = _reachable_groups(visible_names, dict(graph))
+    reachable_from_rules = _reachable_groups(rule_targets, dict(graph))
+    reachable_presentation = reachable_from_ui | reachable_from_rules
+    for name in sorted(presentation_hidden_names):
+        if name not in reachable_presentation:
+            errors.append(
+                f"hidden presentation group {name!r} must be reachable from a public group "
+                "or an active rule target"
+            )
 
     serialized = stable_json(config)
     for value in secret_urls:

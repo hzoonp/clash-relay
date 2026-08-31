@@ -6,7 +6,8 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ### Changed
 
-- Future changes after the v1.0.0 compatibility contract.
+- The canonical FlClash policy surface now exposes only the three user decisions `代理选择`, `网页浏览`, and `人工智能`; ACL4SSR application targets, regional helpers, manual/provider helpers, media helpers, and final routing groups remain functional but hidden.
+- AI countries are treated as internal scheduling dimensions rather than top-level policy groups, and Hong Kong is hard-excluded from the canonical AI inventory before OpenAI, Claude, or Gemini qualification while remaining eligible for other permitted scenarios.
 
 ## [1.0.0] - 2026-08-31
 

@@ -5,12 +5,13 @@ license: CC-BY-SA-4.0
 max_source_bytes: 2097152
 
 # Routing targets and policy member order follow ACL4SSR_Online_Full.ini at the
-# pinned ref except for two deliberate scheduler boundaries: generic
-# ProxyGFWlist traffic is routed through the dedicated 网页浏览 inventory, and AI
-# traffic is routed through live-qualified AI inventories. FlClash hides only
-# automatic helper groups; every actionable select group remains visible.
+# pinned ref except for deliberate scenario boundaries: generic ProxyGFWlist
+# traffic is routed through the dedicated 网页浏览 inventory, AI traffic is routed
+# through live-qualified AI inventories, and application/rule-target helpers are
+# hidden from FlClash. The public policy surface is intentionally limited to
+# 代理选择, 网页浏览, and 人工智能.
 groups:
-  # ACL4SSR shared selectors -------------------------------------------------
+  # General scenario ---------------------------------------------------------
   - id: policy_auto
     display_name: 自动选择
     module: general
@@ -26,6 +27,7 @@ groups:
   - id: policy_manual
     display_name: 手动切换
     module: general
+    hidden: true
     type: select
     provider_pool: general
     filter: '.*'
@@ -55,6 +57,7 @@ groups:
       - {group: 网页自动}
       - {builtin: DIRECT}
 
+  # Regions are dimensions under 代理选择, never top-level scenario groups.
   - id: policy_hk
     display_name: 香港节点
     module: general
@@ -130,13 +133,14 @@ groups:
   - id: policy_netflix_nodes
     display_name: 奈飞节点
     module: general
+    hidden: true
     type: select
     provider_pool: general
     filter: '(NF|奈飞|解锁|Netflix|NETFLIX|Media)'
     members: []
 
   - id: policy_node_selection
-    display_name: 节点选择
+    display_name: 代理选择
     module: general
     members:
       - {group: 自动选择}
@@ -149,18 +153,21 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # ACL4SSR rule-target groups ----------------------------------------------
+  # ACL4SSR rule-target groups are routing implementation details. They remain
+  # fully addressable by rules/audits but are hidden from the top-level UI.
   - id: policy_global_direct
     display_name: 全球直连
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
 
   - id: policy_block
     display_name: 广告拦截
     module: general
+    hidden: true
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -168,6 +175,7 @@ groups:
   - id: policy_program_ad
     display_name: 应用净化
     module: general
+    hidden: true
     members:
       - {builtin: REJECT}
       - {builtin: DIRECT}
@@ -175,9 +183,10 @@ groups:
   - id: policy_google_fcm
     display_name: 谷歌FCM
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -189,9 +198,10 @@ groups:
   - id: policy_bing
     display_name: 微软Bing
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -203,9 +213,10 @@ groups:
   - id: policy_onedrive
     display_name: 微软云盘
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -217,9 +228,10 @@ groups:
   - id: policy_microsoft
     display_name: 微软服务
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -231,9 +243,10 @@ groups:
   - id: policy_apple
     display_name: 苹果服务
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -245,8 +258,9 @@ groups:
   - id: policy_telegram
     display_name: 电报消息
     module: general
+    hidden: true
     members:
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
       - {group: 新加坡节点}
       - {group: 香港节点}
@@ -257,7 +271,9 @@ groups:
       - {group: 手动切换}
       - {builtin: DIRECT}
 
-  # AI is intentionally presentation-compatible but live-qualified per service.
+  # AI is one public scenario. Countries remain hidden scheduling dimensions and
+  # OpenAI/Claude/Gemini remain independent hidden service qualification targets.
+  # HK is deliberately absent from this scenario.
   - id: policy_ai
     display_name: 人工智能
     module: general
@@ -266,7 +282,6 @@ groups:
       - {group: AI · 新加坡}
       - {group: AI · 日本}
       - {group: AI · 美国}
-      - {group: AI · 香港}
       - {group: AI · 台湾}
       - {group: AI · 韩国}
       - {group: AI · 其他地区}
@@ -275,20 +290,22 @@ groups:
   - id: policy_netease
     display_name: 网易音乐
     module: general
+    hidden: true
     type: select
     provider_pool: general
     filter: '(网易|音乐|解锁|Music|NetEase)'
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
 
   - id: policy_games
     display_name: 游戏平台
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 美国节点}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -300,8 +317,9 @@ groups:
   - id: policy_youtube
     display_name: 油管视频
     module: general
+    hidden: true
     members:
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
       - {group: 新加坡节点}
       - {group: 香港节点}
@@ -315,9 +333,10 @@ groups:
   - id: policy_netflix
     display_name: 奈飞视频
     module: general
+    hidden: true
     members:
       - {group: 奈飞节点}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
       - {group: 新加坡节点}
       - {group: 香港节点}
@@ -331,15 +350,17 @@ groups:
   - id: policy_bahamut
     display_name: 巴哈姆特
     module: general
+    hidden: true
     members:
       - {group: 台湾节点}
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 手动切换}
       - {builtin: DIRECT}
 
   - id: policy_bilibili
     display_name: 哔哩哔哩
     module: general
+    hidden: true
     members:
       - {group: 全球直连}
       - {group: 台湾节点}
@@ -348,6 +369,7 @@ groups:
   - id: policy_china_media
     display_name: 国内媒体
     module: general
+    hidden: true
     members:
       - {builtin: DIRECT}
       - {group: 香港节点}
@@ -359,8 +381,9 @@ groups:
   - id: policy_proxy_media
     display_name: 国外媒体
     module: general
+    hidden: true
     members:
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
       - {group: 香港节点}
       - {group: 台湾节点}
@@ -374,8 +397,9 @@ groups:
   - id: policy_final
     display_name: 漏网之鱼
     module: general
+    hidden: true
     members:
-      - {group: 节点选择}
+      - {group: 代理选择}
       - {group: 自动选择}
       - {builtin: DIRECT}
       - {group: 香港节点}
