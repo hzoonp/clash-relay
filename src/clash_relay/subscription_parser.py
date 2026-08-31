@@ -101,9 +101,7 @@ def _validate_structured_options(proxy: dict[str, Any], *, name: str) -> None:
         if not key.endswith("-opts") or value is None:
             continue
         if not isinstance(value, dict):
-            raise SubscriptionError(
-                f"proxy {name!r} has malformed structured option field {key!r}"
-            )
+            raise SubscriptionError(f"proxy {name!r} has malformed structured option field {key!r}")
 
 
 def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]:
