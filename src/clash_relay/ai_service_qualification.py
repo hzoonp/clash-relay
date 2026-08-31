@@ -115,12 +115,56 @@ def _service_country_anchor_name(service: str, provider_name: str) -> str:
     return f"__CR_AI_{token}_{digest}"
 
 
+def _validated_runtime_probes(
+    probe_specs_by_name: dict[str, dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    if probe_specs_by_name is None:
+        return {}
+    missing = set(_SERVICE_ORDER) - set(probe_specs_by_name)
+    if missing:
+        raise ValidationError("AI runtime service probes are missing required services")
+    result: dict[str, dict[str, Any]] = {}
+    for service in _SERVICE_ORDER:
+        probe = probe_specs_by_name[service]
+        url = probe.get("url")
+        method = probe.get("method")
+        expected = probe.get("expected_status")
+        interval = probe.get("interval")
+        timeout = probe.get("timeout")
+        lazy = probe.get("lazy")
+        tolerance = probe.get("tolerance")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValidationError("AI runtime service probe must use HTTPS")
+        if method != "HEAD":
+            raise ValidationError("AI runtime service probe must use HEAD")
+        if not isinstance(expected, str) or not expected:
+            raise ValidationError("AI runtime service probe expected status is invalid")
+        if not isinstance(interval, int) or interval < 1:
+            raise ValidationError("AI runtime service probe interval is invalid")
+        if not isinstance(timeout, int) or timeout < 100:
+            raise ValidationError("AI runtime service probe timeout is invalid")
+        if not isinstance(lazy, bool):
+            raise ValidationError("AI runtime service probe lazy flag is invalid")
+        if not isinstance(tolerance, int) or tolerance < 0:
+            raise ValidationError("AI runtime service probe tolerance is invalid")
+        result[service] = {
+            "url": url,
+            "expected_status": expected,
+            "interval": interval,
+            "timeout": timeout,
+            "lazy": lazy,
+            "tolerance": tolerance,
+        }
+    return result
+
+
 def _clone_country_anchor(
     groups: list[dict[str, Any]],
     *,
     source_name: str,
     clone_name: str,
     names: set[str],
+    runtime_probe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source = next(
         (
@@ -138,6 +182,13 @@ def _clone_country_anchor(
     clone["name"] = clone_name
     clone["hidden"] = True
     clone["filter"] = _exact_filter(names)
+    if runtime_probe is not None:
+        clone["url"] = runtime_probe["url"]
+        clone["expected-status"] = runtime_probe["expected_status"]
+        clone["interval"] = runtime_probe["interval"]
+        clone["timeout"] = runtime_probe["timeout"]
+        clone["lazy"] = runtime_probe["lazy"]
+        clone["tolerance"] = runtime_probe["tolerance"]
     groups.append(clone)
     return clone
 
@@ -268,11 +319,13 @@ def _hide_country_groups_under_ai_policy(
 def apply_ai_service_qualification(
     config: dict[str, Any],
     qualified_by_probe: dict[str, set[str]],
+    probe_specs_by_name: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Route each AI service only through nodes that passed that service's probe."""
     missing = set(_SERVICE_ORDER) - set(qualified_by_probe)
     if missing:
         raise ValidationError("AI service qualification is missing required probe results")
+    runtime_probes = _validated_runtime_probes(probe_specs_by_name)
 
     providers = config.get("proxy-providers")
     groups = config.get("proxy-groups")
@@ -368,6 +421,7 @@ def apply_ai_service_qualification(
                 source_name=source_anchor,
                 clone_name=clone_name,
                 names=names,
+                runtime_probe=runtime_probes.get(service),
             )
             child_names.append(clone_name)
             template = template or clone
@@ -392,6 +446,7 @@ def apply_ai_service_qualification(
         "service_qualified_nodes": service_counts,
         "service_country_groups": service_country_counts,
         "service_fail_closed": failed_closed,
+        "service_runtime_probes": bool(runtime_probes),
         "service_rules": routing_report,
     }
 
@@ -399,6 +454,7 @@ def apply_ai_service_qualification(
 def rewrite_ai_service_qualified_candidate(
     candidate_path: Path,
     qualified_by_probe: dict[str, set[str]],
+    probe_specs_by_name: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     try:
         original = candidate_path.read_text(encoding="utf-8")
@@ -407,6 +463,6 @@ def rewrite_ai_service_qualified_candidate(
     config = load_yaml_file(candidate_path)
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
-    report = apply_ai_service_qualification(config, qualified_by_probe)
+    report = apply_ai_service_qualification(config, qualified_by_probe, probe_specs_by_name)
     atomic_write(candidate_path, _comment_header(original) + dump_yaml(config))
     return report
