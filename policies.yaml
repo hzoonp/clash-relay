@@ -64,8 +64,9 @@ probes:
     tolerance: 50
 
 pools:
-  # Internal all-node inventory. ACL4SSR owns the user-facing 节点选择 / 自动选择 /
-  # country/manual groups and their exact member order.
+  # Internal non-browsing inventory. subscription_1 cannot enter this pool, so
+  # media, games, messaging, cloud services, manual general selection and
+  # fallback routing cannot accidentally use subscription_1 nodes.
   - id: general
     display_name: __CR_GENERAL_INVENTORY
     module: general
@@ -81,8 +82,26 @@ pools:
     rule_priority: 1000
     rules: null
 
-  # AI pools are the only intentional semantic extension over ACL4SSR. They are
-  # candidate inventories live-qualified per service on the trusted runner.
+  # Generic web-browsing inventory. This is the only non-AI pool that admits
+  # subscription_1. ACL4SSR's generic ProxyGFWlist routes to this inventory via
+  # the 网页浏览 policy group; application-specific rule groups stay on general.
+  - id: browsing
+    display_name: __CR_BROWSING_INVENTORY
+    module: general
+    source_use: browsing
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: error
+    probe: connectivity
+    rule_priority: 1010
+    rules: null
+
+  # AI pools intentionally admit sources that declare source_use=ai. Candidate
+  # nodes are live-qualified per service on the trusted runner before publish.
   - id: ai_sg
     display_name: AI · 新加坡
     module: general
