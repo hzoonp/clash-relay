@@ -106,9 +106,7 @@ def test_apply_browsing_qualification_only_prunes_browsing_inventory() -> None:
     report = apply_browsing_qualification(config, {"keep"})
 
     assert config["proxy-providers"]["cr_browsing_any"]["payload"] == [{"name": "keep"}]
-    assert config["proxy-providers"]["cr_general_any"]["payload"] == [
-        {"name": "general-stays"}
-    ]
+    assert config["proxy-providers"]["cr_general_any"]["payload"] == [{"name": "general-stays"}]
     assert config["proxy-providers"]["cr_ai_us"]["payload"] == [{"name": "ai-stays"}]
     assert report == {
         "tested_nodes": 2,
