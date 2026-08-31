@@ -19,17 +19,6 @@ def _project(repo_root):
     )
 
 
-def _member(route: dict, project) -> str:
-    member = route["member"]
-    if "builtin" in member:
-        return str(member["builtin"])
-    if "group" in member:
-        return str(member["group"])
-    pool_id = str(member["auto_pool"])
-    pool = next(row for row in project.policies["pools"] if row["id"] == pool_id)
-    return str(pool["display_name"])
-
-
 def _candidate(project) -> dict:
     general_choices = [
         "香港节点",
@@ -47,47 +36,61 @@ def _candidate(project) -> dict:
         {"name": "流媒体", "type": "select", "proxies": ["媒体自动", *general_choices]},
         {"name": "消息通讯", "type": "select", "proxies": ["通讯自动", *general_choices]},
         {"name": "下载流量", "type": "select", "proxies": ["下载自动", *general_choices]},
+        {
+            "name": "媒体自动",
+            "type": "url-test",
+            "hidden": True,
+            "use": ["fixture_general"],
+        },
+        {
+            "name": "通讯自动",
+            "type": "url-test",
+            "hidden": True,
+            "use": ["fixture_general"],
+        },
+        {
+            "name": "下载自动",
+            "type": "url-test",
+            "hidden": True,
+            "use": ["fixture_general"],
+        },
+        {
+            "name": "全球直连",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["DIRECT", "代理选择", "自动选择"],
+        },
+        {
+            "name": "广告拦截",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["REJECT", "DIRECT"],
+        },
+        {
+            "name": "谷歌FCM",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["代理选择", "全球直连", "自动选择"],
+        },
+        {
+            "name": "微软服务",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["全球直连", "代理选择"],
+        },
+        {
+            "name": "苹果服务",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["代理选择", "全球直连"],
+        },
+        {
+            "name": "漏网之鱼",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["代理选择", "全球直连", "自动选择"],
+        },
     ]
-    for spec in project.acl4ssr["groups"]:
-        route = spec.get("route")
-        if not isinstance(route, dict) or route.get("deterministic") is not True:
-            continue
-        groups.append(
-            {
-                "name": str(spec["display_name"]),
-                "type": "select",
-                "hidden": True,
-                "proxies": [_member(route, project)],
-            }
-        )
-    groups.extend(
-        [
-            {
-                "name": "媒体自动",
-                "type": "url-test",
-                "hidden": True,
-                "use": ["fixture_general"],
-            },
-            {
-                "name": "通讯自动",
-                "type": "url-test",
-                "hidden": True,
-                "use": ["fixture_general"],
-            },
-            {
-                "name": "下载自动",
-                "type": "url-test",
-                "hidden": True,
-                "use": ["fixture_general"],
-            },
-            {
-                "name": "奈飞视频",
-                "type": "fallback",
-                "hidden": True,
-                "proxies": ["奈飞节点", "流媒体"],
-            },
-        ]
-    )
     return {"proxy-groups": groups}
 
 
@@ -101,10 +104,15 @@ def test_routing_v2_audit_accepts_prequalification_graph(repo_root) -> None:
 
     assert summary["status"] == "passed"
     assert summary["model_version"] == 2
-    assert summary["bindings_checked"] > 20
-    assert summary["deterministic_targets_checked"] > 10
+    assert summary["bindings_checked"] >= 18
+    assert summary["deterministic_targets_checked"] == 0
     assert summary["ai"]["stage"] == "pre_qualification"
     assert summary["ai"]["excluded_regions"] == ["HK"]
+    assert summary["cutover"]["intentional_deviations"] == [
+        "BanProgramAD disabled",
+        "AI extension",
+        "Download extension",
+    ]
 
 
 def test_routing_v2_audit_accepts_complete_fail_closed_ai_service_set(repo_root) -> None:
@@ -127,12 +135,12 @@ def test_routing_v2_audit_accepts_complete_fail_closed_ai_service_set(repo_root)
     assert summary["visible_groups"] == 6
 
 
-def test_routing_v2_audit_rejects_persisted_hidden_selector_state(repo_root) -> None:
+def test_routing_v2_audit_rejects_acl4ssr_selector_drift(repo_root) -> None:
     project = _project(repo_root)
     candidate = _candidate(project)
-    _group(candidate, "油管视频")["proxies"] = ["代理选择", "DIRECT"]
+    _group(candidate, "苹果服务")["proxies"] = ["全球直连", "代理选择"]
 
-    with pytest.raises(ValidationError, match="not a hidden one-hop route"):
+    with pytest.raises(ValidationError, match="changed its reference member order"):
         audit_routing_v2(project, candidate)
 
 
@@ -148,8 +156,8 @@ def test_routing_v2_audit_rejects_provider_exposure_on_public_scenario(repo_root
 def test_routing_v2_audit_rejects_source_use_drift(repo_root) -> None:
     project = _project(repo_root)
     manifest = copy.deepcopy(project.acl4ssr)
-    youtube = next(row for row in manifest["sources"] if row["id"] == "youtube")
-    youtube["source_use"] = "browsing"
+    proxy_media = next(row for row in manifest["sources"] if row["id"] == "proxy_media")
+    proxy_media["source_use"] = "browsing"
     drifted = replace(project, acl4ssr=manifest)
 
     with pytest.raises(ValidationError, match="source-use contract mismatch"):
