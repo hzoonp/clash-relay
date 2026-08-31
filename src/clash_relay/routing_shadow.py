@@ -1,4 +1,4 @@
-"""Privacy-safe configuration-graph shadow analysis for Routing Model V2."""
+"""Privacy-safe configuration-graph drift analysis for Routing Model V2."""
 
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ def _route_member(group: dict[str, Any] | None) -> str | None:
     return None
 
 
-def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
-    """Describe Routing V2 cutover state without inspecting runtime traffic.
+def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
+    """Verify the finalized Routing V2 declaration/configuration graph.
 
-    This is intentionally a declaration/config-graph shadow, not traffic
-    telemetry. It never records domains, node names, addresses, credentials, or
-    subscription URLs.
+    This is intentionally configuration-graph validation, not traffic
+    telemetry. It never records domains, node names, addresses, credentials,
+    subscription URLs, or user activity.
     """
 
     if project.acl4ssr is None:
@@ -73,17 +73,18 @@ def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
         "香港": "HK",
     }
     current_codes = [label_to_code[name] for name in current_ai_regions if name in label_to_code]
-    media_cutover = all(
+    media_applied = all(
         _route_member(groups.get(name)) == "媒体自动" for name in ("油管视频", "国外媒体")
     )
-    download_cutover = (
+    download_applied = (
         policy.download.mode == "general_auto"
         and _route_member(groups.get("下载流量")) == "下载自动"
     )
-    ai_cutover = current_codes == list(policy.ai.preferred_regions)
+    ai_applied = current_codes == list(policy.ai.preferred_regions)
+    healthy = media_applied and download_applied and ai_applied
 
     return {
-        "status": "cutover" if media_cutover and download_cutover and ai_cutover else "shadow",
+        "status": "healthy" if healthy else "drifted",
         "model_version": 2,
         "scenario_counts": dict(model["scenario_counts"]),
         "foreign_web": {
@@ -91,20 +92,18 @@ def routing_shadow_summary(project: ProjectDefinition) -> dict[str, Any]:
             "classifier_widened": False,
         },
         "download": {
-            "current_mode": policy.download.mode,
-            "cutover_mode": "general_auto",
-            "affected_rule_sources": download_rules,
-            "cutover_applied": download_cutover,
+            "mode": policy.download.mode,
+            "rule_sources": download_rules,
+            "scheduler_applied": download_applied,
         },
         "media": {
             "auto_scheduler_rule_sources": media_auto,
-            "cutover_applied": media_cutover,
+            "scheduler_applied": media_applied,
         },
         "ai": {
-            "current_region_order": current_codes,
-            "cutover_region_order": list(policy.ai.preferred_regions),
+            "region_order": current_codes,
+            "declared_region_order": list(policy.ai.preferred_regions),
             "excluded_regions": list(policy.ai.excluded_regions),
-            "region_order_would_change": not ai_cutover,
-            "cutover_applied": ai_cutover,
+            "policy_applied": ai_applied,
         },
     }
