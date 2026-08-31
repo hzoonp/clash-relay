@@ -18,7 +18,7 @@ Production uses:
 - one internal `general` node inventory in `policies.yaml`;
 - seven AI country candidate inventories;
 - pinned ACL4SSR Online Full routing in `rules/acl4ssr.yaml`;
-- FlClash presentation-only containers that are never rule targets;
+- FlClash visibility optimization that keeps actionable ACL4SSR selectors operable;
 - Cloudflare Workers KV as the only credential-bearing publication backend.
 
 The production contract is: **ACL4SSR owns every non-AI rule target and semantic policy group. FlClash presentation and live AI qualification are the only project-specific layers.**
@@ -209,7 +209,9 @@ This file owns canonical non-AI routing behavior. It declares:
 - provider-backed manual/automatic/country selectors using the upstream regexes;
 - `GEOIP,CN -> 全球直连`;
 - `MATCH -> 漏网之鱼`;
-- presentation-only `流媒体`, `国内服务`, and `更多策略` containers that are not rule targets.
+- FlClash visibility metadata that hides only non-actionable automatic helpers.
+
+Mihomo `select` groups are controls, not folders. Canonical production therefore does not create unreferenced `流媒体`, `国内服务`, or `更多策略` pseudo-containers. Real ACL4SSR `select` groups that users may need to override remain visible; automatic `url-test` helpers such as `自动选择` and country selectors may remain hidden.
 
 The only intentional semantic extension is the `人工智能` scheduling layer: candidate country groups are live-qualified per service, and private post-processing inserts service-specific OpenAI/Claude/Gemini routes before the generic ACL4SSR AI rule.
 
@@ -217,17 +219,9 @@ The pinned Full lists also contain nine legacy `URL-REGEX` entries that Mihomo 1
 
 ## Output visibility
 
-After successful AI qualification, the intended FlClash top level is:
+After successful AI qualification, FlClash exposes the actionable ACL4SSR `select` groups themselves. In particular, `哔哩哔哩` is visible and keeps its pinned member order `全球直连 -> 台湾节点 -> 香港节点`; choosing a member changes the exact group targeted by Bilibili rules.
 
-```text
-节点选择
-人工智能
-流媒体
-国内服务
-更多策略
-```
-
-ACL4SSR semantic groups hidden under the presentation containers still receive their original rule traffic. AI country groups are hidden at the top level and appear only under `人工智能`.
+Automatic helpers such as `自动选择` and country `url-test` selectors remain hidden at the top level but continue to participate as members of visible ACL4SSR selectors. AI country groups likewise remain implementation details of the visible `人工智能` policy.
 
 ## Validation
 
