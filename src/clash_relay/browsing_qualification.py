@@ -321,9 +321,7 @@ def probe_browsing_nodes(
         raise ValidationError("candidate is not a YAML mapping")
     provider_payloads = _browsing_provider_payloads(config)
     node_names = tuple(
-        str(proxy["name"])
-        for payload in provider_payloads.values()
-        for proxy in payload
+        str(proxy["name"]) for payload in provider_payloads.values() for proxy in payload
     )
     if len(set(node_names)) != len(node_names):
         raise ValidationError("browsing qualification requires unique runtime proxy names")
@@ -380,9 +378,7 @@ def probe_browsing_nodes(
             for _ in range(attempts):
                 sample, outcome = _group_delay_probe(controller_port, secret, probe)
                 known_sample = {
-                    node_name: sample[node_name]
-                    for node_name in node_names
-                    if node_name in sample
+                    node_name: sample[node_name] for node_name in node_names if node_name in sample
                 }
                 samples.append(known_sample)
                 successes = len(known_sample)
