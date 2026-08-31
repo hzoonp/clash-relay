@@ -7,14 +7,13 @@ import sys
 import time
 from pathlib import Path
 
-from clash_relay.browsing_qualification import (
-    load_browsing_probe_spec,
-    probe_browsing_nodes,
-    rewrite_browsing_qualified_candidate,
+from clash_relay.browsing_qualification import load_browsing_probe_spec, probe_browsing_nodes
+from clash_relay.browsing_runtime import (
+    apply_browsing_history_preference,
+    rewrite_hardened_browsing_qualified_candidate,
 )
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.scheduler_history import (
-    apply_history_preference,
     browsing_runtime_names,
     history_summary,
     parse_history_bytes,
@@ -188,11 +187,27 @@ def main(argv: list[str] | None = None) -> int:
                 preferred_names=preferred,
             )
 
-        report = rewrite_browsing_qualified_candidate(args.candidate, qualified, stable)
+        report = rewrite_hardened_browsing_qualified_candidate(
+            args.candidate,
+            qualified,
+            stable,
+        )
         if history_inputs is not None:
-            scheduler_report["preference_groups"] = apply_history_preference(
-                args.candidate, preferred
+            preference_groups = apply_browsing_history_preference(
+                args.candidate,
+                preferred_names=preferred,
+                stable_names=stable,
+                qualified_names=qualified,
             )
+            scheduler_report["preference_groups"] = preference_groups
+            if preference_groups:
+                effective_preferred = preferred & stable & qualified
+                reserve = qualified - effective_preferred
+                if not reserve:
+                    reserve = set(qualified)
+                report["stable_automatic_nodes"] = len(effective_preferred)
+                report["reserve_automatic_nodes"] = len(reserve)
+
         print(
             json.dumps(
                 {

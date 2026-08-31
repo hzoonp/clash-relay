@@ -4,15 +4,22 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-31
+
 ### Added
 
 - Routing Model V2 now treats scenario, service, source permission, region, capability, and scheduler policy as independent routing dimensions, with complex concurrent route intents covered by unit and dual-Mihomo integration tests.
 - Hidden `媒体自动` and `下载自动` schedulers keep media/download routing independent from persisted user selections while remaining strictly in the `general` source-use domain.
 - A no-Secrets Routing V2 Drift Guard continuously verifies the finalized configuration graph without collecting domains, node identities, endpoints, credentials, subscription URLs, or user traffic.
+- Browsing runtime hardening adds separate hidden Stable and Reserve automatic tiers under `网页自动`, with a real-Mihomo failover contract test.
 
 ### Changed
 
 - The canonical FlClash policy surface exposes only the three user decisions `代理选择`, `网页浏览`, and `人工智能`; ACL4SSR application targets, regional helpers, manual/provider helpers, media/download schedulers, and final routing groups remain functional but hidden.
+- `网页浏览` is now a policy-only selector containing exactly `网页自动` and `DIRECT`; it no longer attaches a proxy provider and therefore cannot expand raw `[BROWSING:*]` runtime nodes in FlClash.
+- `网页自动` is now a hidden fallback from the Stable browsing scheduler to the Reserve browsing scheduler. A current qualified reserve node can automatically take over when the Stable tier becomes unavailable.
+- Browsing pre-publication qualification, provider health checks, Stable/Reserve runtime schedulers, and the browsing fallback now share the canonical HTTPS probe, timeout, lazy mode, and expected-status semantics.
+- Historical scheduler demotion now moves a currently qualified node from the preferred Stable tier into Reserve instead of removing it from automatic failover eligibility.
 - AI countries are internal scheduling dimensions rather than top-level policy groups. Hong Kong is hard-excluded before OpenAI, Claude, or Gemini qualification, while each service independently follows the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference over its own qualified set.
 - YouTube and generic foreign media route through the hidden general-only media scheduler. Netflix prefers its filtered capability pool and then falls back to that media scheduler.
 - `Download.list` is a first-class internal scenario and now routes through the hidden general-only download scheduler after known domestic classification but before generic `ProxyGFWlist` browsing classification.
@@ -20,7 +27,8 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ### Security
 
-- `subscription_1` remains reachable only from browsing and AI; media, download, general, and final routes remain unreachable from that source.
+- Canonical public scenario groups are contract-validated to reject direct proxy-provider exposure; the browsing public surface is additionally frozen to `网页自动` plus `DIRECT`.
+- `subscription_1` remains reachable only from browsing and AI; media, download, general, and final routes remain unreachable from that source, and explicit multipliers strictly greater than 2x remain rejected before classification.
 - `ProxyGFWlist -> 网页浏览`, final `MATCH -> 漏网之鱼`, AI HK exclusion, independent per-service AI fail-closed qualification, source-reachability audits, and dual-Mihomo production validation remain non-negotiable boundaries.
 
 ## [1.0.0] - 2026-08-31
@@ -72,6 +80,7 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hzoonp/clash-relay/releases/tag/v1.0.0
 [0.1.0]: https://github.com/hzoonp/clash-relay/releases/tag/v0.1.0

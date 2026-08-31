@@ -1,6 +1,6 @@
 # Versioning and compatibility
 
-`clash-relay` follows Semantic Versioning. `v0.1.0` established the first production baseline; `v1.0.0` freezes the public compatibility contract described here.
+`clash-relay` follows Semantic Versioning. `v0.1.0` established the first production baseline; `v1.0.0` froze the public compatibility contract, and `v1.0.1` hardens the browsing runtime without widening source permissions or changing classification semantics.
 
 ## Compatibility contract
 
@@ -16,8 +16,10 @@ A major release is required when a documented default routing invariant, configu
 - The canonical first subscription rejects only explicit multipliers strictly greater than `2.0`; exactly `2.0` and unmarked nodes remain eligible.
 - `ProxyGFWlist` is the portable generic browsing route and targets `网页浏览`.
 - Final `MATCH` deliberately remains `漏网之鱼` on the general graph.
-- Browsing qualification is live and fail-closed. Canonical policy is three attempts: 3/3 is stable automatic, 2/3 is reserve/manual, and fewer than 2/3 is rejected from browsing.
-- Historical scheduler state may narrow the current live-stable automatic subset but must never promote a reserve or live-failed node. Old v1 scheduler state migrates to v2 without changing the private HMAC fingerprint domain.
+- The canonical user-facing groups are `代理选择`, `网页浏览`, and `人工智能`. These public scenario groups do not attach proxy providers directly. In particular, `网页浏览` contains exactly `网页自动` and `DIRECT`, so raw `[BROWSING:*]` runtime nodes are not expanded into the public selector.
+- Browsing qualification is live and fail-closed. Canonical policy is three attempts: 3/3 is Stable, 2/3 is Reserve, and fewer than 2/3 is rejected from browsing. `网页自动` is a hidden fallback from the Stable automatic tier to the Reserve automatic tier, so a currently qualified reserve node remains eligible for automatic recovery when Stable becomes unavailable.
+- Browsing pre-publication qualification, provider health checks, Stable/Reserve runtime schedulers, and the browsing fallback use the same canonical HTTPS probe semantics, including timeout, lazy mode, and expected status.
+- Historical scheduler state may narrow the preferred current Stable subset. A historically demoted but currently qualified node moves to Reserve rather than disappearing from automatic failover eligibility. History must never promote a current Reserve or live-failed node into Stable. Old v1 scheduler state migrates to v2 without changing the private HMAC fingerprint domain.
 - OpenAI, Claude, and Gemini are qualified independently and fail closed per service. AI qualification cache is private, payload-sensitive, TTL-bounded, and falls back to live probing on changed, expired, missing, corrupt, or unavailable entries.
 - `policies.yaml` may declare supported scheduler controls. Omitting the optional `scheduler:` block keeps the v0.1.0-compatible defaults; declaring it cannot alter source permissions or bypass reachability audits.
 - The exact production candidate is validated with Mihomo v1.19.30 and v1.19.29 before publication.
