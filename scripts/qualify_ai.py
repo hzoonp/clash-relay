@@ -50,7 +50,9 @@ def _service_diagnostics() -> dict[str, object]:
 def _cache_inputs(args: argparse.Namespace) -> tuple[dict, bytes, str] | None:
     provided = (args.cache is not None, args.cache_key is not None, args.next_cache is not None)
     if any(provided) and not all(provided):
-        raise ValidationError("AI qualification cache requires --cache, --cache-key, and --next-cache")
+        raise ValidationError(
+            "AI qualification cache requires --cache, --cache-key, and --next-cache"
+        )
     if not all(provided):
         return None
     try:
@@ -131,7 +133,9 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics["tested_nodes"] = len(fingerprints)
 
         qualified_by_probe: dict[str, set[str]] = {}
-        expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
+        expected_candidate_nodes: int | None = (
+            len(fingerprints) if fingerprints is not None else None
+        )
         total_live = 0
         total_cache_pass = 0
         total_cache_fail = 0
