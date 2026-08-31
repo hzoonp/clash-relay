@@ -285,22 +285,10 @@ def test_canonical_browsing_route_is_separate_from_application_routes(repo_root:
     assert groups["policy_browsing_auto"]["provider_pool"] == "browsing"
     assert groups["policy_browsing"]["provider_pool"] == "browsing"
     assert groups["policy_browsing"]["display_name"] == "网页浏览"
-    assert sources["proxy_gfwlist"]["target"] == "网页浏览"
+    assert sources["proxy_lite"]["target"] == "网页浏览"
 
     application_sources = {
         "telegram",
-        "netease_music",
-        "epic",
-        "origin",
-        "sony",
-        "steam",
-        "nintendo",
-        "youtube",
-        "netflix",
-        "bahamut",
-        "bilibili_hmt",
-        "bilibili",
-        "china_media",
         "proxy_media",
         "download",
     }
