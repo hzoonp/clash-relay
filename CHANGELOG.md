@@ -4,6 +4,22 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+### Added
+
+- The canonical FlClash surface now exposes three additional scenario selectors: `流媒体`, `消息通讯`, and `下载流量`.
+- Hidden `通讯自动` provides the default general-only scheduler for the new messaging selector.
+
+### Changed
+
+- YouTube and generic foreign media now enter the public `流媒体` selector; Netflix keeps its capability-first `奈飞节点` preference before falling back to `流媒体`.
+- Telegram now enters the public `消息通讯` selector through the hidden deterministic `电报消息` route.
+- `Download.list` continues to target `下载流量`, which is now a public selector defaulting to the hidden `下载自动` scheduler while also exposing general regional choices and `DIRECT`.
+
+### Security
+
+- `流媒体`, `消息通讯`, and `下载流量` do not attach proxy providers directly and are backed only by the `general` inventory. `subscription_1` therefore remains unreachable from all three groups and stays browsing/AI-only.
+- Existing subscription_1 EMBY exclusion and explicit multiplier `>2x` rejection remain unchanged.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added
