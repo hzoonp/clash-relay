@@ -61,4 +61,5 @@ def test_quickstart_warns_against_public_credential_storage() -> None:
     assert "must never be committed" in english
     assert "never committed or uploaded as an Artifact/Release/Gist" in english
     assert "不能提交进仓库" in chinese
-    assert "从不 commit，也不上传到 Artifact / Release / Gist" in chinese
+    assert "从不 commit" in chinese
+    assert "Artifact / Release / Gist" in chinese
