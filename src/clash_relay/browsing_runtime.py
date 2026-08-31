@@ -159,7 +159,9 @@ def _providers_by_region(
                 f"browsing provider {provider_name!r} has an undeclared regional scope"
             )
         if region in result:
-            raise GenerationError(f"multiple canonical browsing providers were generated for {region}")
+            raise GenerationError(
+                f"multiple canonical browsing providers were generated for {region}"
+            )
         result[region] = provider_name
     if not result:
         raise GenerationError("canonical browsing runtime resolved no regional providers")
@@ -362,7 +364,9 @@ def validate_browsing_public_surface(config: dict[str, Any]) -> None:
             ):
                 errors.append(f"regional browsing group {region_name!r} must be a hidden fallback")
             if region_group.get("proxies") != [stable_name, reserve_name]:
-                errors.append(f"regional browsing group {region_name!r} must stay inside its region")
+                errors.append(
+                    f"regional browsing group {region_name!r} must stay inside its region"
+                )
             if region_group.get("use"):
                 errors.append(f"regional browsing group {region_name!r} must not expose providers")
 
@@ -401,7 +405,9 @@ def _comment_header(text: str) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def _region_provider_payloads(config: dict[str, Any]) -> dict[str, tuple[str, list[dict[str, Any]]]]:
+def _region_provider_payloads(
+    config: dict[str, Any],
+) -> dict[str, tuple[str, list[dict[str, Any]]]]:
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
         raise ValidationError("browsing qualification requires proxy-providers")
