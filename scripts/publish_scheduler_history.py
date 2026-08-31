@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         policies_path=args.policies,
     )
     production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])
-    state_key = f"{production_key}.scheduler-state-v1"
+    state_key = f"{production_key}.scheduler-state-v2"
     try:
         result = CloudflareKVPublisher(
             token=token,
@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "status": "published",
+                "state_version": int(history.get("version", 0)),
                 "bytes": result["bytes"],
                 "sha256": result["sha256"],
                 "records": len(history["nodes"]),
