@@ -14,13 +14,15 @@ def test_publish_runs_on_main_and_manual_dispatch() -> None:
     assert "  push:\n" in text
     assert "      - main\n" in text
     assert "  workflow_dispatch:\n" in text
+    assert "      publish:\n" in text
+    assert "        default: false\n" in text
     assert "clash-relay-publish-${{ github.ref }}" in text
     assert "github.ref == 'refs/heads/main'" in text
 
 
 def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storage() -> None:
     text = WORKFLOW.read_text()
-    assert "Build, qualify, validate, and publish private config" in text
+    assert "Build, qualify, validate, and optionally publish private config" in text
     assert "repository.private" not in text
     assert "actions/upload-artifact" not in text
     assert "actions/download-artifact" not in text
@@ -28,8 +30,9 @@ def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storag
     assert "publish-gist" not in text
     assert "GITHUB_GIST_TOKEN" not in text
     assert "PUBLISH_PUBLIC_RELEASE" not in text
-    assert "always()" not in text
     assert "continue-on-error" not in text
+    assert "Remove private candidate" in text
+    assert "if: always()" in text
 
 
 def test_individual_subscription_urls_are_masked_before_generation() -> None:
@@ -49,6 +52,19 @@ def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     assert text.index("CLOUDFLARE_API_TOKEN") > text.index("validate_core v1.19.29")
 
 
+def test_production_audit_runs_before_and_after_ai_qualification() -> None:
+    text = WORKFLOW.read_text()
+    assert "Audit source-to-scenario isolation" in text
+    assert "Re-audit qualified candidate" in text
+    assert text.count("python scripts/audit_production.py") == 2
+    first_audit = text.index("Audit source-to-scenario isolation")
+    qualifier = text.index("Qualify AI nodes by country")
+    second_audit = text.index("Re-audit qualified candidate")
+    assert first_audit < qualifier < second_audit
+    assert "production-summary.md" in text
+    assert 'cat .work/private/production-summary.md >> "$GITHUB_STEP_SUMMARY"' in text
+
+
 def test_ai_qualification_precedes_final_validation() -> None:
     text = WORKFLOW.read_text()
     assert "Qualify AI nodes by country" in text
@@ -56,6 +72,15 @@ def test_ai_qualification_precedes_final_validation() -> None:
     qualifier = text.index("python scripts/qualify_ai.py")
     assert qualifier < text.index("validate_core v1.19.30")
     assert qualifier < text.index("validate_core v1.19.29")
+    assert "Append safe AI qualification summary" in text
+
+
+def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> None:
+    text = WORKFLOW.read_text()
+    assert "Record dry-run result" in text
+    assert "github.event_name == 'workflow_dispatch' && inputs.publish != true" in text
+    assert "github.event_name == 'push' || inputs.publish == true" in text
+    assert "was **not** written to Cloudflare KV" in text
 
 
 def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:
