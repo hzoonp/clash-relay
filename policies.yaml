@@ -123,8 +123,9 @@ pools:
     rule_priority: 1010
     rules: null
 
-  # AI pools intentionally admit sources that declare source_use=ai. Candidate
-  # nodes are live-qualified per service on the trusted runner before publish.
+  # AI is a scenario domain; countries are scheduling dimensions, not public
+  # top-level policy groups. Hong Kong is intentionally absent from the AI
+  # inventory, so HK nodes are never sent to OpenAI/Claude/Gemini qualification.
   - id: ai_sg
     display_name: AI · 新加坡
     module: general
@@ -168,21 +169,6 @@ pools:
     on_empty: reject
     probe: connectivity
     rule_priority: 1120
-    rules: null
-
-  - id: ai_hk
-    display_name: AI · 香港
-    module: general
-    source_use: ai
-    regions: [HK]
-    fallback_order: [HK]
-    capabilities_any: [general]
-    capabilities_all: []
-    excluded_capabilities: []
-    allowed_cost_levels: [standard]
-    on_empty: reject
-    probe: connectivity
-    rule_priority: 1130
     rules: null
 
   - id: ai_tw
