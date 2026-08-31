@@ -26,6 +26,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _read_state(
+    *,
+    token: str,
+    account_id: str,
+    namespace_title: str,
+    production_key: str,
+) -> tuple[bytes | None, str, str]:
+    for suffix, source in (("scheduler-state-v2", "v2"), ("scheduler-state-v1", "v1")):
+        try:
+            content = CloudflareKVPublisher(
+                token=token,
+                account_id=account_id,
+                namespace_title=namespace_title,
+                key_name=f"{production_key}.{suffix}",
+            ).read()
+        except PublicationError:
+            return None, "unavailable", "none"
+        if content is not None:
+            return content, "loaded", source
+    return None, "missing", "none"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     project = load_project(
@@ -38,21 +60,17 @@ def main(argv: list[str] | None = None) -> int:
     account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
     namespace_title = os.environ.get("CLOUDFLARE_KV_NAMESPACE_TITLE", "")
     production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])
-    state_key = f"{production_key}.scheduler-state-v1"
 
     content: bytes | None = None
     transport_status = "unavailable"
+    source = "none"
     if token and account_id and namespace_title:
-        try:
-            content = CloudflareKVPublisher(
-                token=token,
-                account_id=account_id,
-                namespace_title=namespace_title,
-                key_name=state_key,
-            ).read()
-            transport_status = "loaded" if content is not None else "missing"
-        except PublicationError:
-            transport_status = "unavailable"
+        content, transport_status, source = _read_state(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            production_key=production_key,
+        )
 
     history, parse_status = parse_history_bytes(content)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(
             {
                 "status": transport_status,
+                "source": source,
                 "parse_status": parse_status,
+                "state_version": int(history.get("version", 0)),
                 "records": len(nodes) if isinstance(nodes, dict) else 0,
             },
             sort_keys=True,
