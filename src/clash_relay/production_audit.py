@@ -75,7 +75,9 @@ def _provider_graph(
             runtime_name = str(proxy["name"])
             previous = runtime_sources.get(runtime_name)
             if previous is not None and previous != source_id:
-                raise ValidationError("runtime proxy name resolves to multiple subscription sources")
+                raise ValidationError(
+                    "runtime proxy name resolves to multiple subscription sources"
+                )
             runtime_sources[runtime_name] = source_id
             dialer = proxy.get("dialer-proxy")
             if isinstance(dialer, str) and dialer:
