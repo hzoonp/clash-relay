@@ -76,7 +76,10 @@ def test_parse_base64_encoded_uri_lines(repo_root: Path) -> None:
         ("vless://00000000-0000-4000-8000-000000000009@v.invalid.example:443#VLESS", "vless"),
         ("hysteria2://pass@hy.invalid.example:443#HY2", "hysteria2"),
         ("hy2://pass@hy.invalid.example:443#HY2", "hysteria2"),
-        ("tuic://00000000-0000-4000-8000-000000000010:pass@tuic.invalid.example:443#TUIC", "tuic"),
+        (
+            "tuic://00000000-0000-4000-8000-000000000010:pass@tuic.invalid.example:443#TUIC",
+            "tuic",
+        ),
         ("anytls://pass@any.invalid.example:443#AnyTLS", "anytls"),
     ],
 )
@@ -104,6 +107,57 @@ def test_invalid_proxy_skip_policy() -> None:
     document = {"proxies": [_http(), {"name": "Broken", "type": "http"}]}
     result = parse_subscription(yaml.safe_dump(document), invalid_policy="skip")
     assert len(result.proxies) == 1
+    assert result.skipped_items == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("grpc-opts", "not-a-mapping"),
+        ("ws-opts", []),
+        ("h2-opts", "invalid"),
+        ("reality-opts", ["invalid"]),
+        ("plugin-opts", "invalid"),
+    ],
+)
+def test_malformed_structured_proxy_options_rejected(field: str, bad_value) -> None:
+    proxy = {
+        "name": "Malformed options",
+        "type": "vless",
+        "server": "vless.invalid.example",
+        "port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000099",
+        field: bad_value,
+    }
+    with pytest.raises(SubscriptionError, match="malformed structured option"):
+        parse_subscription(yaml.safe_dump({"proxies": [proxy]}), invalid_policy="error")
+
+
+def test_malformed_structured_proxy_options_are_skipped_before_inventory_admission() -> None:
+    malformed = {
+        "name": "Malformed gRPC",
+        "type": "vless",
+        "server": "broken.invalid.example",
+        "port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000099",
+        "network": "grpc",
+        "grpc-opts": "invalid",
+    }
+    valid = {
+        "name": "Valid gRPC",
+        "type": "vless",
+        "server": "valid.invalid.example",
+        "port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000098",
+        "network": "grpc",
+        "grpc-opts": {"grpc-service-name": "service"},
+    }
+    result = parse_subscription(
+        yaml.safe_dump({"proxies": [malformed, valid]}),
+        invalid_policy="skip",
+    )
+
+    assert [proxy["name"] for proxy in result.proxies] == ["Valid gRPC"]
     assert result.skipped_items == 1
 
 
