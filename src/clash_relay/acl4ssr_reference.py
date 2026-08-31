@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 from .errors import GenerationError
 
 _RAW_HOST = "raw.githubusercontent.com"
-_BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
 
 def _reference_source_path(source: str, *, repository: str) -> str:
@@ -96,11 +95,16 @@ def parse_acl4ssr_online(text: str, *, repository: str) -> dict[str, Any]:
                 row["filter"] = parts[2]
                 row["url"] = parts[3]
                 try:
-                    row["interval"] = int(parts[4])
-                    tolerance = next(
-                        (int(part) for part in reversed(parts[5:]) if part.strip()),
-                        None,
-                    )
+                    timing_values = [
+                        token.strip()
+                        for segment in parts[4:]
+                        for token in segment.split(",")
+                        if token.strip()
+                    ]
+                    if not timing_values:
+                        raise ValueError("missing interval")
+                    row["interval"] = int(timing_values[0])
+                    tolerance = int(timing_values[-1]) if len(timing_values) > 1 else None
                 except ValueError as exc:
                     raise GenerationError(
                         f"ACL4SSR Online url-test group {name!r} has invalid timing values"
