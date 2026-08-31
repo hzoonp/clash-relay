@@ -18,6 +18,31 @@ _EXPECTED_COMPATIBILITY_OMISSIONS = {
     "download": (7, "Clash/Providers/Download.yaml"),
 }
 
+_EXPECTED_ACTIONABLE_GROUPS = {
+    "手动切换",
+    "奈飞节点",
+    "节点选择",
+    "全球直连",
+    "广告拦截",
+    "应用净化",
+    "谷歌FCM",
+    "微软Bing",
+    "微软云盘",
+    "微软服务",
+    "苹果服务",
+    "电报消息",
+    "人工智能",
+    "网易音乐",
+    "游戏平台",
+    "油管视频",
+    "奈飞视频",
+    "巴哈姆特",
+    "哔哩哔哩",
+    "国内媒体",
+    "国外媒体",
+    "漏网之鱼",
+}
+
 
 def _assert_canonical_compatibility_report(report: dict) -> None:
     assert report["unverified_legacy_rules"] == 0
@@ -167,7 +192,8 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     visible = {
         item["name"] for item in result.config["proxy-groups"] if not item.get("hidden", False)
     }
-    assert visible == {"节点选择", "人工智能", "流媒体", "国内服务", "更多策略"}
+    assert _EXPECTED_ACTIONABLE_GROUPS <= visible
+    assert {"流媒体", "国内服务", "更多策略"}.isdisjoint(groups)
     assert groups["节点选择"]["proxies"] == [
         "自动选择",
         "香港节点",
@@ -180,21 +206,26 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "DIRECT",
     ]
     assert groups["哔哩哔哩"]["proxies"] == ["全球直连", "台湾节点", "香港节点"]
-    assert groups["哔哩哔哩"]["hidden"] is True
+    assert groups["哔哩哔哩"].get("hidden", False) is False
+    assert groups["手动切换"].get("hidden", False) is False
+    assert groups["奈飞节点"].get("hidden", False) is False
     assert groups["广告拦截"]["proxies"] == ["REJECT", "DIRECT"]
-    assert groups["广告拦截"]["hidden"] is True
+    assert groups["广告拦截"].get("hidden", False) is False
+    assert groups["自动选择"]["hidden"] is True
+    assert groups["香港节点"]["hidden"] is True
+    assert groups["台湾节点"]["hidden"] is True
     assert result.config["rules"][-1] == "MATCH,漏网之鱼"
     assert "GEOIP,CN,全球直连,no-resolve" in result.config["rules"]
     assert "RULE-SET,acl4ssr_bilibili_hmt,哔哩哔哩" in result.config["rules"]
     assert "RULE-SET,acl4ssr_bilibili,哔哩哔哩" in result.config["rules"]
     assert "RULE-SET,acl4ssr_telegram,电报消息" in result.config["rules"]
 
-    presentation_only = {"流媒体", "国内服务", "更多策略"}
-    rule_targets = {
+    non_ai_rule_targets = {
         rule.split(",")[1] if rule.startswith("MATCH,") else rule.split(",")[2]
         for rule in result.config["rules"]
+        if "__CR_AI_SERVICE_" not in rule
     }
-    assert presentation_only.isdisjoint(rule_targets)
+    assert non_ai_rule_targets <= visible
     _assert_canonical_compatibility_report(result.report["rule_sources"]["acl4ssr"])
     assert "source_exclusions" not in result.report
 
