@@ -8,6 +8,7 @@ from pathlib import Path
 from clash_relay.ai_qualification import load_ai_probe_specs, probe_ai_nodes
 from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_candidate
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.util import load_yaml_file
 
 
 def _path(value: str) -> Path:
@@ -34,12 +35,26 @@ def _service_diagnostics() -> dict[str, object]:
     }
 
 
+def _runtime_probe_declarations(policies_path: Path) -> dict[str, dict[str, object]]:
+    document = load_yaml_file(policies_path)
+    probes = document.get("probes") if isinstance(document, dict) else None
+    if not isinstance(probes, dict):
+        raise ValidationError("AI runtime service probes require a valid policies probe mapping")
+    result: dict[str, dict[str, object]] = {}
+    for name in ("ai_openai", "ai_claude", "ai_gemini"):
+        probe = probes.get(name)
+        if not isinstance(probe, dict):
+            raise ValidationError(f"AI runtime service probe {name!r} is missing")
+        result[name] = dict(probe)
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics = _service_diagnostics()
     try:
         probes = load_ai_probe_specs(args.policies)
-        probe_specs_by_name = {str(probe["name"]): probe for probe in probes}
+        probe_specs_by_name = _runtime_probe_declarations(args.policies)
         qualified_by_probe: dict[str, set[str]] = {}
         expected_tested_nodes: int | None = None
         for probe in probes:
