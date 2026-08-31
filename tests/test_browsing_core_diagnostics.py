@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.diagnose_browsing_core import redact_core_output
+from clash_relay.core_diagnostics import redact_core_output
 
 
 def test_browsing_core_diagnostic_redacts_proxy_values() -> None:
