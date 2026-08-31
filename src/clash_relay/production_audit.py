@@ -47,7 +47,9 @@ def audit_production_candidate(
     if not isinstance(providers, dict):
         raise ValidationError("production audit requires proxy-providers")
 
-    subscriptions = {item.id: item for item in project.subscriptions if item.enabled}
+    subscriptions = {
+        item.id: item for item in project.subscriptions if item.enabled
+    }
     pool_rows: list[dict[str, Any]] = []
 
     for pool in project.policies["pools"]:
@@ -109,11 +111,15 @@ def audit_production_candidate(
         if not isinstance(raw_reports, list):
             raise ValidationError("production build report has invalid subscriptions summary")
         source_reports = {
-            str(item.get("id")): item for item in raw_reports if isinstance(item, dict) and item.get("id")
+            str(item.get("id")): item
+            for item in raw_reports
+            if isinstance(item, dict) and item.get("id")
         }
 
     subscription_rows: list[dict[str, Any]] = []
-    for spec in sorted(subscriptions.values(), key=lambda item: (item.priority, item.id)):
+    for spec in sorted(
+        subscriptions.values(), key=lambda item: (item.priority, item.id)
+    ):
         source_report = source_reports.get(spec.id, {})
         row: dict[str, Any] = {
             "id": spec.id,
@@ -166,9 +172,12 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
         ]
     )
     for item in summary["pools"]:
-        sources = ", ".join(
-            f"`{source}`={count}" for source, count in item["sources"].items()
-        ) or "-"
+        sources = (
+            ", ".join(
+                f"`{source}`={count}" for source, count in item["sources"].items()
+            )
+            or "-"
+        )
         lines.append(
             f"| `{item['id']}` | `{item['source_use']}` | {item['nodes']} | {sources} |"
         )
