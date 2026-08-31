@@ -50,9 +50,7 @@ def test_production_audit_fails_when_source_enters_disallowed_pool(
         audit_production_candidate(_project(project_paths), candidate)
 
 
-def test_production_audit_includes_multiplier_filter_counts(
-    built_candidate, project_paths
-) -> None:
+def test_production_audit_includes_multiplier_filter_counts(built_candidate, project_paths) -> None:
     report = copy.deepcopy(built_candidate.report)
     primary = next(item for item in report["subscriptions"] if item["id"] == "primary")
     primary["filtered_over_multiplier"] = 3
