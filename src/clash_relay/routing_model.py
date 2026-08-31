@@ -144,13 +144,16 @@ def compile_routing_model(manifest: dict[str, Any] | None) -> dict[str, Any] | N
         if target_meta is not None and target_meta.scenario not in {"final", "general"}:
             raise ConfigurationError("final route target must belong to final/general scenario")
 
-    scenario_counts: dict[str, int] = {name: 0 for name in sorted(SCENARIOS)}
+    scenario_counts: dict[str, int] = dict.fromkeys(sorted(SCENARIOS), 0)
     for binding in bindings:
         scenario_counts[binding.scenario] += 1
 
     return {
         "version": 2,
         "targets": [targets[name].as_dict() for name in sorted(targets)],
-        "bindings": [binding.as_dict() for binding in sorted(bindings, key=lambda item: (item.priority, item.source_id))],
+        "bindings": [
+            binding.as_dict()
+            for binding in sorted(bindings, key=lambda item: (item.priority, item.source_id))
+        ],
         "scenario_counts": scenario_counts,
     }
