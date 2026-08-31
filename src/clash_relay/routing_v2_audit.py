@@ -29,6 +29,23 @@ _REGION_DISPLAY_NAMES = {
     "OTHER": ("AI · 其他地区", "AI · OTHER"),
 }
 _REGION_CANONICAL_DISPLAY = {region: names[0] for region, names in _REGION_DISPLAY_NAMES.items()}
+_CANONICAL_VISIBLE = {
+    "代理选择",
+    "网页浏览",
+    "人工智能",
+    "流媒体",
+    "消息通讯",
+    "下载流量",
+}
+_GENERAL_REGION_CHOICES = [
+    "香港节点",
+    "台湾节点",
+    "新加坡节点",
+    "日本节点",
+    "美国节点",
+    "韩国节点",
+    "DIRECT",
+]
 
 
 def _groups(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -138,32 +155,55 @@ def _audit_ai_materialization(
     }
 
 
+def _audit_general_scheduler(groups: dict[str, dict[str, Any]], *, name: str, purpose: str) -> None:
+    scheduler = groups.get(name)
+    if not isinstance(scheduler, dict) or scheduler.get("hidden") is not True:
+        raise ValidationError(f"Routing V2 {purpose} scheduler must be hidden")
+    if scheduler.get("type") != "url-test" or not scheduler.get("use"):
+        raise ValidationError(f"Routing V2 {purpose} scheduler must be provider-backed url-test")
+
+
+def _audit_public_general_selector(
+    groups: dict[str, dict[str, Any]], *, name: str, automatic: str
+) -> None:
+    selector = groups.get(name)
+    if not isinstance(selector, dict):
+        raise ValidationError(f"Routing V2 public selector {name!r} is missing")
+    if selector.get("hidden", False) or selector.get("type") != "select":
+        raise ValidationError(f"Routing V2 public selector {name!r} must be a visible select group")
+    if selector.get("use") or "filter" in selector:
+        raise ValidationError(
+            f"Routing V2 public selector {name!r} must not attach proxy providers directly"
+        )
+    expected = [automatic, *_GENERAL_REGION_CHOICES]
+    if _group_proxies(groups, name) != expected:
+        raise ValidationError(
+            f"Routing V2 public selector {name!r} has unexpected general-only choices"
+        )
+
+
 def _audit_cutover_routes(
     policy: RoutingPolicyV2,
     groups: dict[str, dict[str, Any]],
     bindings: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    media_auto = groups.get("媒体自动")
-    download_auto = groups.get("下载自动")
-    if not isinstance(media_auto, dict) or media_auto.get("hidden") is not True:
-        raise ValidationError("Routing V2 media scheduler must be hidden")
-    if media_auto.get("type") != "url-test" or not media_auto.get("use"):
-        raise ValidationError("Routing V2 media scheduler must be provider-backed url-test")
-    if not isinstance(download_auto, dict) or download_auto.get("hidden") is not True:
-        raise ValidationError("Routing V2 download scheduler must be hidden")
-    if download_auto.get("type") != "url-test" or not download_auto.get("use"):
-        raise ValidationError("Routing V2 download scheduler must be provider-backed url-test")
+    _audit_general_scheduler(groups, name="媒体自动", purpose="media")
+    _audit_general_scheduler(groups, name="通讯自动", purpose="messaging")
+    _audit_general_scheduler(groups, name="下载自动", purpose="download")
+    _audit_public_general_selector(groups, name="流媒体", automatic="媒体自动")
+    _audit_public_general_selector(groups, name="消息通讯", automatic="通讯自动")
 
-    if _group_proxies(groups, "油管视频") != ["媒体自动"]:
-        raise ValidationError("YouTube must route only through the media scheduler")
-    if _group_proxies(groups, "国外媒体") != ["媒体自动"]:
-        raise ValidationError("foreign media must route only through the media scheduler")
-    if _group_proxies(groups, "奈飞视频") != ["奈飞节点", "媒体自动"]:
+    if _group_proxies(groups, "油管视频") != ["流媒体"]:
+        raise ValidationError("YouTube must route only through the public media selector")
+    if _group_proxies(groups, "国外媒体") != ["流媒体"]:
+        raise ValidationError("foreign media must route only through the public media selector")
+    if _group_proxies(groups, "奈飞视频") != ["奈飞节点", "流媒体"]:
         raise ValidationError("Netflix must use capability-first media fallback")
+    if _group_proxies(groups, "电报消息") != ["消息通讯"]:
+        raise ValidationError("Telegram must route only through the public messaging selector")
 
     if policy.download.mode == "general_auto":
-        if _group_proxies(groups, "下载流量") != ["下载自动"]:
-            raise ValidationError("download cutover must route only through download scheduler")
+        _audit_public_general_selector(groups, name="下载流量", automatic="下载自动")
     elif _group_proxies(groups, "下载流量") != ["DIRECT"]:
         raise ValidationError("direct download mode must route only to DIRECT")
 
@@ -201,6 +241,7 @@ def _audit_cutover_routes(
 
     return {
         "media_scheduler": "媒体自动",
+        "messaging_scheduler": "通讯自动",
         "download_scheduler": "下载自动",
         "download_mode": policy.download.mode,
         "ai_region_order": ai_regions,
@@ -262,18 +303,17 @@ def audit_routing_v2(
         for row in candidate.get("proxy-groups", [])
         if isinstance(row, dict) and not row.get("hidden", False)
     }
-    canonical_visible = {"代理选择", "网页浏览", "人工智能"}
-    if canonical_visible <= set(groups):
+    if set(groups) >= _CANONICAL_VISIBLE:
         ai_wrapper_names = {
             str(pool["display_name"])
             for pool in project.policies["pools"]
             if str(pool["source_use"]) == policy.scenario_use("ai")
         }
         if ai["stage"] == "post_qualification":
-            allowed_visible = canonical_visible
+            allowed_visible = _CANONICAL_VISIBLE
         else:
-            allowed_visible = canonical_visible | ai_wrapper_names
-        if not canonical_visible <= visible or not visible <= allowed_visible:
+            allowed_visible = _CANONICAL_VISIBLE | ai_wrapper_names
+        if not visible >= _CANONICAL_VISIBLE or not visible <= allowed_visible:
             raise ValidationError(
                 "canonical routing v2 profile exposes unexpected top-level groups"
             )

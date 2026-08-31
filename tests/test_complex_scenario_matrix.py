@@ -27,6 +27,8 @@ def test_complex_concurrent_scenarios_have_independent_route_intent(repo_root) -
         "china_company_ip": ("direct", "domestic_web", "全球直连"),
         # Explicit generic foreign web uses the browsing inventory.
         "proxy_gfwlist": ("browsing", "foreign_web", "网页浏览"),
+        # Messaging remains a general-only application scenario.
+        "telegram": ("general", "telegram", "电报消息"),
         # Video/media services are classified independently from generic web.
         "youtube": ("media", "youtube", "油管视频"),
         "netflix": ("media", "netflix", "奈飞视频"),
@@ -72,6 +74,7 @@ def test_specific_services_and_download_precede_generic_foreign_web(repo_root) -
     generic_web_priority = rows["proxy_gfwlist"]["priority"]
 
     for source_id in (
+        "telegram",
         "ai",
         "openai",
         "youtube",
@@ -101,6 +104,10 @@ def test_finalized_routing_v2_graph_has_no_declared_drift(repo_root) -> None:
     }
     assert drift["media"] == {
         "auto_scheduler_rule_sources": 2,
+        "scheduler_applied": True,
+    }
+    assert drift["messaging"] == {
+        "rule_sources": 1,
         "scheduler_applied": True,
     }
     assert drift["ai"] == {

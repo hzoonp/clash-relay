@@ -18,7 +18,14 @@ _EXPECTED_COMPATIBILITY_OMISSIONS = {
     "download": (7, "Clash/Providers/Download.yaml"),
 }
 
-_EXPECTED_PUBLIC_SCENARIOS = {"代理选择", "网页浏览", "人工智能"}
+_EXPECTED_PUBLIC_SCENARIOS = {
+    "代理选择",
+    "网页浏览",
+    "人工智能",
+    "流媒体",
+    "消息通讯",
+    "下载流量",
+}
 _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "自动选择",
     "手动切换",
@@ -29,6 +36,7 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "美国节点",
     "韩国节点",
     "媒体自动",
+    "通讯自动",
     "下载自动",
     "奈飞节点",
     "全球直连",
@@ -47,7 +55,6 @@ _EXPECTED_HIDDEN_ROUTING_GROUPS = {
     "哔哩哔哩",
     "国内媒体",
     "国外媒体",
-    "下载流量",
     "漏网之鱼",
 }
 _EXPECTED_AI_COUNTRY_GROUPS = {
@@ -58,6 +65,15 @@ _EXPECTED_AI_COUNTRY_GROUPS = {
     "AI · 韩国",
     "AI · 其他地区",
 }
+_PUBLIC_GENERAL_CHOICES = [
+    "香港节点",
+    "台湾节点",
+    "新加坡节点",
+    "日本节点",
+    "美国节点",
+    "韩国节点",
+    "DIRECT",
+]
 
 
 def _assert_canonical_compatibility_report(report: dict) -> None:
@@ -210,7 +226,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         item["name"] for item in result.config["proxy-groups"] if not item.get("hidden", False)
     }
     assert visible == _EXPECTED_PUBLIC_SCENARIOS
-    assert {"流媒体", "国内服务", "更多策略"}.isdisjoint(groups)
+    assert {"国内服务", "更多策略"}.isdisjoint(groups)
     assert groups["代理选择"]["proxies"] == [
         "自动选择",
         "香港节点",
@@ -222,6 +238,13 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "手动切换",
         "DIRECT",
     ]
+    assert groups["流媒体"]["proxies"] == ["媒体自动", *_PUBLIC_GENERAL_CHOICES]
+    assert groups["消息通讯"]["proxies"] == ["通讯自动", *_PUBLIC_GENERAL_CHOICES]
+    assert groups["下载流量"]["proxies"] == ["下载自动", *_PUBLIC_GENERAL_CHOICES]
+    for public_name in ("流媒体", "消息通讯", "下载流量"):
+        assert groups[public_name]["type"] == "select"
+        assert "use" not in groups[public_name]
+        assert "filter" not in groups[public_name]
 
     deterministic = {
         "全球直连": "DIRECT",
@@ -231,15 +254,14 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "微软云盘": "DIRECT",
         "微软服务": "DIRECT",
         "苹果服务": "DIRECT",
-        "电报消息": "代理选择",
+        "电报消息": "消息通讯",
         "网易音乐": "DIRECT",
         "游戏平台": "DIRECT",
-        "油管视频": "媒体自动",
+        "油管视频": "流媒体",
         "巴哈姆特": "台湾节点",
         "哔哩哔哩": "DIRECT",
         "国内媒体": "DIRECT",
-        "国外媒体": "媒体自动",
-        "下载流量": "下载自动",
+        "国外媒体": "流媒体",
         "漏网之鱼": "代理选择",
     }
     assert "应用净化" not in groups
@@ -248,7 +270,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
 
     assert groups["奈飞视频"]["type"] == "fallback"
     assert groups["奈飞视频"]["hidden"] is True
-    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "媒体自动"]
+    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "流媒体"]
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_HIDDEN_ROUTING_GROUPS)
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_AI_COUNTRY_GROUPS)
     assert "AI · 香港" not in groups

@@ -45,7 +45,14 @@ def test_final_routing_v2_presentation_and_internal_routes(repo_root: Path) -> N
     groups = {row["display_name"]: row for row in manifest["groups"]}
 
     visible = {name for name, row in groups.items() if not row.get("hidden", False)}
-    assert visible == {"代理选择", "网页浏览", "人工智能"}
+    assert visible == {
+        "代理选择",
+        "网页浏览",
+        "人工智能",
+        "流媒体",
+        "消息通讯",
+        "下载流量",
+    }
 
     for name, row in groups.items():
         route = row.get("route")
@@ -57,12 +64,17 @@ def test_final_routing_v2_presentation_and_internal_routes(repo_root: Path) -> N
 
     assert groups["媒体自动"]["hidden"] is True
     assert groups["媒体自动"]["provider_pool"] == "general"
+    assert groups["通讯自动"]["hidden"] is True
+    assert groups["通讯自动"]["provider_pool"] == "general"
     assert groups["下载自动"]["hidden"] is True
     assert groups["下载自动"]["provider_pool"] == "general"
     assert groups["网页自动"]["provider_pool"] == "browsing"
+    assert groups["流媒体"]["members"][0] == {"group": "媒体自动"}
+    assert groups["消息通讯"]["members"][0] == {"group": "通讯自动"}
+    assert groups["下载流量"]["members"][0] == {"group": "下载自动"}
     assert groups["奈飞视频"]["members"] == [
         {"group": "奈飞节点"},
-        {"group": "媒体自动"},
+        {"group": "流媒体"},
     ]
 
 
@@ -73,6 +85,7 @@ def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> N
 
     assert sources["proxy_gfwlist"]["target"] == "网页浏览"
     assert sources["download"]["target"] == "下载流量"
+    assert sources["telegram"]["target"] == "电报消息"
     assert sources["youtube"]["target"] == "油管视频"
     assert sources["netflix"]["target"] == "奈飞视频"
     assert manifest["final_target"] == "漏网之鱼"
@@ -106,6 +119,7 @@ def test_final_routing_v2_drift_guard_is_healthy(repo_root: Path) -> None:
     assert summary["status"] == "healthy"
     assert summary["download"]["scheduler_applied"] is True
     assert summary["media"]["scheduler_applied"] is True
+    assert summary["messaging"]["scheduler_applied"] is True
     assert summary["ai"]["policy_applied"] is True
     assert summary["foreign_web"]["classifier_widened"] is False
 

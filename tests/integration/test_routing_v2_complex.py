@@ -82,14 +82,37 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
 
     groups = {row["name"]: row for row in candidate["proxy-groups"]}
     visible = {row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)}
-    assert visible == {"代理选择", "网页浏览", "人工智能"}
-    assert groups["油管视频"]["proxies"] == ["媒体自动"]
-    assert groups["国外媒体"]["proxies"] == ["媒体自动"]
+    assert visible == {
+        "代理选择",
+        "网页浏览",
+        "人工智能",
+        "流媒体",
+        "消息通讯",
+        "下载流量",
+    }
+    general_choices = [
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "DIRECT",
+    ]
+    assert groups["流媒体"]["proxies"] == ["媒体自动", *general_choices]
+    assert groups["消息通讯"]["proxies"] == ["通讯自动", *general_choices]
+    assert groups["下载流量"]["proxies"] == ["下载自动", *general_choices]
+    for public_name in ("流媒体", "消息通讯", "下载流量"):
+        assert "use" not in groups[public_name]
+        assert "filter" not in groups[public_name]
+
+    assert groups["电报消息"]["proxies"] == ["消息通讯"]
+    assert groups["油管视频"]["proxies"] == ["流媒体"]
+    assert groups["国外媒体"]["proxies"] == ["流媒体"]
     assert groups["国内媒体"]["proxies"] == ["DIRECT"]
-    assert groups["下载流量"]["proxies"] == ["下载自动"]
     assert groups["漏网之鱼"]["proxies"] == ["代理选择"]
     assert groups["奈飞视频"]["type"] == "fallback"
-    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "媒体自动"]
+    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "流媒体"]
 
     assert groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0].startswith("__CR_AI_OPENAI_")
     assert groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0].startswith("__CR_AI_CLAUDE_")
@@ -99,6 +122,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert sum(name.startswith("__CR_AI_GEMINI_") for name in groups) == 1
 
     rules = candidate["rules"]
+    assert "RULE-SET,acl4ssr_telegram,电报消息" in rules
     assert "RULE-SET,acl4ssr_youtube,油管视频" in rules
     assert "RULE-SET,acl4ssr_netflix,奈飞视频" in rules
     assert "RULE-SET,acl4ssr_download,下载流量" in rules
@@ -123,6 +147,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     audit = audit_routing_v2(project, candidate)
     assert audit["status"] == "passed"
     assert audit["cutover"]["download_mode"] == "general_auto"
+    assert audit["cutover"]["messaging_scheduler"] == "通讯自动"
     assert audit["ai"]["stage"] == "post_qualification"
 
     path = tmp_path / "routing-v2-complex.yaml"

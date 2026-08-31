@@ -31,10 +31,22 @@ def _member(route: dict, project) -> str:
 
 
 def _candidate(project) -> dict:
+    general_choices = [
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "DIRECT",
+    ]
     groups = [
         {"name": "代理选择", "type": "select", "proxies": ["DIRECT"]},
         {"name": "网页浏览", "type": "select", "proxies": ["DIRECT"]},
         {"name": "人工智能", "type": "select", "proxies": ["DIRECT"]},
+        {"name": "流媒体", "type": "select", "proxies": ["媒体自动", *general_choices]},
+        {"name": "消息通讯", "type": "select", "proxies": ["通讯自动", *general_choices]},
+        {"name": "下载流量", "type": "select", "proxies": ["下载自动", *general_choices]},
     ]
     for spec in project.acl4ssr["groups"]:
         route = spec.get("route")
@@ -57,6 +69,12 @@ def _candidate(project) -> dict:
                 "use": ["fixture_general"],
             },
             {
+                "name": "通讯自动",
+                "type": "url-test",
+                "hidden": True,
+                "use": ["fixture_general"],
+            },
+            {
                 "name": "下载自动",
                 "type": "url-test",
                 "hidden": True,
@@ -66,7 +84,7 @@ def _candidate(project) -> dict:
                 "name": "奈飞视频",
                 "type": "fallback",
                 "hidden": True,
-                "proxies": ["奈飞节点", "媒体自动"],
+                "proxies": ["奈飞节点", "流媒体"],
             },
         ]
     )
@@ -106,7 +124,7 @@ def test_routing_v2_audit_accepts_complete_fail_closed_ai_service_set(repo_root)
 
     assert summary["ai"]["stage"] == "post_qualification"
     assert summary["ai"]["service_targets_checked"] == 3
-    assert summary["visible_groups"] == 3
+    assert summary["visible_groups"] == 6
 
 
 def test_routing_v2_audit_rejects_persisted_hidden_selector_state(repo_root) -> None:
@@ -115,6 +133,15 @@ def test_routing_v2_audit_rejects_persisted_hidden_selector_state(repo_root) -> 
     _group(candidate, "油管视频")["proxies"] = ["代理选择", "DIRECT"]
 
     with pytest.raises(ValidationError, match="not a hidden one-hop route"):
+        audit_routing_v2(project, candidate)
+
+
+def test_routing_v2_audit_rejects_provider_exposure_on_public_scenario(repo_root) -> None:
+    project = _project(repo_root)
+    candidate = _candidate(project)
+    _group(candidate, "流媒体")["use"] = ["fixture_general"]
+
+    with pytest.raises(ValidationError, match="must not attach proxy providers directly"):
         audit_routing_v2(project, candidate)
 
 
