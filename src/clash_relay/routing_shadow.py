@@ -63,9 +63,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         if row["scenario"] == "media" and row.get("service") in _MEDIA_AUTO_SERVICES
     )
     messaging_rules = sum(
-        1
-        for row in bindings
-        if row["scenario"] == "general" and row.get("service") == "telegram"
+        1 for row in bindings if row["scenario"] == "general" and row.get("service") == "telegram"
     )
     download_rules = sum(1 for row in bindings if row["scenario"] == "download")
     browsing_rules = sum(1 for row in bindings if row["scenario"] == "browsing")
@@ -99,9 +97,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     media_applied = (
         bool(media_members)
         and media_members[0] == "媒体自动"
-        and all(
-            _route_member(groups.get(name)) == "流媒体" for name in ("油管视频", "国外媒体")
-        )
+        and all(_route_member(groups.get(name)) == "流媒体" for name in ("油管视频", "国外媒体"))
     )
     messaging_applied = (
         bool(messaging_members)
