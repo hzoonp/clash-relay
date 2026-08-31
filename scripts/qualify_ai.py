@@ -89,19 +89,16 @@ def _filtered_candidate(candidate: Path, live_names: set[str]) -> Path:
             for proxy in payload
             if isinstance(proxy, dict) and str(proxy.get("name", "")) in live_names
         ]
-    handle = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
         suffix=".yaml",
         prefix="ai-live-",
         dir=candidate.parent,
         delete=False,
-    )
-    try:
+    ) as handle:
         handle.write(dump_yaml(config))
         return Path(handle.name)
-    finally:
-        handle.close()
 
 
 def _empty_probe_summary(probe: dict[str, object]) -> dict[str, object]:
