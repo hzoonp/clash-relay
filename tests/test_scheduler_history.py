@@ -83,6 +83,8 @@ def test_history_update_contains_no_runtime_names() -> None:
 def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path: Path) -> None:
     candidate = tmp_path / "config.yaml"
     candidate.write_text(
+        "mixed-port: 7890\n"
+        "mode: rule\n"
         "proxy-providers:\n"
         "  cr_browsing_any:\n"
         "    type: inline\n"
