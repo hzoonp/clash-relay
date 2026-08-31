@@ -6,6 +6,22 @@
 
 > **敏感信息提示**：最终 `config.yaml` 内联真实节点凭据，应视为最高敏感数据。生产工作流只把通过验证的配置写入私有 Cloudflare Workers KV，不上传到公开 Artifact、Release、Gist、commit 或 Pages。
 
+## 从 Fork 开始
+
+全新 Fork 请直接使用 [Fork 快速上手](docs/quickstart.zh-CN.md)，完整路径为：
+
+```text
+Fork
+  -> 配置 CLASH_RELAY_SUBSCRIPTIONS
+  -> 配置 Cloudflare KV Secret / Variables
+  -> 手动 dry-run（publish=false，默认值）
+  -> 查看聚合 production proof
+  -> publish=true
+  -> 必要时执行双核验证的生产回滚
+```
+
+当前生产链还包含网页浏览实时资格分层（`3/3 = stable 自动`、`2/3 = reserve 手动`、`<2/3 = 剔除`）、私有匿名历史调度、OpenAI/Claude/Gemini 独立资格检测、端到端 source reachability 审计，以及 Mihomo v1.19.30 / v1.19.29 双版本验证。如果新的生产 bytes 与当前值不同，替换前会先私有保存 previous-good，之后可通过 `Roll back production config` 重新验证并激活上一份配置。
+
 ## 当前生产场景
 
 生产配置把“合并多个订阅”与“允许所有订阅用于所有业务”严格分开：
@@ -53,13 +69,17 @@ GitHub Secrets
           ↓
 固定 ACL4SSR 规则 + 场景调度
           ↓
+browsing 三次实时资格检测 + 匿名历史偏好
+          ↓
 OpenAI / Claude / Gemini 实测资格
+          ↓
+资格处理后二次 source reachability 审计
           ↓
 Mihomo v1.19.30 + v1.19.29 验证
           ↓
-Cloudflare Workers KV
+私有 previous-good 快照 -> Cloudflare Workers KV
           ↓
-FlClash
+聚合 production proof -> FlClash
 ```
 
 ## 订阅配置
@@ -218,6 +238,8 @@ python scripts/repository_audit.py
 
 ## 文档
 
+- [Fork 快速上手](docs/quickstart.zh-CN.md)
+- [Fork quickstart](docs/quickstart.md)
 - [配置模型](docs/configuration.md)
 - [架构](docs/architecture.md)
 - [ACL4SSR 规则模型](docs/rules.md)
