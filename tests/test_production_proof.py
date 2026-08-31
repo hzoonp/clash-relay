@@ -44,19 +44,19 @@ def _inputs(candidate_path: Path) -> dict:
 def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: Path) -> None:
     candidate = tmp_path / "config.yaml"
     content = (
-        "proxy-providers:\n"
-        "  private:\n"
-        "    type: inline\n"
-        "    payload:\n"
-        "      - name: SECRET-NODE-NAME\n"
-        "        type: http\n"
-        "        server: secret.example.invalid\n"
-        "        port: 443\n"
-        "        password: SUPER-SECRET-PASSWORD\n"
-        "proxy-groups: []\n"
-        "rule-providers: {}\n"
-        "rules: []\n"
-    ).encode()
+        b"proxy-providers:\n"
+        b"  private:\n"
+        b"    type: inline\n"
+        b"    payload:\n"
+        b"      - name: SECRET-NODE-NAME\n"
+        b"        type: http\n"
+        b"        server: secret.example.invalid\n"
+        b"        port: 443\n"
+        b"        password: SUPER-SECRET-PASSWORD\n"
+        b"proxy-groups: []\n"
+        b"rule-providers: {}\n"
+        b"rules: []\n"
+    )
     candidate.write_bytes(content)
 
     proof = build_production_proof(**_inputs(candidate))
