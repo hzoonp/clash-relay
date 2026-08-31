@@ -11,7 +11,16 @@ from clash_relay.browsing_qualification import (
     probe_browsing_nodes,
     rewrite_browsing_qualified_candidate,
 )
-from clash_relay.errors import ClashRelayError
+from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.scheduler_history import (
+    apply_history_preference,
+    browsing_runtime_names,
+    history_summary,
+    parse_history_bytes,
+    preferred_stable_names,
+    update_history,
+)
+from clash_relay.util import load_yaml_file
 
 
 def _path(value: str) -> Path:
@@ -28,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--attempts", type=int, default=3)
     parser.add_argument("--required-successes", type=int, default=2)
+    parser.add_argument("--history", type=_path)
+    parser.add_argument("--history-key", type=_path)
+    parser.add_argument("--next-history", type=_path)
     return parser
 
 
@@ -50,10 +62,44 @@ def _emit_safe_core_diagnostic(args: argparse.Namespace) -> None:
         print('{"status":"unavailable","reason":"diagnostic_process_failed"}', file=sys.stderr)
 
 
+def _history_inputs(args: argparse.Namespace) -> tuple[dict, bytes, str] | None:
+    provided = (
+        args.history is not None,
+        args.history_key is not None,
+        args.next_history is not None,
+    )
+    if any(provided) and not all(provided):
+        raise ValidationError(
+            "browsing scheduler history requires --history, --history-key, and --next-history together"
+        )
+    if not all(provided):
+        return None
+    try:
+        key_text = args.history_key.read_text(encoding="ascii").strip()
+    except OSError as exc:
+        raise ValidationError("failed to read private scheduler fingerprint key") from exc
+    if not key_text:
+        return None
+    try:
+        fingerprint_key = bytes.fromhex(key_text)
+    except ValueError as exc:
+        raise ValidationError("private scheduler fingerprint key is invalid") from exc
+    try:
+        content = args.history.read_bytes()
+    except OSError:
+        content = None
+    history, status = parse_history_bytes(content)
+    return history, fingerprint_key, status
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics: dict[str, object] = {}
     try:
+        candidate_before = load_yaml_file(args.candidate)
+        if not isinstance(candidate_before, dict):
+            raise ValidationError("candidate is not a YAML mapping")
+        all_names = browsing_runtime_names(candidate_before)
         probe = load_browsing_probe_spec(args.policies)
         qualified, stable = probe_browsing_nodes(
             args.mihomo_bin,
@@ -64,10 +110,60 @@ def main(argv: list[str] | None = None) -> int:
             required_successes=args.required_successes,
             diagnostics=diagnostics,
         )
+
+        history_inputs = _history_inputs(args)
+        scheduler_report: dict[str, object] = {
+            "status": "disabled",
+            "records_before": 0,
+            "records_after": 0,
+            "stable_nodes": len(stable),
+            "preferred_stable_nodes": len(stable),
+            "historically_demoted_nodes": 0,
+            "preference_groups": 0,
+        }
+        preferred = set(stable)
+        if history_inputs is not None:
+            history, fingerprint_key, load_status = history_inputs
+            preferred = preferred_stable_names(stable, history, fingerprint_key)
+            next_history = update_history(
+                history,
+                all_names=all_names,
+                qualified_names=qualified,
+                stable_names=stable,
+                fingerprint_key=fingerprint_key,
+            )
+            args.next_history.parent.mkdir(parents=True, exist_ok=True)
+            args.next_history.write_text(
+                json.dumps(
+                    next_history,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            scheduler_report = history_summary(
+                load_status=load_status,
+                before=history,
+                after=next_history,
+                stable_names=stable,
+                preferred_names=preferred,
+            )
+
         report = rewrite_browsing_qualified_candidate(args.candidate, qualified, stable)
+        if history_inputs is not None:
+            scheduler_report["preference_groups"] = apply_history_preference(
+                args.candidate, preferred
+            )
         print(
             json.dumps(
-                {"status": "qualified", "diagnostics": diagnostics, **report},
+                {
+                    "status": "qualified",
+                    "diagnostics": diagnostics,
+                    "scheduler_history": scheduler_report,
+                    **report,
+                },
                 ensure_ascii=False,
                 sort_keys=True,
             )

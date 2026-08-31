@@ -48,8 +48,12 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
-    assert text.index("CLOUDFLARE_API_TOKEN") > text.index("validate_core v1.19.29")
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 3
+    load = text.index("Load private scheduler history")
+    browsing = text.index("Qualify browsing nodes")
+    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    persist = text.index("Persist private scheduler history")
+    assert load < browsing < publish < persist
 
 
 def test_production_audit_runs_before_and_after_private_qualification() -> None:
@@ -79,6 +83,25 @@ def test_browsing_qualification_precedes_ai_and_final_validation() -> None:
     assert browsing < ai < text.index("validate_core v1.19.30")
     assert ".work/bin/mihomo-qualification" in text
     assert text.count("--mihomo-bin .work/bin/mihomo-qualification") == 2
+
+
+def test_scheduler_history_is_private_optional_and_committed_only_after_config_publish() -> None:
+    text = WORKFLOW.read_text()
+    load = text.index("Load private scheduler history")
+    browsing = text.index("Qualify browsing nodes")
+    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    persist = text.index("Persist private scheduler history")
+    proof = text.index("Record publication result")
+    assert "scripts/load_scheduler_history.py" in text
+    assert "scripts/publish_scheduler_history.py" in text
+    assert "--history .work/private/scheduler-history.json" in text
+    assert "--history-key .work/private/scheduler-history.key" in text
+    assert "--next-history .work/private/scheduler-history-next.json" in text
+    assert load < browsing < publish < persist < proof
+    persist_block = text[persist:proof]
+    assert "github.event_name == 'push' || inputs.publish == true" in persist_block
+    assert "scheduler-state-v1" not in text
+    assert "actions/upload-artifact" not in text
 
 
 def test_ai_qualification_precedes_final_validation() -> None:

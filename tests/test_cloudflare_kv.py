@@ -15,8 +15,22 @@ class _Response:
     def __init__(self, document: dict) -> None:
         self._payload = json.dumps(document).encode("utf-8")
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, size: int = -1) -> bytes:
+        return self._payload if size < 0 else self._payload[:size]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class _RawResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def read(self, size: int = -1) -> bytes:
+        return self._payload if size < 0 else self._payload[:size]
 
     def __enter__(self):
         return self
@@ -72,6 +86,52 @@ def test_cloudflare_publisher_resolves_namespace_and_writes_exact_config(monkeyp
         "bytes": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
     }
+
+
+def test_cloudflare_publisher_reads_exact_private_value(monkeypatch) -> None:
+    requests: list[urllib.request.Request] = []
+    value = b'{"version":1,"nodes":{}}\n'
+
+    def fake_urlopen(request, timeout):
+        assert timeout == 30
+        requests.append(request)
+        if "/storage/kv/namespaces?" in request.full_url:
+            return _Response(
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
+            )
+        return _RawResponse(value)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = CloudflareKVPublisher(
+        token="private-api-token",
+        account_id="0" * 32,
+        namespace_title="clash-relay-config",
+        key_name="production-config.scheduler-state-v1",
+    ).read()
+
+    assert result == value
+    assert len(requests) == 2
+    assert requests[1].get_method() == "GET"
+    assert requests[1].full_url.endswith("/values/production-config.scheduler-state-v1")
+
+
+def test_cloudflare_publisher_returns_none_for_missing_private_value(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        if "/storage/kv/namespaces?" in request.full_url:
+            return _Response(
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
+            )
+        raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = CloudflareKVPublisher(
+        token="private-api-token",
+        account_id="0" * 32,
+        namespace_title="clash-relay-config",
+        key_name="production-config.scheduler-state-v1",
+    ).read()
+
+    assert result is None
 
 
 def test_cloudflare_publisher_fails_closed_when_namespace_is_missing(monkeypatch) -> None:

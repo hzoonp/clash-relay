@@ -105,6 +105,36 @@ class CloudflareKVPublisher:
             )
         return matches[0]
 
+    def _value_url(self, namespace_id: str) -> str:
+        encoded_account = urllib.parse.quote(self._account_id, safe="")
+        encoded_namespace = urllib.parse.quote(namespace_id, safe="")
+        encoded_key = urllib.parse.quote(self._key_name, safe="")
+        return (
+            f"{_API_ROOT}/accounts/{encoded_account}/storage/kv/namespaces/"
+            f"{encoded_namespace}/values/{encoded_key}"
+        )
+
+    def read(self) -> bytes | None:
+        """Read the exact value bytes; a missing key is represented as None."""
+        namespace_id = self._namespace_id()
+        request = urllib.request.Request(
+            self._value_url(namespace_id),
+            headers=self._headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                content = response.read(_MAX_VALUE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise PublicationError(f"Cloudflare API request failed with HTTP {exc.code}") from exc
+        except (urllib.error.URLError, OSError) as exc:
+            raise PublicationError("Cloudflare API request failed") from exc
+        if len(content) > _MAX_VALUE_BYTES:
+            raise PublicationError("Cloudflare KV value exceeds the 25 MiB safety limit")
+        return content
+
     def publish(self, *, content: bytes) -> dict[str, Any]:
         if not content:
             raise PublicationError("refusing to publish an empty Cloudflare KV value")
@@ -112,19 +142,15 @@ class CloudflareKVPublisher:
             raise PublicationError("generated config exceeds Cloudflare KV's 25 MiB value limit")
 
         namespace_id = self._namespace_id()
-        encoded_account = urllib.parse.quote(self._account_id, safe="")
-        encoded_namespace = urllib.parse.quote(namespace_id, safe="")
-        encoded_key = urllib.parse.quote(self._key_name, safe="")
         boundary = f"clash-relay-{secrets.token_hex(16)}"
         prefix = (
             f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="value"; filename="config.yaml"\r\n'
-            "Content-Type: text/yaml; charset=utf-8\r\n\r\n"
+            'Content-Disposition: form-data; name="value"; filename="value.bin"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
         ).encode()
         suffix = f"\r\n--{boundary}--\r\n".encode()
         request = urllib.request.Request(
-            f"{_API_ROOT}/accounts/{encoded_account}/storage/kv/namespaces/"
-            f"{encoded_namespace}/values/{encoded_key}",
+            self._value_url(namespace_id),
             data=prefix + content + suffix,
             method="PUT",
             headers={
