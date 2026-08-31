@@ -4,21 +4,29 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-01
+
 ### Added
 
-- The canonical FlClash surface now exposes three additional scenario selectors: `流媒体`, `消息通讯`, and `下载流量`.
-- Hidden `通讯自动` provides the default general-only scheduler for the new messaging selector.
+- The canonical FlClash surface now exposes `流媒体`, `消息通讯`, and `下载流量` alongside `代理选择`, `网页浏览`, and `人工智能`.
+- A pinned `ACL4SSR_Online.ini` reference compiler and parity gate now verify baseline ruleset order, compatibility-selector defaults, explicit extensions, and intentional deviations before release or production publication.
+- Hidden `通讯自动` provides the default general-only scheduler for messaging while existing media/download schedulers remain provider-backed and hidden.
 
 ### Changed
 
-- YouTube and generic foreign media now enter the public `流媒体` selector; Netflix keeps its capability-first `奈飞节点` preference before falling back to `流媒体`.
-- Telegram now enters the public `消息通讯` selector through the hidden deterministic `电报消息` route.
-- `Download.list` continues to target `下载流量`, which is now a public selector defaulting to the hidden `下载自动` scheduler while also exposing general regional choices and `DIRECT`.
+- ACL4SSR Online is now the classification source of truth instead of being reinterpreted into a separate application-routing graph.
+- Generic foreign-web routing uses the pinned ACL4SSR `ProxyLite.list` baseline and maps it to `网页浏览`; the former canonical `ProxyGFWlist` replacement is removed.
+- `ProxyMedia.list` now owns generic foreign-media classification and maps to `流媒体`; Telegram maps directly to `消息通讯`.
+- Microsoft, Apple, Google FCM, global-direct, block, and final compatibility selectors preserve the pinned ACL4SSR default member order while remaining hidden from the six-group FlClash surface.
+- AI/OpenAI are explicit classification extensions before `ProxyMedia`; `Download.list` is the only download extension and runs before `ProxyLite`.
+- Standalone YouTube/Netflix/game/Bilibili/ChinaMedia classification sources that altered ACL4SSR Online precedence are removed from the canonical rule graph. Media capability scheduling can remain internal without redefining baseline classification.
 
 ### Security
 
-- `流媒体`, `消息通讯`, and `下载流量` do not attach proxy providers directly and are backed only by the `general` inventory. `subscription_1` therefore remains unreachable from all three groups and stays browsing/AI-only.
-- Existing subscription_1 EMBY exclusion and explicit multiplier `>2x` rejection remain unchanged.
+- `BanProgramAD.list` / `应用净化` remains intentionally disabled because it caused confirmed mobile image/CDN breakage; basic `BanAD.list` remains enabled.
+- ACL4SSR raw-node wildcards are never copied into canonical scenario selectors. `流媒体`, `消息通讯`, and `下载流量` remain backed only by the `general` inventory, so `subscription_1` stays unreachable from all three.
+- `subscription_1` remains browsing/AI-only, EMBY-labelled nodes remain excluded, and explicit multipliers greater than 2x remain rejected before classification.
+- Pinned ACL4SSR parity, Routing V2 drift, source reachability, browsing/AI qualification, previous-good preservation, and dual-Mihomo validation remain fail-closed production gates.
 
 ## [1.1.0] - 2026-08-31
 
@@ -121,7 +129,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/hzoonp/clash-relay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hzoonp/clash-relay/releases/tag/v1.0.0
