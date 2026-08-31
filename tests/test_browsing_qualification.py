@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import urllib.parse
 from pathlib import Path
 
@@ -141,6 +142,7 @@ def test_apply_browsing_qualification_keeps_reserve_manual_but_not_automatic() -
                 "name": "Browsing Auto",
                 "type": "url-test",
                 "use": ["cr_browsing_any"],
+                "filter": ".*",
             },
             {
                 "name": "Browsing Manual",
@@ -162,12 +164,13 @@ def test_apply_browsing_qualification_keeps_reserve_manual_but_not_automatic() -
         {"name": "stable-c"},
         {"name": "reserve"},
     ]
-    assert config["proxy-providers"]["cr_browsing_auto_any"]["payload"] == [
-        {"name": "stable-a"},
-        {"name": "stable-b"},
-        {"name": "stable-c"},
-    ]
-    assert config["proxy-groups"][0]["use"] == ["cr_browsing_auto_any"]
+    assert "cr_browsing_auto_any" not in config["proxy-providers"]
+    assert config["proxy-groups"][0]["use"] == ["cr_browsing_any"]
+    auto_filter = config["proxy-groups"][0]["filter"]
+    assert re.fullmatch(auto_filter, "stable-a")
+    assert re.fullmatch(auto_filter, "stable-b")
+    assert re.fullmatch(auto_filter, "stable-c")
+    assert re.fullmatch(auto_filter, "reserve") is None
     assert config["proxy-groups"][1]["use"] == ["cr_browsing_any"]
     assert config["proxy-providers"]["cr_general_any"]["payload"] == [{"name": "general-stays"}]
     assert config["proxy-providers"]["cr_ai_us"]["payload"] == [{"name": "ai-stays"}]
@@ -189,7 +192,14 @@ def test_apply_browsing_qualification_falls_back_when_stable_tier_is_too_small()
                 "payload": [{"name": "stable"}, {"name": "reserve-a"}, {"name": "reserve-b"}],
             }
         },
-        "proxy-groups": [{"name": "Browsing Auto", "type": "url-test", "use": ["cr_browsing_any"]}],
+        "proxy-groups": [
+            {
+                "name": "Browsing Auto",
+                "type": "url-test",
+                "use": ["cr_browsing_any"],
+                "filter": ".*",
+            }
+        ],
     }
 
     report = apply_browsing_qualification(
@@ -198,9 +208,74 @@ def test_apply_browsing_qualification_falls_back_when_stable_tier_is_too_small()
         {"stable"},
     )
 
-    assert len(config["proxy-providers"]["cr_browsing_auto_any"]["payload"]) == 3
+    assert set(config["proxy-providers"]) == {"cr_browsing_any"}
+    auto_filter = config["proxy-groups"][0]["filter"]
+    assert re.fullmatch(auto_filter, "stable")
+    assert re.fullmatch(auto_filter, "reserve-a")
+    assert re.fullmatch(auto_filter, "reserve-b")
     assert report["automatic_fallback_providers"] == 1
     assert report["automatic_nodes"] == 3
+
+
+def test_apply_browsing_qualification_quotes_runtime_names_in_exact_filter() -> None:
+    names = {"stable[1]", "stable(2)", "stable+3"}
+    config = {
+        "proxy-providers": {
+            "cr_browsing_any": {
+                "type": "inline",
+                "payload": [{"name": name} for name in sorted(names)],
+            }
+        },
+        "proxy-groups": [
+            {
+                "name": "Browsing Auto",
+                "type": "url-test",
+                "use": ["cr_browsing_any"],
+                "filter": ".*",
+            }
+        ],
+    }
+
+    apply_browsing_qualification(config, names, names)
+
+    auto_filter = config["proxy-groups"][0]["filter"]
+    for name in names:
+        assert re.fullmatch(auto_filter, name)
+    assert re.fullmatch(auto_filter, "stable1") is None
+
+
+def test_apply_browsing_qualification_rejects_mixed_provider_auto_group() -> None:
+    config = {
+        "proxy-providers": {
+            "cr_browsing_any": {
+                "type": "inline",
+                "payload": [
+                    {"name": "stable-a"},
+                    {"name": "stable-b"},
+                    {"name": "stable-c"},
+                ],
+            },
+            "cr_general_any": {
+                "type": "inline",
+                "payload": [{"name": "general"}],
+            },
+        },
+        "proxy-groups": [
+            {
+                "name": "Unsafe Mixed Auto",
+                "type": "url-test",
+                "use": ["cr_browsing_any", "cr_general_any"],
+                "filter": ".*",
+            }
+        ],
+    }
+
+    with pytest.raises(ValidationError, match="must not mix browsing and non-browsing providers"):
+        apply_browsing_qualification(
+            config,
+            {"stable-a", "stable-b", "stable-c"},
+            {"stable-a", "stable-b", "stable-c"},
+        )
 
 
 def test_apply_browsing_qualification_fails_closed_when_provider_becomes_empty() -> None:
