@@ -109,9 +109,7 @@ def test_workflows_parse_as_yaml(repo_root: Path) -> None:
 
 
 def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> None:
-    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(
-        encoding="utf-8"
-    )
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "always()" not in ci
     assert "continue-on-error" not in ci
 
