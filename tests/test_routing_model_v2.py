@@ -18,14 +18,14 @@ def test_routing_model_v2_classifies_complex_scenarios(repo_root: Path) -> None:
     assert report is not None
     bindings = {row["source_id"]: row for row in report["bindings"]}
 
-    assert bindings["proxy_gfwlist"]["scenario"] == "browsing"
-    assert bindings["proxy_gfwlist"]["service"] == "foreign_web"
-    assert bindings["proxy_gfwlist"]["source_use"] == "browsing"
+    assert bindings["proxy_lite"]["scenario"] == "browsing"
+    assert bindings["proxy_lite"]["service"] == "foreign_web"
+    assert bindings["proxy_lite"]["source_use"] == "browsing"
 
-    assert bindings["youtube"]["scenario"] == "media"
-    assert bindings["youtube"]["service"] == "youtube"
-    assert bindings["netflix"]["scenario"] == "media"
-    assert bindings["netflix"]["service"] == "netflix"
+    assert bindings["proxy_media"]["scenario"] == "media"
+    assert bindings["proxy_media"]["service"] == "foreign_media"
+    assert bindings["telegram"]["scenario"] == "general"
+    assert bindings["telegram"]["service"] == "telegram"
     assert bindings["download"]["scenario"] == "download"
 
     assert bindings["ai"]["scenario"] == "ai"
@@ -34,6 +34,9 @@ def test_routing_model_v2_classifies_complex_scenarios(repo_root: Path) -> None:
     assert bindings["openai"]["service"] == "openai"
     assert bindings["__final__"]["scenario"] == "final"
     assert bindings["__final__"]["target"] == "漏网之鱼"
+
+    for removed in ("proxy_gfwlist", "youtube", "netflix", "bilibili", "china_media"):
+        assert removed not in bindings
 
 
 def test_public_scenario_selectors_are_explicit_and_general_only_where_required(
@@ -59,49 +62,40 @@ def test_public_scenario_selectors_are_explicit_and_general_only_where_required(
     assert groups["下载自动"]["provider_pool"] == "general"
 
 
-def test_internal_rule_targets_are_deterministic(repo_root: Path) -> None:
+def test_acl4ssr_compatibility_selectors_preserve_reference_defaults(repo_root: Path) -> None:
     manifest = _manifest(repo_root)
-    targets = {
-        row["display_name"]: row["route"]
-        for row in manifest["groups"]
-        if isinstance(row.get("route"), dict)
-    }
+    groups = {row["display_name"]: row for row in manifest["groups"]}
 
     expected = {
-        "全球直连": "DIRECT",
-        "广告拦截": "REJECT",
-        "谷歌FCM": "DIRECT",
-        "微软Bing": "DIRECT",
-        "微软云盘": "DIRECT",
-        "微软服务": "DIRECT",
-        "苹果服务": "DIRECT",
-        "电报消息": "消息通讯",
-        "网易音乐": "DIRECT",
-        "游戏平台": "DIRECT",
-        "油管视频": "流媒体",
-        "巴哈姆特": "台湾节点",
-        "哔哩哔哩": "DIRECT",
-        "国内媒体": "DIRECT",
-        "国外媒体": "流媒体",
-        "漏网之鱼": "代理选择",
+        "全球直连": [{"builtin": "DIRECT"}, {"group": "代理选择"}, {"group": "自动选择"}],
+        "广告拦截": [{"builtin": "REJECT"}, {"builtin": "DIRECT"}],
+        "谷歌FCM": [{"group": "代理选择"}, {"group": "全球直连"}, {"group": "自动选择"}],
+        "微软服务": [{"group": "全球直连"}, {"group": "代理选择"}],
+        "苹果服务": [{"group": "代理选择"}, {"group": "全球直连"}],
+        "漏网之鱼": [{"group": "代理选择"}, {"group": "全球直连"}, {"group": "自动选择"}],
     }
-    assert "应用净化" not in targets
-    for name, destination in expected.items():
-        route = targets[name]
-        assert route["deterministic"] is True
-        member = route["member"]
-        assert member.get("builtin", member.get("group")) == destination
+    assert "应用净化" not in groups
+    for name, members in expected.items():
+        assert groups[name]["hidden"] is True
+        assert groups[name]["type"] == "select"
+        assert groups[name]["members"] == members
+        assert groups[name].get("provider_pool") is None
 
-    # Public selectors are user-controlled and therefore never deterministic.
-    for name in ("流媒体", "消息通讯", "下载流量"):
-        assert targets[name].get("deterministic", False) is False
-
-    # Netflix is automatic failover, not persisted hidden user selection.
-    netflix = next(row for row in manifest["groups"] if row["display_name"] == "奈飞视频")
-    assert netflix["type"] == "fallback"
-    assert netflix["route"]["scenario"] == "media"
-    assert netflix["route"]["service"] == "netflix"
-    assert netflix["members"] == [{"group": "奈飞节点"}, {"group": "流媒体"}]
+    for removed in (
+        "微软Bing",
+        "微软云盘",
+        "电报消息",
+        "网易音乐",
+        "游戏平台",
+        "油管视频",
+        "奈飞节点",
+        "奈飞视频",
+        "巴哈姆特",
+        "哔哩哔哩",
+        "国内媒体",
+        "国外媒体",
+    ):
+        assert removed not in groups
 
 
 def test_policy_postprocessor_reduces_deterministic_target_to_one_hop() -> None:
@@ -110,7 +104,7 @@ def test_policy_postprocessor_reduces_deterministic_target_to_one_hop() -> None:
         "proxy-groups": [
             {"name": "代理选择", "type": "select", "proxies": ["DIRECT"]},
             {
-                "name": "油管视频",
+                "name": "示例确定路由",
                 "type": "select",
                 "proxies": ["代理选择", "DIRECT"],
             },
@@ -120,13 +114,13 @@ def test_policy_postprocessor_reduces_deterministic_target_to_one_hop() -> None:
         output,
         group_specs=[
             {
-                "id": "policy_youtube",
-                "display_name": "油管视频",
+                "id": "policy_example",
+                "display_name": "示例确定路由",
                 "hidden": True,
                 "members": [{"group": "代理选择"}, {"builtin": "DIRECT"}],
                 "route": {
                     "scenario": "media",
-                    "service": "youtube",
+                    "service": "example",
                     "deterministic": True,
                     "member": {"group": "代理选择"},
                 },
@@ -135,11 +129,11 @@ def test_policy_postprocessor_reduces_deterministic_target_to_one_hop() -> None:
         pool_specs=[],
     )
 
-    youtube = output["proxy-groups"][1]
-    assert youtube == {
-        "name": "油管视频",
+    example = output["proxy-groups"][1]
+    assert example == {
+        "name": "示例确定路由",
         "type": "select",
         "hidden": True,
         "proxies": ["代理选择"],
     }
-    assert report["deterministic_routes"] == ["油管视频"]
+    assert report["deterministic_routes"] == ["示例确定路由"]
