@@ -84,7 +84,9 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
     if not 0.0 <= result.history.min_success_ema <= 1.0:
         raise ValidationError("scheduler.history.min_success_ema must be between 0 and 1")
     if result.history.max_age_seconds < 3600 or result.history.max_age_seconds > 90 * 24 * 60 * 60:
-        raise ValidationError("scheduler.history.max_age_seconds must be between 1 hour and 90 days")
+        raise ValidationError(
+            "scheduler.history.max_age_seconds must be between 1 hour and 90 days"
+        )
     if result.ai_cache.pass_ttl_seconds < 60 or result.ai_cache.pass_ttl_seconds > 24 * 60 * 60:
         raise ValidationError("scheduler.ai_cache.pass_ttl_seconds must be between 60s and 24h")
     if (
