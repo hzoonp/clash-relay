@@ -8,7 +8,9 @@ from clash_relay.acl4ssr_policy import apply_acl4ssr_group_semantics
 
 
 def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> None:
-    manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
+    manifest = yaml.safe_load(
+        (repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8")
+    )
     visible = {
         str(group["display_name"])
         for group in manifest["groups"]
@@ -26,7 +28,9 @@ def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> No
 
 
 def test_ai_region_dimension_hard_excludes_hong_kong(repo_root: Path) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = yaml.safe_load(
+        (repo_root / "policies.yaml").read_text(encoding="utf-8")
+    )
     ai_pools = [pool for pool in policies["pools"] if pool["source_use"] == "ai"]
 
     assert ai_pools
