@@ -43,7 +43,11 @@ def parse_ai_cache_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
         return empty_ai_cache(), "invalid"
     clean: dict[str, dict[str, Any]] = {}
     for fingerprint, record in nodes.items():
-        if not isinstance(fingerprint, str) or len(fingerprint) != 64 or not isinstance(record, dict):
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or not isinstance(record, dict)
+        ):
             return empty_ai_cache(), "invalid"
         services = record.get("services")
         if not isinstance(services, dict):
