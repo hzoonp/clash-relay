@@ -8,6 +8,7 @@ import yaml
 
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
 from clash_relay.builder import build_candidate
+from clash_relay.config_loader import load_project
 from clash_relay.mihomo import validate_with_mihomo
 from clash_relay.routing_v2_audit import audit_routing_v2
 from clash_relay.util import dump_yaml
@@ -103,7 +104,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert "RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI" in rules
     assert rules[-1] == "MATCH,漏网之鱼"
 
-    project = __import__("clash_relay.config_loader", fromlist=["load_project"]).load_project(
+    project = load_project(
         config_path=repo_root / "config.yaml",
         subscriptions_path=repo_root / "subscriptions.yaml",
         services_path=repo_root / "services.yaml",
