@@ -173,14 +173,14 @@ def _audit_cutover_routes(
     china_domain = by_source.get("china_domain")
     china_ip = by_source.get("china_company_ip")
     geoip = by_source.get("geoip_cn")
-    if not all(isinstance(row, dict) for row in (download, foreign_web, china_domain, china_ip, geoip)):
+    if not all(
+        isinstance(row, dict) for row in (download, foreign_web, china_domain, china_ip, geoip)
+    ):
         raise ValidationError("Routing V2 cutover classification bindings are incomplete")
     if download["target"] != "下载流量":
         raise ValidationError("Download.list must target the download scenario route")
     if not (
-        int(china_domain["priority"])
-        < int(download["priority"])
-        < int(foreign_web["priority"])
+        int(china_domain["priority"]) < int(download["priority"]) < int(foreign_web["priority"])
         and int(china_ip["priority"]) < int(download["priority"])
         and int(geoip["priority"]) < int(download["priority"])
     ):
