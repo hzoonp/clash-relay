@@ -63,7 +63,11 @@ def _emit_safe_core_diagnostic(args: argparse.Namespace) -> None:
 
 
 def _history_inputs(args: argparse.Namespace) -> tuple[dict, bytes, str] | None:
-    provided = (args.history is not None, args.history_key is not None, args.next_history is not None)
+    provided = (
+        args.history is not None,
+        args.history_key is not None,
+        args.next_history is not None,
+    )
     if any(provided) and not all(provided):
         raise ValidationError(
             "browsing scheduler history requires --history, --history-key, and --next-history together"
