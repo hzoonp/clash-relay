@@ -13,6 +13,7 @@ on:
       - "schemas/**"
       - "src/**"
       - "scripts/qualify_ai.py"
+      - "scripts/qualify_browsing.py"
       - "scripts/audit_production.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
@@ -120,13 +121,57 @@ jobs:
             > .work/private/production-audit.json
           cat .work/private/production-summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Download Mihomo for private AI qualification
+      - name: Download Mihomo for private qualification
         run: |
           python scripts/download_mihomo.py \
             --channel stable \
             --tag v1.19.30 \
-            --output .work/bin/mihomo-ai \
-            > .work/download-ai-qualification.json
+            --output .work/bin/mihomo-qualification \
+            > .work/download-qualification.json
+
+      - name: Qualify browsing nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/qualify_browsing.py \
+            --candidate .work/private/config.yaml \
+            --policies policies.yaml \
+            --mihomo-bin .work/bin/mihomo-qualification \
+            --attempts 3 \
+            --required-successes 2 \
+            | tee .work/private/browsing-qualification-summary.json
+
+      - name: Append safe browsing qualification summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          path = ".work/private/browsing-qualification-summary.json"
+          with open(path, encoding="utf-8") as handle:
+              data = json.load(handle)
+          diagnostics = data.get("diagnostics", {})
+          latency = diagnostics.get("qualified_latency_ms", {})
+          lines = [
+              "## Browsing qualification",
+              "",
+              f"Tested nodes: **{int(diagnostics.get('tested_nodes', 0))}**  ",
+              f"Qualified nodes: **{int(diagnostics.get('qualified_nodes', 0))}**  ",
+              f"Rejected nodes: **{int(diagnostics.get('failed_nodes', 0))}**  ",
+              f"Qualification threshold: **{int(diagnostics.get('required_successes', 0))}/{int(diagnostics.get('attempts_per_node', 0))} successful HTTPS probes**",
+              "",
+              "| Qualified latency | ms |",
+              "| --- | ---: |",
+              f"| p50 | {latency.get('p50', 'n/a')} |",
+              f"| p95 | {latency.get('p95', 'n/a')} |",
+              "",
+              "Only aggregate browsing qualification results are shown; node-level results remain private.",
+              "",
+          ]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("\n".join(lines))
+          PY
 
       - name: Qualify AI nodes by country
         shell: bash
@@ -135,7 +180,7 @@ jobs:
           python scripts/qualify_ai.py \
             --candidate .work/private/config.yaml \
             --policies policies.yaml \
-            --mihomo-bin .work/bin/mihomo-ai \
+            --mihomo-bin .work/bin/mihomo-qualification \
             | tee .work/private/ai-qualification-summary.json
 
       - name: Append safe AI qualification summary

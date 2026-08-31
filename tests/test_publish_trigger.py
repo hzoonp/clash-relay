@@ -52,17 +52,33 @@ def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     assert text.index("CLOUDFLARE_API_TOKEN") > text.index("validate_core v1.19.29")
 
 
-def test_production_audit_runs_before_and_after_ai_qualification() -> None:
+def test_production_audit_runs_before_and_after_private_qualification() -> None:
     text = WORKFLOW.read_text()
     assert "Audit source-to-scenario isolation" in text
     assert "Re-audit qualified candidate" in text
     assert text.count("python scripts/audit_production.py") == 2
     first_audit = text.index("Audit source-to-scenario isolation")
-    qualifier = text.index("Qualify AI nodes by country")
+    browsing_qualifier = text.index("Qualify browsing nodes")
+    ai_qualifier = text.index("Qualify AI nodes by country")
     second_audit = text.index("Re-audit qualified candidate")
-    assert first_audit < qualifier < second_audit
+    assert first_audit < browsing_qualifier < ai_qualifier < second_audit
     assert "production-summary.md" in text
     assert 'cat .work/private/production-summary.md >> "$GITHUB_STEP_SUMMARY"' in text
+
+
+def test_browsing_qualification_precedes_ai_and_final_validation() -> None:
+    text = WORKFLOW.read_text()
+    assert "Download Mihomo for private qualification" in text
+    assert "python scripts/qualify_browsing.py" in text
+    assert "--attempts 3" in text
+    assert "--required-successes 2" in text
+    assert "Append safe browsing qualification summary" in text
+    assert "node-level results remain private" in text
+    browsing = text.index("python scripts/qualify_browsing.py")
+    ai = text.index("python scripts/qualify_ai.py")
+    assert browsing < ai < text.index("validate_core v1.19.30")
+    assert ".work/bin/mihomo-qualification" in text
+    assert text.count("--mihomo-bin .work/bin/mihomo-qualification") == 2
 
 
 def test_ai_qualification_precedes_final_validation() -> None:
