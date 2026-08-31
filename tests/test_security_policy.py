@@ -56,3 +56,4 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert "gh release" not in text
     assert "publish-gist" not in text
     assert "continue-on-error" not in text
+    assert '      - "scripts/download_mihomo.py"' in text
