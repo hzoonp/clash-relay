@@ -8,6 +8,22 @@
 >
 > The generated `config.yaml` contains inline proxy credentials and must be treated as highest-sensitivity data. The supported production path publishes only a validated candidate to private Cloudflare Workers KV, not to public Artifacts, Releases, Gists, commits, or Pages.
 
+## Start with a fork
+
+For a fresh fork, use the [Fork quickstart](docs/quickstart.md). It covers the complete path:
+
+```text
+Fork
+  -> add CLASH_RELAY_SUBSCRIPTIONS
+  -> add Cloudflare KV secret/variables
+  -> manual dry-run (publish=false, the default)
+  -> inspect aggregate production proof
+  -> publish=true
+  -> optional validated rollback
+```
+
+The production workflow additionally performs live browsing qualification (`3/3 = stable auto`, `2/3 = manual reserve`, `<2/3 = rejected`), private anonymous scheduler history, independent OpenAI/Claude/Gemini qualification, end-to-end source reachability audits, and validation with Mihomo v1.19.30 plus v1.19.29. A different current production value is preserved privately before replacement so `Roll back production config` can revalidate and reactivate the previous-good bytes.
+
 ## Production scenarios
 
 Merging subscriptions does **not** mean every subscription can serve every application:
@@ -55,13 +71,17 @@ three logical inventories
           ↓
 pinned ACL4SSR rules + scenario routing
           ↓
+browsing 3-sample live qualification + anonymous history preference
+          ↓
 OpenAI / Claude / Gemini live qualification
+          ↓
+post-qualification source reachability audit
           ↓
 Mihomo v1.19.30 + v1.19.29 validation
           ↓
-Cloudflare Workers KV
+private previous-good snapshot -> Cloudflare Workers KV
           ↓
-FlClash
+aggregate production proof -> FlClash
 ```
 
 ## Subscription declarations
@@ -220,6 +240,8 @@ python scripts/repository_audit.py
 
 ## Documentation
 
+- [Fork quickstart](docs/quickstart.md)
+- [配置快速上手](docs/quickstart.zh-CN.md)
 - [Configuration model](docs/configuration.md)
 - [Architecture](docs/architecture.md)
 - [ACL4SSR routing model](docs/rules.md)
