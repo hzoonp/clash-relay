@@ -269,7 +269,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     assert all(groups[name]["hidden"] is True for name in _EXPECTED_AI_COUNTRY_GROUPS)
     assert "AI · 香港" not in groups
     assert result.config["rules"][-1] == "MATCH,漏网之鱼"
-    assert "GEOIP,CN,全球直连,no-resolve" in result.config["rules"]
+    assert "GEOIP,CN,全球直连" in result.config["rules"]
     assert "RULE-SET,acl4ssr_telegram,消息通讯" in result.config["rules"]
     assert "RULE-SET,acl4ssr_proxy_media,流媒体" in result.config["rules"]
     assert "RULE-SET,acl4ssr_download,下载流量" in result.config["rules"]
