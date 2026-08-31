@@ -15,6 +15,7 @@ on:
       - "scripts/qualify_ai.py"
       - "scripts/qualify_browsing.py"
       - "scripts/audit_production.py"
+      - "scripts/render_production_proof.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
@@ -262,12 +263,18 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.publish != true
         shell: bash
         run: |
-          {
-            echo "## Publication"
-            echo
-            echo "Dry-run completed successfully. The validated private candidate was **not** written to Cloudflare KV."
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          python scripts/render_production_proof.py \
+            --candidate .work/private/config.yaml \
+            --audit .work/private/post-qualification-audit.json \
+            --browsing .work/private/browsing-qualification-summary.json \
+            --ai .work/private/ai-qualification-summary.json \
+            --validated-core v1.19.30 \
+            --validated-core v1.19.29 \
+            --publication-status dry-run \
+            --markdown .work/private/production-proof.md \
+            > .work/private/production-proof.json
+          cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish exact validated bytes to Cloudflare KV
         if: github.event_name == 'push' || inputs.publish == true
@@ -287,12 +294,18 @@ jobs:
         if: github.event_name == 'push' || inputs.publish == true
         shell: bash
         run: |
-          {
-            echo "## Publication"
-            echo
-            echo "The exact candidate validated by both pinned Mihomo cores was published to Cloudflare KV."
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          python scripts/render_production_proof.py \
+            --candidate .work/private/config.yaml \
+            --audit .work/private/post-qualification-audit.json \
+            --browsing .work/private/browsing-qualification-summary.json \
+            --ai .work/private/ai-qualification-summary.json \
+            --validated-core v1.19.30 \
+            --validated-core v1.19.29 \
+            --publication-status published \
+            --markdown .work/private/production-proof.md \
+            > .work/private/production-proof.json
+          cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove private candidate
         if: always()
