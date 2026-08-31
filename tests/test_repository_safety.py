@@ -9,7 +9,6 @@ AI_COUNTRY_GROUPS = [
     "AI · 新加坡",
     "AI · 日本",
     "AI · 美国",
-    "AI · 香港",
     "AI · 台湾",
     "AI · 韩国",
     "AI · 其他地区",
@@ -76,11 +75,13 @@ def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
         assert "*" in subscription["allowed_countries"]
 
     pools = {item["display_name"]: item for item in policies["pools"]}
+    assert "AI · 香港" not in pools
     for group_name in AI_COUNTRY_GROUPS:
         pool = pools[group_name]
         assert pool["source_use"] == "ai"
         assert pool["on_empty"] == "reject"
         assert pool["probe"] == "connectivity"
+        assert "HK" not in pool["regions"]
 
     for probe_name in ("ai_openai", "ai_claude", "ai_gemini"):
         probe = policies["probes"][probe_name]
@@ -90,6 +91,7 @@ def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
     ai_group = next(item for item in acl["groups"] if item["display_name"] == "人工智能")
     members = [item.get("group", item.get("builtin")) for item in ai_group["members"]]
     assert members == [*AI_COUNTRY_GROUPS, "DIRECT"]
+    assert "AI · 香港" not in members
 
 
 def test_lock_files_pin_every_dependency(repo_root: Path) -> None:
