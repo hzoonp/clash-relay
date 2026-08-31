@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render aggregate Routing V2 cutover shadow evidence."""
+"""Render aggregate Routing V2 configuration-drift evidence."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from clash_relay.config_loader import load_project
-from clash_relay.routing_shadow import routing_shadow_summary
+from clash_relay.routing_shadow import routing_drift_summary
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,7 +28,7 @@ def main() -> int:
         services_path=args.services,
         policies_path=args.policies,
     )
-    print(json.dumps(routing_shadow_summary(project), ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps(routing_drift_summary(project), ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
