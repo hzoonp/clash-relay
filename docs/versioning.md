@@ -16,7 +16,10 @@ A major release is required when a documented default routing invariant, configu
 - The canonical first subscription rejects only explicit multipliers strictly greater than `2.0`; exactly `2.0` and unmarked nodes remain eligible.
 - `ProxyGFWlist` is the portable generic browsing route and targets `网页浏览`.
 - Final `MATCH` deliberately remains `漏网之鱼` on the general graph.
-- The canonical top-level user-facing groups remain `代理选择`, `网页浏览`, and `人工智能`. These public scenario groups do not attach proxy providers directly.
+- The canonical top-level user-facing groups are `代理选择`, `网页浏览`, `人工智能`, `流媒体`, `消息通讯`, and `下载流量`. These public scenario groups do not attach proxy providers directly.
+- `流媒体`, `消息通讯`, and `下载流量` are general-only public selectors. Their default automatic choices are hidden `媒体自动`, `通讯自动`, and `下载自动` schedulers respectively, followed by general regional helpers and `DIRECT`; a browsing/AI-only source cannot become reachable through these selectors.
+- YouTube and generic foreign media route through `流媒体`. Netflix remains capability-first through `奈飞节点` and then falls back to `流媒体`.
+- Telegram routes through the hidden one-hop `电报消息` target into `消息通讯`. `Download.list` targets the public `下载流量` selector while its automatic default remains the hidden general-only `下载自动` scheduler.
 - Browsing owns an independent regional order declared as `preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]`; changing browsing preference does not change the AI service preference order.
 - `网页浏览` contains `网页自动`, every currently available `网页 · <地区>` fixed-region choice in preference order, and `DIRECT`. Raw `[BROWSING:*]` runtime nodes are never direct members of the public selector.
 - Browsing qualification is live and fail-closed. Canonical policy is three attempts: 3/3 is Stable, 2/3 is Reserve, and fewer than 2/3 is rejected from browsing for that publication.
