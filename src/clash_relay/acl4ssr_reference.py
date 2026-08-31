@@ -92,9 +92,7 @@ def parse_acl4ssr_online(text: str, *, repository: str) -> dict[str, Any]:
             }
             if group_type == "url-test":
                 if len(parts) < 5:
-                    raise GenerationError(
-                        f"ACL4SSR Online url-test group {name!r} is incomplete"
-                    )
+                    raise GenerationError(f"ACL4SSR Online url-test group {name!r} is incomplete")
                 row["filter"] = parts[2]
                 row["url"] = parts[3]
                 try:
@@ -163,9 +161,7 @@ def validate_acl4ssr_fidelity(
         for reference_name, internal_name in contract.get("member_map", {}).items()
     }
 
-    ordered_sources = sorted(
-        manifest["sources"], key=lambda row: (row["priority"], row["id"])
-    )
+    ordered_sources = sorted(manifest["sources"], key=lambda row: (row["priority"], row["id"]))
     by_path: dict[str, dict[str, Any]] = {}
     for source in ordered_sources:
         path = str(source["path"])
@@ -175,9 +171,7 @@ def validate_acl4ssr_fidelity(
 
     baseline_paths: list[str] = []
     baseline_positions: list[int] = []
-    source_position = {
-        str(row["id"]): index for index, row in enumerate(ordered_sources)
-    }
+    source_position = {str(row["id"]): index for index, row in enumerate(ordered_sources)}
     for reference in parsed["rulesets"]:
         kind = str(reference["kind"])
         reference_target = str(reference["target"])
@@ -216,16 +210,12 @@ def validate_acl4ssr_fidelity(
                 raise GenerationError("ACL4SSR final target does not match the Online reference")
 
     if baseline_positions != sorted(baseline_positions):
-        raise GenerationError(
-            "ACL4SSR baseline source ordering drifted from ACL4SSR_Online.ini"
-        )
+        raise GenerationError("ACL4SSR baseline source ordering drifted from ACL4SSR_Online.ini")
 
     extensions = list(contract.get("extensions", []))
     extension_ids = {str(row["source_id"]) for row in extensions}
     baseline_ids = {str(by_path[path]["id"]) for path in baseline_paths}
-    unexpected = (
-        {str(row["id"]) for row in ordered_sources} - baseline_ids - extension_ids
-    )
+    unexpected = {str(row["id"]) for row in ordered_sources} - baseline_ids - extension_ids
     if unexpected:
         raise GenerationError(
             "ACL4SSR manifest contains undeclared source extensions: "
@@ -251,9 +241,7 @@ def validate_acl4ssr_fidelity(
             )
 
     reference_groups = {str(row["name"]): row for row in parsed["groups"]}
-    manifest_groups = {
-        str(row["display_name"]): row for row in manifest.get("groups", [])
-    }
+    manifest_groups = {str(row["display_name"]): row for row in manifest.get("groups", [])}
     for reference_name, internal_name in disabled_groups.items():
         if reference_name not in reference_groups:
             raise GenerationError(
@@ -289,12 +277,9 @@ def validate_acl4ssr_fidelity(
             )
         if reference["type"] == "select":
             expected_members = [
-                member_map.get(str(member), str(member))
-                for member in reference["members"]
+                member_map.get(str(member), str(member)) for member in reference["members"]
             ]
-            actual_members = [
-                _manifest_member_name(member) for member in group["members"]
-            ]
+            actual_members = [_manifest_member_name(member) for member in group["members"]]
             if actual_members != expected_members:
                 raise GenerationError(
                     f"ACL4SSR compatibility group {internal_name!r} changed selector defaults"
