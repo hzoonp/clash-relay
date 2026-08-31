@@ -47,9 +47,7 @@ def audit_production_candidate(
     if not isinstance(providers, dict):
         raise ValidationError("production audit requires proxy-providers")
 
-    subscriptions = {
-        item.id: item for item in project.subscriptions if item.enabled
-    }
+    subscriptions = {item.id: item for item in project.subscriptions if item.enabled}
     pool_rows: list[dict[str, Any]] = []
 
     for pool in project.policies["pools"]:
@@ -117,9 +115,7 @@ def audit_production_candidate(
         }
 
     subscription_rows: list[dict[str, Any]] = []
-    for spec in sorted(
-        subscriptions.values(), key=lambda item: (item.priority, item.id)
-    ):
+    for spec in sorted(subscriptions.values(), key=lambda item: (item.priority, item.id)):
         source_report = source_reports.get(spec.id, {})
         row: dict[str, Any] = {
             "id": spec.id,
