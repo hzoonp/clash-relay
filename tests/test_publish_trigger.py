@@ -48,13 +48,23 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 4
-    load = text.index("Load private scheduler history")
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 6
+    load_history = text.index("Load private scheduler history")
+    load_ai_cache = text.index("Load private AI qualification cache")
     browsing = text.index("Qualify browsing nodes")
     snapshot = text.index("Preserve previous validated production config")
     publish = text.index("Publish exact validated bytes to Cloudflare KV")
-    persist = text.index("Persist private scheduler history")
-    assert load < browsing < snapshot < publish < persist
+    persist_cache = text.index("Persist private AI qualification cache")
+    persist_history = text.index("Persist private scheduler history")
+    assert (
+        load_history
+        < load_ai_cache
+        < browsing
+        < snapshot
+        < publish
+        < persist_cache
+        < persist_history
+    )
 
 
 def test_production_audit_runs_before_and_after_private_qualification() -> None:
@@ -101,7 +111,26 @@ def test_scheduler_history_is_private_optional_and_committed_only_after_config_p
     assert load < browsing < publish < persist < proof
     persist_block = text[persist:proof]
     assert "github.event_name == 'push' || inputs.publish == true" in persist_block
-    assert "scheduler-state-v1" not in text
+    assert "actions/upload-artifact" not in text
+
+
+def test_ai_cache_is_private_incremental_and_committed_only_after_config_publish() -> None:
+    text = WORKFLOW.read_text()
+    load = text.index("Load private AI qualification cache")
+    ai = text.index("Qualify AI nodes by country")
+    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    persist = text.index("Persist private AI qualification cache")
+    proof = text.index("Record publication result")
+    assert "scripts/load_ai_qualification_cache.py" in text
+    assert "scripts/publish_ai_qualification_cache.py" in text
+    assert "--cache .work/private/ai-qualification-cache.json" in text
+    assert "--cache-key .work/private/ai-qualification-cache.key" in text
+    assert "--next-cache .work/private/ai-qualification-cache-next.json" in text
+    assert load < ai < publish < persist < proof
+    assert "Live service probes" in text
+    assert "Fresh cache pass/fail hits" in text
+    persist_block = text[persist:proof]
+    assert "github.event_name == 'push' || inputs.publish == true" in persist_block
     assert "actions/upload-artifact" not in text
 
 
