@@ -241,13 +241,44 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             if group.get("type") != "select":
                 errors.append(f"public group {name!r} must be a select group")
             public_refs = group.get("proxies", [])
-            if not isinstance(public_refs, list) or not public_refs:
-                errors.append(f"public group {name!r} must have at least one proxy/group reference")
+            if not isinstance(public_refs, list):
+                errors.append(f"public group {name!r} proxies must be a list")
                 public_refs = []
 
             provider_backed = bool(uses)
+            if not public_refs and not provider_backed:
+                errors.append(
+                    f"public group {name!r} must have at least one proxy/group or provider reference"
+                )
+
             if provider_backed:
-                if len(public_refs) != 1 or public_refs[0] not in hidden_names:
+                filter_pattern = group.get("filter")
+                direct_provider_selector = isinstance(filter_pattern, str) and bool(filter_pattern)
+                if direct_provider_selector:
+                    hidden_refs = [
+                        reference for reference in public_refs if reference in hidden_names
+                    ]
+                    unsafe_hidden_refs = [
+                        reference
+                        for reference in hidden_refs
+                        if reference not in presentation_hidden_names
+                        and not str(reference).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
+                    ]
+                    if unsafe_hidden_refs:
+                        errors.append(
+                            f"filtered provider-backed public group {name!r} references forbidden "
+                            f"internal groups: {unsafe_hidden_refs}"
+                        )
+                    reachable: set[str] = set()
+                    for reference in public_refs:
+                        if isinstance(reference, str) and reference in group_rows:
+                            reachable.update(_reachable_providers(reference, group_rows))
+                    if reachable and set(uses) != reachable:
+                        errors.append(
+                            f"filtered provider-backed public group {name!r} exposes providers "
+                            "outside its routing members"
+                        )
+                elif len(public_refs) != 1 or public_refs[0] not in hidden_names:
                     errors.append(
                         f"provider-backed public group {name!r} must point only to one hidden "
                         "routing anchor"
