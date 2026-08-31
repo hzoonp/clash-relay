@@ -1,0 +1,126 @@
+name: Roll back production config
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Replace production-config with the preserved previous validated config
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clash-relay-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Validate and activate previous config
+    if: github.ref == 'refs/heads/main' && inputs.confirm == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+
+      - name: Enforce Cloudflare-only publication policy
+        run: |
+          clash-relay publication-gate \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --mode cloudflare_kv
+
+      - name: Fetch private previous config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+        run: |
+          mkdir -p .work/private
+          python scripts/fetch_previous_config.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --output .work/private/rollback.yaml \
+            > .work/private/rollback-source.json
+
+      - name: Validate previous config with both pinned Mihomo cores
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          validate_core() {
+            local tag="$1"
+            local binary=".work/bin/mihomo-${tag#v}"
+
+            python scripts/download_mihomo.py \
+              --channel stable \
+              --tag "$tag" \
+              --output "$binary" \
+              > ".work/download-${tag}.json"
+
+            if ! clash-relay validate \
+              --candidate .work/private/rollback.yaml \
+              --mihomo-bin "$binary" \
+              --startup-seconds 1.5 \
+              > ".work/rollback-validation-${tag}.json" \
+              2> ".work/rollback-validation-${tag}.error"; then
+              echo "::error title=Rollback validation failed::$tag rejected the preserved previous configuration. Detailed core output is intentionally suppressed."
+              exit 1
+            fi
+          }
+
+          validate_core v1.19.30
+          validate_core v1.19.29
+
+      - name: Activate validated previous config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+        run: |
+          clash-relay publish-cloudflare-kv \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/private/rollback.yaml \
+            > .work/private/rollback-publication.json
+
+      - name: Record rollback result
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          content = Path(".work/private/rollback.yaml").read_bytes()
+          lines = [
+              "## Production rollback",
+              "",
+              "Status: **activated**  ",
+              f"Bytes: **{len(content)}**  ",
+              f"SHA-256: `{hashlib.sha256(content).hexdigest()}`  ",
+              "Validated cores: **v1.19.30, v1.19.29**",
+              "",
+              "The preserved previous slot is intentionally retained. No proxy payload values are shown.",
+              "",
+          ]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("\n".join(lines))
+          PY
+
+      - name: Remove private rollback candidate
+        if: always()
+        run: rm -rf .work/private
