@@ -4,10 +4,24 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+### Added
+
+- Routing Model V2 now treats scenario, service, source permission, region, capability, and scheduler policy as independent routing dimensions, with complex concurrent route intents covered by unit and dual-Mihomo integration tests.
+- Hidden `媒体自动` and `下载自动` schedulers keep media/download routing independent from persisted user selections while remaining strictly in the `general` source-use domain.
+- A no-Secrets Routing V2 Drift Guard continuously verifies the finalized configuration graph without collecting domains, node identities, endpoints, credentials, subscription URLs, or user traffic.
+
 ### Changed
 
-- The canonical FlClash policy surface now exposes only the three user decisions `代理选择`, `网页浏览`, and `人工智能`; ACL4SSR application targets, regional helpers, manual/provider helpers, media helpers, and final routing groups remain functional but hidden.
-- AI countries are treated as internal scheduling dimensions rather than top-level policy groups, and Hong Kong is hard-excluded from the canonical AI inventory before OpenAI, Claude, or Gemini qualification while remaining eligible for other permitted scenarios.
+- The canonical FlClash policy surface exposes only the three user decisions `代理选择`, `网页浏览`, and `人工智能`; ACL4SSR application targets, regional helpers, manual/provider helpers, media/download schedulers, and final routing groups remain functional but hidden.
+- AI countries are internal scheduling dimensions rather than top-level policy groups. Hong Kong is hard-excluded before OpenAI, Claude, or Gemini qualification, while each service independently follows the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference over its own qualified set.
+- YouTube and generic foreign media route through the hidden general-only media scheduler. Netflix prefers its filtered capability pool and then falls back to that media scheduler.
+- `Download.list` is a first-class internal scenario and now routes through the hidden general-only download scheduler after known domestic classification but before generic `ProxyGFWlist` browsing classification.
+- Shadow-era `current -> cutover` reporting has been removed now that Routing V2 is the canonical production graph; drift is reported as healthy or drifted instead.
+
+### Security
+
+- `subscription_1` remains reachable only from browsing and AI; media, download, general, and final routes remain unreachable from that source.
+- `ProxyGFWlist -> 网页浏览`, final `MATCH -> 漏网之鱼`, AI HK exclusion, independent per-service AI fail-closed qualification, source-reachability audits, and dual-Mihomo production validation remain non-negotiable boundaries.
 
 ## [1.0.0] - 2026-08-31
 
