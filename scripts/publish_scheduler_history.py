@@ -61,8 +61,7 @@ def _persist_metrics(
         )
         next_state = append_metrics_run(state, run)
         content = (
-            json.dumps(next_state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            + "\n"
+            json.dumps(next_state, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode("utf-8")
         published = publisher.publish(content=content)
     except (OSError, ValueError, json.JSONDecodeError, PublicationError):
