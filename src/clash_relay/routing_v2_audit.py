@@ -193,7 +193,9 @@ def audit_routing_v2(
         else:
             allowed_visible = canonical_visible | ai_wrapper_names
         if not canonical_visible <= visible or not visible <= allowed_visible:
-            raise ValidationError("canonical routing v2 profile exposes unexpected top-level groups")
+            raise ValidationError(
+                "canonical routing v2 profile exposes unexpected top-level groups"
+            )
 
     return {
         "status": "passed",
