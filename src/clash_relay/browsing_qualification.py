@@ -315,11 +315,7 @@ def probe_browsing_nodes(
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
     provider_payloads = _browsing_provider_payloads(config)
-    node_names = [
-        str(proxy["name"])
-        for payload in provider_payloads.values()
-        for proxy in payload
-    ]
+    node_names = [str(proxy["name"]) for payload in provider_payloads.values() for proxy in payload]
     if len(set(node_names)) != len(node_names):
         raise ValidationError("browsing qualification requires unique runtime proxy names")
 
