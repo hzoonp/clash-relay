@@ -17,9 +17,12 @@ def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> No
 
     assert visible == {"代理选择", "网页浏览", "人工智能"}
     assert manifest["final_target"] == "漏网之鱼"
-    assert next(group for group in manifest["groups"] if group["display_name"] == "漏网之鱼")[
-        "hidden"
-    ] is True
+    final_group = next(
+        group
+        for group in manifest["groups"]
+        if group["display_name"] == "漏网之鱼"
+    )
+    assert final_group["hidden"] is True
 
 
 def test_ai_region_dimension_hard_excludes_hong_kong(repo_root: Path) -> None:
