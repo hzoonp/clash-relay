@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import ipaddress
+import socket
 import ssl
 import urllib.error
 import urllib.request
@@ -65,6 +66,32 @@ def validate_subscription_url(
         raise FetchError("subscription URL may not target a private or special-use IP literal")
 
 
+def _validate_resolved_destination(url: str) -> None:
+    """Reject hostnames whose current DNS answers include private/special-use addresses."""
+    parsed = urlsplit(url)
+    if parsed.scheme == "file":
+        return
+    hostname = parsed.hostname
+    if not hostname:
+        raise FetchError("subscription URL has no hostname")
+    if hostname.lower() == "localhost" or hostname.lower().endswith(".localhost"):
+        raise FetchError("subscription hostname may not target localhost")
+    port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    try:
+        answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise FetchError(
+            f"subscription hostname could not be resolved for {redact_url(url)}"
+        ) from exc
+    addresses = {
+        str(answer[4][0]) for answer in answers if answer and len(answer) >= 5 and answer[4]
+    }
+    if not addresses:
+        raise FetchError("subscription hostname resolved to no usable address")
+    if any(_is_private_literal(address) for address in addresses):
+        raise FetchError("subscription hostname resolves to a private or special-use address")
+
+
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, *, allow_http: bool, allow_file: bool) -> None:
         self._allow_http = allow_http
@@ -77,6 +104,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
             allow_http=self._allow_http,
             allow_file=self._allow_file,
         )
+        _validate_resolved_destination(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -113,6 +141,7 @@ def fetch_subscription(
         if len(raw) > max_bytes:
             raise FetchError("subscription exceeds the configured byte limit")
     else:
+        _validate_resolved_destination(url)
         request = urllib.request.Request(
             url,
             headers={"User-Agent": _USER_AGENT, "Accept-Encoding": "gzip"},
@@ -128,6 +157,7 @@ def fetch_subscription(
                 validate_subscription_url(
                     response.geturl(), allow_http=allow_http, allow_file=allow_file
                 )
+                _validate_resolved_destination(response.geturl())
                 raw = _read_bounded(response, max_bytes)
                 if response.headers.get("Content-Encoding", "").lower() == "gzip":
                     try:
