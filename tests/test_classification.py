@@ -64,6 +64,23 @@ def test_name_rule_can_add_nonrestricted_capability(policies: dict) -> None:
     assert node.capabilities == frozenset({"general", "ai"})
 
 
+def test_name_rule_can_remove_default_capability_and_exclude_node(policies: dict) -> None:
+    spec = _spec(
+        allowed_uses=frozenset({"ai"}),
+        name_rules=({"pattern": "(?i)emby", "remove_capabilities": ["general"]},),
+    )
+    node = classify_proxy(_proxy("US EMBY Media"), spec, policies)
+    selector = {
+        "source_use": "ai",
+        "capabilities_any": ["general"],
+        "capabilities_all": [],
+        "excluded_capabilities": [],
+        "allowed_cost_levels": ["standard"],
+    }
+    assert node.capabilities == frozenset()
+    assert select_nodes([node], selector, "ANY") == []
+
+
 def test_exact_metadata_can_add_restricted_capability(policies: dict) -> None:
     spec = _spec(node_metadata={"Home": {"country": "US", "add_capabilities": ["residential"]}})
     node = classify_proxy(_proxy("Home"), spec, policies)
