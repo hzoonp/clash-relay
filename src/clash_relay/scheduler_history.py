@@ -13,9 +13,11 @@ from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
-_STATE_VERSION = 1
+_STATE_VERSION = 2
+_LEGACY_STATE_VERSION = 1
 _DOMAIN = b"clash-relay/browsing-scheduler-history/v1"
 _ALPHA = 0.30
+_LATENCY_ALPHA = 0.25
 _MIN_HISTORY_RUNS = 2
 _MIN_SUCCESS_EMA = 0.80
 _MAX_AGE_SECONDS = 30 * 24 * 60 * 60
@@ -38,18 +40,72 @@ def fingerprint_runtime_name(runtime_name: str, key: bytes) -> str:
 
 
 def empty_history() -> dict[str, Any]:
-    return {"version": _STATE_VERSION, "nodes": {}}
+    return {
+        "version": _STATE_VERSION,
+        "nodes": {},
+        "cohort": {"runs": 0, "latency_ema_ms": None, "last_seen_epoch": 0},
+    }
+
+
+def _clean_node_record(record: Any) -> dict[str, Any] | None:
+    if not isinstance(record, dict):
+        return None
+    runs = record.get("runs")
+    success_ema = record.get("success_ema")
+    failures = record.get("consecutive_failed_runs")
+    last_seen = record.get("last_seen_epoch")
+    if (
+        not isinstance(runs, int)
+        or runs < 1
+        or not isinstance(success_ema, (int, float))
+        or not 0 <= float(success_ema) <= 1
+        or not isinstance(failures, int)
+        or failures < 0
+        or not isinstance(last_seen, int)
+        or last_seen < 0
+    ):
+        return None
+    return {
+        "runs": runs,
+        "success_ema": round(float(success_ema), 6),
+        "consecutive_failed_runs": failures,
+        "last_seen_epoch": last_seen,
+    }
+
+
+def _clean_cohort(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {"runs": 0, "latency_ema_ms": None, "last_seen_epoch": 0}
+    runs = value.get("runs", 0)
+    latency = value.get("latency_ema_ms")
+    last_seen = value.get("last_seen_epoch", 0)
+    if not isinstance(runs, int) or runs < 0:
+        runs = 0
+    if latency is not None and (
+        not isinstance(latency, (int, float)) or float(latency) < 0 or float(latency) > 120_000
+    ):
+        latency = None
+    if not isinstance(last_seen, int) or last_seen < 0:
+        last_seen = 0
+    return {
+        "runs": runs,
+        "latency_ema_ms": None if latency is None else round(float(latency), 3),
+        "last_seen_epoch": last_seen,
+    }
 
 
 def parse_history_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
-    """Parse auxiliary state; malformed or missing state safely degrades to empty history."""
+    """Parse auxiliary state; v1 is migrated and malformed state safely degrades."""
     if not content:
         return empty_history(), "missing"
     try:
         document = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return empty_history(), "invalid"
-    if not isinstance(document, dict) or document.get("version") != _STATE_VERSION:
+    if not isinstance(document, dict) or document.get("version") not in {
+        _LEGACY_STATE_VERSION,
+        _STATE_VERSION,
+    }:
         return empty_history(), "invalid"
     nodes = document.get("nodes")
     if not isinstance(nodes, dict):
@@ -58,30 +114,16 @@ def parse_history_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
     for fingerprint, record in nodes.items():
         if not isinstance(fingerprint, str) or len(fingerprint) != 64:
             return empty_history(), "invalid"
-        if not isinstance(record, dict):
+        clean_record = _clean_node_record(record)
+        if clean_record is None:
             return empty_history(), "invalid"
-        runs = record.get("runs")
-        success_ema = record.get("success_ema")
-        failures = record.get("consecutive_failed_runs")
-        last_seen = record.get("last_seen_epoch")
-        if (
-            not isinstance(runs, int)
-            or runs < 1
-            or not isinstance(success_ema, (int, float))
-            or not 0 <= float(success_ema) <= 1
-            or not isinstance(failures, int)
-            or failures < 0
-            or not isinstance(last_seen, int)
-            or last_seen < 0
-        ):
-            return empty_history(), "invalid"
-        clean[fingerprint] = {
-            "runs": runs,
-            "success_ema": round(float(success_ema), 6),
-            "consecutive_failed_runs": failures,
-            "last_seen_epoch": last_seen,
-        }
-    return {"version": _STATE_VERSION, "nodes": clean}, "loaded"
+        clean[fingerprint] = clean_record
+    legacy = document.get("version") == _LEGACY_STATE_VERSION
+    return {
+        "version": _STATE_VERSION,
+        "nodes": clean,
+        "cohort": _clean_cohort(None if legacy else document.get("cohort")),
+    }, "migrated" if legacy else "loaded"
 
 
 def browsing_runtime_names(candidate: dict[str, Any]) -> set[str]:
@@ -109,10 +151,14 @@ def preferred_stable_names(
     stable_names: set[str],
     history: dict[str, Any],
     fingerprint_key: bytes,
+    *,
+    now_epoch: int | None = None,
 ) -> set[str]:
+    """Demote only mature, fresh, historically unstable nodes inside today's stable set."""
     nodes = history.get("nodes", {})
     if not isinstance(nodes, dict):
         return set(stable_names)
+    now = int(time.time()) if now_epoch is None else int(now_epoch)
     preferred: set[str] = set()
     for runtime_name in stable_names:
         record = nodes.get(fingerprint_runtime_name(runtime_name, fingerprint_key))
@@ -122,9 +168,37 @@ def preferred_stable_names(
         runs = int(record.get("runs", 0))
         success_ema = float(record.get("success_ema", 1.0))
         failures = int(record.get("consecutive_failed_runs", 0))
-        if runs < _MIN_HISTORY_RUNS or (success_ema >= _MIN_SUCCESS_EMA and failures == 0):
+        last_seen = int(record.get("last_seen_epoch", 0))
+        fresh = last_seen > 0 and now >= last_seen and now - last_seen <= _MAX_AGE_SECONDS
+        if not fresh or runs < _MIN_HISTORY_RUNS:
+            preferred.add(runtime_name)
+            continue
+        if success_ema >= _MIN_SUCCESS_EMA and failures == 0:
             preferred.add(runtime_name)
     return preferred
+
+
+def _update_cohort_latency(
+    history: dict[str, Any], *, current_latency_ms: float | None, now_epoch: int
+) -> dict[str, Any]:
+    old = _clean_cohort(history.get("cohort"))
+    if current_latency_ms is None:
+        return old
+    current = float(current_latency_ms)
+    if current < 0 or current > 120_000:
+        return old
+    old_runs = int(old["runs"])
+    old_latency = old["latency_ema_ms"]
+    latency_ema = (
+        current
+        if old_runs == 0 or old_latency is None
+        else float(old_latency) * (1 - _LATENCY_ALPHA) + current * _LATENCY_ALPHA
+    )
+    return {
+        "runs": old_runs + 1,
+        "latency_ema_ms": round(latency_ema, 3),
+        "last_seen_epoch": now_epoch,
+    }
 
 
 def update_history(
@@ -134,9 +208,10 @@ def update_history(
     qualified_names: set[str],
     stable_names: set[str],
     fingerprint_key: bytes,
+    cohort_latency_ms: float | None = None,
     now_epoch: int | None = None,
 ) -> dict[str, Any]:
-    """Update only anonymous stability aggregates from the current run."""
+    """Update anonymous stability aggregates without allowing history to alter live admission."""
     now = int(time.time()) if now_epoch is None else int(now_epoch)
     old_nodes = history.get("nodes", {})
     if not isinstance(old_nodes, dict):
@@ -147,8 +222,10 @@ def update_history(
         if not isinstance(record, dict):
             continue
         last_seen = record.get("last_seen_epoch")
-        if isinstance(last_seen, int) and now - last_seen <= _MAX_AGE_SECONDS:
-            nodes[str(fingerprint)] = dict(record)
+        if isinstance(last_seen, int) and 0 <= now - last_seen <= _MAX_AGE_SECONDS:
+            clean = _clean_node_record(record)
+            if clean is not None:
+                nodes[str(fingerprint)] = clean
 
     for runtime_name in sorted(all_names):
         fingerprint = fingerprint_runtime_name(runtime_name, fingerprint_key)
@@ -162,7 +239,7 @@ def update_history(
             else (2.0 / 3.0 if runtime_name in qualified_names else 0.0)
         )
         success_ema = (
-            current_ratio if old_runs == 0 else (old_ema * (1 - _ALPHA) + current_ratio * _ALPHA)
+            current_ratio if old_runs == 0 else old_ema * (1 - _ALPHA) + current_ratio * _ALPHA
         )
         nodes[fingerprint] = {
             "runs": old_runs + 1,
@@ -178,7 +255,13 @@ def update_history(
             reverse=True,
         )[:_MAX_RECORDS]
         nodes = dict(newest)
-    return {"version": _STATE_VERSION, "nodes": dict(sorted(nodes.items()))}
+    return {
+        "version": _STATE_VERSION,
+        "nodes": dict(sorted(nodes.items())),
+        "cohort": _update_cohort_latency(
+            history, current_latency_ms=cohort_latency_ms, now_epoch=now
+        ),
+    }
 
 
 def history_summary(
@@ -191,13 +274,17 @@ def history_summary(
 ) -> dict[str, Any]:
     before_nodes = before.get("nodes", {})
     after_nodes = after.get("nodes", {})
+    cohort = _clean_cohort(after.get("cohort"))
     return {
         "status": load_status,
+        "state_version": _STATE_VERSION,
         "records_before": len(before_nodes) if isinstance(before_nodes, dict) else 0,
         "records_after": len(after_nodes) if isinstance(after_nodes, dict) else 0,
         "stable_nodes": len(stable_names),
         "preferred_stable_nodes": len(preferred_names),
         "historically_demoted_nodes": len(stable_names - preferred_names),
+        "cohort_latency_ema_ms": cohort["latency_ema_ms"],
+        "cohort_runs": cohort["runs"],
     }
 
 
