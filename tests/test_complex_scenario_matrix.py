@@ -48,7 +48,9 @@ def test_complex_concurrent_scenarios_have_independent_route_intent(repo_root) -
         assert row["target"] == target
 
 
-def test_scenario_permissions_prevent_browsing_source_from_media_download_and_final(repo_root) -> None:
+def test_scenario_permissions_prevent_browsing_source_from_media_download_and_final(
+    repo_root,
+) -> None:
     project = _project(repo_root)
     policy = load_routing_policy_v2(project.policies)
     subscription_1 = next(item for item in project.subscriptions if item.id == "subscription_1")
