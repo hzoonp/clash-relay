@@ -8,9 +8,7 @@ from clash_relay.acl4ssr_policy import apply_acl4ssr_group_semantics
 
 
 def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> None:
-    manifest = yaml.safe_load(
-        (repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8")
-    )
+    manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
     visible = {
         str(group["display_name"])
         for group in manifest["groups"]
@@ -19,18 +17,12 @@ def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> No
 
     assert visible == {"代理选择", "网页浏览", "人工智能"}
     assert manifest["final_target"] == "漏网之鱼"
-    final_group = next(
-        group
-        for group in manifest["groups"]
-        if group["display_name"] == "漏网之鱼"
-    )
+    final_group = next(group for group in manifest["groups"] if group["display_name"] == "漏网之鱼")
     assert final_group["hidden"] is True
 
 
 def test_ai_region_dimension_hard_excludes_hong_kong(repo_root: Path) -> None:
-    policies = yaml.safe_load(
-        (repo_root / "policies.yaml").read_text(encoding="utf-8")
-    )
+    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
     ai_pools = [pool for pool in policies["pools"] if pool["source_use"] == "ai"]
 
     assert ai_pools
@@ -51,7 +43,7 @@ def test_ai_pool_wrappers_are_hidden_scheduling_dimensions() -> None:
             "cr_ai_us_us": {
                 "type": "inline",
                 "payload": [],
-            }
+            },
         },
         "proxy-groups": [
             {
@@ -81,7 +73,7 @@ def test_ai_pool_wrappers_are_hidden_scheduling_dimensions() -> None:
                 "id": "ai_us",
                 "display_name": "AI · 美国",
                 "source_use": "ai",
-            }
+            },
         ],
     )
 
