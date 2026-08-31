@@ -16,7 +16,9 @@ def _path(value: str) -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Persist private browsing scheduler history to KV.")
+    parser = argparse.ArgumentParser(
+        description="Persist private browsing scheduler history to KV."
+    )
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
     parser.add_argument("--services", type=_path, default=Path("services.yaml"))
