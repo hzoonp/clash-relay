@@ -48,7 +48,9 @@ def main() -> int:
         except FetchError as exc:
             raise GenerationError("pinned ACL4SSR Online reference could not be fetched") from exc
         if _normalized(upstream) != _normalized(vendored):
-            raise GenerationError("vendored ACL4SSR Online reference differs from the pinned upstream bytes")
+            raise GenerationError(
+                "vendored ACL4SSR Online reference differs from the pinned upstream bytes"
+            )
         upstream_verified = True
 
     report = validate_acl4ssr_fidelity(manifest, reference_text=vendored)
