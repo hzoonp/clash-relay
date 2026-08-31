@@ -122,9 +122,7 @@ def audit_production_candidate(
             "status": str(source_report.get("status", "unknown")),
             "allowed_uses": sorted(spec.allowed_uses),
             "nodes": int(source_report.get("nodes", 0) or 0),
-            "filtered_over_multiplier": int(
-                source_report.get("filtered_over_multiplier", 0) or 0
-            ),
+            "filtered_over_multiplier": int(source_report.get("filtered_over_multiplier", 0) or 0),
         }
         if spec.max_node_multiplier is not None:
             row["max_node_multiplier"] = spec.max_node_multiplier
@@ -169,14 +167,9 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
     )
     for item in summary["pools"]:
         sources = (
-            ", ".join(
-                f"`{source}`={count}" for source, count in item["sources"].items()
-            )
-            or "-"
+            ", ".join(f"`{source}`={count}" for source, count in item["sources"].items()) or "-"
         )
-        lines.append(
-            f"| `{item['id']}` | `{item['source_use']}` | {item['nodes']} | {sources} |"
-        )
+        lines.append(f"| `{item['id']}` | `{item['source_use']}` | {item['nodes']} | {sources} |")
 
     lines.append("")
     lines.append(
