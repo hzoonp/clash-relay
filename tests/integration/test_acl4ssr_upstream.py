@@ -192,7 +192,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     visible = {
         item["name"] for item in result.config["proxy-groups"] if not item.get("hidden", False)
     }
-    assert _EXPECTED_ACTIONABLE_GROUPS <= visible
+    assert visible >= _EXPECTED_ACTIONABLE_GROUPS
     assert {"流媒体", "国内服务", "更多策略"}.isdisjoint(groups)
     assert groups["节点选择"]["proxies"] == [
         "自动选择",
