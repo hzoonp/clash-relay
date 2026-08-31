@@ -13,9 +13,9 @@ scheduler:
     failure_ttl_seconds: 3600
 
 # Routing V2 keeps classification, source permissions, service qualification,
-# region policy, and scheduling as separate dimensions. The current download
-# mode remains direct during shadow validation; Phase 14 promotes the validated
-# general_auto policy after evidence from production shadow runs.
+# region policy, and scheduling as separate dimensions. Shadow evidence has
+# validated the download cutover; it now uses the general-only download
+# scheduler while remaining unreachable from browsing-only sources.
 routing:
   version: 2
   scenarios:
@@ -30,7 +30,7 @@ routing:
     excluded_regions: [HK]
     preferred_regions: [US, SG, JP, TW, KR, OTHER]
   download:
-    mode: direct
+    mode: general_auto
 
 capabilities:
   general:
@@ -70,9 +70,6 @@ probes:
     timeout: 5000
     lazy: true
     tolerance: 50
-  # Browsing is latency-sensitive but should not flap between nearly equal nodes.
-  # Probe proactively, fail faster, and require a materially better candidate
-  # before automatic selection moves away from the current healthy node.
   browsing:
     url: https://www.gstatic.com/generate_204
     method: HEAD
@@ -107,9 +104,6 @@ probes:
     tolerance: 50
 
 pools:
-  # Internal non-browsing inventory. subscription_1 cannot enter this pool, so
-  # media, games, messaging, cloud services, manual general selection and
-  # fallback routing cannot accidentally use subscription_1 nodes.
   - id: general
     display_name: __CR_GENERAL_INVENTORY
     module: general
@@ -125,9 +119,6 @@ pools:
     rule_priority: 1000
     rules: null
 
-  # Generic web-browsing inventory. This is the only non-AI pool that admits
-  # subscription_1. ACL4SSR's generic ProxyGFWlist routes to this inventory via
-  # the 网页浏览 policy group; application-specific rule groups stay on general.
   - id: browsing
     display_name: __CR_BROWSING_INVENTORY
     module: general
@@ -143,9 +134,6 @@ pools:
     rule_priority: 1010
     rules: null
 
-  # AI is a scenario domain; countries are scheduling dimensions, not public
-  # top-level policy groups. Hong Kong is intentionally absent from the AI
-  # inventory, so HK nodes are never sent to OpenAI/Claude/Gemini qualification.
   - id: ai_sg
     display_name: AI · 新加坡
     module: general
