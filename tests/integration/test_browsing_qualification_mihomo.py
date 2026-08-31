@@ -115,8 +115,7 @@ def test_real_mihomo_accepts_qualified_stable_only_provider_filter(tmp_path: Pat
             "cr_browsing_any": {
                 "type": "inline",
                 "payload": [
-                    {"name": name, "type": "direct"}
-                    for name in [*sorted(stable), "Reserve"]
+                    {"name": name, "type": "direct"} for name in [*sorted(stable), "Reserve"]
                 ],
             }
         },
