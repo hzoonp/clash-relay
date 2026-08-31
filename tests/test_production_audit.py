@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import pytest
 
@@ -20,6 +21,43 @@ def _group(candidate, name: str) -> dict:
     return next(item for item in candidate["proxy-groups"] if item["name"] == name)
 
 
+def _with_acl_surfaces(project, candidate):
+    manifest = {
+        "groups": [
+            {
+                "id": "policy_youtube",
+                "display_name": "YouTube",
+                "module": "general",
+                "members": [],
+            },
+            {
+                "id": "policy_final",
+                "display_name": "Final",
+                "module": "general",
+                "members": [],
+            },
+        ],
+        "sources": [
+            {
+                "id": "youtube",
+                "target": "YouTube",
+                "module": "general",
+            }
+        ],
+        "inline_rules": [],
+        "final_target": "Final",
+        "final_source_use": "general",
+    }
+    candidate["proxy-groups"].extend(
+        [
+            {"name": "YouTube", "type": "select", "proxies": ["Proxy"]},
+            {"name": "Final", "type": "select", "proxies": ["Proxy"]},
+        ]
+    )
+    candidate["rules"] = ["RULE-SET,acl4ssr_youtube,YouTube", "MATCH,Final"]
+    return replace(project, acl4ssr=manifest)
+
+
 def test_production_audit_reports_only_aggregate_source_counts(
     built_candidate, project_paths
 ) -> None:
@@ -36,14 +74,24 @@ def test_production_audit_reports_only_aggregate_source_counts(
     assert "special" not in pools["general"]["sources"]
     assert summary["reachability"]["status"] == "passed"
     assert summary["reachability"]["groups_checked"] > 0
-    assert summary["reachability"]["routing_surfaces_checked"] > 0
-    assert summary["reachability"]["runtime_rules_checked"] > 0
 
     markdown = render_production_summary_markdown(summary)
     assert "Fictional General" not in markdown
     assert "example.invalid" not in markdown
     assert "Source-use policy: **passed**" in markdown
     assert "Routing graph reachability: **passed**" in markdown
+
+
+def test_production_audit_checks_declared_and_runtime_acl_surfaces(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    project = _with_acl_surfaces(_project(project_paths), candidate)
+
+    summary = audit_production_candidate(project, candidate)
+
+    assert summary["reachability"]["routing_surfaces_checked"] == 2
+    assert summary["reachability"]["runtime_rules_checked"] == 2
 
 
 def test_production_audit_fails_when_source_enters_disallowed_pool(
@@ -63,36 +111,35 @@ def test_production_audit_fails_when_general_group_can_reach_restricted_pool(
     built_candidate, project_paths
 ) -> None:
     candidate = copy.deepcopy(built_candidate.config)
+    project = _with_acl_surfaces(_project(project_paths), candidate)
     youtube = _group(candidate, "YouTube")
     youtube["proxies"].append("Residential")
 
     with pytest.raises(ValidationError, match="routing reachability boundary violated"):
-        audit_production_candidate(_project(project_paths), candidate)
+        audit_production_candidate(project, candidate)
 
 
 def test_production_audit_fails_when_ruleset_is_retargeted_to_restricted_pool(
     built_candidate, project_paths
 ) -> None:
     candidate = copy.deepcopy(built_candidate.config)
-    rules = candidate["rules"]
-    index = next(
-        index for index, rule in enumerate(rules) if rule.startswith("RULE-SET,acl4ssr_youtube,")
-    )
-    rules[index] = "RULE-SET,acl4ssr_youtube,Residential"
+    project = _with_acl_surfaces(_project(project_paths), candidate)
+    candidate["rules"][0] = "RULE-SET,acl4ssr_youtube,Residential"
 
     with pytest.raises(ValidationError, match="routing reachability boundary violated"):
-        audit_production_candidate(_project(project_paths), candidate)
+        audit_production_candidate(project, candidate)
 
 
 def test_production_audit_fails_when_final_fallback_can_reach_restricted_pool(
     built_candidate, project_paths
 ) -> None:
     candidate = copy.deepcopy(built_candidate.config)
+    project = _with_acl_surfaces(_project(project_paths), candidate)
     final_group = _group(candidate, "Final")
     final_group["proxies"].append("Residential")
 
     with pytest.raises(ValidationError, match="routing reachability boundary violated"):
-        audit_production_candidate(_project(project_paths), candidate)
+        audit_production_candidate(project, candidate)
 
 
 def test_production_audit_includes_multiplier_filter_counts(built_candidate, project_paths) -> None:
