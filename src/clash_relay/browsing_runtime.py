@@ -100,9 +100,7 @@ def _replace_or_append_group(
     current.update(value)
 
 
-def harden_browsing_runtime(
-    config: dict[str, Any], policies: dict[str, Any]
-) -> dict[str, Any]:
+def harden_browsing_runtime(config: dict[str, Any], policies: dict[str, Any]) -> dict[str, Any]:
     """Remove provider exposure from the public browser selector and add failover tiers."""
 
     groups = config.get("proxy-groups")
@@ -125,7 +123,9 @@ def harden_browsing_runtime(
         name not in providers or not name.startswith(BROWSING_PROVIDER_PREFIX)
         for name in browsing_providers
     ):
-        raise GenerationError("canonical browsing automatic group references a non-browsing provider")
+        raise GenerationError(
+            "canonical browsing automatic group references a non-browsing provider"
+        )
 
     probe = _browsing_probe(policies)
     provider_fields = _runtime_test_fields(probe, tolerance=False)
