@@ -305,13 +305,14 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                     )
         elif not name.startswith("__CR_"):
             group_type = group.get("type")
-            if group_type not in {"select", "url-test"}:
+            if group_type not in {"select", "url-test", "fallback"}:
                 errors.append(
-                    f"hidden presentation group {name!r} must be select or url-test, got {group_type!r}"
+                    f"hidden presentation group {name!r} must be select, url-test, or fallback, "
+                    f"got {group_type!r}"
                 )
-            if group_type == "url-test" and not uses and not references:
+            if group_type in {"url-test", "fallback"} and not uses and not references:
                 errors.append(
-                    f"hidden url-test group {name!r} has no providers or proxy references"
+                    f"hidden {group_type} group {name!r} has no providers or proxy references"
                 )
             if group_type == "select" and uses:
                 nested_refs = group.get("proxies", [])
