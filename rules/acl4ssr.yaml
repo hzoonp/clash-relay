@@ -261,6 +261,7 @@ groups:
   - id: policy_ai
     display_name: 人工智能
     module: general
+    source_use: ai
     members:
       - {group: AI · 新加坡}
       - {group: AI · 日本}
@@ -386,6 +387,7 @@ groups:
       - {group: 手动切换}
 
 final_target: 漏网之鱼
+final_source_use: general
 
 # Rule fragment order mirrors ACL4SSR_Online_Full.ini at the pinned commit.
 sources:
@@ -466,12 +468,14 @@ sources:
     target: 人工智能
     priority: 120
     module: general
+    source_use: ai
 
   - id: openai
     path: Clash/Ruleset/OpenAi.list
     target: 人工智能
     priority: 125
     module: general
+    source_use: ai
 
   - id: netease_music
     path: Clash/Ruleset/NetEaseMusic.list
@@ -556,6 +560,7 @@ sources:
     target: 网页浏览
     priority: 800
     module: general
+    source_use: browsing
 
   - id: china_domain
     path: Clash/ChinaDomain.list
