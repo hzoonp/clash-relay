@@ -6,7 +6,9 @@ from clash_relay.browsing_regions import DEFAULT_BROWSING_REGIONS
 from clash_relay.util import load_yaml_file
 
 
-def test_canonical_browsing_policy_is_region_first_and_independent_from_ai(repo_root: Path) -> None:
+def test_canonical_browsing_policy_is_region_first_and_independent_from_ai(
+    repo_root: Path,
+) -> None:
     policies = load_yaml_file(repo_root / "policies.yaml")
     preferred = policies["routing"]["browsing"]["preferred_regions"]
     ai_preferred = policies["routing"]["ai"]["preferred_regions"]
@@ -35,7 +37,9 @@ def test_canonical_country_classifier_covers_every_browsing_region(repo_root: Pa
 
 def test_regional_scheduling_does_not_widen_subscription_1(repo_root: Path) -> None:
     document = load_yaml_file(repo_root / "subscriptions.yaml")
-    subscription = next(item for item in document["subscriptions"] if item["id"] == "subscription_1")
+    subscription = next(
+        item for item in document["subscriptions"] if item["id"] == "subscription_1"
+    )
 
     assert subscription["secret_name"] == "SUBSCRIPTION_1_URL"
     assert set(subscription["allowed_uses"]) == {"browsing", "ai"}
