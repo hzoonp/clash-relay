@@ -81,7 +81,9 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     )
 
     groups = {row["name"]: row for row in candidate["proxy-groups"]}
-    visible = {row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)}
+    visible = {
+        row["name"] for row in candidate["proxy-groups"] if not row.get("hidden", False)
+    }
     assert visible == {
         "代理选择",
         "网页浏览",
@@ -106,13 +108,32 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
         assert "use" not in groups[public_name]
         assert "filter" not in groups[public_name]
 
-    assert groups["电报消息"]["proxies"] == ["消息通讯"]
-    assert groups["油管视频"]["proxies"] == ["流媒体"]
-    assert groups["国外媒体"]["proxies"] == ["流媒体"]
-    assert groups["国内媒体"]["proxies"] == ["DIRECT"]
-    assert groups["漏网之鱼"]["proxies"] == ["代理选择"]
-    assert groups["奈飞视频"]["type"] == "fallback"
-    assert groups["奈飞视频"]["proxies"] == ["奈飞节点", "流媒体"]
+    compatibility = {
+        "全球直连": ["DIRECT", "代理选择", "自动选择"],
+        "广告拦截": ["REJECT", "DIRECT"],
+        "谷歌FCM": ["代理选择", "全球直连", "自动选择"],
+        "微软服务": ["全球直连", "代理选择"],
+        "苹果服务": ["代理选择", "全球直连"],
+        "漏网之鱼": ["代理选择", "全球直连", "自动选择"],
+    }
+    for name, expected in compatibility.items():
+        assert groups[name]["hidden"] is True
+        assert groups[name]["type"] == "select"
+        assert groups[name]["proxies"] == expected
+        assert "use" not in groups[name]
+        assert "filter" not in groups[name]
+    assert "应用净化" not in groups
+    for removed in (
+        "电报消息",
+        "油管视频",
+        "国外媒体",
+        "国内媒体",
+        "奈飞视频",
+        "奈飞节点",
+        "游戏平台",
+        "哔哩哔哩",
+    ):
+        assert removed not in groups
 
     assert groups["__CR_AI_SERVICE_OPENAI"]["proxies"][0].startswith("__CR_AI_OPENAI_")
     assert groups["__CR_AI_SERVICE_CLAUDE"]["proxies"][0].startswith("__CR_AI_CLAUDE_")
@@ -122,20 +143,25 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert sum(name.startswith("__CR_AI_GEMINI_") for name in groups) == 1
 
     rules = candidate["rules"]
-    assert "RULE-SET,acl4ssr_telegram,电报消息" in rules
-    assert "RULE-SET,acl4ssr_youtube,油管视频" in rules
-    assert "RULE-SET,acl4ssr_netflix,奈飞视频" in rules
+    assert "RULE-SET,acl4ssr_telegram,消息通讯" in rules
+    assert "RULE-SET,acl4ssr_proxy_media,流媒体" in rules
     assert "RULE-SET,acl4ssr_download,下载流量" in rules
-    assert "RULE-SET,acl4ssr_proxy_gfwlist,网页浏览" in rules
+    assert "RULE-SET,acl4ssr_proxy_lite,网页浏览" in rules
     assert "RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI" in rules
     assert "RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE" in rules
     assert "RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI" in rules
+    assert all("acl4ssr_youtube" not in rule for rule in rules)
+    assert all("acl4ssr_netflix" not in rule for rule in rules)
+    assert all("acl4ssr_proxy_gfwlist" not in rule for rule in rules)
     assert rules[-1] == "MATCH,漏网之鱼"
-    assert rules.index("RULE-SET,acl4ssr_china_domain,全球直连") < rules.index(
+    assert rules.index("RULE-SET,acl4ssr_proxy_media,流媒体") < rules.index(
         "RULE-SET,acl4ssr_download,下载流量"
     )
     assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
-        "RULE-SET,acl4ssr_proxy_gfwlist,网页浏览"
+        "RULE-SET,acl4ssr_proxy_lite,网页浏览"
+    )
+    assert rules.index("RULE-SET,acl4ssr_proxy_lite,网页浏览") < rules.index(
+        "RULE-SET,acl4ssr_china_domain,全球直连"
     )
 
     project = load_project(
@@ -148,6 +174,11 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert audit["status"] == "passed"
     assert audit["cutover"]["download_mode"] == "general_auto"
     assert audit["cutover"]["messaging_scheduler"] == "通讯自动"
+    assert audit["cutover"]["intentional_deviations"] == [
+        "BanProgramAD disabled",
+        "AI extension",
+        "Download extension",
+    ]
     assert audit["ai"]["stage"] == "post_qualification"
 
     path = tmp_path / "routing-v2-complex.yaml"
