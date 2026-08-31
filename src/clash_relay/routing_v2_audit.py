@@ -155,16 +155,12 @@ def _audit_ai_materialization(
     }
 
 
-def _audit_general_scheduler(
-    groups: dict[str, dict[str, Any]], *, name: str, purpose: str
-) -> None:
+def _audit_general_scheduler(groups: dict[str, dict[str, Any]], *, name: str, purpose: str) -> None:
     scheduler = groups.get(name)
     if not isinstance(scheduler, dict) or scheduler.get("hidden") is not True:
         raise ValidationError(f"Routing V2 {purpose} scheduler must be hidden")
     if scheduler.get("type") != "url-test" or not scheduler.get("use"):
-        raise ValidationError(
-            f"Routing V2 {purpose} scheduler must be provider-backed url-test"
-        )
+        raise ValidationError(f"Routing V2 {purpose} scheduler must be provider-backed url-test")
 
 
 def _audit_public_general_selector(
