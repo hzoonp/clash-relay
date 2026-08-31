@@ -18,6 +18,7 @@ on:
       - "scripts/render_production_proof.py"
       - "scripts/load_scheduler_history.py"
       - "scripts/publish_scheduler_history.py"
+      - "scripts/snapshot_previous_config.py"
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
@@ -302,6 +303,21 @@ jobs:
             --markdown .work/private/production-proof.md \
             > .work/private/production-proof.json
           cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve previous validated production config
+        if: github.event_name == 'push' || inputs.publish == true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+        run: |
+          python scripts/snapshot_previous_config.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/private/config.yaml \
+            > .work/private/recovery-snapshot.json
 
       - name: Publish exact validated bytes to Cloudflare KV
         if: github.event_name == 'push' || inputs.publish == true
