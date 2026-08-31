@@ -2,180 +2,182 @@
 
 [简体中文](README.zh-CN.md)
 
-`clash-relay` is a deterministic Mihomo / FlClash configuration builder for merging multiple private subscriptions into one standalone `config.yaml` while preserving hard source-to-scenario permissions. Public GitHub files contain policy metadata only; real subscription URLs and generated proxy credentials never belong in Git history.
+`clash-relay` is a deterministic Mihomo / FlClash configuration builder that merges multiple private subscriptions into one standalone `config.yaml` while preserving hard source-to-scenario permissions. Public GitHub files contain policy metadata only; real subscription URLs and generated proxy credentials never belong in Git history.
 
 > **Credential warning**
 >
-> The generated `config.yaml` contains inline proxy credentials and must be treated as highest-sensitivity data. The supported production path publishes only a validated candidate to private Cloudflare Workers KV, not to public Artifacts, Releases, Gists, commits, or Pages.
+> The generated `config.yaml` contains inline proxy credentials and is highest-sensitivity data. Production publishes only validated bytes to private Cloudflare Workers KV, never to public Artifacts, Releases, Gists, commits, or Pages.
 
 ## Start with a fork
 
-For a fresh fork, use the [Fork quickstart](docs/quickstart.md). It covers the complete path:
+For a fresh fork, use the [Fork quickstart](docs/quickstart.md):
 
 ```text
 Fork
   -> add CLASH_RELAY_SUBSCRIPTIONS
   -> add Cloudflare KV secret/variables
-  -> manual dry-run (publish=false, the default)
+  -> manual dry-run (publish=false)
   -> inspect aggregate production proof
   -> publish=true
-  -> optional validated rollback
+  -> optional dual-core validated rollback
 ```
 
-The production workflow additionally performs live browsing qualification (`3/3 = stable auto`, `2/3 = manual reserve`, `<2/3 = rejected`), private anonymous scheduler history, independent OpenAI/Claude/Gemini qualification, end-to-end source reachability audits, and validation with Mihomo v1.19.30 plus v1.19.29. A different current production value is preserved privately before replacement so `Roll back production config` can revalidate and reactivate the previous-good bytes.
+The production pipeline also performs live browsing qualification, private anonymous scheduler history, independent OpenAI/Claude/Gemini qualification, end-to-end source reachability auditing, pinned ACL4SSR Online parity, and validation with Mihomo v1.19.30 plus v1.19.29. Different production bytes are preceded by a private previous-good snapshot.
 
-## Production scenarios
+## Public scenarios
 
-Merging subscriptions does **not** mean every subscription can serve every application:
+FlClash exposes only six primary user decisions:
 
 ```text
-SUBSCRIPTION_1_URL ──> drop explicit >2x nodes ──┬─> web browsing
-                                                 └─> AI
+代理选择
+网页浏览
+人工智能
+流媒体
+消息通讯
+下载流量
+```
 
-SUBSCRIPTION_2_URL ───────────────────────────────┬─> general applications
-SUBSCRIPTION_3_URL ───────────────────────────────┼─> web browsing
-SUBSCRIPTION_4_URL ───────────────────────────────┴─> AI
+ACL4SSR compatibility groups, regional helpers, automatic schedulers, and qualification runtime groups stay hidden. Public selectors do not attach proxy providers directly, so they do not expand raw runtime nodes in the UI.
+
+## Source policy
+
+Merging subscriptions does **not** grant every source access to every scenario:
+
+```text
+SUBSCRIPTION_1_URL
+  ├─ explicit >2x       -> rejected
+  ├─ EMBY-labelled      -> rejected
+  ├─ browsing           -> allowed
+  ├─ ai                 -> allowed
+  └─ general/media/...  -> denied
+
+SUBSCRIPTION_2+
+  ├─ general
+  ├─ browsing
+  └─ ai
 ```
 
 Production invariants:
 
 1. `subscription_1` allows only `browsing` and `ai`; it cannot enter `general`.
-2. Nodes from `subscription_1` with an explicit multiplier above `2x` are dropped before classification, deduplication, or provider generation.
-3. Exactly `2x` is allowed. Nodes with no explicit multiplier marker are retained rather than guessed.
-4. YouTube, Netflix, Telegram, games, Microsoft services, media groups, downloads, and the final `MATCH` path use the `general` inventory, so they cannot select `subscription_1`.
-5. Generic `ProxyGFWlist` traffic uses a dedicated `网页浏览` browsing inventory. AI uses dedicated AI inventories and service qualification.
-6. Final `MATCH` remains `漏网之鱼 -> general`; unknown traffic never receives browsing-only permission merely because it might originate from a browser.
+2. EMBY-labelled subscription-1 nodes are rejected case-insensitively before inventory generation.
+3. Explicit multipliers strictly above `2x` are rejected before classification, deduplication, and provider generation. Exactly `2x` and unmarked nodes remain eligible.
+4. `流媒体`, `消息通讯`, `下载流量`, ACL compatibility selectors, and final `MATCH` use only the general inventory and cannot reach `subscription_1`.
+5. Source reachability is audited before and after qualification rather than being left to user selection behavior.
 
-The project deliberately does not use browser process names as the security boundary because process matching is inconsistent across Android, iOS, Windows, macOS, and different Mihomo/FlClash deployments. The boundary is enforced by routing targets plus inventory admission.
+## ACL4SSR fidelity
+
+`rules/acl4ssr.yaml` pins:
+
+```text
+repository: ACL4SSR/ACL4SSR
+ref: c498ae4911f15b19c5ceaef6f8737ca8705b4430
+reference: Clash/config/ACL4SSR_Online.ini
+```
+
+Since P10, **ACL4SSR Online owns classification semantics; clash-relay owns source-safe inventories and scheduling**. The repository vendors the Online profile from the same immutable ref and CI/production auditing compares it mechanically instead of reinterpreting the ACL4SSR routing graph by hand.
+
+Canonical classification order:
+
+```text
+LocalAreaNetwork -> 全球直连
+UnBan            -> 全球直连
+BanAD            -> 广告拦截
+BanProgramAD     -> intentionally disabled
+GoogleFCM        -> 谷歌FCM
+GoogleCN         -> 全球直连
+SteamCN          -> 全球直连
+Microsoft        -> 微软服务
+Apple            -> 苹果服务
+Telegram         -> 消息通讯
+
+AI / OpenAI      -> 人工智能    # clash-relay extension
+ProxyMedia       -> 流媒体
+Download         -> 下载流量    # clash-relay extension
+ProxyLite        -> 网页浏览
+ChinaDomain      -> 全球直连
+ChinaCompanyIp   -> 全球直连
+GEOIP,CN         -> 全球直连
+MATCH            -> 漏网之鱼
+```
+
+The old canonical `ProxyGFWlist` substitution is removed. Standalone YouTube/Netflix/Game/Bilibili/ChinaMedia classifiers no longer interleave with the ACL4SSR Online baseline.
+
+### Explicit deviations
+
+- `BanProgramAD.list / 应用净化` remains **disabled** because it caused confirmed mobile image/CDN breakage. Basic `BanAD.list` remains enabled.
+- AI/OpenAI runs before `ProxyMedia` so protected AI domains are not swallowed by the broad media list.
+- `Download.list` runs before `ProxyLite` and targets `下载流量`.
+- ACL4SSR's single-subscription raw-node `.*` wildcard is adapted to source-aware scenario selectors rather than copied literally, preserving multi-subscription source isolation.
+
+Any additional classification deviation must be declared in the fidelity contract or CI and production auditing fail closed.
+
+## Hidden ACL compatibility selectors
+
+Default member order follows the pinned ACL4SSR Online profile:
+
+```text
+全球直连: DIRECT -> 代理选择 -> 自动选择
+广告拦截: REJECT -> DIRECT
+谷歌FCM: 代理选择 -> 全球直连 -> 自动选择
+微软服务: 全球直连 -> 代理选择
+苹果服务: 代理选择 -> 全球直连
+漏网之鱼: 代理选择 -> 全球直连 -> 自动选择
+```
+
+These groups remain hidden and do not add top-level FlClash clutter.
+
+## Browsing regional scheduling
+
+`ProxyLite -> 网页浏览` keeps the P8 browsing inventory and live qualification model:
+
+```text
+网页自动
+  ├─ US Stable -> US Reserve
+  ├─ SG Stable -> SG Reserve
+  ├─ JP Stable -> JP Reserve
+  ├─ TW Stable -> TW Reserve
+  ├─ KR Stable -> KR Reserve
+  ├─ HK Stable -> HK Reserve
+  └─ OTHER Stable -> OTHER Reserve
+```
+
+Default automatic region order is:
+
+```text
+US -> SG -> JP -> TW -> KR -> HK -> OTHER
+```
+
+Automatic mode crosses regions only when the entire preferred region is unavailable. A manually selected region never silently crosses to another country. Historical demotion is region-local and moves currently qualified nodes from Stable to Reserve without deleting automatic failover eligibility.
+
+## AI qualification
+
+The AI inventory is independent from general and browsing. Hong Kong is excluded before AI qualification. OpenAI, Claude, and Gemini are tested independently and fail closed per service with preference order:
+
+```text
+US -> SG -> JP -> TW -> KR -> OTHER
+```
+
+A protected service never falls back to an unqualified node.
 
 ## Data flow
 
 ```text
 GitHub Secrets
-  └─ CLASH_RELAY_SUBSCRIPTIONS
-          ↓
-fetch multiple subscriptions
-          ↓
-safe parsing / normalization
-          ↓
-subscription admission
-  ├─ subscription_1: drop >2x
-  └─ enforce allowed_uses
-          ↓
-deduplicate / classify country
-          ↓
-three logical inventories
-  ├─ general   : subscription_2+
-  ├─ browsing  : subscription_1+
-  └─ ai        : subscription_1+
-          ↓
-pinned ACL4SSR rules + scenario routing
-          ↓
-browsing 3-sample live qualification + anonymous history preference
-          ↓
-OpenAI / Claude / Gemini live qualification
-          ↓
-post-qualification source reachability audit
-          ↓
-Mihomo v1.19.30 + v1.19.29 validation
-          ↓
-private previous-good snapshot -> Cloudflare Workers KV
-          ↓
-aggregate production proof -> FlClash
+  -> fetch subscriptions
+  -> safe parse / normalize
+  -> source admission (allowed_uses / EMBY / >2x)
+  -> deduplicate / classify country
+  -> general / browsing / ai inventories
+  -> ACL4SSR Online classification + AI/Download extensions
+  -> browsing qualification + regional Stable/Reserve
+  -> OpenAI / Claude / Gemini qualification
+  -> post-qualification reachability + ACL fidelity audit
+  -> Mihomo v1.19.30 + v1.19.29
+  -> previous-good snapshot
+  -> Cloudflare Workers KV
+  -> FlClash
 ```
-
-## Subscription declarations
-
-Tracked `subscriptions.yaml` contains no URL. The critical production declarations are:
-
-```yaml
-subscriptions:
-  - id: subscription_1
-    secret_name: SUBSCRIPTION_1_URL
-    allowed_uses: [browsing, ai]
-    max_node_multiplier: 2.0
-
-  - id: subscription_2
-    secret_name: SUBSCRIPTION_2_URL
-    allowed_uses: [general, browsing, ai]
-```
-
-`subscription_3` and `subscription_4` use the same production permission model as subscription 2.
-
-Common explicit multiplier markers are supported:
-
-```text
-HK 2x          -> keep
-JP x2.0        -> keep
-US 2.01x       -> drop
-SG 3倍         -> drop
-倍率: 4        -> drop
-Unmarked       -> keep
-```
-
-If multiple explicit multiplier markers appear in one node name, the highest parsed value is used.
-
-## Scenario inventories
-
-`policies.yaml` creates hard boundaries with separate `source_use` values:
-
-```text
-general
-  source_use: general
-  subscription_1: denied
-
-browsing
-  source_use: browsing
-  subscription_1: allowed
-
-ai_*
-  source_use: ai
-  subscription_1: allowed
-```
-
-Selection checks `Node.source_allowed_uses` before a provider is generated. A low-latency subscription-1 node therefore cannot leak into general application routing through url-test, fallback, manual selection, or deduplication.
-
-## Routing
-
-`rules/acl4ssr.yaml` pins `ACL4SSR/ACL4SSR` at immutable commit:
-
-```text
-c498ae4911f15b19c5ceaef6f8737ca8705b4430
-```
-
-Most application rules retain their dedicated ACL4SSR Full targets. Production has two explicit scheduling extensions:
-
-```text
-ProxyGFWlist -> 网页浏览 -> browsing inventory
-AI/OpenAI    -> 人工智能 -> AI inventories
-```
-
-Representative non-browsing routes continue through the general inventory:
-
-```text
-Telegram                     -> 电报消息
-YouTube                      -> 油管视频
-Netflix                      -> 奈飞视频
-Epic/Origin/Sony/Steam/...   -> 游戏平台
-ChinaMedia                   -> 国内媒体
-ProxyMedia                   -> 国外媒体
-Download                     -> 全球直连
-MATCH                        -> 漏网之鱼
-```
-
-This makes subscription 1 structurally absent from those unauthorized scenario providers rather than relying on users not to select it.
-
-## AI live qualification
-
-AI candidates are deterministically classified by node name into SG / JP / US / HK / TW / KR / OTHER. A trusted runner starts a temporary Mihomo instance and probes through candidate nodes:
-
-```text
-https://chatgpt.com/
-https://claude.ai/
-https://gemini.google.com/
-```
-
-OpenAI, Claude, and Gemini qualify independently. Network errors, timeouts, TLS failures, or disallowed HTTP statuses fail that candidate for the service. Protected service routing fails closed instead of falling back to an unqualified node.
 
 ## GitHub Secrets
 
@@ -208,23 +210,23 @@ Never write real subscription URLs into tracked YAML, README files, workflow arg
 
 ## Validation contract
 
-Tests directly lock the production invariants:
+CI and production gates lock these behaviors directly:
 
 ```text
-subscription_1 / 1x       -> keep
-subscription_1 / 2x       -> keep
-subscription_1 / 2.01x    -> drop
-subscription_1 / unmarked -> keep
+subscription_1 -> general/media/messaging/download/final -> denied
+subscription_1 -> browsing/ai                         -> allowed
+subscription_1 EMBY                                   -> rejected
+subscription_1 >2x                                    -> rejected
 
-subscription_1 -> general  -> denied
-subscription_1 -> browsing -> allowed
-subscription_1 -> ai       -> allowed
-
-ProxyGFWlist -> 网页浏览
-YouTube/Netflix/Game/Download/MATCH -> not browsing
+ProxyMedia -> 流媒体
+Telegram   -> 消息通讯
+Download   -> 下载流量
+ProxyLite  -> 网页浏览
+MATCH      -> 漏网之鱼
+BanProgramAD -> disabled
 ```
 
-CI runs Ruff, unit tests, repository safety auditing, deterministic generation, and real Mihomo configuration/startup integration against two stable Mihomo versions on Python 3.11/3.12 where applicable.
+The pipeline also verifies pinned ACL4SSR upstream/vendored parity, Ruff, Python 3.11/3.12 unit tests, repository safety auditing, deterministic generation, Routing V2 Drift Guard, and real Mihomo v1.19.30 / v1.19.29 startup integration.
 
 ## Local development
 
@@ -235,6 +237,7 @@ python -m pip install -r requirements-dev.lock -e .
 ruff check .
 ruff format --check .
 pytest -m "not integration"
+python scripts/audit_acl4ssr_fidelity.py
 python scripts/repository_audit.py
 ```
 
@@ -247,4 +250,5 @@ python scripts/repository_audit.py
 - [ACL4SSR routing model](docs/rules.md)
 - [Security model](docs/security.md)
 - [Publishing](docs/publishing.md)
+- [Versioning and compatibility](docs/versioning.md)
 - [Release checklist](docs/release-checklist.md)
