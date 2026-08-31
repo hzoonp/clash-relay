@@ -96,7 +96,8 @@ def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> No
     assert "Record dry-run result" in text
     assert "github.event_name == 'workflow_dispatch' && inputs.publish != true" in text
     assert "github.event_name == 'push' || inputs.publish == true" in text
-    assert "was **not** written to Cloudflare KV" in text
+    assert "--publication-status dry-run" in text
+    assert "--publication-status published" in text
 
 
 def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:
@@ -108,6 +109,22 @@ def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:
     assert text.index("validate_core v1.19.30") < publish
     assert text.index("validate_core v1.19.29") < publish
     assert "clash-relay publish-cloudflare-kv" in text
+
+
+def test_final_production_proof_uses_only_private_aggregate_inputs() -> None:
+    text = WORKFLOW.read_text()
+    assert "scripts/render_production_proof.py" in text
+    assert "--audit .work/private/post-qualification-audit.json" in text
+    assert "--browsing .work/private/browsing-qualification-summary.json" in text
+    assert "--ai .work/private/ai-qualification-summary.json" in text
+    assert "--validated-core v1.19.30" in text
+    assert "--validated-core v1.19.29" in text
+    assert "production-proof.md" in text
+    assert 'cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"' in text
+    assert text.index("validate_core v1.19.29") < text.index("--publication-status dry-run")
+    assert text.index("Publish exact validated bytes to Cloudflare KV") < text.rindex(
+        "--publication-status published"
+    )
 
 
 def test_sensitive_github_backends_are_disabled_by_default() -> None:
