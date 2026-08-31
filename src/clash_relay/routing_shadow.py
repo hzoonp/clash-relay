@@ -51,9 +51,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     by_source = {str(row["source_id"]): row for row in bindings}
     media_rules = sum(1 for row in bindings if row["scenario"] == "media")
     messaging_rules = sum(
-        1
-        for row in bindings
-        if row["scenario"] == "general" and row.get("service") == "telegram"
+        1 for row in bindings if row["scenario"] == "general" and row.get("service") == "telegram"
     )
     download_rules = sum(1 for row in bindings if row["scenario"] == "download")
     browsing_rules = sum(1 for row in bindings if row["scenario"] == "browsing")
@@ -79,9 +77,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         "其他地区": "OTHER",
         "香港": "HK",
     }
-    current_codes = [
-        label_to_code[name] for name in current_ai_regions if name in label_to_code
-    ]
+    current_codes = [label_to_code[name] for name in current_ai_regions if name in label_to_code]
 
     media_members = _declared_members(groups.get("流媒体"))
     messaging_members = _declared_members(groups.get("消息通讯"))
@@ -128,8 +124,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     order_applied = all(source_id in by_source for source_id in required_order)
     if order_applied:
         priorities = {
-            source_id: int(by_source[source_id]["priority"])
-            for source_id in required_order
+            source_id: int(by_source[source_id]["priority"]) for source_id in required_order
         }
         order_applied = (
             priorities["telegram"]
