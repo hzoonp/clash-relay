@@ -36,8 +36,7 @@ jobs:
           new_redirect = '            > .work/private/recovery-snapshot.json'
           if old_redirect not in text:
               raise SystemExit('expected P15 snapshot tee not found')
-          text = text.replace(old_redirect, new_redirect, 1)
-          workflow.write_text(text, encoding='utf-8')
+          workflow.write_text(text.replace(old_redirect, new_redirect, 1), encoding='utf-8')
 
           changelog = Path('CHANGELOG.md')
           text = changelog.read_text(encoding='utf-8')
@@ -46,8 +45,7 @@ jobs:
               '- Source-health evaluation tracks only private structural fingerprints and aggregate source/region counts; it rejects large active-source collapses and protected browsing-region disappearance without emitting node names, endpoints, credentials, subscription URLs, or traffic records.',
               '- Explicit source removal from `subscriptions.yaml` is treated as a deliberate declaration change, so P15 does not mistake planned source retirement for an outage.',
           }
-          lines = [line for line in text.splitlines() if line not in remove_lines]
-          text = '\n'.join(lines) + '\n'
+          text = '\n'.join(line for line in text.splitlines() if line not in remove_lines) + '\n'
           text = text.replace(
               '- P13/P15 preserve client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.',
               '- P13 preserves client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.',
@@ -60,26 +58,21 @@ jobs:
               raise SystemExit('P15 reference remains in v1.4.0 changelog section')
           changelog.write_text(text, encoding='utf-8')
 
-          transport = Path('src/clash_relay/transport_qualification.py')
-          text = transport.read_text(encoding='utf-8')
-          bad = '        + b"\\x08crp13dcid"'
-          good = '        + b"\\x08crp13dci"'
-          if bad not in text:
-              raise SystemExit('expected QUIC DCID fixture not found')
-          transport.write_text(text.replace(bad, good, 1), encoding='utf-8')
-
           test = Path('tests/test_transport_qualification.py')
           text = test.read_text(encoding='utf-8')
           marker = '    assert int.from_bytes(payload[1:5], "big") == 0x0A0A0A0A\n'
           addition = (
               marker
               + '    assert payload[5] == 8\n'
-              + '    assert payload[6:14] == b"crp13dci"\n'
+              + '    assert payload[6:14] == b"p13dcid1"\n'
               + '    assert payload[14] == 8\n'
+              + '    assert payload[15:23] == b"p13scid1"\n'
           )
           if marker not in text:
               raise SystemExit('expected QUIC test marker not found')
-          test.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+          if 'payload[6:14]' not in text:
+              text = text.replace(marker, addition, 1)
+          test.write_text(text, encoding='utf-8')
           PY
           rm .github/workflows/p13-scope-finalize.yml
           git config user.name "github-actions[bot]"
