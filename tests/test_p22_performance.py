@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import scripts.validate_mihomo_matrix as matrix
-
 import clash_relay.qualification_pipeline as pipeline
+
+
+def _load_matrix_script(repo_root: Path):
+    path = repo_root / "scripts" / "validate_mihomo_matrix.py"
+    spec = importlib.util.spec_from_file_location("test_validate_mihomo_matrix", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_qualification_pipeline_reports_only_aggregate_phase_timings(
@@ -46,8 +54,9 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
 
 
 def test_stable_matrix_reuses_primary_and_downloads_only_remaining_core(
-    tmp_path: Path, monkeypatch, capsys
+    repo_root: Path, tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    matrix = _load_matrix_script(repo_root)
     candidate = tmp_path / "config.yaml"
     candidate.write_text("test: true\n", encoding="utf-8")
     primary = tmp_path / "mihomo-primary"
