@@ -32,7 +32,11 @@ def _validated_cores(args: argparse.Namespace) -> tuple[str, ...]:
         return explicit
     report = _load_json(args.validated_cores_report, "Mihomo validation matrix")
     raw = report.get("validated_cores")
-    if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
+    if (
+        not isinstance(raw, list)
+        or not raw
+        or not all(isinstance(item, str) and item for item in raw)
+    ):
         raise ValidationError("Mihomo validation matrix does not contain validated_cores")
     matrix = tuple(str(item) for item in raw)
     if explicit and explicit != matrix:
