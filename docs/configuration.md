@@ -21,6 +21,7 @@ The canonical profile contains:
 - pinned ACL4SSR Full routing data in `rules/acl4ssr.yaml`;
 - live OpenAI / Claude / Gemini qualification before publication;
 - Cloudflare Workers KV as the credential-bearing publication backend.
+- DNS-independent HTTP/TLS/QUIC traffic sniffing for more complete mobile routing identity.
 
 The production source-policy boundary is intentional: `subscription_1` may enter only `browsing` and `ai`; it may never enter `general`.
 
@@ -38,6 +39,32 @@ Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, 
 - `managed` emits the declared DNS settings exactly as before. Configurations that omit `mode` retain the legacy managed behavior.
 
 P11 changes DNS ownership only; ACL4SSR routing, source isolation, qualification, and scenario schedulers are unchanged.
+
+#### Traffic sniffing
+
+`runtime.sniffer` is independent from DNS ownership. Canonical production keeps `runtime.dns.mode: client` while enabling HTTP Host, TLS SNI, and QUIC sniffing. This lets Mihomo recover domain identity for pure-IP or otherwise opaque application connections so the existing ACL4SSR/scenario graph can classify them more accurately.
+
+Canonical production uses:
+
+```yaml
+runtime:
+  dns:
+    mode: client
+  sniffer:
+    enabled: true
+    force_dns_mapping: false
+    parse_pure_ip: true
+    sniff:
+      http:
+        ports: [80, '8080-8880']
+        override_destination: true
+      tls:
+        ports: [443, 8443]
+      quic:
+        ports: [443, 8443]
+```
+
+`force_dns_mapping` remains disabled because P12 does not reintroduce Fake-IP or managed DNS. Configurations that omit `runtime.sniffer` keep the legacy no-sniffer output. Port ranges are fail-closed and must be ordered within `1..65535`.
 
 ### `generation`
 

@@ -4,6 +4,23 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-01
+
+### Added
+
+- Canonical production now enables DNS-independent HTTP, TLS, and QUIC traffic sniffing so Mihomo can recover domain identity from Host/SNI/QUIC metadata before existing routing rules classify traffic.
+- `runtime.sniffer` is an optional, strictly validated declaration with pure-IP parsing, protocol-specific ports, and HTTP destination override support.
+- Real Mihomo integration covers the production combination of client-owned DNS plus HTTP/TLS/QUIC sniffing on both pinned stable cores.
+
+### Changed
+
+- Traffic sniffing is rendered independently from `runtime.dns.mode`; legacy configurations that omit `runtime.sniffer` preserve their previous output.
+- Canonical production enables `parse-pure-ip`, keeps `force-dns-mapping` disabled, and does not alter ACL4SSR ordering, proxy groups, qualification, or source isolation.
+
+### Security
+
+- P12 does not restore Fake-IP, managed DNS, `store-fake-ip`, or overseas resolver injection. Canonical production remains `runtime.dns.mode: client`.
+
 ## [1.2.1] - 2026-09-01
 
 ### Fixed

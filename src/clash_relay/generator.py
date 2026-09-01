@@ -376,6 +376,24 @@ def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:
         "tcp-concurrent": runtime["tcp_concurrent"],
         "profile": profile,
     }
+
+    sniffer = runtime.get("sniffer")
+    if sniffer is not None:
+        sniff = sniffer["sniff"]
+        output["sniffer"] = {
+            "enable": sniffer["enabled"],
+            "force-dns-mapping": sniffer["force_dns_mapping"],
+            "parse-pure-ip": sniffer["parse_pure_ip"],
+            "sniff": {
+                "HTTP": {
+                    "ports": list(sniff["http"]["ports"]),
+                    "override-destination": sniff["http"]["override_destination"],
+                },
+                "TLS": {"ports": list(sniff["tls"]["ports"])},
+                "QUIC": {"ports": list(sniff["quic"]["ports"])},
+            },
+        }
+
     if dns_mode == "client":
         return output
 
