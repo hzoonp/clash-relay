@@ -4,6 +4,8 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-01
+
 ### Fixed
 
 - Canonical production now uses client-owned DNS, so clash-relay no longer forces Fake-IP or overseas public resolvers onto FlClash/Mihomo mobile clients.
@@ -82,7 +84,7 @@ All notable user-visible changes are documented here. This project follows Seman
 ### Security
 
 - Canonical public scenario groups are contract-validated to reject direct proxy-provider exposure; the browsing public surface is additionally frozen to `网页自动` plus `DIRECT`.
-- `subscription_1` remains reachable only from browsing and AI; media, download, general, and final routes remain unreachable from that source, and explicit multipliers strictly greater than 2x remain rejected before classification.
+- `subscription_1` remains reachable only from browsing and AI; media, download, general, and final routes remain unreachable from that source, and explicit multipliers strictly greater than 2x are rejected before classification.
 - `ProxyGFWlist -> 网页浏览`, final `MATCH -> 漏网之鱼`, AI HK exclusion, independent per-service AI fail-closed qualification, source-reachability audits, and dual-Mihomo production validation remain non-negotiable boundaries.
 
 ## [1.0.0] - 2026-08-31
@@ -134,7 +136,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/hzoonp/clash-relay/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/hzoonp/clash-relay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/hzoonp/clash-relay/compare/v1.0.0...v1.0.1
