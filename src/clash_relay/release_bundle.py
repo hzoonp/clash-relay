@@ -95,9 +95,7 @@ def manifest_bytes(content: bytes) -> bytes:
         "sha256": release_id,
         "bytes": len(content),
     }
-    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(
-        "utf-8"
-    )
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
 def _matches_after_write(publisher: KVValue, expected: bytes) -> bool:
@@ -155,9 +153,7 @@ def _ensure_immutable_release(
     if existing_manifest is None:
         _publish_verified(factory, manifest_key, expected_manifest)
     elif existing_manifest != expected_manifest:
-        raise PublicationError(
-            "immutable production release manifest does not match release bytes"
-        )
+        raise PublicationError("immutable production release manifest does not match release bytes")
     return release_id
 
 
@@ -288,9 +284,7 @@ def read_previous_release(
         if content is None:
             raise PublicationError("previous release pointer references a missing release")
         if release_id_for(content) != previous_release_id:
-            raise PublicationError(
-                "previous release bytes do not match their immutable release id"
-            )
+            raise PublicationError("previous release bytes do not match their immutable release id")
         return content, {
             "source": "versioned-release",
             "release_id": previous_release_id,
