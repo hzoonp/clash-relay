@@ -8,6 +8,7 @@ from typing import Any
 
 from .config_loader import ProjectDefinition
 from .errors import ValidationError
+from .runtime_names import canonical_source_id
 from .util import safe_identifier
 
 _RUNTIME_SOURCE = re.compile(r"^\[[^\]]+\]\s+([^/]+)/")
@@ -19,7 +20,9 @@ def _provider_name(pool_id: str, region: str) -> str:
     return f"cr_{safe_identifier(pool_id)}_{safe_identifier(region)}"
 
 
-def _runtime_source_id(proxy: dict[str, Any], *, provider_name: str) -> str:
+def _runtime_source_id(
+    proxy: dict[str, Any], *, provider_name: str, known_source_ids: set[str]
+) -> str:
     name = proxy.get("name")
     if not isinstance(name, str):
         raise ValidationError(
@@ -30,7 +33,10 @@ def _runtime_source_id(proxy: dict[str, Any], *, provider_name: str) -> str:
         raise ValidationError(
             f"production audit could not recover source identity in provider {provider_name!r}"
         )
-    return match.group(1)
+    try:
+        return canonical_source_id(match.group(1), known_source_ids)
+    except ValueError as exc:
+        raise ValidationError("production audit found ambiguous runtime source labels") from exc
 
 
 def _groups_by_name(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -50,6 +56,8 @@ def _groups_by_name(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _provider_graph(
     providers: dict[str, Any],
+    *,
+    known_source_ids: set[str],
 ) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:
     provider_sources: dict[str, set[str]] = {}
     provider_dialers: dict[str, set[str]] = {}
@@ -70,7 +78,9 @@ def _provider_graph(
                 raise ValidationError(
                     f"production reachability audit found malformed proxy in {provider_name!r}"
                 )
-            source_id = _runtime_source_id(proxy, provider_name=provider_name)
+            source_id = _runtime_source_id(
+                proxy, provider_name=provider_name, known_source_ids=known_source_ids
+            )
             sources.add(source_id)
             runtime_name = str(proxy["name"])
             previous = runtime_sources.get(runtime_name)
@@ -221,7 +231,9 @@ def _audit_reachability(
     providers: dict[str, Any],
 ) -> dict[str, Any]:
     groups = _groups_by_name(candidate)
-    provider_sources, provider_dialers, runtime_sources = _provider_graph(providers)
+    provider_sources, provider_dialers, runtime_sources = _provider_graph(
+        providers, known_source_ids=set(subscriptions)
+    )
     memo: dict[str, frozenset[str]] = {}
     use_counts: Counter[str] = Counter()
     groups_checked = 0
@@ -411,7 +423,9 @@ def audit_production_candidate(
                     raise ValidationError(
                         f"production audit found malformed proxy in provider {provider_name!r}"
                     )
-                source_id = _runtime_source_id(proxy, provider_name=provider_name)
+                source_id = _runtime_source_id(
+                    proxy, provider_name=provider_name, known_source_ids=set(subscriptions)
+                )
                 spec = subscriptions.get(source_id)
                 if spec is None:
                     raise ValidationError(
