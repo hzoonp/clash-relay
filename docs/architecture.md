@@ -2,9 +2,9 @@
 
 ## Design boundaries
 
-`clash-relay` is a build tool, not a proxy runtime. Its responsibility ends after emitting and validating a standard standalone Mihomo configuration. It does not manage client state, run on FlClash devices, operate a database, infer commercial provider identity, or maintain an old repository's compatibility surface.
+`clash-relay` is a build and production-promotion tool, not a proxy runtime. Its responsibility ends after emitting, qualifying, validating, and privately promoting a standard standalone Mihomo configuration. It does not manage FlClash device state, operate a traffic database, infer commercial provider identity, or inspect user traffic.
 
-The pipeline is intentionally one-way:
+The production pipeline is staged and fail closed:
 
 1. **Declaration loading** validates `config.yaml`, `subscriptions.yaml`, `services.yaml`, `policies.yaml`, and rule files against JSON Schema and cross-file semantic constraints.
 2. **Secret resolution** maps logical `secret_name` values to URLs from `CLASH_RELAY_SUBSCRIPTIONS`, a same-name environment variable, or an ignored local secret file.
@@ -13,9 +13,23 @@ The pipeline is intentionally one-way:
 5. **Classification** combines source defaults, optional name rules, country aliases, and authoritative exact-node metadata into an immutable node model.
 6. **Eligibility selection** applies source use, country, capability any/all/exclude, and cost constraints. Source priority is deterministic ordering only.
 7. **Generation** creates inline providers and layered hidden groups programmatically. Runtime proxy names include scope, source ID, and a fingerprint suffix.
-8. **Static validation** verifies provider non-emptiness, unique names, reference closure, cycle absence, public layering, rule targets, controlled chain references, and URL-secret non-leakage.
-9. **Real-core validation** runs Mihomo config test and startup smoke against a temporary validation copy with collision-free local ports.
-10. **Promotion** distributes the exact validated bytes through a backend-independent gate.
+8. **RuntimeGraph audit** normalizes groups/providers/proxies/dialer edges and verifies Routing V2 and source-to-scenario contracts against the concrete generated graph.
+9. **Qualification pipeline** copies the generated private candidate through browsing/transport and AI qualification stages, producing one explicit final candidate instead of mutating the generator output across unrelated workflow steps.
+10. **Static/current-policy audit** is repeated against the exact qualified candidate.
+11. **Real-core matrix validation** tests the exact final candidate against every pinned stable Mihomo core in `tools/mihomo-versions.json`.
+12. **Versioned promotion** stages and read-back verifies an immutable private release, updates the fixed client-facing Cloudflare KV key, and commits release pointers with compensation when a pointer commit fails.
+
+## Canonical models
+
+There are three deliberately separate models:
+
+- **Declarations** describe desired policy and source permissions.
+- **`RuntimeGraph`** is a side-effect-free normalized view of a concrete Mihomo candidate.
+- **`CandidateArtifact`** identifies immutable logical transitions between generated and qualified stages.
+
+`RuntimeGraph` is an audit/traversal model, not a second serializer. The deterministic generator remains the only Mihomo YAML constructor.
+
+The canonical production names and Routing V2 fidelity rules are data under `routing.contract` in `policies.yaml`. Core validation code consumes that contract rather than embedding production group names or region exclusions as Python constants.
 
 ## Module responsibilities
 
@@ -29,10 +43,16 @@ The pipeline is intentionally one-way:
 | `classify.py` | country/capability/cost assignment and deduplication |
 | `selector.py` | pure business eligibility predicates |
 | `generator.py` | deterministic Mihomo graph construction |
+| `runtime_graph.py` | normalized candidate traversal and immutable stage model |
+| `policy_contract.py` | declarative production Routing V2 contract |
+| `routing_v2_audit.py` | current contract versus concrete RuntimeGraph audit |
+| `qualification_pipeline.py` | browsing/transport then AI qualification orchestration |
 | `validator.py` | output graph, reference, isolation, and leakage validation |
 | `mihomo.py` | actual core load/start tests |
+| `mihomo_matrix.py` | pinned validation-core source of truth |
+| `release_bundle.py` | immutable release staging, activation pointers, compensation, rollback reads |
 | `publication.py` | publication safety gates |
-| `publishers/` | optional output backends, isolated from generation |
+| `publishers/` | private output backends, isolated from generation |
 | `cli.py` | local/CI command surface |
 
 ## Scheduling graph
@@ -74,9 +94,28 @@ hidden entry AUTO
 
 Every subscription-supplied `dialer-proxy` is removed first. Static validation permits the field only in `cr_chain_exit_*` providers and only when it references a generated `__CR_CHAIN_ENTRY_AUTO_*` group.
 
+## Production candidate stages
+
+The sensitive production path is explicit:
+
+```text
+generated.yaml
+  -> 01-generated.yaml
+  -> 02-browsing-transport.yaml
+  -> 03-ai.yaml
+  -> config.yaml
+  -> current-policy audit
+  -> pinned stable Mihomo matrix
+  -> immutable release
+  -> production key
+  -> release pointers
+```
+
+All stage files remain under the private runner directory and are deleted at the end. GitHub Artifact/Release/Gist are not used for credential-bearing output.
+
 ## Determinism
 
-Stable output comes from:
+Stable generator output comes from:
 
 - schema-constrained plain data;
 - sorted source processing by `(priority, id)`;
@@ -85,10 +124,14 @@ Stable output comes from:
 - deterministic runtime names;
 - explicit dictionary insertion order;
 - alias-free YAML output;
-- no timestamps or environment-specific values in the candidate.
+- no timestamps or environment-specific values in the generated candidate.
 
-The report includes a SHA-256 of candidate bytes. CI generates twice and compares bytes, then exercises `--check`.
+Qualification is intentionally environment-sensitive because it measures live service/transport eligibility. The generated pre-qualification artifact remains byte-deterministic and CI generates it twice and compares bytes.
 
 ## Trust boundaries
 
-Public declarations are still treated as malformed-capable input. Subscriptions are fully untrusted. Secrets are trusted only as opaque URLs and never as configuration fragments. Mihomo is the syntax/runtime authority after project validation. Publication backends cannot alter generation or bypass validation.
+Public declarations are still treated as malformed-capable input. Subscriptions are fully untrusted. Secrets are trusted only as opaque URLs and never as configuration fragments. Qualification executors operate only on the private generated candidate. Mihomo is the syntax/runtime authority after project validation. Publication backends cannot alter generation or bypass current-policy and core validation.
+
+Cloudflare Workers KV does not provide a multi-key transaction. The release layer therefore uses verified immutable objects plus compensating writes rather than claiming cross-key atomicity. The fixed client-facing production key remains compatible with existing subscription URLs.
+
+See [`p14-p18.md`](p14-p18.md) for the stabilization contract and release/rollback details.
