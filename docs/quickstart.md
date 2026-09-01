@@ -49,13 +49,19 @@ Private readiness validation with local environment variables or a local ignored
 clash-relay doctor --secret-file .secrets.yaml
 ```
 
+Optionally perform the same bounded fetch policy against every enabled subscription without exposing URL or payload details:
+
+```bash
+clash-relay doctor --secret-file .secrets.yaml --check-subscriptions
+```
+
 To validate Cloudflare account/token/namespace/key read connectivity without publishing bytes:
 
 ```bash
 clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 ```
 
-Doctor output is aggregate-only. It never prints subscription URLs or Cloudflare tokens.
+Both connectivity checks can be requested together. Doctor output is aggregate-only. It never prints subscription URLs, subscription payloads, Cloudflare credentials, or production configuration bytes. Connectivity failures are reduced to safe public identifiers/status messages.
 
 ## 5. Dry-run the production workflow
 
