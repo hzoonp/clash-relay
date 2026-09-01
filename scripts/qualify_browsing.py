@@ -25,6 +25,10 @@ from clash_relay.scheduler_policy import (
     load_scheduler_policy,
     preferred_stable_names_from_policy,
 )
+from clash_relay.transport_qualification import (
+    probe_transport_nodes,
+    rewrite_transport_qualified_candidate,
+)
 from clash_relay.util import load_yaml_file
 
 _MIN_PREFERRED_STABLE_NODES = 3
@@ -307,6 +311,18 @@ def main(argv: list[str] | None = None) -> int:
                     preferred=preferred,
                 )
 
+        transport_diagnostics: dict[str, object] = {}
+        tcp_qualified, udp_qualified, _ = probe_transport_nodes(
+            args.mihomo_bin,
+            args.candidate,
+            diagnostics=transport_diagnostics,
+        )
+        transport_report = rewrite_transport_qualified_candidate(
+            args.candidate,
+            tcp_qualified,
+            udp_qualified,
+        )
+
         print(
             json.dumps(
                 {
@@ -319,6 +335,10 @@ def main(argv: list[str] | None = None) -> int:
                         "region_switch_interval": scheduler_policy.browsing.region_switch_interval,
                     },
                     "scheduler_history": scheduler_report,
+                    "transport_qualification": {
+                        "diagnostics": transport_diagnostics,
+                        **transport_report,
+                    },
                     **report,
                 },
                 ensure_ascii=False,

@@ -4,6 +4,22 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-01
+
+### Added
+
+- P13 adds private pre-publication transport qualification for the general automatic inventory: live HTTPS admission for `自动选择`, plus live SOCKS5 UDP-associate qualification for `媒体自动` and `通讯自动`.
+- UDP qualification probes a QUIC-speaking UDP/443 endpoint first and falls back to a lightweight UDP DNS round-trip; the report distinguishes observed QUIC-path responses from generic UDP reachability.
+
+### Changed
+
+- Automatic general/media/messaging selection is now transport-aware while explicit/manual node choices remain available and unchanged.
+
+### Security
+
+- P13 preserves client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.
+- If transport qualification leaves no safe automatic UDP inventory, publication stops before Cloudflare KV is replaced and previous-good remains intact.
+
 ## [1.3.0] - 2026-09-01
 
 ### Added
@@ -40,7 +56,7 @@ All notable user-visible changes are documented here. This project follows Seman
 
 - ACL4SSR Online is now the classification source of truth instead of being reinterpreted into a separate application-routing graph.
 - Generic foreign-web routing uses the pinned ACL4SSR `ProxyLite.list` baseline and maps it to `网页浏览`; the former canonical `ProxyGFWlist` replacement is removed.
-- `ProxyMedia.list` now owns generic foreign-media classification and maps to `流媒体`; Telegram maps directly to `消息通讯`.
+- `ProxyMedia.list` now owns generic foreign-media classification and maps it to `流媒体`; Telegram maps directly to `消息通讯`.
 - Microsoft, Apple, Google FCM, global-direct, block, and final compatibility selectors preserve the pinned ACL4SSR default member order while remaining hidden from the six-group FlClash surface.
 - AI/OpenAI are explicit classification extensions before `ProxyMedia`; `Download.list` is the only download extension and runs before `ProxyLite`.
 - Standalone YouTube/Netflix/game/Bilibili/ChinaMedia classification sources that altered ACL4SSR Online precedence are removed from the canonical rule graph. Media capability scheduling can remain internal without redefining baseline classification.
@@ -153,7 +169,9 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/hzoonp/clash-relay/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/hzoonp/clash-relay/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/hzoonp/clash-relay/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/hzoonp/clash-relay/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/hzoonp/clash-relay/compare/v1.0.1...v1.1.0
