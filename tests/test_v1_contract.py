@@ -3,6 +3,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from clash_relay import __version__
 from clash_relay.scheduler_policy import load_scheduler_policy
 
 
@@ -11,9 +12,10 @@ def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.4.1"
+    assert project["version"] == "1.5.0"
+    assert __version__ == project["version"]
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.4.1] - 2026-09-01" in changelog
+    assert "## [1.5.0] - 2026-09-01" in changelog
 
 
 def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
@@ -48,7 +50,7 @@ def test_v1_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) 
         "never promotes a current Reserve or live-failed node into Stable",
         "OpenAI, Claude, and Gemini",
         "BanProgramAD.list",
-        "Mihomo v1.19.30 and v1.19.29",
+        "every stable Mihomo core declared in `tools/mihomo-versions.json`",
         "Manual rollback requires explicit confirmation",
         "not attached to GitHub Releases",
         "DNS resolutions containing private/special-use",
