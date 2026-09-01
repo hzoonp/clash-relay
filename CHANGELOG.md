@@ -10,18 +10,15 @@ All notable user-visible changes are documented here. This project follows Seman
 
 - P13 adds private pre-publication transport qualification for the general automatic inventory: live HTTPS admission for `自动选择`, plus live SOCKS5 UDP-associate qualification for `媒体自动` and `通讯自动`.
 - UDP qualification probes a QUIC-speaking UDP/443 endpoint first and falls back to a lightweight UDP DNS round-trip; the report distinguishes observed QUIC-path responses from generic UDP reachability.
-- P15 adds a fail-closed source-health guard that compares the fully qualified candidate with the currently published private configuration before the previous-good snapshot or production KV write.
-- Source-health evaluation tracks only private structural fingerprints and aggregate source/region counts; it rejects large active-source collapses and protected browsing-region disappearance without emitting node names, endpoints, credentials, subscription URLs, or traffic records.
 
 ### Changed
 
 - Automatic general/media/messaging selection is now transport-aware while explicit/manual node choices remain available and unchanged.
-- Explicit source removal from `subscriptions.yaml` is treated as a deliberate declaration change, so P15 does not mistake planned source retirement for an outage.
 
 ### Security
 
-- P13/P15 preserve client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.
-- If transport qualification leaves no safe automatic UDP inventory, or if source-health drift crosses the production thresholds, publication stops before Cloudflare KV is replaced and previous-good remains intact.
+- P13 preserves client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.
+- If transport qualification leaves no safe automatic UDP inventory, publication stops before Cloudflare KV is replaced and previous-good remains intact.
 
 ## [1.3.0] - 2026-09-01
 

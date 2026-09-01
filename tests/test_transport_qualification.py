@@ -52,3 +52,7 @@ def test_quic_probe_is_amplification_safe_unsupported_version_datagram() -> None
     assert len(payload) == 1200
     assert payload[0] & 0xC0 == 0xC0
     assert int.from_bytes(payload[1:5], "big") == 0x0A0A0A0A
+    assert payload[5] == 8
+    assert payload[6:14] == b"p13dcid1"
+    assert payload[14] == 8
+    assert payload[15:23] == b"p13scid1"
