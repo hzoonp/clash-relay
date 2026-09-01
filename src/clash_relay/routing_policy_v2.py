@@ -130,7 +130,9 @@ def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
     )
 
 
-def routing_policy_summary(policy: RoutingPolicyV2, policies: dict[str, Any] | None = None) -> dict[str, Any]:
+def routing_policy_summary(
+    policy: RoutingPolicyV2, policies: dict[str, Any] | None = None
+) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "version": 2,
         "declared": policy.declared,
