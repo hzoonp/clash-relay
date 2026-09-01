@@ -10,6 +10,7 @@ from pathlib import Path
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ClashRelayError, PublicationError
 from clash_relay.publishers.cloudflare_kv import CloudflareKVPublisher
+from clash_relay.source_health import evaluate_source_health_bytes
 
 
 def _path(value: str) -> Path:
@@ -18,7 +19,7 @@ def _path(value: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Preserve the currently published config before replacing it."
+        description="Guard and preserve the currently published config before replacing it."
     )
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
@@ -54,14 +55,43 @@ def main(argv: list[str] | None = None) -> int:
             key_name=production_key,
         ).read()
         if current is None:
-            print(json.dumps({"status": "no-current"}, sort_keys=True))
+            print(
+                json.dumps(
+                    {"status": "no-current", "source_health": {"status": "bootstrap"}},
+                    sort_keys=True,
+                )
+            )
             return 0
+
+        declared_sources = {spec.id for spec in project.subscriptions if spec.enabled}
+        browsing_sources = {
+            spec.id
+            for spec in project.subscriptions
+            if spec.enabled and "browsing" in spec.allowed_uses
+        }
+        source_health = evaluate_source_health_bytes(
+            current,
+            candidate,
+            declared_sources=declared_sources,
+            browsing_sources=browsing_sources,
+        )
+        if source_health["status"] != "healthy":
+            raise PublicationError(
+                "source health guard rejected production candidate: "
+                + json.dumps(source_health["violations"], ensure_ascii=False, sort_keys=True)
+            )
+
         current_sha = hashlib.sha256(current).hexdigest()
         candidate_sha = hashlib.sha256(candidate).hexdigest()
         if current_sha == candidate_sha:
             print(
                 json.dumps(
-                    {"status": "unchanged", "bytes": len(current), "sha256": current_sha},
+                    {
+                        "status": "unchanged",
+                        "bytes": len(current),
+                        "sha256": current_sha,
+                        "source_health": source_health,
+                    },
                     sort_keys=True,
                 )
             )
@@ -80,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
                     "status": "snapshotted",
                     "bytes": result["bytes"],
                     "sha256": result["sha256"],
+                    "source_health": source_health,
                 },
                 sort_keys=True,
             )

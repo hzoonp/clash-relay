@@ -11,9 +11,9 @@ def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.3.0"
+    assert project["version"] == "1.4.0"
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.3.0] - 2026-09-01" in changelog
+    assert "## [1.4.0] - 2026-09-01" in changelog
 
 
 def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
