@@ -42,7 +42,10 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     assert text.index("Audit source-to-scenario isolation") < publish
     assert text.index("Qualify private candidate through the unified pipeline") < publish
     assert text.index("Re-audit qualified candidate") < publish
-    assert text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix") < publish
+    assert (
+        text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+        < publish
+    )
     assert "--manifest tools/mihomo-versions.json" in text[:publish]
     assert "scripts/snapshot_previous_config.py" not in text
     assert "clash-relay publish-cloudflare-kv" not in text
