@@ -13,6 +13,7 @@ from typing import Any
 from . import __version__
 from .builder import build_candidate
 from .config_loader import load_project
+from .doctor import run_doctor
 from .errors import ClashRelayError, PublicationError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
 from .publication import ACKNOWLEDGEMENT, publication_gate
@@ -76,6 +77,22 @@ def _command_validate_project(args: argparse.Namespace) -> int:
         "chains": len(project.policies["chains"]),
     }
     print(_json_text(summary), end="")
+    return 0
+
+
+def _command_doctor(args: argparse.Namespace) -> int:
+    report = run_doctor(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        services_path=args.services,
+        policies_path=args.policies,
+        secret_file=args.secret_file,
+        mihomo_manifest=args.mihomo_manifest,
+        public_only=args.public_only,
+        check_subscriptions=args.check_subscriptions,
+        check_cloudflare=args.check_cloudflare,
+    )
+    print(_json_text(report), end="")
     return 0
 
 
@@ -201,6 +218,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_project_args(validate_project)
     validate_project.set_defaults(handler=_command_validate_project)
+
+    doctor = subparsers.add_parser(
+        "doctor", help="Preflight public declarations, private inputs, and optional connectivity."
+    )
+    _add_project_args(doctor)
+    doctor.add_argument(
+        "--secret-file",
+        type=_path,
+        help="Ignored local YAML/JSON subscription secret mapping.",
+    )
+    doctor.add_argument(
+        "--mihomo-manifest",
+        type=_path,
+        default=Path("tools/mihomo-versions.json"),
+    )
+    doctor.add_argument(
+        "--public-only",
+        action="store_true",
+        help="Validate only tracked public declarations and the pinned stable Mihomo manifest.",
+    )
+    doctor.add_argument(
+        "--check-subscriptions",
+        action="store_true",
+        help="Fetch each enabled subscription with the normal bounded production fetch policy.",
+    )
+    doctor.add_argument(
+        "--check-cloudflare",
+        action="store_true",
+        help="Verify Cloudflare KV read connectivity without publishing any bytes.",
+    )
+    doctor.set_defaults(handler=_command_doctor)
 
     generate = subparsers.add_parser(
         "generate", help="Fetch, parse, classify, generate, and statically validate a candidate."
