@@ -18,7 +18,7 @@ Fork
   -> 手动 dry-run（publish=false）
   -> 查看聚合 production proof
   -> publish=true
-  -> 必要时执行 release-aware rollback
+  -> 必要时执行经过验证的回滚（release-aware rollback）
 ```
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
