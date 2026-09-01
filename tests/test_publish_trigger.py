@@ -123,7 +123,9 @@ def test_ai_cache_is_best_effort_incremental_state_after_release_commit() -> Non
 
 def test_versioned_release_transaction_replaces_snapshot_then_direct_publish() -> None:
     text = WORKFLOW.read_text()
-    validation = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+    validation = text.index(
+        "Validate exact qualified candidate with the pinned stable Mihomo matrix"
+    )
     publish = text.index("Publish versioned validated release transaction")
     assert validation < publish
     assert "python scripts/publish_release_bundle.py" in text
