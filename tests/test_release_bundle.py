@@ -20,6 +20,7 @@ from clash_relay.release_bundle import (
 class MemoryKV:
     values: dict[str, bytes] = field(default_factory=dict)
     fail_once: set[str] = field(default_factory=set)
+    fail_content_once: set[tuple[str, bytes]] = field(default_factory=set)
     ambiguous_once: set[str] = field(default_factory=set)
     fail_always: set[str] = field(default_factory=set)
 
@@ -36,6 +37,10 @@ class MemoryKV:
                 if key in store.fail_once:
                     store.fail_once.remove(key)
                     raise PublicationError("simulated write failure")
+                content_failure = (key, bytes(content))
+                if content_failure in store.fail_content_once:
+                    store.fail_content_once.remove(content_failure)
+                    raise PublicationError("simulated content-specific write failure")
                 store.values[key] = bytes(content)
                 if key in store.ambiguous_once:
                     store.ambiguous_once.remove(key)
@@ -130,10 +135,12 @@ def test_incomplete_compensation_is_reported_explicitly() -> None:
     publish_release_bundle(factory=kv.factory, production_key=key, content=first)
     keys = release_keys(key)
     kv.fail_once.add(keys.current_pointer)
-    kv.fail_always.add(key)
+    kv.fail_content_once.add((key, first))
 
     with pytest.raises(PublicationError, match="compensation was incomplete: production"):
         publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    assert kv.values[key] == second
 
 
 def test_previous_reader_falls_back_to_legacy_slot() -> None:
