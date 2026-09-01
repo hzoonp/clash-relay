@@ -45,7 +45,7 @@ jobs:
     needs: quality
     runs-on: ubuntu-latest
     outputs:
-      mihomo-tags: ${{ steps.versions.outputs.tags }}
+      mihomo_tags: ${{ steps.versions.outputs.tags }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -94,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tag: ${{ fromJSON(needs.deterministic-generation.outputs.mihomo-tags) }}
+        tag: ${{ fromJSON(needs.deterministic-generation.outputs.mihomo_tags) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
