@@ -30,6 +30,15 @@ The production source-policy boundary is intentional: `subscription_1` may enter
 
 Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, and DNS. Production does not emit a public controller, controller secret, listeners, or tunnels.
 
+#### DNS ownership
+
+`runtime.dns.mode` controls whether clash-relay owns DNS configuration:
+
+- `client` omits the generated `dns` block and `store-fake-ip`, leaving DNS behavior to FlClash/Mihomo and the client environment. Canonical production uses this mode for mobile CDN compatibility.
+- `managed` emits the declared DNS settings exactly as before. Configurations that omit `mode` retain the legacy managed behavior.
+
+P11 changes DNS ownership only; ACL4SSR routing, source isolation, qualification, and scenario schedulers are unchanged.
+
 ### `generation`
 
 | Field | Behavior |

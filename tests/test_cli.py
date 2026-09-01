@@ -175,4 +175,4 @@ def test_missing_secret_returns_controlled_error(project_paths, monkeypatch, cap
 def test_version_option(capsys) -> None:
     with pytest.raises(SystemExit, match="0"):
         cli.main(["--version"])
-    assert "1.2.0" in capsys.readouterr().out
+    assert "1.2.1" in capsys.readouterr().out
