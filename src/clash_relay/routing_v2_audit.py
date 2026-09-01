@@ -137,9 +137,7 @@ def _audit_public_general_selector(
     if not isinstance(selector, dict):
         raise ValidationError(f"Routing V2 public selector {name!r} is missing")
     if selector.get("hidden", False) or selector.get("type") != "select":
-        raise ValidationError(
-            f"Routing V2 public selector {name!r} must be a visible select group"
-        )
+        raise ValidationError(f"Routing V2 public selector {name!r} must be a visible select group")
     if selector.get("use") or "filter" in selector:
         raise ValidationError(
             f"Routing V2 public selector {name!r} must not attach proxy providers directly"
@@ -225,9 +223,7 @@ def _audit_cutover_routes(
     priorities = {source_id: int(by_source[source_id]["priority"]) for source_id in required_ids}
     for before, after in contract.priority_edges:
         if priorities[before] >= priorities[after]:
-            raise ValidationError(
-                f"ACL4SSR fidelity order requires {before!r} before {after!r}"
-            )
+            raise ValidationError(f"ACL4SSR fidelity order requires {before!r} before {after!r}")
 
     ai_policy = _group_proxies(groups, contract.public_groups["ai"])
     canonical_display = contract.ai.canonical_region_display
