@@ -4,7 +4,7 @@ This is the shortest supported path from a fresh fork to a private production co
 
 ## 1. Fork without adding credentials
 
-Keep `config.yaml`, `subscriptions.yaml`, `services.yaml`, `policies.yaml`, schemas, rules, source code, and workflows public. Never commit real subscription URLs or generated production `config.yaml` bytes.
+Keep `config.yaml`, `subscriptions.yaml`, `services.yaml`, `policies.yaml`, schemas, rules, source code, and workflows public. Real subscription URLs and generated production `config.yaml` bytes **must never be committed**. Private credentials and generated config are never committed or uploaded as an Artifact/Release/Gist.
 
 ## 2. Add subscription secrets
 
@@ -65,15 +65,17 @@ Both connectivity checks can be requested together. Doctor output is aggregate-o
 
 ## 5. Dry-run the production workflow
 
-Run `Generate, validate, and publish` manually with `publish=false`.
+Run `Generate, validate, and publish` manually with the workflow input `publish = false`.
 
 A successful dry-run performs the same private generation, source audit, browsing/transport qualification, AI qualification, post-qualification audit, and every stable Mihomo validation from `tools/mihomo-versions.json`, but does not activate Cloudflare KV production bytes.
+
+Browsing qualification keeps the established `3/3` Stable and `2/3` Reserve sampling semantics. Scheduler history remains private and anonymous through HMAC-SHA256 fingerprints. OpenAI, Claude, and Gemini are qualified independently and fail closed per service.
 
 Inspect the GitHub Actions summary. It intentionally exposes only aggregate production proof.
 
 ## 6. Publish
 
-Run the workflow with `publish=true`, or merge a validated change to `main` when the repository is intentionally configured for push publication.
+Run the workflow with `publish = true`, or merge a validated change to `main` when the repository is intentionally configured for push publication.
 
 Publication stages immutable release objects first, verifies exact read-back bytes, activates the fixed client-facing production key, then commits release pointers. Cloudflare KV does not provide cross-key transactions, so pointer-commit failures use compensating restoration of the previous exact production bytes.
 
@@ -94,7 +96,7 @@ Top-level FlClash decisions remain:
 
 ## 8. Roll back safely
 
-The manual rollback workflow resolves `previous-release-v1`, falls back to the legacy slot only for migration compatibility, audits the historical bytes against current source/routing policy, validates every currently pinned stable Mihomo core, and activates through the same versioned release transaction.
+Run the manual `Roll back production config` workflow with `confirm = true` only when rollback is intentional. It resolves `previous-release-v1`, falls back to the legacy slot only for migration compatibility, applies the current-policy source/routing audits, validates every currently pinned stable Mihomo core, and activates through the same versioned release transaction.
 
 A historical config that violates current source isolation is intentionally not rollback-eligible.
 
