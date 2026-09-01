@@ -36,6 +36,8 @@ def test_versioning_document_freezes_canonical_boundaries(repo_root: Path) -> No
     assert "MATCH" in text
     assert "3/3" in text
     assert "2/3" in text
-    assert "v1.19.30" in text
-    assert "v1.19.29" in text
+    assert "tools/mihomo-versions.json" in text
+    assert "routing.contract" in text
+    assert "current-release-v1" in text
+    assert "current" in text and "policy audit" in text
     assert "not attached to GitHub Releases" in text
