@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: Replace production-config with the preserved previous validated config
+        description: Replace production-config with the preserved previous validated release
         required: true
         default: false
         type: boolean
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   rollback:
-    name: Validate and activate previous config
+    name: Audit, validate, and activate previous release
     if: github.ref == 'refs/heads/main' && inputs.confirm == true
     runs-on: ubuntu-latest
     steps:
@@ -39,7 +39,7 @@ jobs:
             --policies policies.yaml \
             --mode cloudflare_kv
 
-      - name: Fetch private previous config
+      - name: Fetch private previous release
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -54,42 +54,40 @@ jobs:
             --output .work/private/rollback.yaml \
             > .work/private/rollback-source.json
 
-      - name: Validate previous config with both pinned Mihomo cores
+      - name: Audit previous release against current production policy
         shell: bash
         run: |
           set -euo pipefail
+          python scripts/audit_production.py \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --candidate .work/private/rollback.yaml \
+            > .work/private/rollback-current-policy-audit.json
 
-          validate_core() {
-            local tag="$1"
-            local binary=".work/bin/mihomo-${tag#v}"
+      - name: Validate previous release with pinned stable Mihomo matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python scripts/validate_mihomo_matrix.py \
+            --candidate .work/private/rollback.yaml \
+            --manifest tools/mihomo-versions.json \
+            --channel stable \
+            --work-dir .work/bin/rollback-validation \
+            > .work/private/rollback-validation-matrix.json \
+            2> .work/rollback-validation.error; then
+            echo "::error title=Rollback validation failed::A pinned stable core rejected the preserved previous release. Detailed core output is intentionally suppressed."
+            exit 1
+          fi
 
-            python scripts/download_mihomo.py \
-              --channel stable \
-              --tag "$tag" \
-              --output "$binary" \
-              > ".work/download-${tag}.json"
-
-            if ! clash-relay validate \
-              --candidate .work/private/rollback.yaml \
-              --mihomo-bin "$binary" \
-              --startup-seconds 1.5 \
-              > ".work/rollback-validation-${tag}.json" \
-              2> ".work/rollback-validation-${tag}.error"; then
-              echo "::error title=Rollback validation failed::$tag rejected the preserved previous configuration. Detailed core output is intentionally suppressed."
-              exit 1
-            fi
-          }
-
-          validate_core v1.19.30
-          validate_core v1.19.29
-
-      - name: Activate validated previous config
+      - name: Activate audited validated previous release
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
         run: |
-          clash-relay publish-cloudflare-kv \
+          python scripts/publish_release_bundle.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
             --services services.yaml \
@@ -102,19 +100,25 @@ jobs:
         run: |
           python - <<'PY'
           import hashlib
+          import json
           import os
           from pathlib import Path
 
           content = Path(".work/private/rollback.yaml").read_bytes()
+          with open(".work/private/rollback-validation-matrix.json", encoding="utf-8") as handle:
+              cores = json.load(handle).get("validated_cores", [])
+          with open(".work/private/rollback-source.json", encoding="utf-8") as handle:
+              source = json.load(handle)
           lines = [
               "## Production rollback",
               "",
               "Status: **activated**  ",
+              f"Source: **{source.get('source', 'unknown')}**  ",
               f"Bytes: **{len(content)}**  ",
               f"SHA-256: `{hashlib.sha256(content).hexdigest()}`  ",
-              "Validated cores: **v1.19.30, v1.19.29**",
+              f"Validated cores: **{', '.join(cores)}**",
               "",
-              "The preserved previous slot is intentionally retained. No proxy payload values are shown.",
+              "The activated release passed the current repository policy audit before core validation. No proxy payload values are shown.",
               "",
           ]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
