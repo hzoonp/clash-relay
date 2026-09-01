@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -10,6 +9,7 @@ from pathlib import Path
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ClashRelayError, PublicationError
 from clash_relay.publishers.cloudflare_kv import CloudflareKVPublisher
+from clash_relay.release_bundle import read_previous_release
 
 
 def _path(value: str) -> Path:
@@ -18,7 +18,7 @@ def _path(value: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch the private previous production config for explicit rollback."
+        description="Fetch the private previous production release for explicit rollback."
     )
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
@@ -43,29 +43,25 @@ def main(argv: list[str] | None = None) -> int:
             policies_path=args.policies,
         )
         production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])
-        previous = CloudflareKVPublisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=f"{production_key}.previous-v1",
-        ).read()
-        if previous is None:
-            raise PublicationError("no previous validated production config is available")
+
+        def factory(key: str) -> CloudflareKVPublisher:
+            return CloudflareKVPublisher(
+                token=token,
+                account_id=account_id,
+                namespace_title=namespace_title,
+                key_name=key,
+            )
+
+        previous, metadata = read_previous_release(
+            factory=factory,
+            production_key=production_key,
+        )
         if not previous:
-            raise PublicationError("previous production config is empty")
+            raise PublicationError("previous production release is empty")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(previous)
         os.chmod(args.output, 0o600)
-        print(
-            json.dumps(
-                {
-                    "status": "fetched",
-                    "bytes": len(previous),
-                    "sha256": hashlib.sha256(previous).hexdigest(),
-                },
-                sort_keys=True,
-            )
-        )
+        print(json.dumps({"status": "fetched", **metadata}, sort_keys=True))
         return 0
     except ClashRelayError as exc:
         print(f"error: {exc}", file=sys.stderr)
