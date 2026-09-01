@@ -1,0 +1,104 @@
+name: P11 mobile DNS patch
+
+on:
+  push:
+    branches:
+      - feat/p11-mobile-dns-client-mode
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/p11-mobile-dns-client-mode
+      - name: Apply P11-A DNS ownership patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          old_runtime = """  profile:\n    store_selected: true\n    store_fake_ip: true\n  dns:\n    enabled: true\n    enhanced_mode: fake-ip\n    listen: 127.0.0.1:1053\n    nameservers:\n      - https://1.1.1.1/dns-query\n      - https://8.8.8.8/dns-query\n    fallback_nameservers:\n      - tls://1.0.0.1:853\n"""
+          new_runtime = """  profile:\n    store_selected: true\n    store_fake_ip: false\n  dns:\n    mode: client\n"""
+          for filename in ("config.yaml", "config.example.yaml"):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              if old_runtime not in text:
+                  raise SystemExit(f"expected runtime block not found in {filename}")
+              path.write_text(text.replace(old_runtime, new_runtime, 1), encoding="utf-8")
+
+          schema_path = Path("schemas/config.schema.json")
+          schema = json.loads(schema_path.read_text(encoding="utf-8"))
+          dns = schema["properties"]["runtime"]["properties"]["dns"]
+          old_properties = dict(dns["properties"])
+          dns["properties"] = {
+              "mode": {"enum": ["client", "managed"]},
+              **old_properties,
+          }
+          dns["required"] = []
+          dns["allOf"] = [
+              {
+                  "if": {
+                      "required": ["mode"],
+                      "properties": {"mode": {"const": "client"}},
+                  },
+                  "then": {},
+                  "else": {
+                      "required": [
+                          "enabled",
+                          "enhanced_mode",
+                          "listen",
+                          "nameservers",
+                          "fallback_nameservers",
+                      ]
+                  },
+              }
+          ]
+          schema_path.write_text(
+              json.dumps(schema, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          generator_path = Path("src/clash_relay/generator.py")
+          generator = generator_path.read_text(encoding="utf-8")
+          old_function = '''def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:\n    runtime = config["runtime"]\n    dns = runtime["dns"]\n    return {\n        "mixed-port": runtime["mixed_port"],\n        "allow-lan": runtime["allow_lan"],\n        "bind-address": runtime["bind_address"],\n        "mode": runtime["mode"],\n        "log-level": runtime["log_level"],\n        "ipv6": runtime["ipv6"],\n        "unified-delay": runtime["unified_delay"],\n        "tcp-concurrent": runtime["tcp_concurrent"],\n        "profile": {\n            "store-selected": runtime["profile"]["store_selected"],\n            "store-fake-ip": runtime["profile"]["store_fake_ip"],\n        },\n        "dns": {\n            "enable": dns["enabled"],\n            "enhanced-mode": dns["enhanced_mode"],\n            "listen": dns["listen"],\n            "nameserver": list(dns["nameservers"]),\n            "fallback": list(dns["fallback_nameservers"]),\n        },\n    }\n'''
+          new_function = '''def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:\n    runtime = config["runtime"]\n    dns = runtime["dns"]\n    dns_mode = str(dns.get("mode", "managed"))\n\n    profile: dict[str, Any] = {\n        "store-selected": runtime["profile"]["store_selected"],\n    }\n    output: dict[str, Any] = {\n        "mixed-port": runtime["mixed_port"],\n        "allow-lan": runtime["allow_lan"],\n        "bind-address": runtime["bind_address"],\n        "mode": runtime["mode"],\n        "log-level": runtime["log_level"],\n        "ipv6": runtime["ipv6"],\n        "unified-delay": runtime["unified_delay"],\n        "tcp-concurrent": runtime["tcp_concurrent"],\n        "profile": profile,\n    }\n    if dns_mode == "client":\n        return output\n\n    profile["store-fake-ip"] = runtime["profile"]["store_fake_ip"]\n    output["dns"] = {\n        "enable": dns["enabled"],\n        "enhanced-mode": dns["enhanced_mode"],\n        "listen": dns["listen"],\n        "nameserver": list(dns["nameservers"]),\n        "fallback": list(dns["fallback_nameservers"]),\n    }\n    return output\n'''
+          if old_function not in generator:
+              raise SystemExit("expected _runtime_config function not found")
+          generator_path.write_text(generator.replace(old_function, new_function, 1), encoding="utf-8")
+
+          test_path = Path("tests/test_runtime_dns_mode.py")
+          test_path.write_text('''from __future__ import annotations\n\nimport json\nfrom pathlib import Path\n\nfrom jsonschema import Draft202012Validator\n\nfrom clash_relay.generator import _runtime_config\n\n\ndef _runtime(dns: dict[str, object]) -> dict[str, object]:\n    return {\n        "runtime": {\n            "mixed_port": 7890,\n            "allow_lan": False,\n            "bind_address": "127.0.0.1",\n            "mode": "rule",\n            "log_level": "warning",\n            "ipv6": False,\n            "unified_delay": True,\n            "tcp_concurrent": True,\n            "profile": {"store_selected": True, "store_fake_ip": True},\n            "dns": dns,\n        }\n    }\n\n\ndef _managed_dns() -> dict[str, object]:\n    return {\n        "mode": "managed",\n        "enabled": True,\n        "enhanced_mode": "fake-ip",\n        "listen": "127.0.0.1:1053",\n        "nameservers": ["https://1.1.1.1/dns-query"],\n        "fallback_nameservers": ["tls://1.0.0.1:853"],\n    }\n\n\ndef test_client_dns_mode_leaves_dns_to_the_client() -> None:\n    output = _runtime_config(_runtime({"mode": "client"}))\n\n    assert "dns" not in output\n    assert output["profile"] == {"store-selected": True}\n\n\ndef test_managed_dns_mode_preserves_explicit_dns_runtime() -> None:\n    output = _runtime_config(_runtime(_managed_dns()))\n\n    assert output["profile"] == {"store-selected": True, "store-fake-ip": True}\n    assert output["dns"] == {\n        "enable": True,\n        "enhanced-mode": "fake-ip",\n        "listen": "127.0.0.1:1053",\n        "nameserver": ["https://1.1.1.1/dns-query"],\n        "fallback": ["tls://1.0.0.1:853"],\n    }\n\n\ndef test_legacy_dns_without_mode_defaults_to_managed() -> None:\n    dns = _managed_dns()\n    dns.pop("mode")\n    output = _runtime_config(_runtime(dns))\n\n    assert "dns" in output\n    assert output["profile"]["store-fake-ip"] is True\n\n\ndef test_dns_schema_accepts_client_and_legacy_managed_shapes() -> None:\n    schema = json.loads(Path("schemas/config.schema.json").read_text(encoding="utf-8"))\n    dns_schema = schema["properties"]["runtime"]["properties"]["dns"]\n    validator = Draft202012Validator(dns_schema)\n\n    validator.validate({"mode": "client"})\n    legacy = _managed_dns()\n    legacy.pop("mode")\n    validator.validate(legacy)\n''', encoding="utf-8")
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text(encoding="utf-8")
+          marker = "## [Unreleased]\n"
+          addition = """## [Unreleased]\n\n### Fixed\n\n- Canonical production now uses client-owned DNS, so clash-relay no longer forces Fake-IP or overseas public resolvers onto FlClash/Mihomo mobile clients.\n- Managed DNS remains available as an explicit compatibility mode, and legacy configurations without `runtime.dns.mode` continue to behave as managed DNS.\n"""
+          if marker not in changelog:
+              raise SystemExit("Unreleased changelog marker not found")
+          changelog_path.write_text(changelog.replace(marker, addition, 1), encoding="utf-8")
+
+          docs_path = Path("docs/configuration.md")
+          docs = docs_path.read_text(encoding="utf-8")
+          runtime_line = "Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, and DNS. Production does not emit a public controller, controller secret, listeners, or tunnels.\n"
+          runtime_replacement = runtime_line + """\n#### DNS ownership\n\n`runtime.dns.mode` controls whether clash-relay owns DNS configuration:\n\n- `client` omits the generated `dns` block and `store-fake-ip`, leaving DNS behavior to FlClash/Mihomo and the client environment. Canonical production uses this mode for mobile CDN compatibility.\n- `managed` emits the declared DNS settings exactly as before. Configurations that omit `mode` retain the legacy managed behavior.\n\nP11 changes DNS ownership only; ACL4SSR routing, source isolation, qualification, and scenario schedulers are unchanged.\n"""
+          if runtime_line not in docs:
+              raise SystemExit("configuration runtime paragraph not found")
+          docs_path.write_text(docs.replace(runtime_line, runtime_replacement, 1), encoding="utf-8")
+
+          workflow = Path(".github/workflows/p11-mobile-dns-edit.yml")
+          workflow.unlink()
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: let mobile clients own DNS by default"
+          git push origin HEAD:feat/p11-mobile-dns-client-mode
