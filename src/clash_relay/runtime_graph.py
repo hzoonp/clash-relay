@@ -238,9 +238,7 @@ class RuntimeGraph:
     ) -> frozenset[str]:
         reachability = self.walk(target)
         found = {
-            str(proxy_sources[name])
-            for name in reachability.proxies
-            if name in proxy_sources
+            str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources
         }
         if provider_sources is not None:
             for provider in reachability.providers:
