@@ -1,7 +1,7 @@
 """Declarative names and fidelity contracts for the canonical production profile.
 
 The core compiler/audits consume this structure instead of embedding production
-selector names, region labels, or ACL4SSR binding targets in Python.  A default
+selector names, region labels, or ACL4SSR binding targets in Python. A default
 contract preserves compatibility for older forks that declare Routing V2 but
 have not yet added the P15 contract block.
 """
@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConfigurationError
-
 
 _DEFAULT_CONTRACT: dict[str, Any] = {
     "public_groups": {
@@ -196,9 +195,7 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
     if len(region_display_names) != len(region_raw):
         raise ConfigurationError("routing contract region names must be strings")
 
-    binding_targets = _string_mapping(
-        document.get("binding_targets"), field="binding_targets"
-    )
+    binding_targets = _string_mapping(document.get("binding_targets"), field="binding_targets")
     priority_raw = document.get("priority_edges")
     if not isinstance(priority_raw, list) or not priority_raw:
         raise ConfigurationError("routing contract priority_edges must be a non-empty list")
