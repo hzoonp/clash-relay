@@ -178,18 +178,13 @@ def run_qualification_pipeline(
 
     stages = (
         QualificationStage("generated", generated, generated_artifact.fingerprint),
-        QualificationStage(
-            "browsing_transport_qualified", browsing, browsing_artifact.fingerprint
-        ),
+        QualificationStage("browsing_transport_qualified", browsing, browsing_artifact.fingerprint),
         QualificationStage("ai_qualified", ai, ai_artifact.fingerprint),
         QualificationStage("final_qualified", output, final_artifact.fingerprint),
     )
     return {
         "status": "qualified",
-        "stages": [
-            {"name": row.name, "fingerprint": row.fingerprint}
-            for row in stages
-        ],
+        "stages": [{"name": row.name, "fingerprint": row.fingerprint} for row in stages],
         "browsing": {
             "status": browsing_summary.get("status"),
             "automatic_nodes": browsing_summary.get("automatic_nodes", 0),
