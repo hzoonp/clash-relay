@@ -1,0 +1,138 @@
+name: Apply short runtime source labels
+
+on:
+  push:
+    branches:
+      - feat/short-runtime-source-labels
+    paths:
+      - .github/workflows/apply-short-runtime-labels.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/short-runtime-source-labels
+      - name: Apply runtime naming patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_one(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one match in {path}, found {count}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          Path("src/clash_relay/runtime_names.py").write_text(
+              '''"""Safe presentation aliases for generated runtime proxy names."""\n\nfrom __future__ import annotations\n\nimport re\nfrom collections.abc import Iterable\n\n_LONG_SOURCE = re.compile(r"^subscription_([0-9]+)$")\n\n\ndef runtime_source_label(source_id: str) -> str:\n    """Shorten canonical numbered subscription ids without changing policy identity."""\n    match = _LONG_SOURCE.fullmatch(source_id)\n    return f"sub_{match.group(1)}" if match is not None else source_id\n\n\ndef validate_runtime_source_labels(source_ids: Iterable[str]) -> dict[str, str]:\n    """Return label-to-canonical-id mapping and reject ambiguous display aliases."""\n    mapping: dict[str, str] = {}\n    for source_id in sorted(set(source_ids)):\n        label = runtime_source_label(source_id)\n        previous = mapping.get(label)\n        if previous is not None and previous != source_id:\n            raise ValueError(\n                f"subscription sources {previous!r} and {source_id!r} share runtime label {label!r}"\n            )\n        mapping[label] = source_id\n    return mapping\n\n\ndef canonical_source_id(runtime_label: str, known_source_ids: Iterable[str]) -> str:\n    """Resolve a generated display alias back to the canonical subscription id."""\n    return validate_runtime_source_labels(known_source_ids).get(runtime_label, runtime_label)\n''',
+              encoding="utf-8",
+          )
+
+          replace_one(
+              "src/clash_relay/generator.py",
+              "from .models import Node\nfrom .schema import load_and_validate",
+              "from .models import Node\nfrom .runtime_names import runtime_source_label, validate_runtime_source_labels\nfrom .schema import load_and_validate",
+          )
+          replace_one(
+              "src/clash_relay/generator.py",
+              '    original = node.original_name.replace("\\n", " ").replace("\\r", " ").strip()[:96]\n    return f"[{scope}] {node.source_id}/{original} #{digest}"',
+              '    original = node.original_name.replace("\\n", " ").replace("\\r", " ").strip()[:96]\n    source_label = runtime_source_label(node.source_id)\n    return f"[{scope}] {source_label}/{original} #{digest}"',
+          )
+          replace_one(
+              "src/clash_relay/generator.py",
+              '    providers: dict[str, Any] = {}\n    groups: list[dict[str, Any]] = []',
+              '    try:\n        validate_runtime_source_labels(node.source_id for node in nodes)\n    except ValueError as exc:\n        raise GenerationError(str(exc)) from exc\n\n    providers: dict[str, Any] = {}\n    groups: list[dict[str, Any]] = []',
+          )
+
+          replace_one(
+              "src/clash_relay/routing_policy.py",
+              "from .errors import GenerationError\nfrom .util import unique",
+              "from .errors import GenerationError\nfrom .runtime_names import runtime_source_label, validate_runtime_source_labels\nfrom .util import unique",
+          )
+          replace_one(
+              "src/clash_relay/routing_policy.py",
+              'def _source_exclude_pattern(source_ids: tuple[str, ...]) -> str:\n    alternatives = "|".join(re.escape(source_id) for source_id in source_ids)',
+              'def _source_exclude_pattern(source_ids: tuple[str, ...]) -> str:\n    alternatives = "|".join(\n        re.escape(runtime_source_label(source_id)) for source_id in source_ids\n    )',
+          )
+          replace_one(
+              "src/clash_relay/routing_policy.py",
+              '    if (\n        not isinstance(providers, dict)\n        or not isinstance(groups, list)\n        or not isinstance(rules, list)\n    ):\n        raise GenerationError("generated proxy provider/group/rule structure is invalid")\n\n    by_name:',
+              '    if (\n        not isinstance(providers, dict)\n        or not isinstance(groups, list)\n        or not isinstance(rules, list)\n    ):\n        raise GenerationError("generated proxy provider/group/rule structure is invalid")\n    try:\n        validate_runtime_source_labels(known_source_ids)\n    except ValueError as exc:\n        raise GenerationError(str(exc)) from exc\n\n    by_name:',
+          )
+
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              "from .errors import ValidationError\nfrom .util import safe_identifier",
+              "from .errors import ValidationError\nfrom .runtime_names import canonical_source_id\nfrom .util import safe_identifier",
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              'def _runtime_source_id(proxy: dict[str, Any], *, provider_name: str) -> str:',
+              'def _runtime_source_id(\n    proxy: dict[str, Any], *, provider_name: str, known_source_ids: set[str]\n) -> str:',
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              '    return match.group(1)\n\n\ndef _groups_by_name',
+              '    try:\n        return canonical_source_id(match.group(1), known_source_ids)\n    except ValueError as exc:\n        raise ValidationError("production audit found ambiguous runtime source labels") from exc\n\n\ndef _groups_by_name',
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              'def _provider_graph(\n    providers: dict[str, Any],\n) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:',
+              'def _provider_graph(\n    providers: dict[str, Any],\n    *,\n    known_source_ids: set[str],\n) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:',
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              '            source_id = _runtime_source_id(proxy, provider_name=provider_name)',
+              '            source_id = _runtime_source_id(\n                proxy, provider_name=provider_name, known_source_ids=known_source_ids\n            )',
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              '    provider_sources, provider_dialers, runtime_sources = _provider_graph(providers)',
+              '    provider_sources, provider_dialers, runtime_sources = _provider_graph(\n        providers, known_source_ids=set(subscriptions)\n    )',
+          )
+
+          Path("tests/test_runtime_names.py").write_text(
+              '''from __future__ import annotations\n\nimport pytest\n\nfrom clash_relay.generator import _runtime_name\nfrom clash_relay.models import Node\nfrom clash_relay.runtime_names import (\n    canonical_source_id,\n    runtime_source_label,\n    validate_runtime_source_labels,\n)\n\n\ndef _node(source_id: str) -> Node:\n    return Node(\n        source_id=source_id,\n        source_display_name=source_id,\n        source_priority=100,\n        source_allowed_uses=frozenset({"general"}),\n        source_allowed_countries=frozenset({"*"}),\n        original_name="Example Node",\n        proxy={"name": "Example Node", "type": "http", "server": "example.invalid", "port": 443},\n        country="US",\n        capabilities=frozenset({"general"}),\n        cost_level="normal",\n        fingerprint="f" * 64,\n    )\n\n\ndef test_numbered_subscription_ids_are_shortened_for_runtime_display() -> None:\n    assert runtime_source_label("subscription_1") == "sub_1"\n    assert runtime_source_label("subscription_27") == "sub_27"\n    assert runtime_source_label("primary") == "primary"\n    assert runtime_source_label("subscription_alpha") == "subscription_alpha"\n\n\ndef test_runtime_name_uses_short_label_but_keeps_original_name_and_digest() -> None:\n    name = _runtime_name(_node("subscription_2"), "GENERAL:ANY")\n    assert name.startswith("[GENERAL:ANY] sub_2/Example Node #")\n    assert "subscription_2/" not in name\n\n\ndef test_short_label_resolves_back_to_canonical_source_id() -> None:\n    known = {"subscription_1", "subscription_2"}\n    assert canonical_source_id("sub_2", known) == "subscription_2"\n    assert canonical_source_id("other", known) == "other"\n\n\ndef test_ambiguous_short_label_is_rejected_fail_closed() -> None:\n    with pytest.raises(ValueError, match="share runtime label"):\n        validate_runtime_source_labels({"subscription_1", "sub_1"})\n''',
+              encoding="utf-8",
+          )
+
+          replace_one("pyproject.toml", 'version = "1.4.0"', 'version = "1.4.1"')
+          replace_one(
+              "src/clash_relay/__init__.py",
+              '__version__ = "1.2.1"',
+              '__version__ = "1.4.1"',
+          )
+          replace_one(
+              "tests/test_v1_contract.py",
+              'assert project["version"] == "1.4.0"',
+              'assert project["version"] == "1.4.1"',
+          )
+          replace_one(
+              "tests/test_v1_contract.py",
+              'assert "## [1.4.0] - 2026-09-01" in changelog',
+              'assert "## [1.4.1] - 2026-09-01" in changelog',
+          )
+          replace_one(
+              "CHANGELOG.md",
+              "## [Unreleased]\n\n## [1.4.0] - 2026-09-01",
+              """## [Unreleased]\n\n## [1.4.1] - 2026-09-01\n\n### Changed\n\n- Generated Mihomo/FlClash runtime node names shorten canonical numbered source labels from `subscription_N/` to `sub_N/` while keeping the canonical source id unchanged inside policy and isolation logic.\n- Runtime label collisions fail closed instead of weakening source isolation.\n\n### Compatibility\n\n- Browsing scheduler history and AI qualification cache use runtime identity, so this display-name migration causes a one-time private state refresh on the first v1.4.1 production run; live qualification remains authoritative throughout the refresh.\n\n## [1.4.0] - 2026-09-01""",
+          )
+
+          Path(".github/workflows/apply-short-runtime-labels.yml").unlink()
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "hzoonp"
+          git config user.email "59133798+hzoonp@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: shorten runtime subscription labels"
+          git push origin HEAD:feat/short-runtime-source-labels
