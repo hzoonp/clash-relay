@@ -14,7 +14,6 @@ on:
       - "src/**"
       - "scripts/qualify_ai.py"
       - "scripts/qualify_browsing.py"
-      - "scripts/qualify_transport.py"
       - "scripts/audit_production.py"
       - "scripts/render_production_proof.py"
       - "scripts/load_scheduler_history.py"
@@ -223,42 +222,6 @@ jobs:
               handle.write("\n".join(lines))
           PY
 
-      - name: Qualify general UDP and QUIC transport
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/qualify_transport.py \
-            --candidate .work/private/config.yaml \
-            --mihomo-bin .work/bin/mihomo-qualification \
-            | tee .work/private/transport-qualification-summary.json
-
-      - name: Append safe transport qualification summary
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          import os
-
-          with open(".work/private/transport-qualification-summary.json", encoding="utf-8") as handle:
-              data = json.load(handle)
-          diagnostics = data.get("diagnostics", {})
-          lines = [
-              "## Transport qualification",
-              "",
-              f"General nodes tested: **{int(diagnostics.get('tested_nodes', 0))}**  ",
-              f"HTTPS-qualified automatic nodes: **{int(diagnostics.get('tcp_qualified_nodes', 0))}**  ",
-              f"UDP-qualified media/messaging nodes: **{int(diagnostics.get('udp_qualified_nodes', 0))}**  ",
-              f"Observed QUIC UDP/443 path: **{int(diagnostics.get('quic_path_nodes', 0))}**  ",
-              f"Static UDP-disabled nodes: **{int(diagnostics.get('static_udp_disabled_nodes', 0))}**  ",
-              f"Selector failures: **{int(diagnostics.get('selector_failures', 0))}**",
-              "",
-              "The QUIC count is transport-path evidence, not an application-level HTTP/3 entitlement test. Node-level results remain private.",
-              "",
-          ]
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-              handle.write("\n".join(lines))
-          PY
-
       - name: Qualify AI nodes by country
         shell: bash
         run: |
@@ -369,7 +332,7 @@ jobs:
             > .work/private/production-proof.json
           cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Guard source health and preserve previous validated production config
+      - name: Preserve previous validated production config
         if: github.event_name == 'push' || inputs.publish == true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -382,7 +345,7 @@ jobs:
             --services services.yaml \
             --policies policies.yaml \
             --candidate .work/private/config.yaml \
-            | tee .work/private/recovery-snapshot.json
+            > .work/private/recovery-snapshot.json
 
       - name: Publish exact validated bytes to Cloudflare KV
         if: github.event_name == 'push' || inputs.publish == true
