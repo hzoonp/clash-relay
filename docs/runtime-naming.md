@@ -19,3 +19,5 @@ The canonical subscription id remains the policy identity used for source permis
 If two enabled source ids would produce the same visible label, generation fails closed rather than publishing an ambiguous configuration. For example, a fork must not define both `subscription_1` and a literal `sub_1` source at the same time.
 
 Because browsing scheduler history and the AI qualification cache include runtime proxy identity, the first production run after a runtime-name presentation change may refresh private historical/cache state. Live qualification remains authoritative and publication stays fail-closed during that refresh.
+
+FlClash users see the shortened labels after refreshing and reloading the generated clash-relay configuration.
