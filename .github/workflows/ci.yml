@@ -31,13 +31,21 @@ jobs:
       - run: python -m pip install --requirement requirements-dev.lock --editable .
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -m "not integration" --junitxml=.work/unit-${{ matrix.python }}.xml
+      - name: Unit tests and coverage baseline
+        run: |
+          pytest -m "not integration" \
+            --cov=clash_relay \
+            --cov-report=term-missing \
+            --cov-report=xml:.work/coverage-${{ matrix.python }}.xml \
+            --junitxml=.work/unit-${{ matrix.python }}.xml
       - run: python scripts/repository_audit.py
 
   deterministic-generation:
     name: Deterministic fictional generation
     needs: quality
     runs-on: ubuntu-latest
+    outputs:
+      mihomo-tags: ${{ steps.versions.outputs.tags }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -46,6 +54,9 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.lock
       - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - id: versions
+        name: Export pinned stable Mihomo matrix
+        run: python scripts/export_mihomo_matrix.py --channel stable --github-output "$GITHUB_OUTPUT"
       - name: Verify pinned ACL4SSR Online fidelity
         run: python scripts/audit_acl4ssr_fidelity.py
       - run: python scripts/make_fixture_sources.py
@@ -83,7 +94,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tag: [v1.19.30, v1.19.29]
+        tag: ${{ fromJSON(needs.deterministic-generation.outputs.mihomo-tags) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
