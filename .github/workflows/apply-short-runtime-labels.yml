@@ -31,6 +31,13 @@ jobs:
                   raise SystemExit(f"expected one match in {path}, found {count}")
               target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
+          def replace_first(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected a match in {path}, found none")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
           Path("src/clash_relay/runtime_names.py").write_text(
               '''"""Safe presentation aliases for generated runtime proxy names."""\n\nfrom __future__ import annotations\n\nimport re\nfrom collections.abc import Iterable\n\n_LONG_SOURCE = re.compile(r"^subscription_([0-9]+)$")\n\n\ndef runtime_source_label(source_id: str) -> str:\n    """Shorten canonical numbered subscription ids without changing policy identity."""\n    match = _LONG_SOURCE.fullmatch(source_id)\n    return f"sub_{match.group(1)}" if match is not None else source_id\n\n\ndef validate_runtime_source_labels(source_ids: Iterable[str]) -> dict[str, str]:\n    """Return label-to-canonical-id mapping and reject ambiguous display aliases."""\n    mapping: dict[str, str] = {}\n    for source_id in sorted(set(source_ids)):\n        label = runtime_source_label(source_id)\n        previous = mapping.get(label)\n        if previous is not None and previous != source_id:\n            raise ValueError(\n                f"subscription sources {previous!r} and {source_id!r} share runtime label {label!r}"\n            )\n        mapping[label] = source_id\n    return mapping\n\n\ndef canonical_source_id(runtime_label: str, known_source_ids: Iterable[str]) -> str:\n    """Resolve a generated display alias back to the canonical subscription id."""\n    return validate_runtime_source_labels(known_source_ids).get(runtime_label, runtime_label)\n''',
               encoding="utf-8",
@@ -88,7 +95,7 @@ jobs:
               'def _provider_graph(\n    providers: dict[str, Any],\n) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:',
               'def _provider_graph(\n    providers: dict[str, Any],\n    *,\n    known_source_ids: set[str],\n) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:',
           )
-          replace_one(
+          replace_first(
               "src/clash_relay/production_audit.py",
               '            source_id = _runtime_source_id(proxy, provider_name=provider_name)',
               '            source_id = _runtime_source_id(\n                proxy, provider_name=provider_name, known_source_ids=known_source_ids\n            )',
@@ -97,6 +104,11 @@ jobs:
               "src/clash_relay/production_audit.py",
               '    provider_sources, provider_dialers, runtime_sources = _provider_graph(providers)',
               '    provider_sources, provider_dialers, runtime_sources = _provider_graph(\n        providers, known_source_ids=set(subscriptions)\n    )',
+          )
+          replace_one(
+              "src/clash_relay/production_audit.py",
+              '                source_id = _runtime_source_id(proxy, provider_name=provider_name)',
+              '                source_id = _runtime_source_id(\n                    proxy, provider_name=provider_name, known_source_ids=set(subscriptions)\n                )',
           )
 
           Path("tests/test_runtime_names.py").write_text(
