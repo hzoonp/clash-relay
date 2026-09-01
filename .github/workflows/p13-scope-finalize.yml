@@ -1,0 +1,89 @@
+name: Finalize P13-only scope
+
+on:
+  push:
+    branches:
+      - feat/p13-p15-transport-source-health
+    paths:
+      - ".github/workflows/p13-scope-finalize.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/p13-p15-transport-source-health
+          fetch-depth: 0
+      - name: Remove deferred P15 references and finalize P13
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/publish.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '- name: Guard source health and preserve previous validated production config'
+          new = '- name: Preserve previous validated production config'
+          if old not in text:
+              raise SystemExit('expected P15 workflow label not found')
+          text = text.replace(old, new, 1)
+          old_redirect = '            | tee .work/private/recovery-snapshot.json'
+          new_redirect = '            > .work/private/recovery-snapshot.json'
+          if old_redirect not in text:
+              raise SystemExit('expected P15 snapshot tee not found')
+          text = text.replace(old_redirect, new_redirect, 1)
+          workflow.write_text(text, encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text(encoding='utf-8')
+          remove_lines = {
+              '- P15 adds a fail-closed source-health guard that compares the fully qualified candidate with the currently published private configuration before the previous-good snapshot or production KV write.',
+              '- Source-health evaluation tracks only private structural fingerprints and aggregate source/region counts; it rejects large active-source collapses and protected browsing-region disappearance without emitting node names, endpoints, credentials, subscription URLs, or traffic records.',
+              '- Explicit source removal from `subscriptions.yaml` is treated as a deliberate declaration change, so P15 does not mistake planned source retirement for an outage.',
+          }
+          lines = [line for line in text.splitlines() if line not in remove_lines]
+          text = '\n'.join(lines) + '\n'
+          text = text.replace(
+              '- P13/P15 preserve client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.',
+              '- P13 preserves client-owned DNS, no Fake-IP, P12 Sniffer settings, pinned ACL4SSR order, the six public selectors, browsing/AI qualification, and all `subscription_1` isolation boundaries.',
+          )
+          text = text.replace(
+              '- If transport qualification leaves no safe automatic UDP inventory, or if source-health drift crosses the production thresholds, publication stops before Cloudflare KV is replaced and previous-good remains intact.',
+              '- If transport qualification leaves no safe automatic UDP inventory, publication stops before Cloudflare KV is replaced and previous-good remains intact.',
+          )
+          if 'P15' in text.split('## [1.3.0]', 1)[0]:
+              raise SystemExit('P15 reference remains in v1.4.0 changelog section')
+          changelog.write_text(text, encoding='utf-8')
+
+          transport = Path('src/clash_relay/transport_qualification.py')
+          text = transport.read_text(encoding='utf-8')
+          bad = '        + b"\\x08crp13dcid"'
+          good = '        + b"\\x08crp13dci"'
+          if bad not in text:
+              raise SystemExit('expected QUIC DCID fixture not found')
+          transport.write_text(text.replace(bad, good, 1), encoding='utf-8')
+
+          test = Path('tests/test_transport_qualification.py')
+          text = test.read_text(encoding='utf-8')
+          marker = '    assert int.from_bytes(payload[1:5], "big") == 0x0A0A0A0A\n'
+          addition = (
+              marker
+              + '    assert payload[5] == 8\n'
+              + '    assert payload[6:14] == b"crp13dci"\n'
+              + '    assert payload[14] == 8\n'
+          )
+          if marker not in text:
+              raise SystemExit('expected QUIC test marker not found')
+          test.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+          PY
+          rm .github/workflows/p13-scope-finalize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: finalize P13-only transport scope"
+          git push origin HEAD:feat/p13-p15-transport-source-health
