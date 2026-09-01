@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_loader import load_project
-from .errors import ValidationError
+from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
 from .mihomo_matrix import load_mihomo_tags
 from .publishers.cloudflare_kv import CloudflareKVPublisher
@@ -32,7 +32,11 @@ def _cloudflare_values(environment: Mapping[str, str]) -> tuple[str, str, str]:
         raise ValidationError(
             "doctor requires Cloudflare setting(s): " + ", ".join(sorted(missing))
         )
-    return tuple(environment[name].strip() for name in _CLOUDFLARE_NAMES)  # type: ignore[return-value]
+    return (
+        environment["CLOUDFLARE_API_TOKEN"].strip(),
+        environment["CLOUDFLARE_ACCOUNT_ID"].strip(),
+        environment["CLOUDFLARE_KV_NAMESPACE_TITLE"].strip(),
+    )
 
 
 def run_doctor(
@@ -96,14 +100,18 @@ def run_doctor(
         generation = project.config["generation"]
         reachable = 0
         for spec in enabled:
-            url = resolved[spec.id]
-            fetch_subscription(
-                url,
-                timeout=int(generation["fetch_timeout_seconds"]),
-                max_bytes=int(generation["max_subscription_bytes"]),
-                allow_http=bool(generation["allow_http_subscription_urls"]),
-                allow_file=bool(generation["allow_file_subscription_urls"]),
-            )
+            try:
+                fetch_subscription(
+                    resolved[spec.id],
+                    timeout=int(generation["fetch_timeout_seconds"]),
+                    max_bytes=int(generation["max_subscription_bytes"]),
+                    allow_http=bool(generation["allow_http_subscription_urls"]),
+                    allow_file=bool(generation["allow_file_subscription_urls"]),
+                )
+            except FetchError as exc:
+                raise ValidationError(
+                    f"subscription connectivity check failed for {spec.id}"
+                ) from exc
             reachable += 1
         subscription_report["reachable"] = reachable
     report["subscriptions"] = subscription_report
@@ -111,12 +119,15 @@ def run_doctor(
     if check_cloudflare:
         token, account_id, namespace_title = _cloudflare_values(environment)
         production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])
-        current = CloudflareKVPublisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=production_key,
-        ).read()
+        try:
+            current = CloudflareKVPublisher(
+                token=token,
+                account_id=account_id,
+                namespace_title=namespace_title,
+                key_name=production_key,
+            ).read()
+        except PublicationError as exc:
+            raise ValidationError("Cloudflare KV read readiness check failed") from exc
         report["cloudflare"] = {
             "status": "ready",
             "production_key_present": current is not None,
