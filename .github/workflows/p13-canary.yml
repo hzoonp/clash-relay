@@ -1,0 +1,102 @@
+name: P13 private transport canary
+
+on:
+  push:
+    branches:
+      - feat/p13-p15-transport-source-health
+    paths:
+      - ".github/workflows/p13-canary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/p13-p15-transport-source-health
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m pip install --requirement requirements.lock --editable .
+      - name: Mask individual subscription URLs
+        shell: bash
+        env:
+          CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
+        run: |
+          python - <<'PY'
+          import os
+          from clash_relay.secrets import load_secret_mapping
+          def esc(value: str) -> str:
+              return value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          for value in load_secret_mapping(env=os.environ).values():
+              print(f"::add-mask::{esc(value)}")
+          PY
+      - name: Generate private candidate
+        env:
+          CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
+        run: |
+          set -euo pipefail
+          mkdir -p .work/private
+          clash-relay generate \
+            --config config.yaml \
+            --subscriptions subscriptions.yaml \
+            --services services.yaml \
+            --policies policies.yaml \
+            --output .work/private/config.yaml \
+            --report .work/private/build-report.json \
+            > .work/private/generation-summary.json
+      - name: Download qualification core
+        run: |
+          python scripts/download_mihomo.py \
+            --channel stable \
+            --tag v1.19.30 \
+            --output .work/bin/mihomo-qualification \
+            > .work/download-qualification.json
+      - name: Run browsing and P13 transport qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/qualify_browsing.py \
+            --candidate .work/private/config.yaml \
+            --policies policies.yaml \
+            --mihomo-bin .work/bin/mihomo-qualification \
+            --attempts 3 \
+            --required-successes 2 \
+            > .work/private/qualification.json
+          python - <<'PY'
+          import json
+          import os
+          with open('.work/private/qualification.json', encoding='utf-8') as f:
+              data = json.load(f)
+          transport = data.get('transport_qualification', {})
+          diag = transport.get('diagnostics', {})
+          lines = [
+              '## P13 private transport canary',
+              '',
+              f"Tested general nodes: **{int(diag.get('tested_nodes', 0))}**  ",
+              f"TCP qualified: **{int(diag.get('tcp_qualified_nodes', 0))}**  ",
+              f"UDP qualified: **{int(diag.get('udp_qualified_nodes', 0))}**  ",
+              f"QUIC path observed: **{int(diag.get('quic_path_nodes', 0))}**  ",
+              f"Static UDP disabled: **{int(diag.get('static_udp_disabled_nodes', 0))}**  ",
+              '',
+              'Only aggregate counts are emitted; private node material remains in the ephemeral runner.',
+              '',
+          ]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as f:
+              f.write('\n'.join(lines))
+          print(json.dumps({
+              'status': data.get('status'),
+              'tested': int(diag.get('tested_nodes', 0)),
+              'tcp_qualified': int(diag.get('tcp_qualified_nodes', 0)),
+              'udp_qualified': int(diag.get('udp_qualified_nodes', 0)),
+              'quic_path': int(diag.get('quic_path_nodes', 0)),
+          }, sort_keys=True))
+          PY
+      - name: Remove private candidate
+        if: always()
+        run: rm -rf .work/private
