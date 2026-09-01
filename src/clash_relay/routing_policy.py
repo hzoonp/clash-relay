@@ -14,9 +14,7 @@ _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
 
 def _source_exclude_pattern(source_ids: tuple[str, ...]) -> str:
-    alternatives = "|".join(
-        re.escape(runtime_source_label(source_id)) for source_id in source_ids
-    )
+    alternatives = "|".join(re.escape(runtime_source_label(source_id)) for source_id in source_ids)
     return rf"^\[[^\]]+\]\s+(?:{alternatives})/"
 
 
