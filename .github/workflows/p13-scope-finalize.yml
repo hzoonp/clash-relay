@@ -18,25 +18,12 @@ jobs:
         with:
           ref: feat/p13-p15-transport-source-health
           fetch-depth: 0
-      - name: Remove deferred P15 references and finalize P13
+      - name: Finalize P13 implementation without P15
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
-          workflow = Path('.github/workflows/publish.yml')
-          text = workflow.read_text(encoding='utf-8')
-          old = '- name: Guard source health and preserve previous validated production config'
-          new = '- name: Preserve previous validated production config'
-          if old not in text:
-              raise SystemExit('expected P15 workflow label not found')
-          text = text.replace(old, new, 1)
-          old_redirect = '            | tee .work/private/recovery-snapshot.json'
-          new_redirect = '            > .work/private/recovery-snapshot.json'
-          if old_redirect not in text:
-              raise SystemExit('expected P15 snapshot tee not found')
-          workflow.write_text(text.replace(old_redirect, new_redirect, 1), encoding='utf-8')
 
           changelog = Path('CHANGELOG.md')
           text = changelog.read_text(encoding='utf-8')
@@ -58,6 +45,56 @@ jobs:
               raise SystemExit('P15 reference remains in v1.4.0 changelog section')
           changelog.write_text(text, encoding='utf-8')
 
+          script = Path('scripts/qualify_browsing.py')
+          text = script.read_text(encoding='utf-8')
+          import_marker = 'from clash_relay.scheduler_policy import (\n    load_scheduler_policy,\n    preferred_stable_names_from_policy,\n)\n'
+          transport_import = (
+              import_marker
+              + 'from clash_relay.transport_qualification import (\n'
+              + '    probe_transport_nodes,\n'
+              + '    rewrite_transport_qualified_candidate,\n'
+              + ')\n'
+          )
+          if 'from clash_relay.transport_qualification import' not in text:
+              if import_marker not in text:
+                  raise SystemExit('qualify_browsing import marker not found')
+              text = text.replace(import_marker, transport_import, 1)
+
+          print_marker = '        print(\n            json.dumps(\n                {\n                    "status": "qualified",\n'
+          transport_block = (
+              '        transport_diagnostics: dict[str, object] = {}\n'
+              '        tcp_qualified, udp_qualified, _ = probe_transport_nodes(\n'
+              '            args.mihomo_bin,\n'
+              '            args.candidate,\n'
+              '            diagnostics=transport_diagnostics,\n'
+              '        )\n'
+              '        transport_report = rewrite_transport_qualified_candidate(\n'
+              '            args.candidate,\n'
+              '            tcp_qualified,\n'
+              '            udp_qualified,\n'
+              '        )\n\n'
+              + print_marker
+          )
+          if 'transport_diagnostics: dict[str, object]' not in text:
+              if print_marker not in text:
+                  raise SystemExit('qualify_browsing output marker not found')
+              text = text.replace(print_marker, transport_block, 1)
+
+          scheduler_marker = '                    "scheduler_history": scheduler_report,\n                    **report,\n'
+          scheduler_replacement = (
+              '                    "scheduler_history": scheduler_report,\n'
+              '                    "transport_qualification": {\n'
+              '                        "diagnostics": transport_diagnostics,\n'
+              '                        **transport_report,\n'
+              '                    },\n'
+              '                    **report,\n'
+          )
+          if '"transport_qualification": {' not in text:
+              if scheduler_marker not in text:
+                  raise SystemExit('qualify_browsing scheduler marker not found')
+              text = text.replace(scheduler_marker, scheduler_replacement, 1)
+          script.write_text(text, encoding='utf-8')
+
           test = Path('tests/test_transport_qualification.py')
           text = test.read_text(encoding='utf-8')
           marker = '    assert int.from_bytes(payload[1:5], "big") == 0x0A0A0A0A\n'
@@ -68,15 +105,15 @@ jobs:
               + '    assert payload[14] == 8\n'
               + '    assert payload[15:23] == b"p13scid1"\n'
           )
-          if marker not in text:
-              raise SystemExit('expected QUIC test marker not found')
           if 'payload[6:14]' not in text:
+              if marker not in text:
+                  raise SystemExit('QUIC test marker not found')
               text = text.replace(marker, addition, 1)
           test.write_text(text, encoding='utf-8')
           PY
-          rm .github/workflows/p13-scope-finalize.yml
+          rm -f scripts/qualify_transport.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: finalize P13-only transport scope"
+          git add CHANGELOG.md scripts/qualify_browsing.py scripts/qualify_transport.py tests/test_transport_qualification.py
+          git commit -m "feat: complete P13 transport qualification"
           git push origin HEAD:feat/p13-p15-transport-source-health
