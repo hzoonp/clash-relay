@@ -309,7 +309,7 @@ def audit_routing_v2(
         for row in candidate.get("proxy-groups", [])
         if isinstance(row, dict) and not row.get("hidden", False)
     }
-    canonical_visible = set(contract.visible_groups)
+    canonical_visible = contract.visible_groups
     if set(groups) >= canonical_visible:
         ai_wrapper_names = {
             str(pool["display_name"])
