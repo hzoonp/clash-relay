@@ -194,9 +194,7 @@ def _wait_for_members(
 
 def _group_delay_probe(port: int, secret: str) -> dict[str, int]:
     encoded = urllib.parse.quote(_PROBE_GROUP, safe="")
-    query = urllib.parse.urlencode(
-        {"url": _TCP_URL, "timeout": _TCP_TIMEOUT_MS, "expected": "204"}
-    )
+    query = urllib.parse.urlencode({"url": _TCP_URL, "timeout": _TCP_TIMEOUT_MS, "expected": "204"})
     try:
         result = _controller_get(
             port,
@@ -252,9 +250,7 @@ def _udp_relay(mixed_port: int) -> tuple[socket.socket, socket.socket, tuple[Any
     port = int.from_bytes(_recv_exact(control, 2), "big")
     if host in {"0.0.0.0", "::"}:
         host = "127.0.0.1"
-    family, socktype, proto, _, sockaddr = socket.getaddrinfo(
-        host, port, type=socket.SOCK_DGRAM
-    )[0]
+    family, socktype, proto, _, sockaddr = socket.getaddrinfo(host, port, type=socket.SOCK_DGRAM)[0]
     udp = socket.socket(family, socktype, proto)
     udp.settimeout(_UDP_TIMEOUT_SECONDS)
     return control, udp, sockaddr
@@ -369,9 +365,12 @@ def probe_transport_nodes(
             _wait_for_controller(process, controller_port, secret)
             _wait_for_members(process, controller_port, secret, node_names)
 
-            tcp_samples = [_group_delay_probe(controller_port, secret) for _ in range(_TCP_ATTEMPTS)]
+            tcp_samples = [
+                _group_delay_probe(controller_port, secret) for _ in range(_TCP_ATTEMPTS)
+            ]
             tcp_counts = {
-                name: sum(1 for sample in tcp_samples if name in sample) for name in sorted(node_names)
+                name: sum(1 for sample in tcp_samples if name in sample)
+                for name in sorted(node_names)
             }
             tcp_qualified = {
                 name for name, count in tcp_counts.items() if count >= _TCP_REQUIRED_SUCCESSES
