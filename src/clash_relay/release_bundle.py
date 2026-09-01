@@ -11,12 +11,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from .errors import PublicationError
 
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
+_READ_BACK_DELAYS = (0.0, 0.25, 0.5, 1.0, 2.0)
 
 
 class KVValue(Protocol):
@@ -92,9 +95,24 @@ def manifest_bytes(content: bytes) -> bytes:
         "sha256": release_id,
         "bytes": len(content),
     }
-    return (
-        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
+
+
+def _matches_after_write(publisher: KVValue, expected: bytes) -> bool:
+    """Retry short read-after-write propagation without weakening byte equality."""
+
+    for delay in _READ_BACK_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            observed = publisher.read()
+        except PublicationError:
+            continue
+        if observed == expected:
+            return True
+    return False
 
 
 def _publish_verified(factory: PublisherFactory, key: str, content: bytes) -> dict[str, Any]:
@@ -105,11 +123,7 @@ def _publish_verified(factory: PublisherFactory, key: str, content: bytes) -> di
         # A remote PUT may succeed while its response is lost. Read back before
         # declaring failure so an ambiguous network response cannot create a
         # false "failed but production changed" result.
-        try:
-            observed = publisher.read()
-        except PublicationError:
-            raise
-        if observed != content:
+        if not _matches_after_write(publisher, content):
             raise
         result = {
             "key": key,
@@ -117,8 +131,7 @@ def _publish_verified(factory: PublisherFactory, key: str, content: bytes) -> di
             "sha256": hashlib.sha256(content).hexdigest(),
             "recovered_from_ambiguous_write": True,
         }
-    observed = publisher.read()
-    if observed != content:
+    if not _matches_after_write(publisher, content):
         raise PublicationError(f"Cloudflare KV read-back verification failed for {key!r}")
     return result
 
