@@ -69,16 +69,19 @@ def test_stable_matrix_reuses_primary_and_downloads_only_remaining_core(
         lambda binary, candidate, startup_seconds: {"status": "passed"},
     )
 
-    assert matrix.main(
-        [
-            "--candidate",
-            str(candidate),
-            "--work-dir",
-            str(tmp_path / "cores"),
-            "--reuse-primary-bin",
-            str(primary),
-        ]
-    ) == 0
+    assert (
+        matrix.main(
+            [
+                "--candidate",
+                str(candidate),
+                "--work-dir",
+                str(tmp_path / "cores"),
+                "--reuse-primary-bin",
+                str(primary),
+            ]
+        )
+        == 0
+    )
     result = json.loads(capsys.readouterr().out)
     assert downloads == ["v2"]
     assert result["validated_cores"] == ["v1", "v2"]

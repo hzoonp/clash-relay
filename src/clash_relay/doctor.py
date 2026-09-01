@@ -54,9 +54,7 @@ def run_doctor(
 ) -> dict[str, Any]:
     """Validate fork readiness without publishing or exposing private values."""
     if public_only and (check_subscriptions or check_cloudflare):
-        raise ValidationError(
-            "--public-only cannot be combined with private connectivity checks"
-        )
+        raise ValidationError("--public-only cannot be combined with private connectivity checks")
 
     project = load_project(
         config_path=config_path,

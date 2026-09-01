@@ -28,7 +28,11 @@ def _number(value: Any) -> int | float | None:
 
 
 def _non_negative_int(value: Any, default: int = 0) -> int:
-    return int(value) if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
+    return (
+        int(value)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else default
+    )
 
 
 def _safe_sha(value: Any) -> str | None:
@@ -53,7 +57,12 @@ def _clean_browsing(value: Any) -> dict[str, Any] | None:
     if isinstance(regions, dict):
         safe_regions: dict[str, dict[str, int]] = {}
         for region, summary in sorted(regions.items()):
-            if not isinstance(region, str) or not region or len(region) > 32 or not isinstance(summary, dict):
+            if (
+                not isinstance(region, str)
+                or not region
+                or len(region) > 32
+                or not isinstance(summary, dict)
+            ):
                 continue
             safe_regions[region] = {
                 key: _non_negative_int(summary.get(key))
@@ -114,7 +123,9 @@ def _clean_mihomo(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     tags = value.get("validated_cores")
-    if not isinstance(tags, list) or not all(isinstance(tag, str) and 0 < len(tag) <= 64 for tag in tags):
+    if not isinstance(tags, list) or not all(
+        isinstance(tag, str) and 0 < len(tag) <= 64 for tag in tags
+    ):
         return None
     return {
         "status": "passed" if value.get("status") == "passed" else "unknown",
@@ -309,7 +320,9 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
     previous = runs[-2] if len(runs) > 1 else None
     release = latest.get("release", {}) if isinstance(latest.get("release"), dict) else {}
     mihomo = latest.get("mihomo", {}) if isinstance(latest.get("mihomo"), dict) else {}
-    performance = latest.get("performance", {}) if isinstance(latest.get("performance"), dict) else {}
+    performance = (
+        latest.get("performance", {}) if isinstance(latest.get("performance"), dict) else {}
+    )
     summary: dict[str, Any] = {
         "runs": len(runs),
         "latest_candidate_sha256": latest["candidate_sha256"],

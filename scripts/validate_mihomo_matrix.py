@@ -99,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
                     "channel": args.channel,
                     "validated_cores": list(tags),
                     "reused_primary": args.reuse_primary_bin is not None,
-                    "downloaded_cores": len(tags) - (1 if args.reuse_primary_bin is not None else 0),
+                    "downloaded_cores": len(tags)
+                    - (1 if args.reuse_primary_bin is not None else 0),
                     "results": results,
                 },
                 ensure_ascii=False,

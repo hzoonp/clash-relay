@@ -24,7 +24,9 @@ def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
     if value.get("status") != "qualified":
-        raise ValidationError("production proof requires a successful unified qualification pipeline")
+        raise ValidationError(
+            "production proof requires a successful unified qualification pipeline"
+        )
     result: dict[str, Any] = {"status": "qualified"}
     stages = value.get("stages")
     result["stages"] = len(stages) if isinstance(stages, list) else 0
@@ -184,7 +186,9 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     for name, count in service_counts.items():
         lines.append(f"| AI {name} qualified | {count} |")
     fail_closed = ai.get("service_fail_closed", [])
-    lines.append(f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |")
+    lines.append(
+        f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |"
+    )
 
     qualification = proof.get("qualification_pipeline")
     if isinstance(qualification, dict):
@@ -196,7 +200,9 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     release = proof.get("release")
     if isinstance(release, dict):
         lines.append(f"| Release transaction | {release.get('status')} |")
-        lines.append(f"| Production bytes changed | {str(release.get('production_changed')).lower()} |")
+        lines.append(
+            f"| Production bytes changed | {str(release.get('production_changed')).lower()} |"
+        )
     lines.extend(
         [
             "",

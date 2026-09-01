@@ -261,7 +261,11 @@ def update_history(
         if not isinstance(record, dict):
             continue
         last_seen = record.get("last_seen_epoch")
-        if isinstance(last_seen, int) and not isinstance(last_seen, bool) and 0 <= now - last_seen <= _MAX_AGE_SECONDS:
+        if (
+            isinstance(last_seen, int)
+            and not isinstance(last_seen, bool)
+            and 0 <= now - last_seen <= _MAX_AGE_SECONDS
+        ):
             clean = _clean_node_record(record)
             if clean is not None:
                 nodes[str(fingerprint)] = clean

@@ -199,7 +199,9 @@ def main(argv: list[str] | None = None) -> int:
     diagnostics: dict[str, object] = {}
     try:
         scheduler_policy = load_scheduler_policy(args.policies)
-        attempts = scheduler_policy.browsing.attempts if scheduler_policy.declared else args.attempts
+        attempts = (
+            scheduler_policy.browsing.attempts if scheduler_policy.declared else args.attempts
+        )
         required_successes = (
             scheduler_policy.browsing.reserve_successes
             if scheduler_policy.declared

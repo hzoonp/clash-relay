@@ -97,7 +97,9 @@ def test_stale_history_cannot_demote_a_current_stable_node() -> None:
             }
         },
     }
-    assert preferred_stable_names({"stable-now"}, history, key, now_epoch=40 * 24 * 60 * 60) == {"stable-now"}
+    assert preferred_stable_names({"stable-now"}, history, key, now_epoch=40 * 24 * 60 * 60) == {
+        "stable-now"
+    }
 
 
 def test_history_update_is_anonymous_and_persists_preference_decision() -> None:
@@ -174,7 +176,9 @@ def test_history_preference_narrows_auto_group_but_not_manual_provider(tmp_path:
     assert config["proxy-groups"][1]["proxies"] == ["Browsing Auto", "DIRECT"]
 
 
-def test_history_preference_keeps_current_stable_filter_when_pool_is_too_small(tmp_path: Path) -> None:
+def test_history_preference_keeps_current_stable_filter_when_pool_is_too_small(
+    tmp_path: Path,
+) -> None:
     candidate = tmp_path / "config.yaml"
     original = (
         "proxy-providers:\n"

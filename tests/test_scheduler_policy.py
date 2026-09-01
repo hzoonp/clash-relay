@@ -94,7 +94,9 @@ def test_history_hysteresis_debounces_one_transient_failure() -> None:
         "nodes": {fingerprint_runtime_name("keep", key): _record(ema=0.70, failures=1)},
     }
     policy = HistorySchedulerPolicy()
-    assert preferred_stable_names_from_policy({"keep"}, history, key, policy, now_epoch=120) == {"keep"}
+    assert preferred_stable_names_from_policy({"keep"}, history, key, policy, now_epoch=120) == {
+        "keep"
+    }
 
 
 def test_history_hysteresis_demotes_after_consecutive_failure_threshold() -> None:
@@ -104,9 +106,12 @@ def test_history_hysteresis_demotes_after_consecutive_failure_threshold() -> Non
         "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
         "nodes": {fingerprint_runtime_name("bad", key): _record(ema=0.7, failures=2)},
     }
-    assert preferred_stable_names_from_policy(
-        {"bad"}, history, key, HistorySchedulerPolicy(), now_epoch=120
-    ) == set()
+    assert (
+        preferred_stable_names_from_policy(
+            {"bad"}, history, key, HistorySchedulerPolicy(), now_epoch=120
+        )
+        == set()
+    )
 
 
 def test_history_hysteresis_requires_stronger_recovery_threshold() -> None:
@@ -115,8 +120,12 @@ def test_history_hysteresis_requires_stronger_recovery_threshold() -> None:
         "version": 3,
         "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
         "nodes": {
-            fingerprint_runtime_name("not-yet", key): _record(ema=0.89, failures=0, preferred=False),
-            fingerprint_runtime_name("recovered", key): _record(ema=0.91, failures=0, preferred=False),
+            fingerprint_runtime_name("not-yet", key): _record(
+                ema=0.89, failures=0, preferred=False
+            ),
+            fingerprint_runtime_name("recovered", key): _record(
+                ema=0.91, failures=0, preferred=False
+            ),
         },
     }
     preferred = preferred_stable_names_from_policy(

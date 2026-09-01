@@ -104,7 +104,9 @@ def test_ambiguous_successful_production_put_is_recovered_by_exact_readback() ->
 
     assert result["status"] == "published"
     assert kv.values[key] == second
-    assert parse_release_pointer(kv.values[release_keys(key).current_pointer]) == release_id_for(second)
+    assert parse_release_pointer(kv.values[release_keys(key).current_pointer]) == release_id_for(
+        second
+    )
 
 
 def test_first_release_activation_failure_restores_empty_pointer_state() -> None:

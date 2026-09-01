@@ -77,7 +77,13 @@ def test_metrics_add_release_matrix_regions_and_safe_timings(tmp_path: Path) -> 
     assert run["mihomo"]["validated_core_count"] == 2
     assert run["performance"]["total"] == 34.5
     assert run["qualification"] == {"status": "qualified", "stage_count": 1}
-    for secret in ("private proxy payload", "SECRET-FINGERPRINT", "SECRET-NODE", "SECRET-SERVER", "SECRET-CORE-OUTPUT"):
+    for secret in (
+        "private proxy payload",
+        "SECRET-FINGERPRINT",
+        "SECRET-NODE",
+        "SECRET-SERVER",
+        "SECRET-CORE-OUTPUT",
+    ):
         assert secret not in serialized
 
 
