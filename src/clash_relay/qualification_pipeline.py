@@ -12,9 +12,10 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .errors import ValidationError
 from .runtime_graph import CandidateArtifact
