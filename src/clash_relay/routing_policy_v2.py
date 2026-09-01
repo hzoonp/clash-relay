@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConfigurationError
+from .policy_contract import load_policy_contract, policy_contract_summary
 
 _REQUIRED_SCENARIOS = ("direct", "general", "browsing", "media", "download", "ai", "final")
 _ALLOWED_PROFILES = frozenset({"direct", "connectivity", "browsing", "media", "download", "ai"})
@@ -104,8 +105,13 @@ def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
         raise ConfigurationError("routing ai regions must not contain duplicates")
     if set(excluded) & set(preferred):
         raise ConfigurationError("routing ai preferred regions cannot include excluded regions")
-    if "HK" not in excluded:
-        raise ConfigurationError("canonical AI routing must exclude HK")
+    contract = load_policy_contract(policies)
+    required_excluded = set(contract.ai.required_excluded_regions)
+    if not required_excluded <= set(excluded):
+        missing = ", ".join(sorted(required_excluded - set(excluded)))
+        raise ConfigurationError(
+            f"routing ai policy is missing contract-required excluded regions: {missing}"
+        )
     if not preferred:
         raise ConfigurationError("routing ai policy requires at least one preferred region")
 
@@ -124,8 +130,8 @@ def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
     )
 
 
-def routing_policy_summary(policy: RoutingPolicyV2) -> dict[str, Any]:
-    return {
+def routing_policy_summary(policy: RoutingPolicyV2, policies: dict[str, Any] | None = None) -> dict[str, Any]:
+    summary: dict[str, Any] = {
         "version": 2,
         "declared": policy.declared,
         "scenarios": {
@@ -141,3 +147,6 @@ def routing_policy_summary(policy: RoutingPolicyV2) -> dict[str, Any]:
         },
         "download": {"mode": policy.download.mode},
     }
+    if policies is not None:
+        summary["contract"] = policy_contract_summary(load_policy_contract(policies))
+    return summary
