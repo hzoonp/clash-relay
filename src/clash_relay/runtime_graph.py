@@ -11,8 +11,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from .errors import ValidationError
 
@@ -41,7 +42,7 @@ class CandidateArtifact:
     document: dict[str, Any]
 
     @classmethod
-    def from_document(cls, stage: str, document: Mapping[str, Any]) -> "CandidateArtifact":
+    def from_document(cls, stage: str, document: Mapping[str, Any]) -> CandidateArtifact:
         if not stage:
             raise ValidationError("candidate artifact stage must not be empty")
         if not isinstance(document, Mapping):
@@ -62,7 +63,7 @@ class CandidateArtifact:
         self,
         stage: str,
         transform: Callable[[dict[str, Any]], dict[str, Any] | None],
-    ) -> "CandidateArtifact":
+    ) -> CandidateArtifact:
         next_document = copy.deepcopy(self.document)
         result = transform(next_document)
         if result is not None:
@@ -93,7 +94,7 @@ class RuntimeGraph:
         self.provider_dialers = provider_dialers
 
     @classmethod
-    def from_candidate(cls, candidate: Mapping[str, Any]) -> "RuntimeGraph":
+    def from_candidate(cls, candidate: Mapping[str, Any]) -> RuntimeGraph:
         if not isinstance(candidate, Mapping):
             raise ValidationError("runtime graph requires a candidate mapping")
 
