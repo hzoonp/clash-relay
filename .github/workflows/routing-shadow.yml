@@ -9,12 +9,8 @@ on:
       - "policies.yaml"
       - "rules/**"
       - "schemas/**"
-      - "src/clash_relay/acl4ssr_reference.py"
-      - "src/clash_relay/routing_model.py"
-      - "src/clash_relay/routing_policy_v2.py"
-      - "src/clash_relay/routing_shadow.py"
-      - "scripts/audit_acl4ssr_fidelity.py"
-      - "scripts/routing_shadow.py"
+      - "src/**"
+      - "scripts/**"
       - ".github/workflows/routing-shadow.yml"
   push:
     branches:
@@ -26,12 +22,8 @@ on:
       - "policies.yaml"
       - "rules/**"
       - "schemas/**"
-      - "src/clash_relay/acl4ssr_reference.py"
-      - "src/clash_relay/routing_model.py"
-      - "src/clash_relay/routing_policy_v2.py"
-      - "src/clash_relay/routing_shadow.py"
-      - "scripts/audit_acl4ssr_fidelity.py"
-      - "scripts/routing_shadow.py"
+      - "src/**"
+      - "scripts/**"
       - ".github/workflows/routing-shadow.yml"
   workflow_dispatch:
 
