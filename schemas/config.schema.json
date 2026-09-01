@@ -3,87 +3,253 @@
   "$id": "https://clash-relay.invalid/schema/config.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "runtime", "modules", "generation", "publishing"],
+  "required": [
+    "version",
+    "runtime",
+    "modules",
+    "generation",
+    "publishing"
+  ],
   "properties": {
-    "version": {"const": 1},
+    "version": {
+      "const": 1
+    },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mixed_port", "allow_lan", "bind_address", "mode", "log_level", "ipv6", "unified_delay", "tcp_concurrent", "profile", "dns"],
+      "required": [
+        "mixed_port",
+        "allow_lan",
+        "bind_address",
+        "mode",
+        "log_level",
+        "ipv6",
+        "unified_delay",
+        "tcp_concurrent",
+        "profile",
+        "dns"
+      ],
       "properties": {
-        "mixed_port": {"type": "integer", "minimum": 1, "maximum": 65535},
-        "allow_lan": {"type": "boolean"},
-        "bind_address": {"type": "string", "minLength": 1},
-        "mode": {"enum": ["rule", "global", "direct"]},
-        "log_level": {"enum": ["silent", "error", "warning", "info", "debug"]},
-        "ipv6": {"type": "boolean"},
-        "unified_delay": {"type": "boolean"},
-        "tcp_concurrent": {"type": "boolean"},
+        "mixed_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "allow_lan": {
+          "type": "boolean"
+        },
+        "bind_address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "rule",
+            "global",
+            "direct"
+          ]
+        },
+        "log_level": {
+          "enum": [
+            "silent",
+            "error",
+            "warning",
+            "info",
+            "debug"
+          ]
+        },
+        "ipv6": {
+          "type": "boolean"
+        },
+        "unified_delay": {
+          "type": "boolean"
+        },
+        "tcp_concurrent": {
+          "type": "boolean"
+        },
         "profile": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["store_selected", "store_fake_ip"],
+          "required": [
+            "store_selected",
+            "store_fake_ip"
+          ],
           "properties": {
-            "store_selected": {"type": "boolean"},
-            "store_fake_ip": {"type": "boolean"}
+            "store_selected": {
+              "type": "boolean"
+            },
+            "store_fake_ip": {
+              "type": "boolean"
+            }
           }
         },
         "dns": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "enhanced_mode", "listen", "nameservers", "fallback_nameservers"],
+          "required": [],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "enhanced_mode": {"enum": ["fake-ip", "redir-host", "normal"]},
-            "listen": {"type": "string", "minLength": 1},
-            "nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-            "fallback_nameservers": {"type": "array", "items": {"type": "string", "minLength": 1}}
-          }
+            "mode": {
+              "enum": [
+                "client",
+                "managed"
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "enhanced_mode": {
+              "enum": [
+                "fake-ip",
+                "redir-host",
+                "normal"
+              ]
+            },
+            "listen": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nameservers": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "fallback_nameservers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "client"
+                  }
+                }
+              },
+              "then": {},
+              "else": {
+                "required": [
+                  "enabled",
+                  "enhanced_mode",
+                  "listen",
+                  "nameservers",
+                  "fallback_nameservers"
+                ]
+              }
+            }
+          ]
         }
       }
     },
     "modules": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
-      "additionalProperties": {"type": "boolean"}
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "boolean"
+      }
     },
     "generation": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "minimum_successful_subscriptions", "minimum_usable_nodes", "fetch_timeout_seconds",
-        "max_subscription_bytes", "invalid_proxy_policy", "duplicate_policy",
-        "allow_http_subscription_urls", "allow_file_subscription_urls",
-        "reject_private_proxy_hosts", "fail_on_required_subscription_error",
-        "node_name_prefix", "generated_header"
+        "minimum_successful_subscriptions",
+        "minimum_usable_nodes",
+        "fetch_timeout_seconds",
+        "max_subscription_bytes",
+        "invalid_proxy_policy",
+        "duplicate_policy",
+        "allow_http_subscription_urls",
+        "allow_file_subscription_urls",
+        "reject_private_proxy_hosts",
+        "fail_on_required_subscription_error",
+        "node_name_prefix",
+        "generated_header"
       ],
       "properties": {
-        "minimum_successful_subscriptions": {"type": "integer", "minimum": 1},
-        "minimum_usable_nodes": {"type": "integer", "minimum": 1},
-        "fetch_timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120},
-        "max_subscription_bytes": {"type": "integer", "minimum": 1024, "maximum": 67108864},
-        "invalid_proxy_policy": {"enum": ["error", "skip"]},
-        "duplicate_policy": {"enum": ["keep_first", "error"]},
-        "allow_http_subscription_urls": {"type": "boolean"},
-        "allow_file_subscription_urls": {"type": "boolean"},
-        "reject_private_proxy_hosts": {"type": "boolean"},
-        "fail_on_required_subscription_error": {"type": "boolean"},
-        "node_name_prefix": {"enum": ["source_id", "none"]},
-        "generated_header": {"type": "boolean"}
+        "minimum_successful_subscriptions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_usable_nodes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fetch_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120
+        },
+        "max_subscription_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 67108864
+        },
+        "invalid_proxy_policy": {
+          "enum": [
+            "error",
+            "skip"
+          ]
+        },
+        "duplicate_policy": {
+          "enum": [
+            "keep_first",
+            "error"
+          ]
+        },
+        "allow_http_subscription_urls": {
+          "type": "boolean"
+        },
+        "allow_file_subscription_urls": {
+          "type": "boolean"
+        },
+        "reject_private_proxy_hosts": {
+          "type": "boolean"
+        },
+        "fail_on_required_subscription_error": {
+          "type": "boolean"
+        },
+        "node_name_prefix": {
+          "enum": [
+            "source_id",
+            "none"
+          ]
+        },
+        "generated_header": {
+          "type": "boolean"
+        }
       }
     },
     "rule_sources": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["acl4ssr"],
+      "required": [
+        "acl4ssr"
+      ],
       "properties": {
         "acl4ssr": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "manifest"],
+          "required": [
+            "enabled",
+            "manifest"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
+            "enabled": {
+              "type": "boolean"
+            },
             "manifest": {
               "type": "string",
               "minLength": 1,
@@ -97,33 +263,59 @@
     "publishing": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifact", "github_release", "gist", "cloudflare_kv"],
+      "required": [
+        "artifact",
+        "github_release",
+        "gist",
+        "cloudflare_kv"
+      ],
       "properties": {
-        "artifact": {"type": "boolean"},
+        "artifact": {
+          "type": "boolean"
+        },
         "github_release": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "allow_sensitive_public_release"],
+          "required": [
+            "enabled",
+            "allow_sensitive_public_release"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "allow_sensitive_public_release": {"type": "boolean"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "allow_sensitive_public_release": {
+              "type": "boolean"
+            }
           }
         },
         "gist": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "allow_sensitive_unlisted_gist"],
+          "required": [
+            "enabled",
+            "allow_sensitive_unlisted_gist"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "allow_sensitive_unlisted_gist": {"type": "boolean"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "allow_sensitive_unlisted_gist": {
+              "type": "boolean"
+            }
           }
         },
         "cloudflare_kv": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "key"],
+          "required": [
+            "enabled",
+            "key"
+          ],
           "properties": {
-            "enabled": {"type": "boolean"},
+            "enabled": {
+              "type": "boolean"
+            },
             "key": {
               "type": "string",
               "minLength": 1,

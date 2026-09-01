@@ -11,16 +11,9 @@ runtime:
   tcp_concurrent: true
   profile:
     store_selected: true
-    store_fake_ip: true
+    store_fake_ip: false
   dns:
-    enabled: true
-    enhanced_mode: fake-ip
-    listen: 127.0.0.1:1053
-    nameservers:
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    fallback_nameservers:
-      - tls://1.0.0.1:853
+    mode: client
 
 modules:
   general: true

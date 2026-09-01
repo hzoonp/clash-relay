@@ -4,6 +4,11 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+### Fixed
+
+- Canonical production now uses client-owned DNS, so clash-relay no longer forces Fake-IP or overseas public resolvers onto FlClash/Mihomo mobile clients.
+- Managed DNS remains available as an explicit compatibility mode, and legacy configurations without `runtime.dns.mode` continue to behave as managed DNS.
+
 ## [1.2.0] - 2026-09-01
 
 ### Added

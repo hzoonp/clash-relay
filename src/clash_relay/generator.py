@@ -360,7 +360,12 @@ def _add_external_groups(
 def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:
     runtime = config["runtime"]
     dns = runtime["dns"]
-    return {
+    dns_mode = str(dns.get("mode", "managed"))
+
+    profile: dict[str, Any] = {
+        "store-selected": runtime["profile"]["store_selected"],
+    }
+    output: dict[str, Any] = {
         "mixed-port": runtime["mixed_port"],
         "allow-lan": runtime["allow_lan"],
         "bind-address": runtime["bind_address"],
@@ -369,18 +374,20 @@ def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:
         "ipv6": runtime["ipv6"],
         "unified-delay": runtime["unified_delay"],
         "tcp-concurrent": runtime["tcp_concurrent"],
-        "profile": {
-            "store-selected": runtime["profile"]["store_selected"],
-            "store-fake-ip": runtime["profile"]["store_fake_ip"],
-        },
-        "dns": {
-            "enable": dns["enabled"],
-            "enhanced-mode": dns["enhanced_mode"],
-            "listen": dns["listen"],
-            "nameserver": list(dns["nameservers"]),
-            "fallback": list(dns["fallback_nameservers"]),
-        },
+        "profile": profile,
     }
+    if dns_mode == "client":
+        return output
+
+    profile["store-fake-ip"] = runtime["profile"]["store_fake_ip"]
+    output["dns"] = {
+        "enable": dns["enabled"],
+        "enhanced-mode": dns["enhanced_mode"],
+        "listen": dns["listen"],
+        "nameserver": list(dns["nameservers"]),
+        "fallback": list(dns["fallback_nameservers"]),
+    }
+    return output
 
 
 def generate_config(
