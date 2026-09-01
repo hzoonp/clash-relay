@@ -4,6 +4,32 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-02
+
+### Added
+
+- P19 extends the private bounded production-metrics ring with sanitized release state, stable-Mihomo validation counts, regional browsing aggregates, unified qualification stage counts, and bounded phase timings.
+- P21 adds explicit failure-injection coverage for ambiguous Cloudflare writes, first-release activation failure, pointer-commit failure, incomplete compensation, and corrupt or missing immutable release manifests.
+- P23 adds `clash-relay doctor` for public declaration validation, subscription Secret readiness, optional bounded subscription reachability checks, and optional Cloudflare KV read-only readiness checks.
+
+### Changed
+
+- P18.1 makes the authoritative onboarding documentation describe the manifest-driven Mihomo matrix, versioned release transaction, current-policy rollback, and doctor-first fork flow, with an automated documentation drift guard.
+- P20 upgrades anonymous browsing scheduler history to v3 with consecutive-failure debounce and asymmetric hysteresis: a transient failure does not immediately demote a preferred Stable node, while a historically demoted node must clear a stronger recovery EMA before returning to preferred Stable.
+- P22 records aggregate browsing/transport, AI, and total qualification durations and reuses the already downloaded primary pinned stable Mihomo binary for the first stable-matrix validation, while every pinned stable core still validates the exact final candidate.
+- Production proof now includes safe unified-qualification timing metadata and versioned release transaction status; private metrics sanitize unknown fields before re-persistence.
+
+### Compatibility
+
+- Existing scheduler state v1/v2 is read and migrated to v3 without changing anonymous node fingerprints. Production writes the new `.scheduler-state-v3` key and continues reading v2/v1 as migration fallbacks.
+- The client-facing Cloudflare production key, six public FlClash scenarios, source permissions, and release-object naming remain compatible with v1.5.0.
+
+### Security
+
+- Doctor never publishes bytes and reduces private connectivity failures to safe public identifiers/status messages; subscription URLs, subscription payloads, Cloudflare credentials, and production config bytes are excluded from its report.
+- Versioned previous-release reads now require both exact release-id byte integrity and an exact immutable manifest match before rollback can proceed.
+- Production observability remains aggregate-only and strips unsupported historical fields instead of perpetuating arbitrary private state.
+
 ## [1.5.0] - 2026-09-01
 
 ### Added
@@ -116,7 +142,7 @@ All notable user-visible changes are documented here. This project follows Seman
 
 - `网页自动` now prefers regions in the canonical `US -> SG -> JP -> TW -> KR -> HK -> OTHER` order instead of racing all qualified browsing nodes globally.
 - Automatic browsing failover is ordered `preferred-region Stable -> same-region Reserve -> next-region Stable`; a healthy preferred region is not abandoned merely because another region has a lower instantaneous delay.
-- `网页浏览` now exposes `网页自动`, each currently available `网页 · <地区>` choice, and `DIRECT`. Regional choices remain provider-free and do not expand raw `[BROWSING:*]` nodes.
+- `网页浏览` now exposes `网页自动`, each currently available `网页 · <地区>` choice, and `DIRECT`. Regional choices remain provider-free and do not expand raw `[BROWSING:*]` runtime nodes.
 - A manual regional browsing choice is region-pinned: it can fail over from Stable to Reserve inside that region but never silently crosses into another region.
 - Browsing history demotion is applied independently inside each region. A historically demoted but currently qualified node remains eligible through that same region's Reserve tier.
 - Completely unavailable browsing regions are removed from the published runtime graph after live qualification rather than making the whole publication fail, provided at least one browsing region remains qualified.
@@ -204,7 +230,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/hzoonp/clash-relay/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/hzoonp/clash-relay/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/hzoonp/clash-relay/compare/v1.3.0...v1.4.0
