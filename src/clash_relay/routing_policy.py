@@ -7,13 +7,16 @@ import re
 from typing import Any
 
 from .errors import GenerationError
+from .runtime_names import runtime_source_label, validate_runtime_source_labels
 from .util import unique
 
 _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
 
 def _source_exclude_pattern(source_ids: tuple[str, ...]) -> str:
-    alternatives = "|".join(re.escape(source_id) for source_id in source_ids)
+    alternatives = "|".join(
+        re.escape(runtime_source_label(source_id)) for source_id in source_ids
+    )
     return rf"^\[[^\]]+\]\s+(?:{alternatives})/"
 
 
@@ -44,6 +47,10 @@ def apply_acl4ssr_source_exclusions(
         or not isinstance(rules, list)
     ):
         raise GenerationError("generated proxy provider/group/rule structure is invalid")
+    try:
+        validate_runtime_source_labels(known_source_ids)
+    except ValueError as exc:
+        raise GenerationError(str(exc)) from exc
 
     by_name: dict[str, dict[str, Any]] = {
         str(group["name"]): group

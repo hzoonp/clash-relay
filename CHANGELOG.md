@@ -4,6 +4,17 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-01
+
+### Changed
+
+- Generated Mihomo/FlClash runtime node names shorten canonical numbered source labels from `subscription_N/` to `sub_N/` while keeping the canonical source id unchanged inside policy and isolation logic.
+- Runtime label collisions fail closed instead of weakening source isolation.
+
+### Compatibility
+
+- Browsing scheduler history and AI qualification cache use runtime identity, so this display-name migration causes a one-time private state refresh on the first v1.4.1 production run; live qualification remains authoritative throughout the refresh.
+
 ## [1.4.0] - 2026-09-01
 
 ### Added

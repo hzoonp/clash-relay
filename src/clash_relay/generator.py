@@ -8,6 +8,7 @@ from typing import Any
 
 from .errors import GenerationError
 from .models import Node
+from .runtime_names import runtime_source_label, validate_runtime_source_labels
 from .schema import load_and_validate
 from .selector import select_nodes
 from .util import normalize_expected_status, safe_identifier, unique
@@ -24,7 +25,8 @@ def _runtime_name(node: Node, scope: str) -> str:
         :10
     ]
     original = node.original_name.replace("\n", " ").replace("\r", " ").strip()[:96]
-    return f"[{scope}] {node.source_id}/{original} #{digest}"
+    source_label = runtime_source_label(node.source_id)
+    return f"[{scope}] {source_label}/{original} #{digest}"
 
 
 def _runtime_proxy(node: Node, scope: str, *, dialer_proxy: str | None = None) -> dict[str, Any]:
@@ -420,6 +422,11 @@ def generate_config(
     external_groups: list[dict[str, Any]] | None = None,
     final_target: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        validate_runtime_source_labels(node.source_id for node in nodes)
+    except ValueError as exc:
+        raise GenerationError(str(exc)) from exc
+
     providers: dict[str, Any] = {}
     groups: list[dict[str, Any]] = []
     pool_report: list[dict[str, Any]] = []
