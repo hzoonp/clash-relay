@@ -7,7 +7,7 @@ import pytest
 
 import clash_relay.doctor as doctor_module
 from clash_relay.doctor import run_doctor
-from clash_relay.errors import SecretError, ValidationError
+from clash_relay.errors import FetchError, PublicationError, SecretError, ValidationError
 
 
 def _paths(repo_root: Path) -> dict[str, Path]:
@@ -94,13 +94,40 @@ def test_subscription_connectivity_reports_counts_only(
     assert "secret-one.example" not in serialized
 
 
+def test_subscription_connectivity_failure_redacts_private_hostname(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_fetch(url: str, **kwargs) -> str:
+        raise FetchError(f"PRIVATE failure for {url}")
+
+    monkeypatch.setattr(doctor_module, "fetch_subscription", fake_fetch)
+    with pytest.raises(ValidationError) as caught:
+        run_doctor(
+            **_paths(repo_root),
+            env=_private_env(),
+            check_subscriptions=True,
+        )
+
+    message = str(caught.value)
+    assert "subscription_1" in message
+    assert "secret-one.example" not in message
+    assert "PRIVATE failure" not in message
+
+
 def test_cloudflare_check_is_read_only_and_safe(
     repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reads: list[str] = []
 
     class FakePublisher:
-        def __init__(self, *, token: str, account_id: str, namespace_title: str, key_name: str):
+        def __init__(
+            self,
+            *,
+            token: str,
+            account_id: str,
+            namespace_title: str,
+            key_name: str,
+        ):
             assert token == "PRIVATE-TOKEN"
             assert account_id == "PRIVATE-ACCOUNT"
             assert namespace_title == "PRIVATE-NAMESPACE"
@@ -124,8 +151,38 @@ def test_cloudflare_check_is_read_only_and_safe(
 
     assert reads == ["production-config"]
     assert report["cloudflare"] == {"status": "ready", "production_key_present": True}
-    for secret in ("PRIVATE-TOKEN", "PRIVATE-ACCOUNT", "PRIVATE-NAMESPACE", "PRIVATE CONFIG BYTES"):
+    for secret in (
+        "PRIVATE-TOKEN",
+        "PRIVATE-ACCOUNT",
+        "PRIVATE-NAMESPACE",
+        "PRIVATE CONFIG BYTES",
+    ):
         assert secret not in serialized
+
+
+def test_cloudflare_failure_redacts_connector_details(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakePublisher:
+        def __init__(self, **kwargs):
+            pass
+
+        def read(self) -> bytes:
+            raise PublicationError("PRIVATE-TOKEN PRIVATE-ACCOUNT PRIVATE-NAMESPACE")
+
+    monkeypatch.setattr(doctor_module, "CloudflareKVPublisher", FakePublisher)
+    environment = {
+        **_private_env(),
+        "CLOUDFLARE_API_TOKEN": "PRIVATE-TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID": "PRIVATE-ACCOUNT",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE": "PRIVATE-NAMESPACE",
+    }
+    with pytest.raises(ValidationError) as caught:
+        run_doctor(**_paths(repo_root), env=environment, check_cloudflare=True)
+
+    message = str(caught.value)
+    assert message == "Cloudflare KV read readiness check failed"
+    assert "PRIVATE" not in message
 
 
 def test_public_only_rejects_private_connectivity_flags(repo_root: Path) -> None:
