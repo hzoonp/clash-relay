@@ -30,6 +30,12 @@ def _load_json(path: Path) -> dict[str, Any]:
     return document
 
 
+def _load_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    return _load_json(path)
+
+
 def _persist_metrics(
     *,
     token: str,
@@ -58,6 +64,9 @@ def _persist_metrics(
             candidate_path=paths["candidate"],
             browsing=_load_json(paths["browsing"]),
             ai=_load_json(paths["ai"]),
+            qualification=_load_optional_json(private_dir / "qualification-pipeline-summary.json"),
+            release=_load_optional_json(private_dir / "release-publication.json"),
+            mihomo_matrix=_load_optional_json(private_dir / "mihomo-validation-matrix.json"),
         )
         next_state = append_metrics_run(state, run)
         content = (

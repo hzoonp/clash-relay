@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,12 +11,48 @@ from .errors import ValidationError
 from .util import load_yaml_file
 
 _ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "published"})
+_RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _json_mapping(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValidationError(f"production proof requires a {label} mapping")
     return value
+
+
+def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if value.get("status") != "qualified":
+        raise ValidationError("production proof requires a successful unified qualification pipeline")
+    result: dict[str, Any] = {"status": "qualified"}
+    stages = value.get("stages")
+    result["stages"] = len(stages) if isinstance(stages, list) else 0
+    timings = value.get("timings_ms")
+    if isinstance(timings, dict):
+        safe: dict[str, float] = {}
+        for name, duration in sorted(timings.items()):
+            if isinstance(name, str) and isinstance(duration, (int, float)) and not isinstance(duration, bool):
+                if 0 <= float(duration) <= 24 * 60 * 60 * 1000:
+                    safe[name] = round(float(duration), 3)
+        if safe:
+            result["timings_ms"] = safe
+    return result
+
+
+def _safe_release(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    release_id = value.get("release_id")
+    if value.get("status") not in {"published", "unchanged"} or not isinstance(release_id, str):
+        raise ValidationError("production proof received invalid release metadata")
+    if _RELEASE_ID.fullmatch(release_id) is None:
+        raise ValidationError("production proof received an invalid release id")
+    return {
+        "status": value["status"],
+        "release_id": release_id,
+        "production_changed": value.get("production_changed") is True,
+    }
 
 
 def build_production_proof(
@@ -26,6 +63,8 @@ def build_production_proof(
     ai: dict[str, Any],
     validated_cores: tuple[str, ...],
     publication_status: str,
+    qualification: dict[str, Any] | None = None,
+    release: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return aggregate-only metadata for the exact validated candidate bytes."""
     if publication_status not in _ALLOWED_PUBLICATION_STATUSES:
@@ -60,7 +99,7 @@ def build_production_proof(
     if ai.get("status") != "qualified":
         raise ValidationError("production proof requires successful AI qualification")
 
-    return {
+    proof: dict[str, Any] = {
         "status": "passed",
         "candidate": {
             "bytes": len(content),
@@ -95,6 +134,15 @@ def build_production_proof(
         "validated_cores": list(validated_cores),
         "publication": publication_status,
     }
+    safe_qualification = _safe_qualification(qualification)
+    if safe_qualification is not None:
+        proof["qualification_pipeline"] = safe_qualification
+    safe_release = _safe_release(release)
+    if safe_release is not None:
+        if safe_release["release_id"] != proof["candidate"]["sha256"]:
+            raise ValidationError("production release id does not match the proved candidate bytes")
+        proof["release"] = safe_release
+    return proof
 
 
 def render_production_proof_markdown(proof: dict[str, Any]) -> str:
@@ -132,9 +180,21 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     for name, count in service_counts.items():
         lines.append(f"| AI {name} qualified | {count} |")
     fail_closed = ai.get("service_fail_closed", [])
+    lines.append(f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |")
+
+    qualification = proof.get("qualification_pipeline")
+    if isinstance(qualification, dict):
+        lines.append(f"| Unified qualification stages | {qualification.get('stages', 0)} |")
+        timings = qualification.get("timings_ms")
+        if isinstance(timings, dict):
+            for name, duration in sorted(timings.items()):
+                lines.append(f"| Qualification `{name}` | {duration} ms |")
+    release = proof.get("release")
+    if isinstance(release, dict):
+        lines.append(f"| Release transaction | {release.get('status')} |")
+        lines.append(f"| Production bytes changed | {str(release.get('production_changed')).lower()} |")
     lines.extend(
         [
-            f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |",
             "",
             "This proof contains aggregate metadata only; node names, servers, credentials, and subscription URLs are intentionally excluded.",
             "",
