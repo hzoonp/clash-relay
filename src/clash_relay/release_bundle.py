@@ -2,8 +2,9 @@
 
 Mihomo/FlClash consumers continue reading the configured production KV key.
 P17 stages immutable releases first, verifies exact bytes, then updates that
-compatibility key and commits release pointers. If a pointer commit fails after
-production changes, the previous exact bytes are restored when available.
+compatibility key and commits release pointers. P21 verifies the recovery paths:
+failed activation or pointer commit restores the previous client-visible state
+where possible and reports incomplete compensation explicitly otherwise.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from .errors import PublicationError
 
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 _READ_BACK_DELAYS = (0.0, 0.25, 0.5, 1.0, 2.0)
+_EMPTY_POINTER = b"\n"
 
 
 class KVValue(Protocol):
@@ -100,7 +102,6 @@ def manifest_bytes(content: bytes) -> bytes:
 
 def _matches_after_write(publisher: KVValue, expected: bytes) -> bool:
     """Retry short read-after-write propagation without weakening byte equality."""
-
     for delay in _READ_BACK_DELAYS:
         if delay:
             time.sleep(delay)
@@ -161,6 +162,15 @@ def _safe_read(factory: PublisherFactory, key: str) -> bytes | None:
     return factory(key).read()
 
 
+def _restore_pointer(
+    factory: PublisherFactory,
+    key: str,
+    release_id: str | None,
+) -> None:
+    content = _EMPTY_POINTER if release_id is None else _pointer_bytes(release_id)
+    _publish_verified(factory, key, content)
+
+
 def _restore_after_failed_commit(
     factory: PublisherFactory,
     keys: ReleaseKeys,
@@ -175,12 +185,12 @@ def _restore_after_failed_commit(
     except PublicationError:
         errors.append("production")
     try:
-        _publish_verified(factory, keys.current_pointer, _pointer_bytes(previous_release_id))
+        _restore_pointer(factory, keys.current_pointer, previous_release_id)
     except PublicationError:
         errors.append("current-pointer")
     restore_previous = previous_pointer_before or previous_release_id
     try:
-        _publish_verified(factory, keys.previous_pointer, _pointer_bytes(restore_previous))
+        _restore_pointer(factory, keys.previous_pointer, restore_previous)
     except PublicationError:
         errors.append("previous-pointer")
     if errors:
@@ -189,18 +199,38 @@ def _restore_after_failed_commit(
         )
 
 
+def _activate_first_release(
+    factory: PublisherFactory,
+    keys: ReleaseKeys,
+    *,
+    content: bytes,
+    new_release_id: str,
+    current_pointer_before: str | None,
+) -> None:
+    # The pointer is internal and is staged before the client-facing key. If the
+    # production write fails, restore the exact prior pointer semantic state.
+    _restore_pointer(factory, keys.current_pointer, new_release_id)
+    try:
+        _publish_verified(factory, keys.production, content)
+    except PublicationError as exc:
+        try:
+            _restore_pointer(factory, keys.current_pointer, current_pointer_before)
+        except PublicationError as compensation_error:
+            raise PublicationError(
+                "first release activation failed and pointer compensation was incomplete"
+            ) from compensation_error
+        raise PublicationError(
+            "first release activation failed; current pointer was restored"
+        ) from exc
+
+
 def publish_release_bundle(
     *,
     factory: PublisherFactory,
     production_key: str,
     content: bytes,
 ) -> dict[str, Any]:
-    """Stage, verify, activate, and commit a versioned release.
-
-    The configured production key remains the client-facing compatibility
-    surface. Release objects and pointers are private operational metadata.
-    """
-
+    """Stage, verify, activate, and commit a versioned release."""
     keys = release_keys(production_key)
     new_release_id = _ensure_immutable_release(factory, keys, content)
     current_content = _safe_read(factory, keys.production)
@@ -209,7 +239,7 @@ def publish_release_bundle(
 
     if current_content == content:
         if current_pointer_before != new_release_id:
-            _publish_verified(factory, keys.current_pointer, _pointer_bytes(new_release_id))
+            _restore_pointer(factory, keys.current_pointer, new_release_id)
         return {
             "status": "unchanged",
             "release_id": new_release_id,
@@ -220,11 +250,13 @@ def publish_release_bundle(
         }
 
     if current_content is None:
-        # First publication has no state to compensate back to. Commit the
-        # internal pointer first, then expose the compatibility key. A failed
-        # production write leaves no client-visible partial replacement.
-        _publish_verified(factory, keys.current_pointer, _pointer_bytes(new_release_id))
-        _publish_verified(factory, keys.production, content)
+        _activate_first_release(
+            factory,
+            keys,
+            content=content,
+            new_release_id=new_release_id,
+            current_pointer_before=current_pointer_before,
+        )
         return {
             "status": "published",
             "release_id": new_release_id,
@@ -242,8 +274,8 @@ def publish_release_bundle(
 
     try:
         _publish_verified(factory, keys.production, content)
-        _publish_verified(factory, keys.previous_pointer, _pointer_bytes(old_release_id))
-        _publish_verified(factory, keys.current_pointer, _pointer_bytes(new_release_id))
+        _restore_pointer(factory, keys.previous_pointer, old_release_id)
+        _restore_pointer(factory, keys.current_pointer, new_release_id)
     except PublicationError as exc:
         try:
             _restore_after_failed_commit(
@@ -275,8 +307,7 @@ def read_previous_release(
     factory: PublisherFactory,
     production_key: str,
 ) -> tuple[bytes, dict[str, Any]]:
-    """Read the versioned previous release, falling back to the legacy slot."""
-
+    """Read and verify the versioned previous release, with legacy migration fallback."""
     keys = release_keys(production_key)
     previous_release_id = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
     if previous_release_id is not None:
@@ -285,6 +316,11 @@ def read_previous_release(
             raise PublicationError("previous release pointer references a missing release")
         if release_id_for(content) != previous_release_id:
             raise PublicationError("previous release bytes do not match their immutable release id")
+        manifest = _safe_read(factory, keys.manifest(previous_release_id))
+        if manifest is None:
+            raise PublicationError("previous release manifest is missing")
+        if manifest != manifest_bytes(content):
+            raise PublicationError("previous release manifest does not match release bytes")
         return content, {
             "source": "versioned-release",
             "release_id": previous_release_id,
