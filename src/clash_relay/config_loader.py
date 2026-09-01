@@ -68,6 +68,23 @@ def _probe_semantics(probe: dict[str, Any], label: str) -> None:
         raise ConfigurationError(f"{label} must use HEAD because Mihomo provider checks use HEAD")
 
 
+def _sniffer_semantics(config: dict[str, Any]) -> None:
+    sniffer = config["runtime"].get("sniffer")
+    if sniffer is None:
+        return
+    for protocol, settings in sniffer["sniff"].items():
+        for port in settings["ports"]:
+            if isinstance(port, int):
+                continue
+            start_text, end_text = str(port).split("-", 1)
+            start = int(start_text)
+            end = int(end_text)
+            if not 1 <= start <= end <= 65535:
+                raise ConfigurationError(
+                    f"runtime.sniffer.sniff.{protocol}.ports contains invalid range {port!r}"
+                )
+
+
 def _selector_capabilities(selector: dict[str, Any]) -> set[str]:
     return (
         set(selector["capabilities_any"])
@@ -113,6 +130,7 @@ def load_project(
     policies_path: Path,
 ) -> ProjectDefinition:
     config = load_and_validate(config_path, "config.schema.json")
+    _sniffer_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
     services = load_and_validate(services_path, "services.schema.json")
     policies = load_and_validate(policies_path, "policies.schema.json")
