@@ -40,7 +40,9 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
     assert "Mask individual subscription URLs" in text
     assert "from clash_relay.secrets import load_secret_mapping" in text
     assert 'print(f"::add-mask::{command_escape(value)}")' in text
-    assert text.index("Mask individual subscription URLs") < text.index("Generate private candidate")
+    assert text.index("Mask individual subscription URLs") < text.index(
+        "Generate private candidate"
+    )
 
 
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
