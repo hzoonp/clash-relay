@@ -4,7 +4,7 @@
 
 ## 1. Fork 时不要加入任何凭据
 
-`config.yaml`、`subscriptions.yaml`、`services.yaml`、`policies.yaml`、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节绝不能提交到 Git。
+`config.yaml`、`subscriptions.yaml`、`services.yaml`、`policies.yaml`、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节不能提交进仓库。私有凭据和生成后的生产配置从不 commit，也不会上传到 GitHub Artifact / Release / Gist。
 
 ## 2. 添加订阅 Secret
 
@@ -71,15 +71,17 @@ clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 
 ## 5. 先做 dry-run
 
-手动运行 `Generate, validate, and publish`，把 `publish` 设为 `false`。
+手动运行 `Generate, validate, and publish`，把 Workflow input 设为 `publish = false`。
 
 成功的 dry-run 会执行与生产相同的私有生成、source audit、browsing/transport qualification、AI qualification、qualification 后审计，以及 `tools/mihomo-versions.json` 中全部 stable Mihomo core 验证，但不会激活 Cloudflare KV 生产字节。
+
+网页 qualification 保留既有采样语义：`3/3` 为 Stable，`2/3` 为 Reserve。Scheduler history 继续通过 HMAC-SHA256 指纹保存私有匿名历史；OpenAI、Claude、Gemini 分别独立 qualification，并按服务 fail-closed。
 
 只查看 GitHub Actions 中的 aggregate production proof。
 
 ## 6. 正式发布
 
-手动运行 `publish=true`，或者在仓库明确配置为 main push 发布时合并经过验证的变更。
+手动运行 `publish = true`，或者在仓库明确配置为 main push 发布时合并经过验证的变更。
 
 发布流程先写入并 read-back 验证不可变 release 对象，再激活固定客户端 production key，最后提交 release pointers。Cloudflare KV 不支持跨 key 事务，因此 pointer commit 异常时使用补偿恢复上一版本的精确生产字节。
 
@@ -100,7 +102,7 @@ clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 
 ## 8. 安全回滚
 
-手动 rollback Workflow 优先解析 `previous-release-v1`；legacy slot 只用于迁移兼容。历史 candidate 必须重新通过当前 source/routing policy audit 和 `tools/mihomo-versions.json` 中全部当前 stable core 验证，再通过相同 versioned release transaction 激活。
+只有明确需要回滚时，才运行手动 `Roll back production config` Workflow，并设置 `confirm = true`。Workflow 优先解析 `previous-release-v1`；legacy slot 只用于迁移兼容。历史 candidate 必须重新通过 current-policy source/routing audit 和 `tools/mihomo-versions.json` 中全部当前 stable core 验证，再通过相同 versioned release transaction 激活。
 
 违反当前 source isolation 的历史配置不会被允许回滚。
 
