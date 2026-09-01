@@ -8,7 +8,11 @@ from .config_loader import ProjectDefinition
 from .errors import ValidationError
 from .policy_contract import RuntimePolicyContract, load_policy_contract
 from .routing_model import compile_routing_model
-from .routing_policy_v2 import RoutingPolicyV2, load_routing_policy_v2, routing_policy_summary
+from .routing_policy_v2 import (
+    RoutingPolicyV2,
+    load_routing_policy_v2,
+    routing_policy_summary,
+)
 from .runtime_graph import RuntimeGraph
 
 
@@ -73,9 +77,7 @@ def _audit_ai_materialization(
         raise ValidationError("routing v2 generated an excluded AI region group")
 
     present_targets = {
-        service
-        for service, target in contract.ai.service_targets.items()
-        if target in groups
+        service for service, target in contract.ai.service_targets.items() if target in groups
     }
     post_qualification = bool(present_targets)
     if post_qualification and present_targets != set(contract.ai.service_targets):
@@ -135,7 +137,9 @@ def _audit_public_general_selector(
     if not isinstance(selector, dict):
         raise ValidationError(f"Routing V2 public selector {name!r} is missing")
     if selector.get("hidden", False) or selector.get("type") != "select":
-        raise ValidationError(f"Routing V2 public selector {name!r} must be a visible select group")
+        raise ValidationError(
+            f"Routing V2 public selector {name!r} must be a visible select group"
+        )
     if selector.get("use") or "filter" in selector:
         raise ValidationError(
             f"Routing V2 public selector {name!r} must not attach proxy providers directly"
