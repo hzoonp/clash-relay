@@ -277,6 +277,7 @@ jobs:
             --manifest tools/mihomo-versions.json \
             --channel stable \
             --work-dir .work/bin/validation \
+            --reuse-primary-bin .work/bin/mihomo-qualification \
             > .work/private/mihomo-validation-matrix.json \
             2> .work/mihomo-validation-matrix.error; then
             echo "::error title=Mihomo validation failed::A pinned stable core rejected the qualified private configuration. Detailed core output is intentionally suppressed in this public repository."
@@ -293,6 +294,7 @@ jobs:
             --audit .work/private/post-qualification-audit.json \
             --browsing .work/private/browsing-qualification-summary.json \
             --ai .work/private/ai-qualification-summary.json \
+            --qualification .work/private/qualification-pipeline-summary.json \
             --validated-cores-report .work/private/mihomo-validation-matrix.json \
             --publication-status dry-run \
             --markdown .work/private/production-proof.md \
@@ -368,6 +370,8 @@ jobs:
             --audit .work/private/post-qualification-audit.json \
             --browsing .work/private/browsing-qualification-summary.json \
             --ai .work/private/ai-qualification-summary.json \
+            --qualification .work/private/qualification-pipeline-summary.json \
+            --release .work/private/release-publication.json \
             --validated-cores-report .work/private/mihomo-validation-matrix.json \
             --publication-status published \
             --markdown .work/private/production-proof.md \

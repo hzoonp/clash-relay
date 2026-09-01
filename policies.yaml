@@ -8,6 +8,8 @@ scheduler:
   history:
     min_runs: 2
     min_success_ema: 0.8
+    recover_success_ema: 0.9
+    demote_after_failures: 2
     max_age_seconds: 2592000
   ai_cache:
     pass_ttl_seconds: 21600

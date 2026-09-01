@@ -24,6 +24,10 @@ def _load_json(path: Path, label: str) -> dict:
     return document
 
 
+def _optional_json(path: Path | None, label: str) -> dict | None:
+    return None if path is None else _load_json(path, label)
+
+
 def _validated_cores(args: argparse.Namespace) -> tuple[str, ...]:
     explicit = tuple(args.validated_core or ())
     if args.validated_cores_report is None:
@@ -50,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit", type=_path, required=True)
     parser.add_argument("--browsing", type=_path, required=True)
     parser.add_argument("--ai", type=_path, required=True)
+    parser.add_argument("--qualification", type=_path)
+    parser.add_argument("--release", type=_path)
     parser.add_argument("--validated-core", action="append")
     parser.add_argument("--validated-cores-report", type=_path)
     parser.add_argument("--publication-status", choices=("dry-run", "published"), required=True)
@@ -67,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
             ai=_load_json(args.ai, "AI qualification"),
             validated_cores=_validated_cores(args),
             publication_status=args.publication_status,
+            qualification=_optional_json(args.qualification, "qualification pipeline"),
+            release=_optional_json(args.release, "release transaction"),
         )
         markdown = render_production_proof_markdown(proof)
         if args.markdown is not None:

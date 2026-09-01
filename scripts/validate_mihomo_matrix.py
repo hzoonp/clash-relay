@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=_path, default=Path("tools/mihomo-versions.json"))
     parser.add_argument("--channel", default="stable")
     parser.add_argument("--work-dir", type=_path, required=True)
+    parser.add_argument("--reuse-primary-bin", type=_path)
     parser.add_argument("--startup-seconds", type=float, default=1.5)
     return parser
 
@@ -61,26 +62,45 @@ def main(argv: list[str] | None = None) -> int:
     try:
         tags = load_mihomo_tags(args.manifest, args.channel)
         args.work_dir.mkdir(parents=True, exist_ok=True)
+        if args.reuse_primary_bin is not None and not args.reuse_primary_bin.is_file():
+            raise ValidationError("reused primary Mihomo binary does not exist")
         results = []
-        for tag in tags:
-            binary = _download(
-                tag,
-                manifest=args.manifest,
-                channel=args.channel,
-                work_dir=args.work_dir,
+        for index, tag in enumerate(tags):
+            reuse_primary = index == 0 and args.reuse_primary_bin is not None
+            binary = (
+                args.reuse_primary_bin
+                if reuse_primary
+                else _download(
+                    tag,
+                    manifest=args.manifest,
+                    channel=args.channel,
+                    work_dir=args.work_dir,
+                )
             )
+            if binary is None:
+                raise ValidationError("failed to resolve Mihomo validation binary")
             result = validate_with_mihomo(
                 binary,
                 args.candidate,
                 startup_seconds=args.startup_seconds,
             )
-            results.append({"tag": tag, "status": "passed", "mihomo": result})
+            results.append(
+                {
+                    "tag": tag,
+                    "status": "passed",
+                    "reused_primary": reuse_primary,
+                    "mihomo": result,
+                }
+            )
         print(
             json.dumps(
                 {
                     "status": "passed",
                     "channel": args.channel,
                     "validated_cores": list(tags),
+                    "reused_primary": args.reuse_primary_bin is not None,
+                    "downloaded_cores": len(tags)
+                    - (1 if args.reuse_primary_bin is not None else 0),
                     "results": results,
                 },
                 ensure_ascii=False,

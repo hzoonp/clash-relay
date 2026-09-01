@@ -33,7 +33,11 @@ def _read_state(
     namespace_title: str,
     production_key: str,
 ) -> tuple[bytes | None, str, str]:
-    for suffix, source in (("scheduler-state-v2", "v2"), ("scheduler-state-v1", "v1")):
+    for suffix, source in (
+        ("scheduler-state-v3", "v3"),
+        ("scheduler-state-v2", "v2"),
+        ("scheduler-state-v1", "v1"),
+    ):
         try:
             content = CloudflareKVPublisher(
                 token=token,

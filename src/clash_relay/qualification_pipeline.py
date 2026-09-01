@@ -1,10 +1,4 @@
-"""Unified staged qualification orchestration for private production candidates.
-
-The existing browsing/transport and AI qualification implementations remain the
-compatibility executors. P16 gives them one owner and stops production from
-mutating the generated candidate through unrelated workflow steps: each stage
-receives a private copy and the final validated artifact is emitted explicitly.
-"""
+"""Unified staged qualification orchestration for private production candidates."""
 
 from __future__ import annotations
 
@@ -12,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +59,10 @@ def _json_text(document: dict[str, Any]) -> str:
     return json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
 
 
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000.0, 3)
+
+
 def run_qualification_pipeline(
     *,
     candidate: Path,
@@ -84,7 +83,7 @@ def run_qualification_pipeline(
     python_executable: str | None = None,
 ) -> dict[str, Any]:
     """Run browsing+transport then AI qualification using immutable file stages."""
-
+    pipeline_started = time.perf_counter()
     if workers < 1:
         raise ValidationError("qualification workers must be at least 1")
     for label, paths in {
@@ -135,9 +134,11 @@ def run_qualification_pipeline(
                 str(next_history),
             ]
         )
+    browsing_started = time.perf_counter()
     browsing_summary = _run_json_stage("browsing/transport", browsing_command)
     atomic_write(browsing_report, _json_text(browsing_summary))
     browsing_artifact = _artifact(browsing, "browsing_transport_qualified")
+    browsing_elapsed_ms = _elapsed_ms(browsing_started)
 
     try:
         shutil.copyfile(browsing, ai)
@@ -166,9 +167,11 @@ def run_qualification_pipeline(
                 str(next_cache),
             ]
         )
+    ai_started = time.perf_counter()
     ai_summary = _run_json_stage("AI", ai_command)
     atomic_write(ai_report, _json_text(ai_summary))
     ai_artifact = _artifact(ai, "ai_qualified")
+    ai_elapsed_ms = _elapsed_ms(ai_started)
 
     try:
         shutil.copyfile(ai, output)
@@ -185,6 +188,11 @@ def run_qualification_pipeline(
     return {
         "status": "qualified",
         "stages": [{"name": row.name, "fingerprint": row.fingerprint} for row in stages],
+        "timings_ms": {
+            "browsing_transport": browsing_elapsed_ms,
+            "ai": ai_elapsed_ms,
+            "total": _elapsed_ms(pipeline_started),
+        },
         "browsing": {
             "status": browsing_summary.get("status"),
             "automatic_nodes": browsing_summary.get("automatic_nodes", 0),

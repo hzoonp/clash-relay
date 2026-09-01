@@ -226,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
         history_inputs = _history_inputs(args)
         scheduler_report: dict[str, object] = {
             "status": "disabled",
-            "state_version": 2,
+            "state_version": 3,
             "records_before": 0,
             "records_after": 0,
             "stable_nodes": len(stable),
@@ -260,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                 all_names=all_names,
                 qualified_names=qualified,
                 stable_names=stable,
+                preferred_names=preferred,
                 fingerprint_key=fingerprint_key,
                 cohort_latency_ms=_cohort_latency(diagnostics),
             )
@@ -333,6 +334,10 @@ def main(argv: list[str] | None = None) -> int:
                         "attempts": attempts,
                         "reserve_successes": required_successes,
                         "region_switch_interval": scheduler_policy.browsing.region_switch_interval,
+                        "history_min_runs": scheduler_policy.history.min_runs,
+                        "history_min_success_ema": scheduler_policy.history.min_success_ema,
+                        "history_recover_success_ema": scheduler_policy.history.recover_success_ema,
+                        "history_demote_after_failures": scheduler_policy.history.demote_after_failures,
                     },
                     "scheduler_history": scheduler_report,
                     "transport_qualification": {

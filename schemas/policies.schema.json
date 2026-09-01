@@ -68,6 +68,8 @@
           "properties": {
             "min_runs": {"type": "integer", "minimum": 1, "maximum": 100},
             "min_success_ema": {"type": "number", "minimum": 0, "maximum": 1},
+            "recover_success_ema": {"type": "number", "minimum": 0, "maximum": 1},
+            "demote_after_failures": {"type": "integer", "minimum": 1, "maximum": 10},
             "max_age_seconds": {"type": "integer", "minimum": 3600, "maximum": 7776000}
           }
         },

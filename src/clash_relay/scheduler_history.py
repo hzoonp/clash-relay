@@ -13,13 +13,15 @@ from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
-_STATE_VERSION = 2
-_LEGACY_STATE_VERSION = 1
+_STATE_VERSION = 3
+_LEGACY_STATE_VERSIONS = frozenset({1, 2})
 _DOMAIN = b"clash-relay/browsing-scheduler-history/v1"
 _ALPHA = 0.30
 _LATENCY_ALPHA = 0.25
 _MIN_HISTORY_RUNS = 2
 _MIN_SUCCESS_EMA = 0.80
+_RECOVER_SUCCESS_EMA = 0.90
+_DEMOTE_AFTER_FAILURES = 2
 _MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _MAX_RECORDS = 4096
 _MIN_PREFERRED_AUTO_NODES = 3
@@ -54,15 +56,21 @@ def _clean_node_record(record: Any) -> dict[str, Any] | None:
     success_ema = record.get("success_ema")
     failures = record.get("consecutive_failed_runs")
     last_seen = record.get("last_seen_epoch")
+    historically_preferred = record.get("historically_preferred", True)
     if (
         not isinstance(runs, int)
+        or isinstance(runs, bool)
         or runs < 1
         or not isinstance(success_ema, (int, float))
+        or isinstance(success_ema, bool)
         or not 0 <= float(success_ema) <= 1
         or not isinstance(failures, int)
+        or isinstance(failures, bool)
         or failures < 0
         or not isinstance(last_seen, int)
+        or isinstance(last_seen, bool)
         or last_seen < 0
+        or not isinstance(historically_preferred, bool)
     ):
         return None
     return {
@@ -70,6 +78,7 @@ def _clean_node_record(record: Any) -> dict[str, Any] | None:
         "success_ema": round(float(success_ema), 6),
         "consecutive_failed_runs": failures,
         "last_seen_epoch": last_seen,
+        "historically_preferred": historically_preferred,
     }
 
 
@@ -79,13 +88,16 @@ def _clean_cohort(value: Any) -> dict[str, Any]:
     runs = value.get("runs", 0)
     latency = value.get("latency_ema_ms")
     last_seen = value.get("last_seen_epoch", 0)
-    if not isinstance(runs, int) or runs < 0:
+    if not isinstance(runs, int) or isinstance(runs, bool) or runs < 0:
         runs = 0
     if latency is not None and (
-        not isinstance(latency, (int, float)) or float(latency) < 0 or float(latency) > 120_000
+        not isinstance(latency, (int, float))
+        or isinstance(latency, bool)
+        or float(latency) < 0
+        or float(latency) > 120_000
     ):
         latency = None
-    if not isinstance(last_seen, int) or last_seen < 0:
+    if not isinstance(last_seen, int) or isinstance(last_seen, bool) or last_seen < 0:
         last_seen = 0
     return {
         "runs": runs,
@@ -95,17 +107,17 @@ def _clean_cohort(value: Any) -> dict[str, Any]:
 
 
 def parse_history_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
-    """Parse auxiliary state; v1 is migrated and malformed state safely degrades."""
+    """Parse auxiliary state; v1/v2 migrate and malformed state safely degrades."""
     if not content:
         return empty_history(), "missing"
     try:
         document = json.loads(content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return empty_history(), "invalid"
-    if not isinstance(document, dict) or document.get("version") not in {
-        _LEGACY_STATE_VERSION,
-        _STATE_VERSION,
-    }:
+    if not isinstance(document, dict):
+        return empty_history(), "invalid"
+    version = document.get("version")
+    if version not in {*_LEGACY_STATE_VERSIONS, _STATE_VERSION}:
         return empty_history(), "invalid"
     nodes = document.get("nodes")
     if not isinstance(nodes, dict):
@@ -118,11 +130,12 @@ def parse_history_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
         if clean_record is None:
             return empty_history(), "invalid"
         clean[fingerprint] = clean_record
-    legacy = document.get("version") == _LEGACY_STATE_VERSION
+    legacy = version in _LEGACY_STATE_VERSIONS
+    cohort = None if version == 1 else document.get("cohort")
     return {
         "version": _STATE_VERSION,
         "nodes": clean,
-        "cohort": _clean_cohort(None if legacy else document.get("cohort")),
+        "cohort": _clean_cohort(cohort),
     }, "migrated" if legacy else "loaded"
 
 
@@ -147,6 +160,28 @@ def browsing_runtime_names(candidate: dict[str, Any]) -> set[str]:
     return names
 
 
+def _history_prefers(
+    record: dict[str, Any],
+    *,
+    min_success_ema: float,
+    recover_success_ema: float,
+    demote_after_failures: int,
+) -> bool:
+    success_ema = float(record.get("success_ema", 1.0))
+    failures = int(record.get("consecutive_failed_runs", 0))
+    was_preferred = bool(record.get("historically_preferred", True))
+    if was_preferred:
+        if failures >= demote_after_failures:
+            return False
+        # Debounce a single transient failed run even though EMA reacts faster.
+        if 0 < failures < demote_after_failures:
+            return True
+        return success_ema >= min_success_ema
+    # Hysteresis: once demoted, recovery requires a stronger threshold and a
+    # clean live-qualified run history.
+    return failures == 0 and success_ema >= recover_success_ema
+
+
 def preferred_stable_names(
     stable_names: set[str],
     history: dict[str, Any],
@@ -166,14 +201,17 @@ def preferred_stable_names(
             preferred.add(runtime_name)
             continue
         runs = int(record.get("runs", 0))
-        success_ema = float(record.get("success_ema", 1.0))
-        failures = int(record.get("consecutive_failed_runs", 0))
         last_seen = int(record.get("last_seen_epoch", 0))
         fresh = last_seen > 0 and now >= last_seen and now - last_seen <= _MAX_AGE_SECONDS
         if not fresh or runs < _MIN_HISTORY_RUNS:
             preferred.add(runtime_name)
             continue
-        if success_ema >= _MIN_SUCCESS_EMA and failures == 0:
+        if _history_prefers(
+            record,
+            min_success_ema=_MIN_SUCCESS_EMA,
+            recover_success_ema=_RECOVER_SUCCESS_EMA,
+            demote_after_failures=_DEMOTE_AFTER_FAILURES,
+        ):
             preferred.add(runtime_name)
     return preferred
 
@@ -208,6 +246,7 @@ def update_history(
     qualified_names: set[str],
     stable_names: set[str],
     fingerprint_key: bytes,
+    preferred_names: set[str] | None = None,
     cohort_latency_ms: float | None = None,
     now_epoch: int | None = None,
 ) -> dict[str, Any]:
@@ -222,7 +261,11 @@ def update_history(
         if not isinstance(record, dict):
             continue
         last_seen = record.get("last_seen_epoch")
-        if isinstance(last_seen, int) and 0 <= now - last_seen <= _MAX_AGE_SECONDS:
+        if (
+            isinstance(last_seen, int)
+            and not isinstance(last_seen, bool)
+            and 0 <= now - last_seen <= _MAX_AGE_SECONDS
+        ):
             clean = _clean_node_record(record)
             if clean is not None:
                 nodes[str(fingerprint)] = clean
@@ -241,11 +284,15 @@ def update_history(
         success_ema = (
             current_ratio if old_runs == 0 else old_ema * (1 - _ALPHA) + current_ratio * _ALPHA
         )
+        historically_preferred = bool(old.get("historically_preferred", True))
+        if preferred_names is not None and runtime_name in stable_names:
+            historically_preferred = runtime_name in preferred_names
         nodes[fingerprint] = {
             "runs": old_runs + 1,
             "success_ema": round(success_ema, 6),
             "consecutive_failed_runs": 0 if runtime_name in qualified_names else old_failures + 1,
             "last_seen_epoch": now,
+            "historically_preferred": historically_preferred,
         }
 
     if len(nodes) > _MAX_RECORDS:
