@@ -161,9 +161,7 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
             + ", ".join(sorted(required_public))
         )
 
-    automatic_groups = _string_mapping(
-        document.get("automatic_groups"), field="automatic_groups"
-    )
+    automatic_groups = _string_mapping(document.get("automatic_groups"), field="automatic_groups")
     required_automatic = {"media", "messaging", "download"}
     if set(automatic_groups) != required_automatic:
         raise ConfigurationError(
@@ -206,7 +204,9 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
             or len(edge) != 2
             or not all(isinstance(item, str) and item for item in edge)
         ):
-            raise ConfigurationError("routing contract priority_edges entries must be [before, after]")
+            raise ConfigurationError(
+                "routing contract priority_edges entries must be [before, after]"
+            )
         pair = (str(edge[0]), str(edge[1]))
         if pair[0] not in binding_targets or pair[1] not in binding_targets:
             raise ConfigurationError("routing contract priority_edges reference unknown bindings")
@@ -224,7 +224,9 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
             document.get("disabled_groups", []), field="disabled_groups", allow_empty=True
         ),
         ai=AiPolicyContract(
-            service_targets=_string_mapping(ai_raw.get("service_targets"), field="ai.service_targets"),
+            service_targets=_string_mapping(
+                ai_raw.get("service_targets"), field="ai.service_targets"
+            ),
             service_prefixes=_string_mapping(
                 ai_raw.get("service_prefixes"), field="ai.service_prefixes"
             ),
