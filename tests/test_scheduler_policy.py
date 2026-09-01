@@ -30,17 +30,17 @@ def _minimal_policy(path: Path, scheduler: str = "") -> None:
     )
 
 
-def test_missing_scheduler_block_preserves_v010_defaults(tmp_path: Path) -> None:
+def test_missing_scheduler_block_preserves_conservative_defaults(tmp_path: Path) -> None:
     path = tmp_path / "policies.yaml"
     _minimal_policy(path)
-
     policy = load_scheduler_policy(path)
-
     assert policy.declared is False
     assert policy.browsing.attempts == 3
     assert policy.browsing.reserve_successes == 2
     assert policy.history.min_runs == 2
     assert policy.history.min_success_ema == 0.8
+    assert policy.history.recover_success_ema == 0.9
+    assert policy.history.demote_after_failures == 2
     assert policy.ai_cache.pass_ttl_seconds == 21600
     assert policy.ai_cache.failure_ttl_seconds == 3600
 
@@ -51,18 +51,18 @@ def test_declared_scheduler_values_are_loaded_from_yaml(tmp_path: Path) -> None:
         path,
         "scheduler:\n"
         "  browsing: {attempts: 5, reserve_successes: 4}\n"
-        "  history: {min_runs: 4, min_success_ema: 0.9, max_age_seconds: 86400}\n"
+        "  history: {min_runs: 4, min_success_ema: 0.8, recover_success_ema: 0.95, demote_after_failures: 3, max_age_seconds: 86400}\n"
         "  ai_cache: {pass_ttl_seconds: 7200, failure_ttl_seconds: 900}\n",
     )
-
     policy = load_scheduler_policy(path)
-
     assert policy.declared is True
     assert policy.browsing.attempts == 5
     assert policy.browsing.reserve_successes == 4
     assert policy.history == HistorySchedulerPolicy(
         min_runs=4,
-        min_success_ema=0.9,
+        min_success_ema=0.8,
+        recover_success_ema=0.95,
+        demote_after_failures=3,
         max_age_seconds=86400,
     )
     assert policy.ai_cache.pass_ttl_seconds == 7200
@@ -72,55 +72,68 @@ def test_declared_scheduler_values_are_loaded_from_yaml(tmp_path: Path) -> None:
 def test_invalid_reserve_threshold_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "policies.yaml"
     _minimal_policy(path, "scheduler:\n  browsing: {attempts: 3, reserve_successes: 4}\n")
-
     with pytest.raises(ValidationError, match="reserve_successes"):
         load_scheduler_policy(path)
 
 
-def test_custom_history_thresholds_only_demote_current_stable_names() -> None:
+def _record(*, ema: float, failures: int, preferred: bool = True) -> dict:
+    return {
+        "runs": 5,
+        "success_ema": ema,
+        "consecutive_failed_runs": failures,
+        "last_seen_epoch": 100,
+        "historically_preferred": preferred,
+    }
+
+
+def test_history_hysteresis_debounces_one_transient_failure() -> None:
     key = derive_fingerprint_key("token")
     history = {
-        "version": 2,
+        "version": 3,
+        "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
+        "nodes": {fingerprint_runtime_name("keep", key): _record(ema=0.70, failures=1)},
+    }
+    policy = HistorySchedulerPolicy()
+    assert preferred_stable_names_from_policy({"keep"}, history, key, policy, now_epoch=120) == {"keep"}
+
+
+def test_history_hysteresis_demotes_after_consecutive_failure_threshold() -> None:
+    key = derive_fingerprint_key("token")
+    history = {
+        "version": 3,
+        "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
+        "nodes": {fingerprint_runtime_name("bad", key): _record(ema=0.7, failures=2)},
+    }
+    assert preferred_stable_names_from_policy(
+        {"bad"}, history, key, HistorySchedulerPolicy(), now_epoch=120
+    ) == set()
+
+
+def test_history_hysteresis_requires_stronger_recovery_threshold() -> None:
+    key = derive_fingerprint_key("token")
+    history = {
+        "version": 3,
         "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
         "nodes": {
-            fingerprint_runtime_name("keep", key): {
-                "runs": 4,
-                "success_ema": 0.95,
-                "consecutive_failed_runs": 0,
-                "last_seen_epoch": 100,
-            },
-            fingerprint_runtime_name("demote", key): {
-                "runs": 4,
-                "success_ema": 0.85,
-                "consecutive_failed_runs": 0,
-                "last_seen_epoch": 100,
-            },
-            fingerprint_runtime_name("not-live-stable", key): {
-                "runs": 10,
-                "success_ema": 1.0,
-                "consecutive_failed_runs": 0,
-                "last_seen_epoch": 100,
-            },
+            fingerprint_runtime_name("not-yet", key): _record(ema=0.89, failures=0, preferred=False),
+            fingerprint_runtime_name("recovered", key): _record(ema=0.91, failures=0, preferred=False),
         },
     }
-    policy = HistorySchedulerPolicy(min_runs=3, min_success_ema=0.9, max_age_seconds=3600)
-
     preferred = preferred_stable_names_from_policy(
-        {"keep", "demote"}, history, key, policy, now_epoch=120
+        {"not-yet", "recovered"}, history, key, HistorySchedulerPolicy(), now_epoch=120
     )
-
-    assert preferred == {"keep"}
-    assert "not-live-stable" not in preferred
+    assert preferred == {"recovered"}
 
 
-def test_canonical_scheduler_block_preserves_current_production_semantics(repo_root: Path) -> None:
+def test_canonical_scheduler_block_enables_v2_quality_contract(repo_root: Path) -> None:
     policy = load_scheduler_policy(repo_root / "policies.yaml")
-
     assert policy.declared is True
     assert policy.browsing.attempts == 3
     assert policy.browsing.reserve_successes == 2
     assert policy.history.min_runs == 2
     assert policy.history.min_success_ema == 0.8
+    assert policy.history.recover_success_ema == 0.9
+    assert policy.history.demote_after_failures == 2
     assert policy.history.max_age_seconds == 2592000
     assert policy.ai_cache.pass_ttl_seconds == 21600
     assert policy.ai_cache.failure_ttl_seconds == 3600

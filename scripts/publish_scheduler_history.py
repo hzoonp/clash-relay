@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(history, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
-    state_key = f"{production_key}.scheduler-state-v2"
+    state_key = f"{production_key}.scheduler-state-v3"
     try:
         result = CloudflareKVPublisher(
             token=token,

@@ -22,6 +22,8 @@ class BrowsingSchedulerPolicy:
 class HistorySchedulerPolicy:
     min_runs: int = 2
     min_success_ema: float = 0.80
+    recover_success_ema: float = 0.90
+    demote_after_failures: int = 2
     max_age_seconds: int = 30 * 24 * 60 * 60
 
 
@@ -67,6 +69,8 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         history=HistorySchedulerPolicy(
             min_runs=int(history.get("min_runs", 2)),
             min_success_ema=float(history.get("min_success_ema", 0.80)),
+            recover_success_ema=float(history.get("recover_success_ema", 0.90)),
+            demote_after_failures=int(history.get("demote_after_failures", 2)),
             max_age_seconds=int(history.get("max_age_seconds", 30 * 24 * 60 * 60)),
         ),
         ai_cache=AICachePolicy(
@@ -89,6 +93,12 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         raise ValidationError("scheduler.history.min_runs must be between 1 and 100")
     if not 0.0 <= result.history.min_success_ema <= 1.0:
         raise ValidationError("scheduler.history.min_success_ema must be between 0 and 1")
+    if not result.history.min_success_ema <= result.history.recover_success_ema <= 1.0:
+        raise ValidationError(
+            "scheduler.history.recover_success_ema must be between min_success_ema and 1"
+        )
+    if result.history.demote_after_failures < 1 or result.history.demote_after_failures > 10:
+        raise ValidationError("scheduler.history.demote_after_failures must be between 1 and 10")
     if result.history.max_age_seconds < 3600 or result.history.max_age_seconds > 90 * 24 * 60 * 60:
         raise ValidationError(
             "scheduler.history.max_age_seconds must be between 1 hour and 90 days"
@@ -113,7 +123,7 @@ def preferred_stable_names_from_policy(
     *,
     now_epoch: int,
 ) -> set[str]:
-    """Apply public history thresholds only inside the current live-stable set."""
+    """Apply hysteresis only inside the current live-stable set."""
     nodes = history.get("nodes", {})
     if not isinstance(nodes, dict):
         return set(stable_names)
@@ -135,6 +145,16 @@ def preferred_stable_names_from_policy(
         if not fresh or runs < policy.min_runs:
             preferred.add(runtime_name)
             continue
-        if success_ema >= policy.min_success_ema and failures == 0:
+        was_preferred = bool(record.get("historically_preferred", True))
+        if was_preferred:
+            if failures >= policy.demote_after_failures:
+                continue
+            if 0 < failures < policy.demote_after_failures:
+                preferred.add(runtime_name)
+                continue
+            if success_ema >= policy.min_success_ema:
+                preferred.add(runtime_name)
+            continue
+        if failures == 0 and success_ema >= policy.recover_success_ema:
             preferred.add(runtime_name)
     return preferred
