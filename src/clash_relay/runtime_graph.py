@@ -237,9 +237,7 @@ class RuntimeGraph:
         provider_sources: Mapping[str, set[str] | frozenset[str]] | None = None,
     ) -> frozenset[str]:
         reachability = self.walk(target)
-        found = {
-            str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources
-        }
+        found = {str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources}
         if provider_sources is not None:
             for provider in reachability.providers:
                 found.update(str(item) for item in provider_sources.get(provider, ()))
