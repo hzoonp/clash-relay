@@ -8,7 +8,7 @@
 
 ## 从 Fork 开始
 
-新 Fork 推荐流程：
+新 Fork 使用 [Fork 快速上手](docs/quickstart.zh-CN.md)：
 
 ```text
 Fork
@@ -168,7 +168,7 @@ python scripts/repository_audit.py
 
 ## 文档
 
-- [配置快速上手](docs/quickstart.zh-CN.md)
+- [Fork 快速上手](docs/quickstart.zh-CN.md)
 - [Fork quickstart](docs/quickstart.md)
 - [Production maturity](docs/production-maturity.md)
 - [配置模型](docs/configuration.md)
