@@ -55,13 +55,19 @@ clash-relay doctor --public-only
 clash-relay doctor --secret-file .secrets.yaml
 ```
 
-如果还要验证 Cloudflare account/token/namespace/key 的只读连通性，但不发布任何配置：
+如需使用与生产一致的有界 fetch 策略实际检查全部已启用订阅的连通性，但不输出 URL 或订阅内容：
+
+```bash
+clash-relay doctor --secret-file .secrets.yaml --check-subscriptions
+```
+
+如需验证 Cloudflare account/token/namespace/key 的只读连通性，但不发布任何配置：
 
 ```bash
 clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 ```
 
-Doctor 输出只包含聚合状态，不会打印订阅 URL 或 Cloudflare Token。
+两个连通性检查可以同时启用。Doctor 输出只包含聚合状态，不会打印订阅 URL、订阅内容、Cloudflare 凭据或 production config 字节；失败信息也只保留安全的公开标识和状态。
 
 ## 5. 先做 dry-run
 
