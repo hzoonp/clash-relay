@@ -32,9 +32,13 @@ def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if isinstance(timings, dict):
         safe: dict[str, float] = {}
         for name, duration in sorted(timings.items()):
-            if isinstance(name, str) and isinstance(duration, (int, float)) and not isinstance(duration, bool):
-                if 0 <= float(duration) <= 24 * 60 * 60 * 1000:
-                    safe[name] = round(float(duration), 3)
+            if (
+                isinstance(name, str)
+                and isinstance(duration, (int, float))
+                and not isinstance(duration, bool)
+                and 0 <= float(duration) <= 24 * 60 * 60 * 1000
+            ):
+                safe[name] = round(float(duration), 3)
         if safe:
             result["timings_ms"] = safe
     return result
