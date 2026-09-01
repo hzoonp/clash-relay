@@ -6,7 +6,7 @@
 
 Fork `hzoonp/clash-relay` 到自己的 GitHub 账号。
 
-不要把真实订阅 URL 写入受版本控制的 YAML、Workflow 参数、Issue、PR、commit message 或 README。公开的 `subscriptions.yaml` 只保存 Secret 名称和来源权限；真正生成的 `config.yaml` 属于私密运行时产物，不能提交进仓库。
+不要把真实订阅 URL 写入受版本控制的 YAML、Workflow 参数、Issue、PR、commit message 或 README。公开的 `subscriptions.yaml` 只保存 Secret 名称和来源权限；真正生成的生产 `config.yaml` 属于私密运行时产物，**不能提交进仓库**。
 
 ## 2. 创建订阅 Secret
 
@@ -85,15 +85,15 @@ publish = false
 订阅获取 / 解析
 来源权限准入
 source-to-scenario 可达性审计
-网页浏览实时资格检测
+网页浏览 HTTPS 实时资格检测
+媒体 / 消息 UDP/QUIC transport 资格检测
 AI 服务级资格检测
-资格处理后的二次可达性审计
-Mihomo v1.19.30 验证
-Mihomo v1.19.29 验证
+资格处理后的 current-policy 二次审计
+tools/mihomo-versions.json 中全部 stable Mihomo core
 最终聚合 production proof
 ```
 
-GitHub Actions Summary 只显示聚合数据。节点名、server、凭据、订阅 URL 和最终 candidate 都不会上传成 GitHub Artifact。
+GitHub Actions Summary 只显示聚合数据。节点名、server、凭据、订阅 URL、资格阶段文件和最终 candidate **从不 commit**，也不会上传到 **Artifact / Release / Gist**。
 
 ## 5. 正式发布
 
@@ -105,7 +105,11 @@ publish = true
 
 当 `main` 上的生产输入发生变化时，push 也会自动进入同一套严格验证发布链。
 
-如果新的 candidate 与当前生产值不同，Workflow 会在替换前先把当前已验证 bytes 保存到私有 recovery slot。只有 source audit、实时 qualification 和两个固定 Mihomo 版本全部通过后，新的 candidate 才会写入 `production-config`。
+P17 在不改变客户端固定 key 的前提下增加私有版本化 release。最终精确 bytes 会先按 SHA-256 release ID 写入不可变 KV key 并读回校验；之后才允许激活固定的 `production-config`，最后提交 `current-release-v1` / `previous-release-v1` 指针。旧 `.previous-v1` recovery slot 继续作为迁移兼容兜底。
+
+如果客户端固定 key 已经更新，但 release pointer 提交失败，发布层会尽力把旧 production 精确 bytes 恢复回来。Cloudflare KV 不提供多 key 原子事务，所以这里是**补偿式事务**，不会虚假宣称跨 key 原子性。
+
+AI cache 和 browsing scheduler history 是派生优化状态，在 production release 成功提交后再保存。它们写入失败只会产生 warning，不会把已经成功且验证完成的生产发布误报成失败；后续运行会通过实时探测安全重建缺失状态。
 
 ## 6. 网页浏览调度规则
 
@@ -123,13 +127,13 @@ Browsing inventory 使用三次实时探测：
 
 ### 匿名历史状态
 
-跨 Workflow 的历史记录可以把“当前 3/3 仍然成功、但长期稳定性已经明显较差”的节点从 automatic stable tier 降级；历史记录**永远不会**把当前实时资格检测失败的节点重新提升回来。
+跨 Workflow 的历史记录可以把长期稳定性明显较差的当前合格节点从 automatic stable tier 降级；历史记录**永远不会**把当前实时资格检测失败的节点重新提升回来。
 
-历史数据保存在私有 Workers KV 中，仅保存 HMAC-SHA256 fingerprint 和聚合稳定性字段，不保存 runtime 节点名、server、凭据或订阅 URL。历史缺失、格式错误或暂时读取失败时，会退回纯当前运行的实时调度，不因此阻断生产配置。
+历史数据保存在私有 Workers KV 中，仅保存 HMAC-SHA256 fingerprint 和聚合稳定性字段，不保存 runtime 节点名、server、凭据或订阅 URL。历史缺失、格式错误或暂时读取失败时，会退回纯当前运行的实时调度，不会扩大资格范围。
 
 ## 7. AI 调度规则
 
-OpenAI、Claude、Gemini 会分别通过临时 Mihomo 实际资格检测。同一个节点可能只通过其中一个服务。
+OpenAI、Claude、Gemini 会分别通过 loopback 临时 Mihomo 进行实际资格检测。同一个节点可能只通过其中一个服务。
 
 三个服务拥有独立 qualified routing graph。如果某一个服务没有任何合格节点，只对该服务 fail closed，而不会借用未经该服务验证的节点；其他 AI 服务只要仍有合格节点就可以继续工作。
 
@@ -142,15 +146,13 @@ candidate 字节数与 SHA-256
 source reachability 状态
 browsing tested / qualified / stable / reserve / rejected
 各 AI 服务 qualified 数量
-通过验证的 Mihomo core 版本
+从 tools/mihomo-versions.json 读取的 stable Mihomo core 版本
 publication = dry-run 或 published
 ```
 
 可以用 SHA-256 标识“到底是哪一份精确 candidate 通过验证并发布”，而不暴露 candidate 内容。
 
 ## 9. 回滚生产配置
-
-每次成功发布一份**不同于当前生产值**的新 candidate 前，Workflow 都会先保存当前 production bytes 作为私有 previous-good recovery slot。
 
 需要回滚时打开：
 
@@ -162,7 +164,9 @@ publication = dry-run 或 published
 confirm = true
 ```
 
-Rollback 只允许手动执行，并且只允许在 `main` 上执行。Workflow 会先从私有 KV 取出 previous bytes，再用 Mihomo v1.19.30 和 v1.19.29 重新验证；两个 core 都通过后才会重新激活为 `production-config`。
+Rollback 只允许手动执行，并且只允许在 `main` 上执行。Workflow 优先读取私有 `previous-release-v1`，仅对 P17 之前的状态使用旧 `previous-v1` 兜底。激活前，旧 candidate 必须先通过**当前仓库版本**的 production/source-isolation 与 Routing V2 audit，再通过 `tools/mihomo-versions.json` 中全部 stable core，最后经相同 versioned release transaction 激活。
+
+因此，一份旧配置即使 Mihomo 语法仍然有效，只要它已经不满足今天的来源权限，也不能被回滚上线。
 
 不要把 rollback 当作解决“构建失败”的办法。新的 candidate 只要任一 gate 失败，本来就不会覆盖当前生产配置。
 
@@ -182,28 +186,29 @@ Workflow 会 fail closed 并保留原生产 KV。检查订阅可用性，以及 
 
 ### Mihomo 拒绝 candidate
 
-公开 Workflow 故意不输出可能含凭据的详细 core 日志。应修复结构异常的订阅节点或项目配置，而不是跳过两个固定 Mihomo 版本的生产验证。
+公开 Workflow 故意不输出可能含凭据的详细 core 日志。应修复结构异常的订阅节点或项目配置，而不是跳过 stable core matrix。需要调整支持版本时，只修改 `tools/mihomo-versions.json` 及对应 checksum 声明。
 
 ### Cloudflare 发布失败
 
-检查 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_KV_NAMESPACE_TITLE`，并确认 Token 有权读写目标 Workers KV namespace。发布失败不会主动删除已经存在的生产值。
+检查 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_KV_NAMESPACE_TITLE`，并确认 Token 有权读写目标 Workers KV namespace。激活前失败不会改变当前 production；若固定 key 更新后的 pointer commit 失败，则在存在旧值时执行补偿恢复。
 
-### Scheduler history 读取失败
+### Scheduler history 或 AI cache 持久化失败
 
-History 是辅助信息。Workflow 会退回当前运行的实时 browsing qualification。临时读取失败时，该次运行也不会覆盖未知的旧 history。
+它们属于派生优化状态。生产发布已经成功时，状态写失败只显示 warning，不会使 production config 失效。下一次运行会用实时 qualification 重建缺失数据。
 
-### Rollback 提示没有 previous config
+### Rollback 提示没有 previous release
 
-只有“成功的新发布替换了一份不同的旧生产配置”后才会存在 previous slot。首次发布、或 candidate bytes 与当前生产完全一致时，不会创建/覆盖这个 recovery point。
+只有“成功的新发布替换了一份不同的旧生产配置”后才会存在 previous release。首次发布、或 candidate bytes 与当前生产完全一致时，不会创建新的 previous release。
 
 ## 安全检查清单
 
 正式使用 Fork 前确认：
 
 - 真实订阅 URL 只存在于 GitHub Secrets。
-- 从私密节点生成的 `config.yaml` 从不 commit，也不上传到 Artifact / Release / Gist。
+- 从私密节点生成/资格处理后的 `config.yaml` 从不 commit，也不上传到 Artifact / Release / Gist。
 - 除非你明确重新设计来源权限，否则 `subscription_1` 仍然只能进入 `browsing` 和 `ai`。
 - 最终 `MATCH` 仍位于 general graph。
 - 手动发布默认 `publish=false`。
-- Rollback 必须明确 `confirm=true`，且重新通过两个 Mihomo core。
+- Rollback 必须明确 `confirm=true`，并重新通过 current-policy audit 与完整 pinned stable Mihomo matrix。
+- Workflow 中 Mihomo 版本的唯一事实源是 `tools/mihomo-versions.json`。
 - Cloudflare 凭据只拥有私有 KV 所需的最小权限。

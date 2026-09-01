@@ -38,25 +38,34 @@ def test_canonical_sources_are_optional_but_degradation_cannot_relax_permissions
 
 def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -> None:
     text = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    publish = text.index("Publish versioned validated release transaction")
     assert text.index("Audit source-to-scenario isolation") < publish
-    assert text.index("Qualify browsing nodes") < publish
-    assert text.index("Qualify AI nodes by country") < publish
+    assert text.index("Qualify private candidate through the unified pipeline") < publish
     assert text.index("Re-audit qualified candidate") < publish
-    assert text.index("validate_core v1.19.30") < publish
-    assert text.index("validate_core v1.19.29") < publish
-    assert text.index("Preserve previous validated production config") < publish
+    assert (
+        text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+        < publish
+    )
+    assert "--manifest tools/mihomo-versions.json" in text[:publish]
+    assert "scripts/snapshot_previous_config.py" not in text
+    assert "clash-relay publish-cloudflare-kv" not in text
     assert publish < text.index("Persist private AI qualification cache")
     assert publish < text.index("Persist private scheduler history")
 
 
-def test_rollback_is_confirmed_dual_core_and_fail_closed(repo_root: Path) -> None:
+def test_rollback_is_confirmed_current_policy_matrix_validated_and_fail_closed(
+    repo_root: Path,
+) -> None:
     text = (repo_root / ".github" / "workflows" / "rollback.yml").read_text(encoding="utf-8")
-    activate = text.index("Activate validated previous config")
+    activate = text.index("Activate audited validated previous release")
+    audit = text.index("Audit previous release against current production policy")
+    validate = text.index("Validate previous release with pinned stable Mihomo matrix")
+
     assert "inputs.confirm == true" in text
-    assert "Fetch private previous config" in text
-    assert text.index("validate_core v1.19.30") < activate
-    assert text.index("validate_core v1.19.29") < activate
+    assert "Fetch private previous release" in text
+    assert audit < validate < activate
+    assert "--manifest tools/mihomo-versions.json" in text[validate:activate]
+    assert "python scripts/publish_release_bundle.py" in text[activate:]
     assert "if: always()" in text
 
 
@@ -71,11 +80,11 @@ def test_documented_failure_matrix_covers_every_public_failure_class(repo_root: 
         "Gemini has zero qualified nodes",
         "ACL4SSR/rule acquisition",
         "reachability audit",
-        "Mihomo v1.19.30 or v1.19.29",
-        "Cloudflare production PUT",
+        "pinned stable Mihomo core",
+        "Cloudflare versioned release transaction",
         "Scheduler history",
         "AI qualification cache",
-        "Previous-good recovery slot",
+        "Previous release metadata",
         "Rollback candidate",
     ):
         assert phrase in text

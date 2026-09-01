@@ -30,7 +30,7 @@ def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storag
     assert "publish-gist" not in text
     assert "GITHUB_GIST_TOKEN" not in text
     assert "PUBLISH_PUBLIC_RELEASE" not in text
-    assert "continue-on-error" not in text
+    assert text.count("continue-on-error: true") == 2
     assert "Remove private candidate" in text
     assert "if: always()" in text
 
@@ -48,59 +48,49 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 6
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 5
     load_history = text.index("Load private scheduler history")
     load_ai_cache = text.index("Load private AI qualification cache")
-    browsing = text.index("Qualify browsing nodes")
-    snapshot = text.index("Preserve previous validated production config")
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    qualify = text.index("Qualify private candidate through the unified pipeline")
+    publish = text.index("Publish versioned validated release transaction")
     persist_cache = text.index("Persist private AI qualification cache")
     persist_history = text.index("Persist private scheduler history")
-    assert (
-        load_history
-        < load_ai_cache
-        < browsing
-        < snapshot
-        < publish
-        < persist_cache
-        < persist_history
-    )
+    assert load_history < load_ai_cache < qualify < publish < persist_cache < persist_history
 
 
-def test_production_audit_runs_before_and_after_private_qualification() -> None:
+def test_production_audit_runs_before_and_after_unified_qualification() -> None:
     text = WORKFLOW.read_text()
     assert "Audit source-to-scenario isolation" in text
     assert "Re-audit qualified candidate" in text
     assert text.count("python scripts/audit_production.py") == 2
     first_audit = text.index("Audit source-to-scenario isolation")
-    browsing_qualifier = text.index("Qualify browsing nodes")
-    ai_qualifier = text.index("Qualify AI nodes by country")
+    qualifier = text.index("Qualify private candidate through the unified pipeline")
     second_audit = text.index("Re-audit qualified candidate")
-    assert first_audit < browsing_qualifier < ai_qualifier < second_audit
+    assert first_audit < qualifier < second_audit
+    assert "--candidate .work/private/generated.yaml" in text
+    assert "--candidate .work/private/config.yaml" in text
     assert "production-summary.md" in text
-    assert 'cat .work/private/production-summary.md >> "$GITHUB_STEP_SUMMARY"' in text
 
 
-def test_browsing_qualification_precedes_ai_and_final_validation() -> None:
+def test_qualification_is_one_staged_pipeline_with_legacy_executors_hidden_from_workflow() -> None:
     text = WORKFLOW.read_text()
-    assert "Download Mihomo for private qualification" in text
-    assert "python scripts/qualify_browsing.py" in text
-    assert "--attempts 3" in text
-    assert "--required-successes 2" in text
-    assert "Append safe browsing qualification summary" in text
-    assert "node-level results remain private" in text
-    browsing = text.index("python scripts/qualify_browsing.py")
-    ai = text.index("python scripts/qualify_ai.py")
-    assert browsing < ai < text.index("validate_core v1.19.30")
+    assert "python scripts/qualify_candidate.py" in text
+    assert "--candidate .work/private/generated.yaml" in text
+    assert "--output .work/private/config.yaml" in text
+    assert "--stage-dir .work/private/stages" in text
+    assert "--browsing-report .work/private/browsing-qualification-summary.json" in text
+    assert "--ai-report .work/private/ai-qualification-summary.json" in text
+    assert "python scripts/qualify_browsing.py" not in text
+    assert "python scripts/qualify_ai.py" not in text
     assert ".work/bin/mihomo-qualification" in text
-    assert text.count("--mihomo-bin .work/bin/mihomo-qualification") == 2
+    assert "--tag v1." not in text
 
 
-def test_scheduler_history_is_private_optional_and_committed_only_after_config_publish() -> None:
+def test_scheduler_history_is_best_effort_derived_state_after_release_commit() -> None:
     text = WORKFLOW.read_text()
     load = text.index("Load private scheduler history")
-    browsing = text.index("Qualify browsing nodes")
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    qualify = text.index("Qualify private candidate through the unified pipeline")
+    publish = text.index("Publish versioned validated release transaction")
     persist = text.index("Persist private scheduler history")
     proof = text.index("Record publication result")
     assert "scripts/load_scheduler_history.py" in text
@@ -108,52 +98,41 @@ def test_scheduler_history_is_private_optional_and_committed_only_after_config_p
     assert "--history .work/private/scheduler-history.json" in text
     assert "--history-key .work/private/scheduler-history.key" in text
     assert "--next-history .work/private/scheduler-history-next.json" in text
-    assert load < browsing < publish < persist < proof
+    assert load < qualify < publish < persist < proof
     persist_block = text[persist:proof]
-    assert "github.event_name == 'push' || inputs.publish == true" in persist_block
-    assert "actions/upload-artifact" not in text
+    assert "continue-on-error: true" in persist_block
+    assert "Derived state persistence" in text
 
 
-def test_ai_cache_is_private_incremental_and_committed_only_after_config_publish() -> None:
+def test_ai_cache_is_best_effort_incremental_state_after_release_commit() -> None:
     text = WORKFLOW.read_text()
     load = text.index("Load private AI qualification cache")
-    ai = text.index("Qualify AI nodes by country")
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
+    qualify = text.index("Qualify private candidate through the unified pipeline")
+    publish = text.index("Publish versioned validated release transaction")
     persist = text.index("Persist private AI qualification cache")
-    proof = text.index("Record publication result")
+    history = text.index("Persist private scheduler history")
     assert "scripts/load_ai_qualification_cache.py" in text
     assert "scripts/publish_ai_qualification_cache.py" in text
     assert "--cache .work/private/ai-qualification-cache.json" in text
     assert "--cache-key .work/private/ai-qualification-cache.key" in text
     assert "--next-cache .work/private/ai-qualification-cache-next.json" in text
-    assert load < ai < publish < persist < proof
+    assert load < qualify < publish < persist < history
+    persist_block = text[persist:history]
+    assert "continue-on-error: true" in persist_block
     assert "Live service probes" in text
     assert "Fresh cache pass/fail hits" in text
-    persist_block = text[persist:proof]
-    assert "github.event_name == 'push' || inputs.publish == true" in persist_block
-    assert "actions/upload-artifact" not in text
 
 
-def test_previous_config_is_snapshotted_after_validation_and_before_publication() -> None:
+def test_versioned_release_transaction_replaces_snapshot_then_direct_publish() -> None:
     text = WORKFLOW.read_text()
-    snapshot = text.index("Preserve previous validated production config")
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
-    assert "python scripts/snapshot_previous_config.py" in text
-    assert text.index("validate_core v1.19.30") < snapshot
-    assert text.index("validate_core v1.19.29") < snapshot
-    assert snapshot < publish
-    snapshot_block = text[snapshot:publish]
-    assert "github.event_name == 'push' || inputs.publish == true" in snapshot_block
-
-
-def test_ai_qualification_precedes_final_validation() -> None:
-    text = WORKFLOW.read_text()
-    assert "Qualify AI nodes by country" in text
-    assert "python scripts/qualify_ai.py" in text
-    qualifier = text.index("python scripts/qualify_ai.py")
-    assert qualifier < text.index("validate_core v1.19.30")
-    assert qualifier < text.index("validate_core v1.19.29")
-    assert "Append safe AI qualification summary" in text
+    validation = text.index(
+        "Validate exact qualified candidate with the pinned stable Mihomo matrix"
+    )
+    publish = text.index("Publish versioned validated release transaction")
+    assert validation < publish
+    assert "python scripts/publish_release_bundle.py" in text
+    assert "scripts/snapshot_previous_config.py" not in text
+    assert "clash-relay publish-cloudflare-kv" not in text
 
 
 def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> None:
@@ -165,29 +144,29 @@ def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> No
     assert "--publication-status published" in text
 
 
-def test_both_mihomo_versions_pass_before_cloudflare_publication() -> None:
+def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:
     text = WORKFLOW.read_text()
-    assert "validate_core v1.19.30" in text
-    assert "validate_core v1.19.29" in text
+    assert "python scripts/validate_mihomo_matrix.py" in text
+    assert "--manifest tools/mihomo-versions.json" in text
     assert "Detailed core output is intentionally suppressed" in text
-    publish = text.index("Publish exact validated bytes to Cloudflare KV")
-    assert text.index("validate_core v1.19.30") < publish
-    assert text.index("validate_core v1.19.29") < publish
-    assert "clash-relay publish-cloudflare-kv" in text
+    assert "v1.19.30" not in text
+    assert "v1.19.29" not in text
+    assert text.index("validate_mihomo_matrix.py") < text.index(
+        "Publish versioned validated release transaction"
+    )
 
 
-def test_final_production_proof_uses_only_private_aggregate_inputs() -> None:
+def test_final_production_proof_uses_matrix_report_and_private_aggregate_inputs() -> None:
     text = WORKFLOW.read_text()
     assert "scripts/render_production_proof.py" in text
     assert "--audit .work/private/post-qualification-audit.json" in text
     assert "--browsing .work/private/browsing-qualification-summary.json" in text
     assert "--ai .work/private/ai-qualification-summary.json" in text
-    assert "--validated-core v1.19.30" in text
-    assert "--validated-core v1.19.29" in text
+    assert "--validated-cores-report .work/private/mihomo-validation-matrix.json" in text
     assert "production-proof.md" in text
     assert 'cat .work/private/production-proof.md >> "$GITHUB_STEP_SUMMARY"' in text
-    assert text.index("validate_core v1.19.29") < text.index("--publication-status dry-run")
-    assert text.index("Publish exact validated bytes to Cloudflare KV") < text.rindex(
+    assert text.index("validate_mihomo_matrix.py") < text.index("--publication-status dry-run")
+    assert text.index("Publish versioned validated release transaction") < text.rindex(
         "--publication-status published"
     )
 

@@ -16,7 +16,7 @@ def test_rollback_is_manual_confirmed_and_main_only() -> None:
     assert "clash-relay-publish-${{ github.ref }}" in text
 
 
-def test_rollback_fetches_private_previous_bytes_without_subscription_secrets() -> None:
+def test_rollback_fetches_private_versioned_previous_release_without_subscription_secrets() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "python scripts/fetch_previous_config.py" in text
     assert "--output .work/private/rollback.yaml" in text
@@ -28,19 +28,29 @@ def test_rollback_fetches_private_previous_bytes_without_subscription_secrets() 
     assert "publish-gist" not in text
 
 
-def test_rollback_revalidates_previous_bytes_with_both_cores_before_activation() -> None:
+def test_rollback_runs_current_policy_audit_before_core_validation_and_activation() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
-    fetch = text.index("Fetch private previous config")
-    validate = text.index("Validate previous config with both pinned Mihomo cores")
-    activate = text.index("Activate validated previous config")
-    assert fetch < validate < activate
-    assert "validate_core v1.19.30" in text
-    assert "validate_core v1.19.29" in text
-    assert text.index("validate_core v1.19.30") < activate
-    assert text.index("validate_core v1.19.29") < activate
-    assert "--candidate .work/private/rollback.yaml" in text
-    activation_block = text[activate : text.index("Record rollback result")]
-    assert "clash-relay publish-cloudflare-kv" in activation_block
+    fetch = text.index("Fetch private previous release")
+    audit = text.index("Audit previous release against current production policy")
+    validate = text.index("Validate previous release with pinned stable Mihomo matrix")
+    activate = text.index("Activate audited validated previous release")
+    assert fetch < audit < validate < activate
+    audit_block = text[audit:validate]
+    assert "python scripts/audit_production.py" in audit_block
+    assert "--candidate .work/private/rollback.yaml" in audit_block
+
+
+def test_rollback_uses_manifest_matrix_and_versioned_release_transaction() -> None:
+    text = ROLLBACK.read_text(encoding="utf-8")
+    validate = text.index("Validate previous release with pinned stable Mihomo matrix")
+    activate = text.index("Activate audited validated previous release")
+    assert "python scripts/validate_mihomo_matrix.py" in text
+    assert "--manifest tools/mihomo-versions.json" in text
+    assert "v1.19.30" not in text
+    assert "v1.19.29" not in text
+    assert "python scripts/publish_release_bundle.py" in text[activate:]
+    assert "clash-relay publish-cloudflare-kv" not in text
+    assert validate < activate
 
 
 def test_rollback_only_always_runs_private_cleanup() -> None:
@@ -51,7 +61,7 @@ def test_rollback_only_always_runs_private_cleanup() -> None:
         "- name: Remove private rollback candidate\n        if: always()\n        run: rm -rf .work/private"
     ) in text
     activation = text[
-        text.index("Activate validated previous config") : text.index(
+        text.index("Activate audited validated previous release") : text.index(
             "Remove private rollback candidate"
         )
     ]

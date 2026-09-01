@@ -51,11 +51,11 @@ def test_routing_v2_rejects_ai_region_reenable(repo_root) -> None:
         load_routing_policy_v2(policies)
 
 
-def test_routing_v2_requires_hk_exclusion(repo_root) -> None:
+def test_routing_v2_requires_contract_exclusion(repo_root) -> None:
     policies = copy.deepcopy(_policies(repo_root))
     policies["routing"]["ai"]["excluded_regions"] = ["MO"]
 
-    with pytest.raises(ConfigurationError, match="exclude HK"):
+    with pytest.raises(ConfigurationError, match="contract-required excluded regions: HK"):
         load_routing_policy_v2(policies)
 
 

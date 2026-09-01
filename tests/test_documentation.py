@@ -49,8 +49,9 @@ def test_quickstart_locks_dry_run_browsing_history_ai_and_rollback_semantics() -
         assert "Gemini" in document
         assert "Roll back production config" in document
         assert "confirm = true" in document
-        assert "v1.19.30" in document
-        assert "v1.19.29" in document
+        assert "tools/mihomo-versions.json" in document
+        assert "previous-release-v1" in document
+        assert "current-policy" in document
 
 
 def test_quickstart_examples_never_embed_real_subscription_urls() -> None:

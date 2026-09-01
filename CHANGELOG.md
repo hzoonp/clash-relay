@@ -4,6 +4,30 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-01
+
+### Added
+
+- P14 introduces the shared side-effect-free `RuntimeGraph` and immutable `CandidateArtifact` stage model for one canonical view of generated Mihomo groups, providers, proxies, and controlled dialer edges.
+- P15 adds a declarative `routing.contract` in `policies.yaml` for the six public groups, automatic scheduler names, compatibility selectors, AI service/region names, required exclusions, and ACL4SSR binding/priority contracts.
+- P16 adds one staged production qualification entrypoint: generated -> browsing/transport -> AI -> explicit final candidate.
+- P17 adds immutable SHA-256 production release objects, current/previous release pointers, release-aware rollback, and compensating restoration when a pointer commit fails after activation.
+- P18 adds manifest-driven stable Mihomo matrices for CI, production, rollback, and production proof, plus broader Routing V2 drift triggers and coverage reporting.
+
+### Changed
+
+- Routing V2 audit consumes the concrete `RuntimeGraph` and declarative policy contract instead of maintaining production selector names and AI exclusions as parallel Python constants.
+- Production no longer mutates the generator output through separate workflow qualification steps; legacy browsing/transport and AI executors remain compatible internal stages behind the unified pipeline.
+- Rollback now applies the **current** production/source-isolation and Routing V2 policy audit before the full stable Mihomo matrix and activation.
+- AI cache and scheduler history persist only after the production release commits and are explicitly best-effort derived state; their failure warns without falsely marking an already committed validated release as failed.
+- `tools/mihomo-versions.json` is the workflow source of truth for stable/prerelease core versions; production and rollback workflow YAML no longer hard-code version tags.
+
+### Security
+
+- The canonical six-scenario routing behavior, `subscription_1` browsing/AI-only isolation and >2x filtering, ACL4SSR Online fidelity, client-owned DNS/sniffing behavior, browsing/transport/AI qualification, and fail-closed production gates remain unchanged.
+- Versioned release activation keeps the existing client-facing Cloudflare KV key and does not claim impossible cross-key atomicity; immutable releases are verified before activation and previous exact bytes are restored on compensatable commit failures.
+- Historical rollback candidates that remain valid Mihomo syntax but violate the current source-permission or Routing V2 contract are rejected before activation.
+
 ## [1.4.1] - 2026-09-01
 
 ### Changed
@@ -169,7 +193,7 @@ All notable user-visible changes are documented here. This project follows Seman
 - Browsing Scheduler V2.1 with three live HTTPS samples: 3/3 stable automatic candidates, 2/3 manual reserve candidates, and fewer than 2/3 rejected.
 - Privacy-preserving browsing scheduler history stored as HMAC-SHA256 fingerprints and aggregate stability metadata.
 - Independent OpenAI, Claude, and Gemini live qualification with service-specific fail-closed behavior.
-- Validation of every production candidate with Mihomo v1.19.30 and v1.19.29.
+- Validation of every production candidate with the pinned stable Mihomo matrix.
 - Private Cloudflare Workers KV publication, previous-good snapshotting, and validated manual rollback.
 - Aggregate production proof without node names, servers, credentials, or subscription URLs.
 - English and Simplified Chinese Fork quickstarts.
@@ -180,7 +204,9 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/hzoonp/clash-relay/compare/v1.4.1...v1.5.0
+[1.4.1]: https://github.com/hzoonp/clash-relay/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/hzoonp/clash-relay/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/hzoonp/clash-relay/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/hzoonp/clash-relay/compare/v1.2.0...v1.2.1

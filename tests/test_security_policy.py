@@ -55,5 +55,15 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert "actions/upload-artifact" not in text
     assert "gh release" not in text
     assert "publish-gist" not in text
-    assert "continue-on-error" not in text
-    assert '      - "scripts/download_mihomo.py"' in text
+    assert '      - "scripts/**"' in text
+
+    publish = text.index("Publish versioned validated release transaction")
+    assert "continue-on-error" not in text[:publish]
+    assert text.count("continue-on-error: true") == 2
+
+    ai = text.index("Persist private AI qualification cache")
+    history = text.index("Persist private scheduler history")
+    proof = text.index("Record publication result")
+    assert publish < ai < history < proof
+    assert "continue-on-error: true" in text[ai:history]
+    assert "continue-on-error: true" in text[history:proof]

@@ -10,6 +10,10 @@ from clash_relay.production_metrics import (
     parse_metrics_bytes,
 )
 
+ROOT = Path(__file__).resolve().parents[1]
+PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
+PUBLISH_HISTORY = ROOT / "scripts" / "publish_scheduler_history.py"
+
 
 def _browsing() -> dict:
     return {
@@ -103,3 +107,18 @@ def test_invalid_metrics_state_safely_resets() -> None:
     assert status == "invalid"
     assert state == empty_metrics()
     assert "SECRET" not in json.dumps(state)
+
+
+def test_p18_preserves_production_metrics_after_versioned_release_commit() -> None:
+    workflow = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
+
+    release = workflow.index("Publish versioned validated release transaction")
+    persist = workflow.index("Persist private scheduler history")
+    proof = workflow.index("Record publication result")
+
+    assert release < persist < proof
+    assert "continue-on-error: true" in workflow[persist:proof]
+    assert 'key_name=f"{production_key}.production-metrics-v1"' in publisher
+    assert "metrics = _persist_metrics(" in publisher
+    assert '"production_metrics": metrics' in publisher

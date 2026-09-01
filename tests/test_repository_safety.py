@@ -110,36 +110,41 @@ def test_workflows_parse_as_yaml(repo_root: Path) -> None:
         assert "jobs" in document
 
 
-def test_stable_workflows_have_no_always_publication_path(repo_root: Path) -> None:
+def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_state(
+    repo_root: Path,
+) -> None:
     ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "always()" not in ci
     assert "continue-on-error" not in ci
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    assert "continue-on-error" not in publish
+    assert publish.count("continue-on-error: true") == 2
     assert publish.count("always()") == 1
     assert (
         "- name: Remove private candidate\n        if: always()\n        run: rm -rf .work/private"
     ) in publish
 
-    publication_start = publish.index("- name: Publish exact validated bytes to Cloudflare KV")
-    publication_end = publish.index("- name: Record publication result")
-    publication_block = publish[publication_start:publication_end]
-    assert "always()" not in publication_block
+    release_start = publish.index("- name: Publish versioned validated release transaction")
+    ai_state = publish.index("- name: Persist private AI qualification cache")
+    history_state = publish.index("- name: Persist private scheduler history")
+    result = publish.index("- name: Record publication result")
+    release_block = publish[release_start:ai_state]
+    assert "continue-on-error" not in release_block
+    assert "always()" not in release_block
+    assert "continue-on-error: true" in publish[ai_state:history_state]
+    assert "continue-on-error: true" in publish[history_state:result]
 
     assert ".work/private/config.yaml" in publish
-    assert "python scripts/qualify_ai.py" in publish
-    assert "validate_core v1.19.30" in publish
-    assert "validate_core v1.19.29" in publish
-    assert "clash-relay publish-cloudflare-kv" in publish
-    assert publish.index("python scripts/qualify_ai.py") < publish.index("validate_core v1.19.30")
-    assert publish.index("python scripts/qualify_ai.py") < publish.index("validate_core v1.19.29")
-    assert publish.index("validate_core v1.19.30") < publish.index(
-        "clash-relay publish-cloudflare-kv"
+    assert "python scripts/qualify_candidate.py" in publish
+    assert "python scripts/validate_mihomo_matrix.py" in publish
+    assert "python scripts/publish_release_bundle.py" in publish
+    assert "python scripts/qualify_ai.py" not in publish
+    assert "v1.19.30" not in publish
+    assert "v1.19.29" not in publish
+    assert publish.index("python scripts/qualify_candidate.py") < publish.index(
+        "python scripts/validate_mihomo_matrix.py"
     )
-    assert publish.index("validate_core v1.19.29") < publish.index(
-        "clash-relay publish-cloudflare-kv"
-    )
+    assert publish.index("python scripts/validate_mihomo_matrix.py") < release_start
 
 
 def test_public_production_has_no_sensitive_github_publisher(repo_root: Path) -> None:

@@ -14,12 +14,14 @@ Production is intentionally fail-closed at the publication boundary. A failed ru
 | Gemini has zero qualified nodes | Fail closed only for Gemini; OpenAI/Claude remain independent. |
 | ACL4SSR/rule acquisition or parsing fails | Candidate generation fails before publication; existing production stays untouched. |
 | Source-to-scenario reachability audit fails before or after qualification | Abort; do not publish. |
-| Mihomo v1.19.30 or v1.19.29 rejects the exact candidate | Abort; do not snapshot over the recovery slot and do not publish. |
-| Cloudflare production PUT fails | The workflow fails; auxiliary AI/history state is not advanced because those steps occur only after successful production publication. |
+| Any pinned stable Mihomo core declared in `tools/mihomo-versions.json` rejects the exact candidate | Abort before production activation. Workflow YAML does not maintain a second core-version list. |
+| Cloudflare versioned release transaction fails before activation | Abort; existing production remains active. |
+| Cloudflare versioned release transaction fails after the client-facing key changes but before pointer commit | Attempt compensating restoration of the previous exact production bytes and release pointers; report failure if compensation cannot be completed. |
 | Scheduler history is missing/corrupt/unavailable | Use current live browsing qualification without historical narrowing. Do not weaken the 3/3, 2/3, <2/3 boundary. |
 | AI qualification cache is missing/corrupt/unavailable | Perform live per-service AI qualification instead of trusting cache. |
-| Previous-good recovery slot is absent/unreadable | Manual rollback refuses before activation. Production remains unchanged. |
-| Rollback candidate fails either Mihomo core | Rollback aborts; production remains unchanged. |
+| Post-commit AI cache, scheduler history, or production metrics persistence fails | Keep the already committed validated production release active, warn, and rebuild/advance derived state on a later successful run. |
+| Previous release metadata is absent/unreadable | Manual rollback refuses before activation. Production remains unchanged. |
+| Rollback candidate fails the current production/Routing V2 policy audit or any pinned stable Mihomo core | Rollback aborts; production remains unchanged. |
 
 ## Publication ordering invariant
 
@@ -28,17 +30,32 @@ The production write ordering is:
 ```text
 private generation
   -> source reachability audit
-  -> live browsing qualification
-  -> per-service AI qualification
-  -> post-qualification reachability audit
-  -> Mihomo v1.19.30 + v1.19.29
-  -> preserve previous-good when applicable
-  -> publish exact production-config bytes
-  -> persist auxiliary AI cache / scheduler history
+  -> unified qualification
+       -> live browsing / transport qualification
+       -> per-service AI qualification
+  -> post-qualification reachability + Routing V2 audit
+  -> every stable Mihomo core in tools/mihomo-versions.json
+  -> stage and read-back verify immutable SHA-256 release objects
+  -> activate exact production-config bytes and commit release pointers
+  -> persist best-effort AI cache / scheduler history / aggregate production metrics
   -> aggregate production proof
 ```
 
-Any failure before the production write leaves the previous production value active. Auxiliary state is optimization/observability data and must never become a prerequisite that relaxes a live safety gate.
+Any failure before production activation leaves the previous production value active. A failure during the multi-key Cloudflare KV commit invokes the compensating P17 restoration path when previous production bytes exist. Auxiliary state is derived optimization/observability data and must never become a prerequisite that relaxes a live safety gate or falsely turn an already committed validated release into a failed deployment.
+
+## Rollback ordering invariant
+
+Manual rollback requires explicit confirmation and follows the current repository safety contract:
+
+```text
+resolve previous-release-v1 (legacy previous-v1 fallback)
+  -> audit historical candidate against current production/source policy
+  -> audit current Routing V2 contract
+  -> validate every stable Mihomo core in tools/mihomo-versions.json
+  -> activate through the same versioned release transaction
+```
+
+A historical config that remains valid Mihomo syntax but violates the current source-permission or Routing V2 contract is not eligible for rollback.
 
 ## Source isolation during degradation
 

@@ -1,12 +1,12 @@
 # Fork quickstart
 
-This guide takes a fresh fork from private subscription URLs to a validated Mihomo / FlClash production profile without committing any credential-bearing configuration to GitHub.
+This guide takes a fresh fork from private subscription URLs to a validated Mihomo / FlClash production profile without committing credential-bearing configuration to GitHub.
 
 ## 1. Fork the repository
 
 Fork `hzoonp/clash-relay` into your GitHub account. Do not add subscription URLs to tracked YAML files, workflow inputs, issues, or commit messages.
 
-The tracked `subscriptions.yaml` contains only secret names and source permissions. The generated `config.yaml` is private runtime output and must never be committed.
+The tracked `subscriptions.yaml` contains only secret names and source permissions. The generated production `config.yaml` is private runtime output and **must never be committed**.
 
 ## 2. Create the subscription secret
 
@@ -46,7 +46,7 @@ For `subscription_1`, nodes with an explicit multiplier above `2x` are removed b
 
 ## 3. Configure private Cloudflare Workers KV
 
-Create a private Workers KV namespace in your Cloudflare account. Then configure GitHub Actions in the fork.
+Create a private Workers KV namespace in your Cloudflare account, then configure GitHub Actions.
 
 Repository Secret:
 
@@ -61,7 +61,7 @@ CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-The API token must have the minimum permissions needed to read and write the selected Workers KV namespace. Do not place the token, account ID, namespace ID, or subscription URLs in tracked files.
+The API token should have only the permissions needed to read/write the selected Workers KV namespace. Do not place the token, account ID, namespace ID, or subscription URLs in tracked files.
 
 Production uses the key configured in `config.yaml`, currently `production-config`.
 
@@ -79,21 +79,21 @@ publish = false
 
 This is the default. A manual run with `publish=false` performs the private build and validation chain but does **not** replace the production KV value.
 
-A successful dry-run proves the candidate passed the relevant gates, including:
+A successful dry-run proves the candidate passed the production gates, including:
 
 ```text
 subscription fetch / parsing
 source permission admission
 source-to-scenario reachability audit
-browsing live qualification
+browsing HTTPS qualification
+media/messaging transport qualification
 AI service qualification
-post-qualification reachability audit
-Mihomo v1.19.30 validation
-Mihomo v1.19.29 validation
+post-qualification current-policy audit
+all stable Mihomo cores pinned by tools/mihomo-versions.json
 aggregate production proof
 ```
 
-Only aggregate information is written to GitHub Actions Summary. Node names, servers, credentials, subscription URLs, and the generated candidate are not uploaded as GitHub artifacts.
+Only aggregate information is written to GitHub Actions Summary. Node names, servers, credentials, subscription URLs, stage files, and the generated candidate are never committed or uploaded as an Artifact/Release/Gist.
 
 ## 5. Publish production
 
@@ -103,9 +103,13 @@ After a successful dry-run, run the same workflow manually with:
 publish = true
 ```
 
-A push to `main` that touches production inputs also follows the validated publication path automatically.
+A push to `main` that touches production inputs follows the same validated publication path automatically.
 
-Before replacing a different production value, the workflow preserves the currently published validated bytes in a private recovery slot. The new candidate is written only after source audits, live qualification, and both pinned Mihomo validations succeed.
+P17 publishes a versioned private release without changing the client-facing key. The exact final bytes are first stored and read-back verified under an immutable SHA-256 release ID. Only then can the fixed `production-config` value be activated and `current-release-v1` / `previous-release-v1` pointers committed. The legacy `previous-v1` recovery slot remains a migration fallback.
+
+If pointer commit fails after the client-facing value changed, the release layer attempts to restore the previous exact production bytes. Cloudflare KV does not provide a multi-key transaction, so this is a compensating transaction rather than a claim of cross-key atomicity.
+
+AI qualification cache and browsing scheduler history are derived state. They are persisted after the production release commits. If either optional state write fails, Actions shows a warning while the already validated and committed production release remains successful; a later run safely rebuilds missing state by probing again.
 
 ## 6. Understand browsing scheduling
 
@@ -125,13 +129,13 @@ The runtime `url-test` group still handles live latency selection and tolerance.
 
 Cross-run history can further demote an established unstable node from the automatic stable tier, but it never promotes a node that failed the current live qualification.
 
-History is stored privately in Workers KV as HMAC-SHA256 fingerprints plus aggregate stability fields only. It does not store runtime node names, servers, credentials, or subscription URLs. Missing, invalid, or temporarily unavailable history degrades to current-run scheduling rather than blocking the production config.
+History is stored privately in Workers KV as HMAC-SHA256 fingerprints plus aggregate stability fields only. It does not store runtime node names, servers, credentials, or subscription URLs. Missing, invalid, or temporarily unavailable history degrades to current-run scheduling rather than widening eligibility.
 
 ## 7. Understand AI scheduling
 
-OpenAI, Claude, and Gemini are qualified independently through the temporary Mihomo instance. A node can qualify for one service and fail another.
+OpenAI, Claude, and Gemini are qualified independently through temporary loopback Mihomo processes. A node can qualify for one service and fail another.
 
-Each service receives its own qualified routing graph. If one service has no qualified nodes, that service fails closed instead of borrowing an unqualified route; other AI services can continue if they have valid candidates.
+Each service receives its own qualified routing graph. If one service has no qualified nodes, that service fails closed instead of borrowing an unqualified route; other AI services can continue when they have valid candidates.
 
 ## 8. Verify the production proof
 
@@ -142,17 +146,15 @@ candidate byte length and SHA-256
 source reachability status
 browsing tested / qualified / stable / reserve / rejected
 AI qualified counts per service
-validated Mihomo core versions
+validated stable Mihomo core versions from tools/mihomo-versions.json
 publication = dry-run or published
 ```
 
-Use the SHA-256 to identify the exact validated candidate without exposing its contents.
+The SHA-256 identifies the exact validated candidate without exposing its contents.
 
 ## 9. Roll back a bad production release
 
-Normal publication preserves the previously active, different validated config before replacement.
-
-To roll back:
+Open:
 
 `Actions -> Roll back production config -> Run workflow`
 
@@ -162,7 +164,9 @@ Set:
 confirm = true
 ```
 
-Rollback is manual-only and main-only. The workflow fetches the private previous bytes, validates them again with Mihomo v1.19.30 and v1.19.29, and only then activates them as `production-config`.
+Rollback is manual-only and main-only. It resolves the private versioned `previous-release-v1` pointer first, with legacy `previous-v1` fallback for older deployments. Before activation, the previous candidate must pass the **current repository** production/source-isolation and Routing V2 audits, then every stable core pinned in `tools/mihomo-versions.json`. It is activated through the same versioned release transaction.
+
+This means an old config that is still valid Mihomo syntax but no longer satisfies today's source policy cannot be restored.
 
 Do not use rollback as a substitute for fixing a failed build. A failed candidate never replaces the current production value in the first place.
 
@@ -174,7 +178,7 @@ Check that `CLASH_RELAY_SUBSCRIPTIONS` is valid JSON and contains every secret n
 
 ### Browsing qualification leaves no usable provider
 
-The workflow fails closed and keeps the existing production KV value. Check subscription availability and whether the probe endpoint is reachable through the candidate nodes. Do not bypass the 2-of-3 qualification boundary just to force publication.
+The workflow fails closed and keeps the existing production KV value. Check subscription availability and whether the probe endpoint is reachable through candidate nodes. Do not bypass the 2/3 qualification boundary just to force publication.
 
 ### One AI service has zero qualified nodes
 
@@ -182,28 +186,29 @@ That service is intentionally fail-closed. OpenAI, Claude, and Gemini are indepe
 
 ### Mihomo rejects the candidate
 
-The public workflow suppresses credential-bearing core output. Fix structural subscription input or project configuration rather than publishing a candidate that has not passed both pinned core versions.
+The public workflow suppresses credential-bearing core output. Fix structural subscription input or project configuration rather than skipping the stable core matrix. Change supported core pins only through `tools/mihomo-versions.json` and its checksum manifest entries.
 
 ### Cloudflare publication fails
 
-Confirm `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_KV_NAMESPACE_TITLE`, and confirm the token can read/write the intended Workers KV namespace. A publication failure leaves the already published production value unchanged.
+Confirm `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_KV_NAMESPACE_TITLE`, and confirm the token can read/write the intended Workers KV namespace. Failure before activation leaves the current production value unchanged; a later release-pointer commit failure invokes compensating restoration when a previous value exists.
 
-### Scheduler history cannot be loaded
+### Scheduler history or AI cache cannot be persisted
 
-History is auxiliary. The workflow falls back to current-run live browsing qualification. A transient read failure also prevents that run from overwriting unknown prior history.
+These are derived optimization states. A post-publication state-write warning does not invalidate the committed production config. The next run rebuilds missing state with live qualification.
 
-### Rollback says no previous config is available
+### Rollback says no previous release is available
 
-A previous slot exists only after a successful publication replaces a *different* existing production value. First publication and identical republish operations do not create or overwrite that recovery point.
+A previous release exists only after a successful publication replaces a *different* existing production value. First publication and identical republish operations do not create a new previous release.
 
 ## Security checklist
 
 Before publishing a fork, verify all of these remain true:
 
 - Real subscription URLs exist only in GitHub Secrets.
-- `config.yaml` generated from private nodes is never committed or uploaded as an Artifact/Release/Gist.
+- Private generated/qualified `config.yaml` is never committed or uploaded as an Artifact/Release/Gist.
 - `subscription_1` remains limited to `browsing` and `ai` unless you intentionally redesign the source permission model.
 - Final `MATCH` remains on the general graph.
 - Manual dispatch defaults to `publish=false`.
-- Rollback requires explicit `confirm=true` and dual-core revalidation.
+- Rollback requires explicit `confirm=true`, current-policy audit, and the full pinned stable Mihomo matrix.
+- `tools/mihomo-versions.json` is the only workflow source of truth for supported core versions.
 - Cloudflare credentials have only the permissions needed for the private KV namespace.

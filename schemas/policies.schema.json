@@ -43,6 +43,12 @@
   },
   "$defs": {
     "stringList": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "nonEmptyStringMap": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"type": "string", "minLength": 1},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
     "scheduler": {
       "type": "object",
       "additionalProperties": false,
@@ -97,6 +103,81 @@
         }
       }
     },
+    "routingContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_groups", "automatic_groups", "general_region_choices",
+        "compatibility_selectors", "disabled_groups", "ai", "binding_targets",
+        "priority_edges", "acl4ssr_baseline", "intentional_deviations"
+      ],
+      "properties": {
+        "public_groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["general", "browsing", "ai", "media", "messaging", "download"],
+          "properties": {
+            "general": {"type": "string", "minLength": 1},
+            "browsing": {"type": "string", "minLength": 1},
+            "ai": {"type": "string", "minLength": 1},
+            "media": {"type": "string", "minLength": 1},
+            "messaging": {"type": "string", "minLength": 1},
+            "download": {"type": "string", "minLength": 1}
+          }
+        },
+        "automatic_groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["media", "messaging", "download"],
+          "properties": {
+            "media": {"type": "string", "minLength": 1},
+            "messaging": {"type": "string", "minLength": 1},
+            "download": {"type": "string", "minLength": 1}
+          }
+        },
+        "general_region_choices": {"$ref": "#/$defs/stringList"},
+        "compatibility_selectors": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"type": "string", "minLength": 1},
+          "additionalProperties": {"$ref": "#/$defs/stringList"}
+        },
+        "disabled_groups": {"$ref": "#/$defs/stringList"},
+        "ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["service_targets", "service_prefixes", "region_display_names", "required_excluded_regions"],
+          "properties": {
+            "service_targets": {"$ref": "#/$defs/nonEmptyStringMap"},
+            "service_prefixes": {"$ref": "#/$defs/nonEmptyStringMap"},
+            "region_display_names": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"},
+              "additionalProperties": {"$ref": "#/$defs/stringList"}
+            },
+            "required_excluded_regions": {"$ref": "#/$defs/stringList"}
+          }
+        },
+        "binding_targets": {"$ref": "#/$defs/nonEmptyStringMap"},
+        "priority_edges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {"type": "string", "minLength": 1},
+              {"type": "string", "minLength": 1}
+            ],
+            "items": false
+          }
+        },
+        "acl4ssr_baseline": {"type": "string", "minLength": 1},
+        "intentional_deviations": {"$ref": "#/$defs/stringList"}
+      }
+    },
     "routingV2": {
       "type": "object",
       "additionalProperties": false,
@@ -144,7 +225,8 @@
           "properties": {
             "mode": {"enum": ["direct", "general_auto"]}
           }
-        }
+        },
+        "contract": {"$ref": "#/$defs/routingContract"}
       }
     },
     "probe": {

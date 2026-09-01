@@ -34,6 +34,79 @@ routing:
     preferred_regions: [US, SG, JP, TW, KR, OTHER]
   download:
     mode: general_auto
+  # P15: names/fidelity rules are data, not Python constants. Forks can replace
+  # this block while the compiler/audits remain generic.
+  contract:
+    public_groups:
+      general: 代理选择
+      browsing: 网页浏览
+      ai: 人工智能
+      media: 流媒体
+      messaging: 消息通讯
+      download: 下载流量
+    automatic_groups:
+      media: 媒体自动
+      messaging: 通讯自动
+      download: 下载自动
+    general_region_choices:
+      - 香港节点
+      - 台湾节点
+      - 新加坡节点
+      - 日本节点
+      - 美国节点
+      - 韩国节点
+      - DIRECT
+    compatibility_selectors:
+      全球直连: [DIRECT, 代理选择, 自动选择]
+      广告拦截: [REJECT, DIRECT]
+      谷歌FCM: [代理选择, 全球直连, 自动选择]
+      微软服务: [全球直连, 代理选择]
+      苹果服务: [代理选择, 全球直连]
+      漏网之鱼: [代理选择, 全球直连, 自动选择]
+    disabled_groups: [应用净化]
+    ai:
+      service_targets:
+        openai: __CR_AI_SERVICE_OPENAI
+        claude: __CR_AI_SERVICE_CLAUDE
+        gemini: __CR_AI_SERVICE_GEMINI
+      service_prefixes:
+        openai: __CR_AI_OPENAI_
+        claude: __CR_AI_CLAUDE_
+        gemini: __CR_AI_GEMINI_
+      region_display_names:
+        HK: [AI · 香港, AI · HK]
+        TW: [AI · 台湾, AI · TW]
+        SG: [AI · 新加坡, AI · SG]
+        JP: [AI · 日本, AI · JP]
+        US: [AI · 美国, AI · US]
+        KR: [AI · 韩国, AI · KR]
+        OTHER: [AI · 其他地区, AI · OTHER]
+      required_excluded_regions: [HK]
+    binding_targets:
+      telegram: 消息通讯
+      ai: 人工智能
+      openai: 人工智能
+      proxy_media: 流媒体
+      download: 下载流量
+      proxy_lite: 网页浏览
+      china_domain: 全球直连
+      china_company_ip: 全球直连
+      geoip_cn: 全球直连
+    priority_edges:
+      - [telegram, ai]
+      - [telegram, openai]
+      - [ai, proxy_media]
+      - [openai, proxy_media]
+      - [proxy_media, download]
+      - [download, proxy_lite]
+      - [proxy_lite, china_domain]
+      - [china_domain, china_company_ip]
+      - [china_company_ip, geoip_cn]
+    acl4ssr_baseline: ProxyMedia -> ProxyLite -> ChinaDomain -> ChinaCompanyIp -> GEOIP CN
+    intentional_deviations:
+      - BanProgramAD disabled
+      - AI extension
+      - Download extension
 
 capabilities:
   general:
