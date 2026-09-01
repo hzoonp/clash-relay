@@ -18,7 +18,7 @@ Fork
   -> manual dry-run (publish=false)
   -> inspect aggregate production proof
   -> publish=true
-  -> release-aware rollback when required
+  -> validated rollback when required
 ```
 
 `clash-relay doctor` validates public declarations, private subscription-secret readiness, the pinned Mihomo manifest, and optionally Cloudflare read connectivity without publishing configuration bytes.
