@@ -1,7 +1,7 @@
 """Unified staged qualification orchestration for private production candidates.
 
 The existing browsing/transport and AI qualification implementations remain the
-compatibility executors.  P16 gives them one owner and stops production from
+compatibility executors. P16 gives them one owner and stops production from
 mutating the generated candidate through unrelated workflow steps: each stage
 receives a private copy and the final validated artifact is emitted explicitly.
 """
@@ -59,10 +59,8 @@ def _run_json_stage(name: str, command: Sequence[str]) -> dict[str, Any]:
     return document
 
 
-def _json_bytes(document: dict[str, Any]) -> bytes:
-    return (
-        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
+def _json_text(document: dict[str, Any]) -> str:
+    return json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
 
 
 def run_qualification_pipeline(
@@ -137,7 +135,7 @@ def run_qualification_pipeline(
             ]
         )
     browsing_summary = _run_json_stage("browsing/transport", browsing_command)
-    atomic_write(browsing_report, _json_bytes(browsing_summary))
+    atomic_write(browsing_report, _json_text(browsing_summary))
     browsing_artifact = _artifact(browsing, "browsing_transport_qualified")
 
     try:
@@ -168,7 +166,7 @@ def run_qualification_pipeline(
             ]
         )
     ai_summary = _run_json_stage("AI", ai_command)
-    atomic_write(ai_report, _json_bytes(ai_summary))
+    atomic_write(ai_report, _json_text(ai_summary))
     ai_artifact = _artifact(ai, "ai_qualified")
 
     try:
