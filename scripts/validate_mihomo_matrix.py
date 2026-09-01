@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _download(tag: str, *, manifest: Path, work_dir: Path) -> Path:
+def _download(tag: str, *, manifest: Path, channel: str, work_dir: Path) -> Path:
     binary = work_dir / f"mihomo-{tag.removeprefix('v')}"
     command = [
         sys.executable,
@@ -35,14 +35,20 @@ def _download(tag: str, *, manifest: Path, work_dir: Path) -> Path:
         "--manifest",
         str(manifest),
         "--channel",
-        "stable",
+        channel,
         "--tag",
         tag,
         "--output",
         str(binary),
     ]
     try:
-        result = subprocess.run(command, check=False, capture_output=True, text=True, encoding="utf-8")
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
     except OSError as exc:
         raise ValidationError(f"failed to start Mihomo downloader for {tag}") from exc
     if result.returncode != 0:
@@ -57,7 +63,12 @@ def main(argv: list[str] | None = None) -> int:
         args.work_dir.mkdir(parents=True, exist_ok=True)
         results = []
         for tag in tags:
-            binary = _download(tag, manifest=args.manifest, work_dir=args.work_dir)
+            binary = _download(
+                tag,
+                manifest=args.manifest,
+                channel=args.channel,
+                work_dir=args.work_dir,
+            )
             result = validate_with_mihomo(
                 binary,
                 args.candidate,
