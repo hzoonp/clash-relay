@@ -1,0 +1,176 @@
+name: Apply P12 traffic sniffing
+
+on:
+  push:
+    branches: [feat/p12-traffic-sniffing]
+    paths: [.github/workflows/p12-apply.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/p12-traffic-sniffing
+      - name: Apply P12 patch
+        shell: bash
+        run: |
+          cat > /tmp/apply_p12.py <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          root = Path('.')
+
+          # 1. Extend config schema with an optional, DNS-independent sniffer declaration.
+          schema_path = root / 'schemas/config.schema.json'
+          schema = json.loads(schema_path.read_text(encoding='utf-8'))
+          runtime = schema['properties']['runtime']
+          port_item = {
+              'oneOf': [
+                  {'type': 'integer', 'minimum': 1, 'maximum': 65535},
+                  {
+                      'type': 'string',
+                      'pattern': '^[1-9][0-9]{0,4}-[1-9][0-9]{0,4}$',
+                  },
+              ]
+          }
+          port_list = {
+              'type': 'array',
+              'minItems': 1,
+              'uniqueItems': True,
+              'items': port_item,
+          }
+          runtime['properties']['sniffer'] = {
+              'type': 'object',
+              'additionalProperties': False,
+              'required': ['enabled', 'force_dns_mapping', 'parse_pure_ip', 'sniff'],
+              'properties': {
+                  'enabled': {'type': 'boolean'},
+                  'force_dns_mapping': {'type': 'boolean'},
+                  'parse_pure_ip': {'type': 'boolean'},
+                  'sniff': {
+                      'type': 'object',
+                      'additionalProperties': False,
+                      'required': ['http', 'tls', 'quic'],
+                      'properties': {
+                          'http': {
+                              'type': 'object',
+                              'additionalProperties': False,
+                              'required': ['ports', 'override_destination'],
+                              'properties': {
+                                  'ports': port_list,
+                                  'override_destination': {'type': 'boolean'},
+                              },
+                          },
+                          'tls': {
+                              'type': 'object',
+                              'additionalProperties': False,
+                              'required': ['ports'],
+                              'properties': {'ports': port_list},
+                          },
+                          'quic': {
+                              'type': 'object',
+                              'additionalProperties': False,
+                              'required': ['ports'],
+                              'properties': {'ports': port_list},
+                          },
+                      },
+                  },
+              },
+          }
+          schema_path.write_text(json.dumps(schema, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+          # 2. Add semantic validation for numeric port ranges that JSON Schema cannot compare.
+          loader_path = root / 'src/clash_relay/config_loader.py'
+          loader = loader_path.read_text(encoding='utf-8')
+          helper_anchor = '''def _selector_capabilities(selector: dict[str, Any]) -> set[str]:\n'''
+          helper = '''def _sniffer_semantics(config: dict[str, Any]) -> None:\n    sniffer = config["runtime"].get("sniffer")\n    if sniffer is None:\n        return\n    for protocol, settings in sniffer["sniff"].items():\n        for port in settings["ports"]:\n            if isinstance(port, int):\n                continue\n            start_text, end_text = str(port).split("-", 1)\n            start = int(start_text)\n            end = int(end_text)\n            if not 1 <= start <= end <= 65535:\n                raise ConfigurationError(\n                    f"runtime.sniffer.sniff.{protocol}.ports contains invalid range {port!r}"\n                )\n\n\n'''
+          if helper not in loader:
+              loader = loader.replace(helper_anchor, helper + helper_anchor, 1)
+          load_anchor = '''    config = load_and_validate(config_path, "config.schema.json")\n'''
+          load_replacement = load_anchor + '    _sniffer_semantics(config)\n'
+          if load_replacement not in loader:
+              loader = loader.replace(load_anchor, load_replacement, 1)
+          loader_path.write_text(loader, encoding='utf-8')
+
+          # 3. Render sniffer independently from DNS ownership.
+          generator_path = root / 'src/clash_relay/generator.py'
+          generator = generator_path.read_text(encoding='utf-8')
+          start = generator.index('def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:')
+          end = generator.index('\n\ndef generate_config(', start)
+          runtime_function = '''def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:\n    runtime = config["runtime"]\n    dns = runtime["dns"]\n    dns_mode = str(dns.get("mode", "managed"))\n\n    profile: dict[str, Any] = {\n        "store-selected": runtime["profile"]["store_selected"],\n    }\n    output: dict[str, Any] = {\n        "mixed-port": runtime["mixed_port"],\n        "allow-lan": runtime["allow_lan"],\n        "bind-address": runtime["bind_address"],\n        "mode": runtime["mode"],\n        "log-level": runtime["log_level"],\n        "ipv6": runtime["ipv6"],\n        "unified-delay": runtime["unified_delay"],\n        "tcp-concurrent": runtime["tcp_concurrent"],\n        "profile": profile,\n    }\n\n    sniffer = runtime.get("sniffer")\n    if sniffer is not None:\n        sniff = sniffer["sniff"]\n        output["sniffer"] = {\n            "enable": sniffer["enabled"],\n            "force-dns-mapping": sniffer["force_dns_mapping"],\n            "parse-pure-ip": sniffer["parse_pure_ip"],\n            "sniff": {\n                "HTTP": {\n                    "ports": list(sniff["http"]["ports"]),\n                    "override-destination": sniff["http"]["override_destination"],\n                },\n                "TLS": {"ports": list(sniff["tls"]["ports"])},\n                "QUIC": {"ports": list(sniff["quic"]["ports"])},\n            },\n        }\n\n    if dns_mode == "client":\n        return output\n\n    profile["store-fake-ip"] = runtime["profile"]["store_fake_ip"]\n    output["dns"] = {\n        "enable": dns["enabled"],\n        "enhanced-mode": dns["enhanced_mode"],\n        "listen": dns["listen"],\n        "nameserver": list(dns["nameservers"]),\n        "fallback": list(dns["fallback_nameservers"]),\n    }\n    return output\n'''
+          generator = generator[:start] + runtime_function + generator[end:]
+          generator_path.write_text(generator, encoding='utf-8')
+
+          # 4. Enable the low-risk canonical sniffer while keeping client-owned DNS.
+          sniffer_yaml = '''  sniffer:\n    enabled: true\n    force_dns_mapping: false\n    parse_pure_ip: true\n    sniff:\n      http:\n        ports: [80, '8080-8880']\n        override_destination: true\n      tls:\n        ports: [443, 8443]\n      quic:\n        ports: [443, 8443]\n'''
+          for name in ('config.yaml', 'config.example.yaml'):
+              path = root / name
+              text = path.read_text(encoding='utf-8')
+              anchor = '  dns:\n    mode: client\n'
+              if '  sniffer:\n' not in text:
+                  text = text.replace(anchor, anchor + sniffer_yaml, 1)
+              path.write_text(text, encoding='utf-8')
+
+          # 5. Release version and changelog.
+          pyproject_path = root / 'pyproject.toml'
+          pyproject = pyproject_path.read_text(encoding='utf-8').replace(
+              'version = "1.2.1"', 'version = "1.3.0"', 1
+          )
+          pyproject_path.write_text(pyproject, encoding='utf-8')
+
+          changelog_path = root / 'CHANGELOG.md'
+          changelog = changelog_path.read_text(encoding='utf-8')
+          release = '''## [1.3.0] - 2026-09-01\n\n### Added\n\n- Canonical production now enables DNS-independent HTTP, TLS, and QUIC traffic sniffing so Mihomo can recover domain identity from Host/SNI/QUIC metadata before existing routing rules classify traffic.\n- `runtime.sniffer` is an optional, strictly validated declaration with pure-IP parsing, protocol-specific ports, and HTTP destination override support.\n- Real Mihomo integration covers the production combination of client-owned DNS plus HTTP/TLS/QUIC sniffing on both pinned stable cores.\n\n### Changed\n\n- Traffic sniffing is rendered independently from `runtime.dns.mode`; legacy configurations that omit `runtime.sniffer` preserve their previous output.\n- Canonical production enables `parse-pure-ip`, keeps `force-dns-mapping` disabled, and does not alter ACL4SSR ordering, proxy groups, qualification, or source isolation.\n\n### Security\n\n- P12 does not restore Fake-IP, managed DNS, `store-fake-ip`, or overseas resolver injection. Canonical production remains `runtime.dns.mode: client`.\n\n'''
+          marker = '## [Unreleased]\n\n'
+          if '## [1.3.0]' not in changelog:
+              changelog = changelog.replace(marker, marker + release, 1)
+          changelog_path.write_text(changelog, encoding='utf-8')
+
+          # 6. Document the contract next to DNS ownership.
+          docs_path = root / 'docs/configuration.md'
+          docs = docs_path.read_text(encoding='utf-8')
+          docs = docs.replace(
+              '- Cloudflare Workers KV as the credential-bearing publication backend.\n',
+              '- Cloudflare Workers KV as the credential-bearing publication backend.\n'
+              '- DNS-independent HTTP/TLS/QUIC traffic sniffing for more complete mobile routing identity.\n',
+              1,
+          )
+          sniffer_docs = '''#### Traffic sniffing\n\n`runtime.sniffer` is independent from DNS ownership. Canonical production keeps `runtime.dns.mode: client` while enabling HTTP Host, TLS SNI, and QUIC sniffing. This lets Mihomo recover domain identity for pure-IP or otherwise opaque application connections so the existing ACL4SSR/scenario graph can classify them more accurately.\n\nCanonical production uses:\n\n```yaml\nruntime:\n  dns:\n    mode: client\n  sniffer:\n    enabled: true\n    force_dns_mapping: false\n    parse_pure_ip: true\n    sniff:\n      http:\n        ports: [80, '8080-8880']\n        override_destination: true\n      tls:\n        ports: [443, 8443]\n      quic:\n        ports: [443, 8443]\n```\n\n`force_dns_mapping` remains disabled because P12 does not reintroduce Fake-IP or managed DNS. Configurations that omit `runtime.sniffer` keep the legacy no-sniffer output. Port ranges are fail-closed and must be ordered within `1..65535`.\n\n'''
+          docs_anchor = 'P11 changes DNS ownership only; ACL4SSR routing, source isolation, qualification, and scenario schedulers are unchanged.\n\n'
+          if '#### Traffic sniffing' not in docs:
+              docs = docs.replace(docs_anchor, docs_anchor + sniffer_docs, 1)
+          docs_path.write_text(docs, encoding='utf-8')
+
+          # 7. Unit contracts for rendering, backward compatibility, and range validation.
+          (root / 'tests/test_runtime_sniffer.py').write_text('''from __future__ import annotations\n\nfrom pathlib import Path\n\nimport pytest\n\nfrom clash_relay.config_loader import load_project\nfrom clash_relay.errors import ConfigurationError\nfrom clash_relay.generator import _runtime_config\n\n\ndef _sniffer() -> dict[str, object]:\n    return {\n        "enabled": True,\n        "force_dns_mapping": False,\n        "parse_pure_ip": True,\n        "sniff": {\n            "http": {"ports": [80, "8080-8880"], "override_destination": True},\n            "tls": {"ports": [443, 8443]},\n            "quic": {"ports": [443, 8443]},\n        },\n    }\n\n\ndef _runtime(*, dns: dict[str, object], sniffer: dict[str, object] | None) -> dict[str, object]:\n    runtime: dict[str, object] = {\n        "mixed_port": 7890,\n        "allow_lan": False,\n        "bind_address": "127.0.0.1",\n        "mode": "rule",\n        "log_level": "warning",\n        "ipv6": False,\n        "unified_delay": True,\n        "tcp_concurrent": True,\n        "profile": {"store_selected": True, "store_fake_ip": True},\n        "dns": dns,\n    }\n    if sniffer is not None:\n        runtime["sniffer"] = sniffer\n    return {"runtime": runtime}\n\n\ndef _managed_dns() -> dict[str, object]:\n    return {\n        "mode": "managed",\n        "enabled": True,\n        "enhanced_mode": "fake-ip",\n        "listen": "127.0.0.1:1053",\n        "nameservers": ["https://1.1.1.1/dns-query"],\n        "fallback_nameservers": [],\n    }\n\n\ndef _expected_sniffer() -> dict[str, object]:\n    return {\n        "enable": True,\n        "force-dns-mapping": False,\n        "parse-pure-ip": True,\n        "sniff": {\n            "HTTP": {"ports": [80, "8080-8880"], "override-destination": True},\n            "TLS": {"ports": [443, 8443]},\n            "QUIC": {"ports": [443, 8443]},\n        },\n    }\n\n\ndef test_client_owned_dns_can_enable_sniffer_without_fake_ip() -> None:\n    output = _runtime_config(_runtime(dns={"mode": "client"}, sniffer=_sniffer()))\n\n    assert output["sniffer"] == _expected_sniffer()\n    assert "dns" not in output\n    assert output["profile"] == {"store-selected": True}\n\n\ndef test_managed_dns_and_sniffer_are_independent() -> None:\n    output = _runtime_config(_runtime(dns=_managed_dns(), sniffer=_sniffer()))\n\n    assert output["sniffer"] == _expected_sniffer()\n    assert "dns" in output\n    assert output["profile"]["store-fake-ip"] is True\n\n\ndef test_legacy_runtime_without_sniffer_preserves_previous_output() -> None:\n    output = _runtime_config(_runtime(dns={"mode": "client"}, sniffer=None))\n\n    assert "sniffer" not in output\n    assert "dns" not in output\n\n\n@pytest.mark.parametrize("port_range", ["8443-443", "1-70000", "65536-65536"])\ndef test_invalid_sniffer_port_ranges_fail_project_loading(\n    project_factory, yaml_editor, port_range: str\n) -> None:\n    _, paths = project_factory()\n\n    def mutate(data: dict) -> None:\n        data["runtime"]["sniffer"] = _sniffer()\n        data["runtime"]["sniffer"]["sniff"]["quic"]["ports"] = [port_range]\n\n    yaml_editor(paths["config_path"], mutate)\n    with pytest.raises(ConfigurationError, match="invalid range"):\n        load_project(**paths)\n\n\ndef test_public_example_declares_client_dns_and_sniffer(repo_root: Path) -> None:\n    import yaml\n\n    data = yaml.safe_load((repo_root / "config.example.yaml").read_text(encoding="utf-8"))\n    assert data["runtime"]["dns"] == {"mode": "client"}\n    assert data["runtime"]["sniffer"] == _sniffer()\n''', encoding='utf-8')
+
+          # 8. Real-core contract: client DNS omission + sniffer must load/start on both CI Mihomo tags.
+          (root / 'tests/integration/test_sniffer_mihomo.py').write_text('''from __future__ import annotations\n\nimport os\nfrom pathlib import Path\n\nimport pytest\nimport yaml\n\nfrom clash_relay.builder import build_candidate\nfrom clash_relay.mihomo import validate_with_mihomo\n\npytestmark = pytest.mark.integration\n\n\ndef _binary() -> Path:\n    value = os.environ.get("MIHOMO_BIN")\n    if not value:\n        pytest.skip("MIHOMO_BIN is not set")\n    return Path(value).resolve()\n\n\ndef _sniffer() -> dict[str, object]:\n    return {\n        "enabled": True,\n        "force_dns_mapping": False,\n        "parse_pure_ip": True,\n        "sniff": {\n            "http": {"ports": [80, "8080-8880"], "override_destination": True},\n            "tls": {"ports": [443, 8443]},\n            "quic": {"ports": [443, 8443]},\n        },\n    }\n\n\ndef test_client_owned_dns_with_http_tls_quic_sniffer_loads_and_starts(\n    project_factory, yaml_editor, fixture_env, tmp_path: Path\n) -> None:\n    _, paths = project_factory()\n\n    def mutate(data: dict) -> None:\n        data["runtime"]["dns"] = {"mode": "client"}\n        data["runtime"]["profile"]["store_fake_ip"] = False\n        data["runtime"]["sniffer"] = _sniffer()\n\n    yaml_editor(paths["config_path"], mutate)\n    result = build_candidate(**paths, env=fixture_env)\n    rendered = yaml.safe_load(result.yaml_text)\n\n    assert "dns" not in rendered\n    assert "store-fake-ip" not in rendered["profile"]\n    assert rendered["sniffer"] == {\n        "enable": True,\n        "force-dns-mapping": False,\n        "parse-pure-ip": True,\n        "sniff": {\n            "HTTP": {"ports": [80, "8080-8880"], "override-destination": True},\n            "TLS": {"ports": [443, 8443]},\n            "QUIC": {"ports": [443, 8443]},\n        },\n    }\n\n    candidate = tmp_path / "sniffer-candidate.yaml"\n    candidate.write_text(result.yaml_text, encoding="utf-8")\n    report = validate_with_mihomo(_binary(), candidate, startup_seconds=1.0)\n    assert report["config_test"] == "passed"\n    assert report["startup_smoke"] == "passed"\n''', encoding='utf-8')
+          PY
+          python /tmp/apply_p12.py
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Validate patch before commit
+        run: |
+          python -m pip install --requirement requirements-dev.lock --editable .
+          ruff format src/clash_relay/config_loader.py src/clash_relay/generator.py tests/test_runtime_sniffer.py tests/integration/test_sniffer_mihomo.py
+          ruff check src/clash_relay/config_loader.py src/clash_relay/generator.py tests/test_runtime_sniffer.py tests/integration/test_sniffer_mihomo.py
+          pytest -m 'not integration' tests/test_runtime_sniffer.py tests/test_runtime_dns_mode.py tests/test_config_loader.py tests/test_release_engineering.py
+      - name: Commit feature patch and remove temporary workflow
+        run: |
+          rm .github/workflows/p12-apply.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: add DNS-independent traffic sniffing'
+          git push origin HEAD:feat/p12-traffic-sniffing
