@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import clash_relay.qualification_pipeline as pipeline
 import scripts.validate_mihomo_matrix as matrix
+
+import clash_relay.qualification_pipeline as pipeline
 
 
 def test_qualification_pipeline_reports_only_aggregate_phase_timings(
