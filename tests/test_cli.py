@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from clash_relay import cli
+from clash_relay import __version__, cli
 from clash_relay.errors import ValidationError
 
 
@@ -175,4 +175,4 @@ def test_missing_secret_returns_controlled_error(project_paths, monkeypatch, cap
 def test_version_option(capsys) -> None:
     with pytest.raises(SystemExit, match="0"):
         cli.main(["--version"])
-    assert "1.4.1" in capsys.readouterr().out
+    assert capsys.readouterr().out.strip() == __version__
