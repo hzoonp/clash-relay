@@ -32,7 +32,7 @@ from clash_relay.openai_app_contract import (
     supporting_probes as openai_app_supporting_probes,
 )
 from clash_relay.routing_policy_v2 import load_routing_policy_v2
-from clash_relay.scheduler_policy import load_scheduler_policy
+from clash_relay.scheduler_policy import AICachePolicy, load_scheduler_policy
 from clash_relay.util import dump_yaml, load_yaml_file
 
 
@@ -213,6 +213,12 @@ def _openai_app_diagnostics(
     }
 
 
+def _service_cache_ttls(policy: AICachePolicy, service: str) -> tuple[int, int]:
+    if service == "ai_openai":
+        return policy.openai_pass_ttl_seconds, policy.openai_failure_ttl_seconds
+    return policy.pass_ttl_seconds, policy.failure_ttl_seconds
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics = _service_diagnostics()
@@ -247,6 +253,9 @@ def main(argv: list[str] | None = None) -> int:
         for probe in probes:
             name = str(probe["name"])
             service_cache_key = cache_service_key(name)
+            pass_ttl_seconds, failure_ttl_seconds = _service_cache_ttls(
+                scheduler_policy.ai_cache, name
+            )
             cached_pass: set[str] = set()
             cached_fail: set[str] = set()
             live_names: set[str] | None = None
@@ -255,8 +264,8 @@ def main(argv: list[str] | None = None) -> int:
                     cache,
                     fingerprints,
                     service_cache_key,
-                    pass_ttl_seconds=scheduler_policy.ai_cache.pass_ttl_seconds,
-                    failure_ttl_seconds=scheduler_policy.ai_cache.failure_ttl_seconds,
+                    pass_ttl_seconds=pass_ttl_seconds,
+                    failure_ttl_seconds=failure_ttl_seconds,
                 )
 
             qualification_probes = (
@@ -299,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
             probe_summary["cache_pass_hits"] = len(cached_pass)
             probe_summary["cache_fail_hits"] = len(cached_fail)
             probe_summary["qualified_nodes"] = len(qualified)
+            probe_summary["cache_pass_ttl_seconds"] = pass_ttl_seconds
+            probe_summary["cache_failure_ttl_seconds"] = failure_ttl_seconds
             if name == "ai_openai":
                 probe_summary["critical_endpoints"] = len(qualification_probes)
                 supporting_diagnostics: dict[str, Any] = {}
@@ -337,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
             "status": cache_status,
             "pass_ttl_seconds": scheduler_policy.ai_cache.pass_ttl_seconds,
             "failure_ttl_seconds": scheduler_policy.ai_cache.failure_ttl_seconds,
+            "openai_pass_ttl_seconds": scheduler_policy.ai_cache.openai_pass_ttl_seconds,
+            "openai_failure_ttl_seconds": scheduler_policy.ai_cache.openai_failure_ttl_seconds,
             "live_service_probes": total_live,
             "cache_pass_hits": total_cache_pass,
             "cache_fail_hits": total_cache_fail,
