@@ -32,7 +32,7 @@ _RUNTIME_HEALTH_CHECK: dict[str, Any] = {
     "interval": 120,
     "timeout": 5000,
     "lazy": False,
-    "expected-status": "200-499",
+    "expected-status": "200-399/400-499",
     "max-failed-times": 2,
 }
 
@@ -175,6 +175,37 @@ def _is_hardened(config: dict[str, Any]) -> bool:
     return True
 
 
+def _legacy_server_qualified_shape(
+    groups: dict[str, dict[str, Any]], target: dict[str, Any]
+) -> int | None:
+    """Recognize the exact P24 pre-P25 OpenAI service shape for emergency rollback."""
+    references = target.get("proxies")
+    if not isinstance(references, list) or not references or references == ["REJECT"]:
+        return None
+    expected_type = "select" if len(references) == 1 else "fallback"
+    if target.get("type") != expected_type:
+        return None
+    for reference in references:
+        anchor_name = str(reference)
+        anchor = groups.get(anchor_name)
+        if (
+            not anchor_name.startswith(OPENAI_ANCHOR_PREFIX)
+            or not isinstance(anchor, dict)
+            or anchor.get("hidden") is not True
+            or anchor.get("type") != "url-test"
+        ):
+            return None
+        uses = anchor.get("use")
+        filter_pattern = anchor.get("filter")
+        if not isinstance(uses, list) or len(uses) != 1:
+            return None
+        if not isinstance(filter_pattern, str) or not filter_pattern:
+            return None
+        if str(uses[0]).startswith(RUNTIME_PROVIDER_PREFIX):
+            return None
+    return len(references)
+
+
 def apply_openai_client_path_hardening(config: dict[str, Any]) -> dict[str, Any]:
     """Add client-local OpenAI health checks and stable-first failover."""
     if _is_hardened(config):
@@ -260,7 +291,9 @@ def apply_openai_client_path_hardening(config: dict[str, Any]) -> dict[str, Any]
     return report
 
 
-def audit_openai_client_path(config: dict[str, Any]) -> dict[str, Any]:
+def audit_openai_client_path(
+    config: dict[str, Any], *, allow_legacy_server_qualified: bool = False
+) -> dict[str, Any]:
     """Fail closed if the post-qualification OpenAI path loses local health checks."""
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
@@ -286,6 +319,20 @@ def audit_openai_client_path(config: dict[str, Any]) -> dict[str, Any]:
             "selection": "reject",
             "health_check": runtime_health_contract(),
         }
+
+    if allow_legacy_server_qualified:
+        legacy_regions = _legacy_server_qualified_shape(groups, target)
+        if legacy_regions is not None:
+            return {
+                "status": "legacy_server_qualified",
+                "runtime_regions": 0,
+                "runtime_providers": 0,
+                "runtime_nodes": 0,
+                "selection": "historical_exact_bytes",
+                "legacy_regions": legacy_regions,
+                "health_check": runtime_health_contract(),
+            }
+
     if target.get("type") != "fallback" or not isinstance(references, list) or not references:
         raise ValidationError("OpenAI service target must be a client-path fallback")
 
