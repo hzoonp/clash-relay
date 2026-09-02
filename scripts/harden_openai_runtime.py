@@ -24,7 +24,10 @@ def main() -> int:
     except ClashRelayError as exc:
         print(f"error: {exc}")
         return 2
-    print(json.dumps({"status": "passed", **report}, ensure_ascii=False, sort_keys=True))
+    result = dict(report)
+    result["runtime_status"] = str(result.pop("status", "unknown"))
+    result["status"] = "passed"
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
 
