@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 from clash_relay.ai_runtime_reliability import (
     RUNTIME_PROVIDER_PREFIX,
     apply_openai_client_path_hardening,
@@ -9,6 +11,7 @@ from clash_relay.ai_runtime_reliability import (
     runtime_health_contract,
 )
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
+from clash_relay.errors import ValidationError
 
 _CLAUDE_RULES = [
     "DOMAIN-KEYWORD,anthropic",
@@ -151,7 +154,7 @@ def test_openai_runtime_uses_client_local_android_health_checks_and_stable_fallb
     assert target["interval"] == 120
     assert target["timeout"] == 5000
     assert target["lazy"] is False
-    assert target["expected-status"] == "200-499"
+    assert target["expected-status"] == "200-399/400-499"
     assert target["max-failed-times"] == 2
     assert target["proxies"][0].startswith("__CR_AI_OPENAI_")
     assert len(target["proxies"]) == 2
@@ -221,3 +224,17 @@ def test_openai_runtime_preserves_service_fail_closed_state() -> None:
     assert report["runtime_nodes"] == 0
     assert not any(name.startswith(RUNTIME_PROVIDER_PREFIX) for name in config["proxy-providers"])
     assert audit_openai_client_path(config)["status"] == "fail_closed"
+
+
+def test_legacy_server_qualified_shape_is_allowed_only_for_explicit_rollback() -> None:
+    config = _service_qualified()
+
+    with pytest.raises(ValidationError, match="client-path"):
+        audit_openai_client_path(config)
+
+    report = audit_openai_client_path(config, allow_legacy_server_qualified=True)
+
+    assert report["status"] == "legacy_server_qualified"
+    assert report["selection"] == "historical_exact_bytes"
+    assert report["legacy_regions"] == 2
+    assert report["runtime_nodes"] == 0
