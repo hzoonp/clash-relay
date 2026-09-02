@@ -88,13 +88,31 @@ def _clean_ai(value: Any) -> dict[str, Any] | None:
         for name, count in sorted(qualified.items()):
             if isinstance(name, str) and 0 < len(name) <= 64:
                 safe_services[name] = _non_negative_int(count)
-    return {
+    clean: dict[str, Any] = {
         "candidate_nodes": _non_negative_int(value.get("candidate_nodes")),
         "qualified_by_service": safe_services,
         "live_service_probes": _non_negative_int(value.get("live_service_probes")),
         "cache_pass_hits": _non_negative_int(value.get("cache_pass_hits")),
         "cache_fail_hits": _non_negative_int(value.get("cache_fail_hits")),
     }
+    openai_app = value.get("openai_app")
+    if isinstance(openai_app, dict):
+        clean["openai_app"] = {
+            "app_ready_nodes": _non_negative_int(openai_app.get("app_ready_nodes")),
+            "critical_endpoint_count": _non_negative_int(
+                openai_app.get("critical_endpoint_count")
+            ),
+            "critical_tls_errors": _non_negative_int(openai_app.get("critical_tls_errors")),
+            "critical_dns_errors": _non_negative_int(openai_app.get("critical_dns_errors")),
+            "critical_timeouts": _non_negative_int(openai_app.get("critical_timeouts")),
+            "supporting_endpoint_count": _non_negative_int(
+                openai_app.get("supporting_endpoint_count")
+            ),
+            "supporting_tls_errors": _non_negative_int(
+                openai_app.get("supporting_tls_errors")
+            ),
+        }
+    return clean
 
 
 def _clean_release(value: Any) -> dict[str, Any] | None:
@@ -277,6 +295,39 @@ def build_metrics_run(
             "live_service_probes": int(qualification_cache.get("live_service_probes", 0)),
             "cache_pass_hits": int(qualification_cache.get("cache_pass_hits", 0)),
             "cache_fail_hits": int(qualification_cache.get("cache_fail_hits", 0)),
+            "openai_app": {
+                "app_ready_nodes": int(qualified_by_service.get("ai_openai", 0)),
+                "critical_endpoint_count": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("critical", {})
+                    .get("endpoint_count", 0)
+                ),
+                "critical_tls_errors": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("critical", {})
+                    .get("tls_errors", 0)
+                ),
+                "critical_dns_errors": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("critical", {})
+                    .get("dns_errors", 0)
+                ),
+                "critical_timeouts": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("critical", {})
+                    .get("timeouts", 0)
+                ),
+                "supporting_endpoint_count": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("supporting", {})
+                    .get("endpoint_count", 0)
+                ),
+                "supporting_tls_errors": int(
+                    ai_diagnostics.get("openai_app", {})
+                    .get("supporting", {})
+                    .get("tls_errors", 0)
+                ),
+            },
         },
     }
     if qualification is not None:
