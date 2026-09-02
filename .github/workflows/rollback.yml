@@ -54,7 +54,7 @@ jobs:
             --output .work/private/rollback.yaml \
             > .work/private/rollback-source.json
 
-      - name: Audit previous release against current safety policy
+      - name: Audit previous release against current production policy
         shell: bash
         run: |
           set -euo pipefail
