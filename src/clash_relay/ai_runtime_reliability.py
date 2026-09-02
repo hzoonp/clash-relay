@@ -57,7 +57,7 @@ def _runtime_provider_name(anchor_name: str) -> str:
 
 
 def _runtime_proxy_name(anchor_name: str, original_name: str) -> str:
-    digest = hashlib.sha256(f"{anchor_name}\0{original_name}".encode("utf-8")).hexdigest()[:8]
+    digest = hashlib.sha256(f"{anchor_name}\0{original_name}".encode()).hexdigest()[:8]
     return f"{original_name} [OAI:{digest}]"
 
 
@@ -123,7 +123,6 @@ def _clone_runtime_provider(
     providers: dict[str, Any],
     *,
     anchor_name: str,
-    source_provider_name: str,
     source_provider: dict[str, Any],
     filter_pattern: str,
 ) -> tuple[str, int]:
@@ -214,15 +213,13 @@ def apply_openai_client_path_hardening(config: dict[str, Any]) -> dict[str, Any]
         filter_pattern = anchor.get("filter")
         if not isinstance(uses, list) or len(uses) != 1 or not isinstance(filter_pattern, str):
             raise ValidationError("OpenAI client-path anchor is not a qualified provider filter")
-        source_provider_name = str(uses[0])
-        source_provider = providers.get(source_provider_name)
+        source_provider = providers.get(str(uses[0]))
         if not isinstance(source_provider, dict):
             raise ValidationError("OpenAI client-path anchor references a missing provider")
 
         runtime_provider_name, count = _clone_runtime_provider(
             providers,
             anchor_name=anchor_name,
-            source_provider_name=source_provider_name,
             source_provider=source_provider,
             filter_pattern=filter_pattern,
         )
