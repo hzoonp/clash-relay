@@ -20,9 +20,15 @@ from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_ca
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.openai_app_contract import (
     cache_service_key,
-    contract_summary as openai_app_contract_summary,
-    critical_probes as openai_app_critical_probes,
     rewrite_route_locked_candidate,
+)
+from clash_relay.openai_app_contract import (
+    contract_summary as openai_app_contract_summary,
+)
+from clash_relay.openai_app_contract import (
+    critical_probes as openai_app_critical_probes,
+)
+from clash_relay.openai_app_contract import (
     supporting_probes as openai_app_supporting_probes,
 )
 from clash_relay.routing_policy_v2 import load_routing_policy_v2
@@ -232,7 +238,9 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics["tested_nodes"] = len(fingerprints)
 
         qualified_by_probe: dict[str, set[str]] = {}
-        expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
+        expected_candidate_nodes: int | None = (
+            len(fingerprints) if fingerprints is not None else None
+        )
         total_live = 0
         total_cache_pass = 0
         total_cache_fail = 0

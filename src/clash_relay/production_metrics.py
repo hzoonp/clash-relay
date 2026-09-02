@@ -99,18 +99,14 @@ def _clean_ai(value: Any) -> dict[str, Any] | None:
     if isinstance(openai_app, dict):
         clean["openai_app"] = {
             "app_ready_nodes": _non_negative_int(openai_app.get("app_ready_nodes")),
-            "critical_endpoint_count": _non_negative_int(
-                openai_app.get("critical_endpoint_count")
-            ),
+            "critical_endpoint_count": _non_negative_int(openai_app.get("critical_endpoint_count")),
             "critical_tls_errors": _non_negative_int(openai_app.get("critical_tls_errors")),
             "critical_dns_errors": _non_negative_int(openai_app.get("critical_dns_errors")),
             "critical_timeouts": _non_negative_int(openai_app.get("critical_timeouts")),
             "supporting_endpoint_count": _non_negative_int(
                 openai_app.get("supporting_endpoint_count")
             ),
-            "supporting_tls_errors": _non_negative_int(
-                openai_app.get("supporting_tls_errors")
-            ),
+            "supporting_tls_errors": _non_negative_int(openai_app.get("supporting_tls_errors")),
         }
     return clean
 
@@ -303,19 +299,13 @@ def build_metrics_run(
                     .get("endpoint_count", 0)
                 ),
                 "critical_tls_errors": int(
-                    ai_diagnostics.get("openai_app", {})
-                    .get("critical", {})
-                    .get("tls_errors", 0)
+                    ai_diagnostics.get("openai_app", {}).get("critical", {}).get("tls_errors", 0)
                 ),
                 "critical_dns_errors": int(
-                    ai_diagnostics.get("openai_app", {})
-                    .get("critical", {})
-                    .get("dns_errors", 0)
+                    ai_diagnostics.get("openai_app", {}).get("critical", {}).get("dns_errors", 0)
                 ),
                 "critical_timeouts": int(
-                    ai_diagnostics.get("openai_app", {})
-                    .get("critical", {})
-                    .get("timeouts", 0)
+                    ai_diagnostics.get("openai_app", {}).get("critical", {}).get("timeouts", 0)
                 ),
                 "supporting_endpoint_count": int(
                     ai_diagnostics.get("openai_app", {})
@@ -323,9 +313,7 @@ def build_metrics_run(
                     .get("endpoint_count", 0)
                 ),
                 "supporting_tls_errors": int(
-                    ai_diagnostics.get("openai_app", {})
-                    .get("supporting", {})
-                    .get("tls_errors", 0)
+                    ai_diagnostics.get("openai_app", {}).get("supporting", {}).get("tls_errors", 0)
                 ),
             },
         },

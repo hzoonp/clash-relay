@@ -19,9 +19,7 @@ from .validator import validate_generated_config
 
 CONTRACT_VERSION = 1
 QUALIFICATION_VERSION = 1
-SOURCE_URL = (
-    "https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps"
-)
+SOURCE_URL = "https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps"
 SOURCE_REVIEWED = "2026-09-02"
 RULE_PROVIDER = "cr_openai_app"
 OPENAI_SERVICE_TARGET = "__CR_AI_SERVICE_OPENAI"
@@ -70,7 +68,10 @@ _EXACT_HOSTS = (
 
 ROUTE_RULES = tuple(
     sorted(
-        {*(f"DOMAIN-SUFFIX,{host}" for host in _OPENAI_SUFFIXES), *(f"DOMAIN,{host}" for host in _EXACT_HOSTS)}
+        {
+            *(f"DOMAIN-SUFFIX,{host}" for host in _OPENAI_SUFFIXES),
+            *(f"DOMAIN,{host}" for host in _EXACT_HOSTS),
+        }
     )
 )
 
@@ -220,7 +221,11 @@ def apply_route_lock(config: dict[str, Any]) -> dict[str, Any]:
     rule_providers = config.get("rule-providers")
     rules = config.get("rules")
     groups = config.get("proxy-groups")
-    if not isinstance(rule_providers, dict) or not isinstance(rules, list) or not isinstance(groups, list):
+    if (
+        not isinstance(rule_providers, dict)
+        or not isinstance(rules, list)
+        or not isinstance(groups, list)
+    ):
         raise ValidationError("OpenAI App route lock requires generated rule/group structures")
     if not any(
         isinstance(group, dict) and group.get("name") == OPENAI_SERVICE_TARGET for group in groups
@@ -228,12 +233,16 @@ def apply_route_lock(config: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError("OpenAI App route lock requires the service-qualified OpenAI target")
 
     if _FORBIDDEN_SHARED_SUFFIX_RULES & set(ROUTE_RULES):
-        raise ValidationError("OpenAI App route contract contains an over-broad shared-infrastructure suffix")
+        raise ValidationError(
+            "OpenAI App route contract contains an over-broad shared-infrastructure suffix"
+        )
 
     acl_openai_indexes = _ruleset_indexes(rules, _ACL4SSR_OPENAI_PROVIDER)
     generic_ai_indexes = _ruleset_indexes(rules, _ACL4SSR_AI_PROVIDER)
     if len(acl_openai_indexes) != 1 or len(generic_ai_indexes) != 1:
-        raise ValidationError("OpenAI App route lock requires one ACL4SSR OpenAI and generic AI rule")
+        raise ValidationError(
+            "OpenAI App route lock requires one ACL4SSR OpenAI and generic AI rule"
+        )
 
     # Idempotent for recovery/testing: remove an existing lock before inserting
     # the canonical one immediately before the ACL4SSR OpenAI rule.
@@ -275,7 +284,9 @@ def audit_route_lock(config: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError("OpenAI App route audit requires rule providers and rules")
     provider = rule_providers.get(RULE_PROVIDER)
     if not isinstance(provider, dict):
-        raise ValidationError("post-qualification candidate is missing the OpenAI App rule provider")
+        raise ValidationError(
+            "post-qualification candidate is missing the OpenAI App rule provider"
+        )
     if provider.get("type") != "inline" or provider.get("behavior") != "classical":
         raise ValidationError("OpenAI App rule provider has unexpected runtime semantics")
     payload = provider.get("payload")
@@ -291,7 +302,9 @@ def audit_route_lock(config: dict[str, Any]) -> dict[str, Any]:
     if lock_rule != f"RULE-SET,{RULE_PROVIDER},{OPENAI_SERVICE_TARGET}":
         raise ValidationError("OpenAI App rule does not target service-qualified OpenAI egress")
     if not lock_indexes[0] < acl_openai_indexes[0] < generic_ai_indexes[0]:
-        raise ValidationError("OpenAI App route lock must precede ACL4SSR OpenAI and generic AI rules")
+        raise ValidationError(
+            "OpenAI App route lock must precede ACL4SSR OpenAI and generic AI rules"
+        )
 
     return {"status": "passed", **contract_summary()}
 
