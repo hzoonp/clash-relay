@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from clash_relay.ai_qualification import AI_PROVIDER_PREFIX, load_ai_probe_specs, probe_ai_nodes
 from clash_relay.ai_qualification_cache import (
@@ -17,6 +18,13 @@ from clash_relay.ai_qualification_cache import (
 )
 from clash_relay.ai_service_qualification import rewrite_ai_service_qualified_candidate
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.openai_app_contract import (
+    cache_service_key,
+    contract_summary as openai_app_contract_summary,
+    critical_probes as openai_app_critical_probes,
+    rewrite_route_locked_candidate,
+    supporting_probes as openai_app_supporting_probes,
+)
 from clash_relay.routing_policy_v2 import load_routing_policy_v2
 from clash_relay.scheduler_policy import load_scheduler_policy
 from clash_relay.util import dump_yaml, load_yaml_file
@@ -46,6 +54,11 @@ def _service_diagnostics() -> dict[str, object]:
         "tested_nodes": 0,
         "selector_failures": 0,
         "probes": {},
+        "openai_app": {
+            "contract": openai_app_contract_summary(),
+            "critical": {},
+            "supporting": {},
+        },
     }
 
 
@@ -115,6 +128,85 @@ def _empty_probe_summary(probe: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _probe_names(
+    *,
+    binary: Path,
+    candidate: Path,
+    names: set[str] | None,
+    probes: tuple[dict[str, Any], ...],
+    workers: int,
+) -> tuple[set[str], dict[str, Any]]:
+    diagnostics: dict[str, Any] = {}
+    temporary: Path | None = None
+    try:
+        target = candidate
+        if names is not None:
+            if not names:
+                return set(), diagnostics
+            temporary = _filtered_candidate(candidate, names)
+            target = temporary
+        qualified = probe_ai_nodes(
+            binary,
+            target,
+            probes,
+            workers=workers,
+            diagnostics=diagnostics,
+        )
+        return qualified, diagnostics
+    finally:
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink()
+
+
+def _network_failure_count(probes: dict[str, Any], outcome: str) -> int:
+    total = 0
+    for summary in probes.values():
+        if not isinstance(summary, dict):
+            continue
+        outcomes = summary.get("outcomes")
+        if isinstance(outcomes, dict):
+            total += int(outcomes.get(outcome, 0))
+    return total
+
+
+def _openai_app_diagnostics(
+    *,
+    live_tested: int,
+    qualified: set[str],
+    critical_diagnostics: dict[str, Any],
+    supporting_diagnostics: dict[str, Any],
+    supporting_fully_reachable: int,
+) -> dict[str, Any]:
+    critical = critical_diagnostics.get("probes", {})
+    if not isinstance(critical, dict):
+        critical = {}
+    supporting = supporting_diagnostics.get("probes", {})
+    if not isinstance(supporting, dict):
+        supporting = {}
+    return {
+        "contract": openai_app_contract_summary(),
+        "critical": {
+            "live_tested_nodes": live_tested,
+            "app_ready_live_nodes": len(qualified),
+            "endpoint_count": len(critical),
+            "tls_errors": _network_failure_count(critical, "tls_error"),
+            "dns_errors": _network_failure_count(critical, "dns_error"),
+            "timeouts": _network_failure_count(critical, "timeout"),
+            "probes": critical,
+        },
+        "supporting": {
+            "live_tested_nodes": int(supporting_diagnostics.get("tested_nodes", 0)),
+            "fully_reachable_nodes": supporting_fully_reachable,
+            "endpoint_count": len(supporting),
+            "tls_errors": _network_failure_count(supporting, "tls_error"),
+            "dns_errors": _network_failure_count(supporting, "dns_error"),
+            "timeouts": _network_failure_count(supporting, "timeout"),
+            "probes": supporting,
+        },
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics = _service_diagnostics()
@@ -140,14 +232,13 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics["tested_nodes"] = len(fingerprints)
 
         qualified_by_probe: dict[str, set[str]] = {}
-        expected_candidate_nodes: int | None = (
-            len(fingerprints) if fingerprints is not None else None
-        )
+        expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
         total_live = 0
         total_cache_pass = 0
         total_cache_fail = 0
         for probe in probes:
             name = str(probe["name"])
+            service_cache_key = cache_service_key(name)
             cached_pass: set[str] = set()
             cached_fail: set[str] = set()
             live_names: set[str] | None = None
@@ -155,39 +246,24 @@ def main(argv: list[str] | None = None) -> int:
                 cached_pass, cached_fail, live_names = cached_service_decisions(
                     cache,
                     fingerprints,
-                    name,
+                    service_cache_key,
                     pass_ttl_seconds=scheduler_policy.ai_cache.pass_ttl_seconds,
                     failure_ttl_seconds=scheduler_policy.ai_cache.failure_ttl_seconds,
                 )
 
-            probe_diagnostics: dict[str, object] = {}
-            live_qualified: set[str] = set()
-            temporary: Path | None = None
-            try:
-                if live_names is None:
-                    live_qualified = probe_ai_nodes(
-                        args.mihomo_bin,
-                        args.candidate,
-                        (probe,),
-                        workers=args.workers,
-                        diagnostics=probe_diagnostics,
-                    )
-                elif live_names:
-                    temporary = _filtered_candidate(args.candidate, live_names)
-                    live_qualified = probe_ai_nodes(
-                        args.mihomo_bin,
-                        temporary,
-                        (probe,),
-                        workers=args.workers,
-                        diagnostics=probe_diagnostics,
-                    )
-            finally:
-                if temporary is not None:
-                    with contextlib.suppress(OSError):
-                        temporary.unlink()
+            qualification_probes = (
+                openai_app_critical_probes(probe) if name == "ai_openai" else (probe,)
+            )
+            live_qualified, probe_diagnostics = _probe_names(
+                binary=args.mihomo_bin,
+                candidate=args.candidate,
+                names=live_names,
+                probes=qualification_probes,
+                workers=args.workers,
+            )
 
             if live_names is None:
-                live_tested = int(probe_diagnostics["tested_nodes"])
+                live_tested = int(probe_diagnostics.get("tested_nodes", 0))
                 if expected_candidate_nodes is None:
                     expected_candidate_nodes = live_tested
                     diagnostics["tested_nodes"] = live_tested
@@ -203,14 +279,37 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics["selector_failures"] = int(diagnostics["selector_failures"]) + int(
                 probe_diagnostics.get("selector_failures", 0)
             )
-            if probe_diagnostics:
-                probe_summary = dict(probe_diagnostics["probes"][name])
+            raw_probe_summaries = probe_diagnostics.get("probes", {})
+            if not isinstance(raw_probe_summaries, dict):
+                raw_probe_summaries = {}
+            primary_summary = raw_probe_summaries.get(name)
+            if isinstance(primary_summary, dict):
+                probe_summary = dict(primary_summary)
             else:
                 probe_summary = _empty_probe_summary(probe)
             probe_summary["live_tested_nodes"] = live_tested
             probe_summary["cache_pass_hits"] = len(cached_pass)
             probe_summary["cache_fail_hits"] = len(cached_fail)
             probe_summary["qualified_nodes"] = len(qualified)
+            if name == "ai_openai":
+                probe_summary["critical_endpoints"] = len(qualification_probes)
+                supporting_diagnostics: dict[str, Any] = {}
+                supporting_qualified: set[str] = set()
+                if live_qualified:
+                    supporting_qualified, supporting_diagnostics = _probe_names(
+                        binary=args.mihomo_bin,
+                        candidate=args.candidate,
+                        names=live_qualified,
+                        probes=openai_app_supporting_probes(),
+                        workers=args.workers,
+                    )
+                diagnostics["openai_app"] = _openai_app_diagnostics(
+                    live_tested=live_tested,
+                    qualified=live_qualified,
+                    critical_diagnostics=probe_diagnostics,
+                    supporting_diagnostics=supporting_diagnostics,
+                    supporting_fully_reachable=len(supporting_qualified),
+                )
             diagnostics["probes"][name] = probe_summary
             total_live += live_tested
             total_cache_pass += len(cached_pass)
@@ -220,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
                 next_cache = update_ai_cache_service(
                     next_cache,
                     fingerprints,
-                    name,
+                    service_cache_key,
                     checked_names=live_names_for_cache,
                     passed_names=live_qualified,
                 )
@@ -235,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             "cache_fail_hits": total_cache_fail,
             "records": 0,
             "service_records": 0,
+            "openai_contract_fingerprint": openai_app_contract_summary()["fingerprint"],
         }
         if next_cache is not None and args.next_cache is not None:
             args.next_cache.parent.mkdir(parents=True, exist_ok=True)
@@ -255,12 +355,14 @@ def main(argv: list[str] | None = None) -> int:
             qualified_by_probe,
             preferred_regions=routing_policy.ai.preferred_regions,
         )
+        route_lock = rewrite_route_locked_candidate(args.candidate)
         print(
             json.dumps(
                 {
                     "status": "qualified",
                     "diagnostics": diagnostics,
                     "qualification_cache": cache_report,
+                    "openai_app_route_lock": route_lock,
                     **report,
                 },
                 ensure_ascii=False,
