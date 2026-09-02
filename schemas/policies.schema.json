@@ -78,7 +78,9 @@
           "additionalProperties": false,
           "properties": {
             "pass_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 86400},
-            "failure_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 86400}
+            "failure_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 86400},
+            "openai_pass_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 86400},
+            "openai_failure_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 86400}
           }
         }
       }
