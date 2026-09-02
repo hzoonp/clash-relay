@@ -219,7 +219,5 @@ def test_openai_runtime_preserves_service_fail_closed_state() -> None:
 
     assert report["status"] == "fail_closed"
     assert report["runtime_nodes"] == 0
-    assert not any(
-        name.startswith(RUNTIME_PROVIDER_PREFIX) for name in config["proxy-providers"]
-    )
+    assert not any(name.startswith(RUNTIME_PROVIDER_PREFIX) for name in config["proxy-providers"])
     assert audit_openai_client_path(config)["status"] == "fail_closed"
