@@ -7,6 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from clash_relay.ai_runtime_reliability import (
+    RUNTIME_PROVIDER_PREFIX,
+    apply_openai_client_path_hardening,
+)
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
 
 pytestmark = pytest.mark.integration
@@ -71,7 +75,7 @@ def _auto(name: str, provider: str) -> dict:
     }
 
 
-def test_service_qualified_candidate_is_accepted_by_real_mihomo(
+def test_service_qualified_client_path_candidate_is_accepted_by_real_mihomo(
     tmp_path: Path,
 ) -> None:
     candidate = {
@@ -131,12 +135,34 @@ def test_service_qualified_candidate_is_accepted_by_real_mihomo(
             "ai_gemini": {"sg-gemini"},
         },
     )
+    report = apply_openai_client_path_hardening(candidate)
     groups = {group["name"]: group for group in candidate["proxy-groups"]}
     assert groups["人工智能"].get("hidden", False) is False
     assert groups["AI · 新加坡"]["hidden"] is True
     assert groups["AI · 新加坡"]["use"] == ["cr_ai_sg_sg"]
     assert groups["AI · 美国"]["hidden"] is True
     assert groups["AI · 美国"]["use"] == ["cr_ai_us_us"]
+
+    openai_target = groups["__CR_AI_SERVICE_OPENAI"]
+    assert openai_target["type"] == "fallback"
+    assert openai_target["expected-status"] == "200-399/400-499"
+    assert openai_target["max-failed-times"] == 2
+    assert report["runtime_regions"] == 1
+    assert report["runtime_nodes"] == 1
+    runtime_providers = [
+        name
+        for name in candidate["proxy-providers"]
+        if name.startswith(RUNTIME_PROVIDER_PREFIX)
+    ]
+    assert len(runtime_providers) == 1
+    assert candidate["proxy-providers"][runtime_providers[0]]["health-check"] == {
+        "enable": True,
+        "url": "https://android.chat.openai.com/",
+        "interval": 120,
+        "timeout": 5000,
+        "lazy": False,
+        "expected-status": "200-399/400-499",
+    }
 
     path = tmp_path / "qualified.yaml"
     path.write_text(
