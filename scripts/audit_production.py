@@ -10,6 +10,7 @@ from pathlib import Path
 from clash_relay.acl4ssr_reference import validate_acl4ssr_fidelity
 from clash_relay.config_loader import load_project
 from clash_relay.mihomo import load_candidate
+from clash_relay.openai_app_contract import audit_route_lock
 from clash_relay.production_audit import (
     audit_production_candidate,
     render_production_summary_markdown,
@@ -44,6 +45,7 @@ def main() -> int:
         build_report = json.loads(args.report.read_text(encoding="utf-8"))
     summary = audit_production_candidate(project, candidate, build_report=build_report)
     summary["routing_v2"] = audit_routing_v2(project, candidate)
+    summary["openai_app"] = audit_route_lock(candidate)
     if project.acl4ssr is not None and project.acl4ssr.get("reference") is not None:
         reference_path = args.config.resolve().parent / "rules/acl4ssr-online.reference.ini"
         reference_text = reference_path.read_text(encoding="utf-8")
