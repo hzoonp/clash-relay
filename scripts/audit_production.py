@@ -29,6 +29,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--markdown", type=Path)
+    parser.add_argument(
+        "--allow-legacy-openai-client-path",
+        action="store_true",
+        help=(
+            "Allow the exact P24 server-qualified OpenAI runtime shape for an emergency "
+            "historical rollback. Normal production publication must not use this flag."
+        ),
+    )
     return parser
 
 
@@ -47,7 +55,10 @@ def main() -> int:
     summary = audit_production_candidate(project, candidate, build_report=build_report)
     summary["routing_v2"] = audit_routing_v2(project, candidate)
     summary["openai_app"] = audit_route_lock(candidate)
-    summary["openai_client_path"] = audit_openai_client_path(candidate)
+    summary["openai_client_path"] = audit_openai_client_path(
+        candidate,
+        allow_legacy_server_qualified=args.allow_legacy_openai_client_path,
+    )
     if project.acl4ssr is not None and project.acl4ssr.get("reference") is not None:
         reference_path = args.config.resolve().parent / "rules/acl4ssr-online.reference.ini"
         reference_text = reference_path.read_text(encoding="utf-8")
