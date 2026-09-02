@@ -4,6 +4,26 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-02
+
+### Added
+
+- P24 adds a reviewed OpenAI/ChatGPT App network contract and a dedicated `cr_openai_app` rule overlay that locks the documented application surface to service-qualified OpenAI egress without changing the pinned ACL4SSR baseline.
+- OpenAI qualification now requires the primary ChatGPT probe plus Android and authentication critical TLS endpoints; supporting WorkOS/Cloudflare/CDN/telemetry probes remain diagnostic-only.
+- Production metrics and production proof expose only aggregate OpenAI App-ready/TLS/DNS/timeout counts.
+
+### Changed
+
+- The AI qualification runtime now preserves the canonical HTTP/TLS/QUIC sniffer while retaining client-owned DNS; it does not restore managed DNS or Fake-IP.
+- OpenAI cache identity includes the reviewed App contract fingerprint, so this release invalidates stale OpenAI-only decisions while Claude/Gemini cache records remain independently reusable.
+- Post-qualification production audit requires the exact OpenAI App route lock ahead of ACL4SSR OpenAI and generic AI rules before the complete stable Mihomo matrix can validate publication.
+
+### Security
+
+- TLS certificate and hostname verification remain mandatory. `skip-cert-verify` is not introduced, and certificate failures are hard `tls_error` qualification failures.
+- Shared third-party infrastructure is routed with exact hosts unless the reviewed OpenAI network contract explicitly requires a wildcard family; broad WorkOS, Cloudflare, Stripe, Sentry, Datadog, Apple, and Imgix suffix capture is forbidden by tests.
+- The six public scenarios, `subscription_1` browsing/AI-only isolation and >2x filtering, client-owned DNS, ACL4SSR Online fidelity, versioned Cloudflare KV release transaction, and source-only GitHub Release policy remain unchanged.
+
 ## [1.6.0] - 2026-09-02
 
 ### Added
@@ -230,7 +250,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/hzoonp/clash-relay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/hzoonp/clash-relay/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/hzoonp/clash-relay/compare/v1.4.0...v1.4.1

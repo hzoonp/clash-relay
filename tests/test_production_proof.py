@@ -32,7 +32,29 @@ def _inputs(candidate_path: Path) -> dict:
         },
         "ai": {
             "status": "qualified",
-            "diagnostics": {"tested_nodes": 10, "selector_failures": 0},
+            "diagnostics": {
+                "tested_nodes": 10,
+                "selector_failures": 0,
+                "openai_app": {
+                    "critical": {
+                        "app_ready_live_nodes": 3,
+                        "endpoint_count": 4,
+                        "tls_errors": 2,
+                        "dns_errors": 1,
+                        "timeouts": 3,
+                        "probes": {
+                            "openai_app_android": {"url": "SHOULD-NOT-LEAK"},
+                        },
+                    },
+                    "supporting": {
+                        "endpoint_count": 4,
+                        "tls_errors": 1,
+                        "probes": {
+                            "openai_support_workos": {"url": "SHOULD-NOT-LEAK"},
+                        },
+                    },
+                },
+            },
             "service_qualified_nodes": {"openai": 3, "claude": 4, "gemini": 8},
             "service_fail_closed": [],
         },
@@ -74,12 +96,27 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "automatic": 6,
     }
     assert proof["ai"]["service_qualified"] == {"claude": 4, "gemini": 8, "openai": 3}
-    assert "SECRET-NODE-NAME" not in repr(proof)
-    assert "secret.example.invalid" not in repr(proof)
-    assert "SUPER-SECRET-PASSWORD" not in repr(proof)
-    assert "SECRET-NODE-NAME" not in markdown
-    assert "secret.example.invalid" not in markdown
-    assert "SUPER-SECRET-PASSWORD" not in markdown
+    assert proof["ai"]["openai_app"] == {
+        "app_ready_live_nodes": 3,
+        "critical_endpoints": 4,
+        "critical_tls_errors": 2,
+        "critical_dns_errors": 1,
+        "critical_timeouts": 3,
+        "supporting_endpoints": 4,
+        "supporting_tls_errors": 1,
+    }
+    assert "OpenAI App-ready live nodes | 3" in markdown
+    assert "OpenAI critical TLS / DNS / timeout failures | 2 / 1 / 3" in markdown
+    for secret in (
+        "SECRET-NODE-NAME",
+        "secret.example.invalid",
+        "SUPER-SECRET-PASSWORD",
+        "SHOULD-NOT-LEAK",
+        "openai_app_android",
+        "openai_support_workos",
+    ):
+        assert secret not in repr(proof)
+        assert secret not in markdown
     assert "v1.19.30" in markdown
     assert "v1.19.29" in markdown
 

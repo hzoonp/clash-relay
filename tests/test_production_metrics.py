@@ -41,6 +41,18 @@ def _ai() -> dict:
                 "ai_claude": {"qualified_nodes": 4},
                 "ai_gemini": {"qualified_nodes": 8},
             },
+            "openai_app": {
+                "critical": {
+                    "endpoint_count": 4,
+                    "tls_errors": 2,
+                    "dns_errors": 1,
+                    "timeouts": 3,
+                },
+                "supporting": {
+                    "endpoint_count": 4,
+                    "tls_errors": 1,
+                },
+            },
         },
         "qualification_cache": {
             "live_service_probes": 5,
@@ -58,6 +70,8 @@ def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
     serialized = json.dumps(run, sort_keys=True)
 
     assert "secret-node-payload" not in serialized
+    assert "android.chat.openai.com" not in serialized
+    assert "cdn.workos.com" not in serialized
     assert run["epoch"] == 1234
     assert run["candidate_bytes"] == len(candidate.read_bytes())
     assert run["browsing"]["qualified"] == 8
@@ -68,6 +82,15 @@ def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
         "ai_openai": 3,
     }
     assert run["ai"]["live_service_probes"] == 5
+    assert run["ai"]["openai_app"] == {
+        "app_ready_nodes": 3,
+        "critical_endpoint_count": 4,
+        "critical_tls_errors": 2,
+        "critical_dns_errors": 1,
+        "critical_timeouts": 3,
+        "supporting_endpoint_count": 4,
+        "supporting_tls_errors": 1,
+    }
 
 
 def test_metrics_ring_retains_only_latest_30_runs(tmp_path: Path) -> None:

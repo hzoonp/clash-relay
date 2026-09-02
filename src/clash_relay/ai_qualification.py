@@ -181,6 +181,9 @@ def _temporary_probe_config(
         if probe_dns.get("enable"):
             probe_dns["listen"] = f"127.0.0.1:{_free_port()}"
         config["dns"] = probe_dns
+    sniffer = base_config.get("sniffer")
+    if isinstance(sniffer, dict):
+        config["sniffer"] = dict(sniffer)
     hosts = base_config.get("hosts")
     if isinstance(hosts, dict):
         config["hosts"] = dict(hosts)

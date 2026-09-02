@@ -85,7 +85,7 @@ US -> SG -> JP -> TW -> KR -> HK -> OTHER
 
 Manual region selection never silently crosses to another country. Automatic mode crosses regions only when the preferred region is unavailable. Scheduler history is private and anonymous; it can demote unstable live-qualified nodes but never expand source admission.
 
-AI qualification is independent for OpenAI, Claude, and Gemini. Hong Kong is excluded before AI qualification and each service fails closed independently.
+AI qualification is independent for OpenAI, Claude, and Gemini. Hong Kong is excluded before AI qualification and each service fails closed independently. OpenAI additionally uses a reviewed ChatGPT App contract: a node is App-ready only after every critical ChatGPT/Android/authentication TLS endpoint passes normal certificate and hostname verification. The resulting `cr_openai_app` route lock sends the reviewed application surface only to `__CR_AI_SERVICE_OPENAI`; supporting third-party CDN/telemetry probes are diagnostic and never justify disabling TLS verification.
 
 ## Production release model
 
@@ -118,9 +118,9 @@ Rollback resolves the previous release and validates it against the current repo
 
 ## Observability and privacy
 
-Production proof and private longitudinal metrics contain aggregate operational metadata only: candidate SHA/size, qualified counts, regional cohort counts, AI service counts, release status, validation counts, and bounded stage timings. They intentionally exclude proxy names, servers, credentials, subscription URLs, and child-process diagnostics.
+Production proof and private longitudinal metrics contain aggregate operational metadata only: candidate SHA/size, qualified counts, regional cohort counts, AI service/App-ready counts, release status, validation counts, and bounded stage timings. They intentionally exclude proxy names, servers, credentials, subscription URLs, endpoint URLs, and child-process diagnostics.
 
-See [Production maturity](docs/production-maturity.md) for the P18.1-P23 operating contract.
+See [Production maturity](docs/production-maturity.md) for the P18.1-P23 operating contract and [OpenAI App reliability](docs/openai-app-reliability.md) for the v1.6.1 App-ready routing/TLS contract.
 
 ## GitHub Secrets and variables
 
@@ -171,6 +171,7 @@ python scripts/repository_audit.py
 - [Fork quickstart](docs/quickstart.md)
 - [配置快速上手](docs/quickstart.zh-CN.md)
 - [Production maturity](docs/production-maturity.md)
+- [OpenAI App reliability](docs/openai-app-reliability.md)
 - [Configuration model](docs/configuration.md)
 - [Architecture](docs/architecture.md)
 - [ACL4SSR routing model](docs/rules.md)
