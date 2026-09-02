@@ -43,6 +43,8 @@ def test_missing_scheduler_block_preserves_conservative_defaults(tmp_path: Path)
     assert policy.history.demote_after_failures == 2
     assert policy.ai_cache.pass_ttl_seconds == 21600
     assert policy.ai_cache.failure_ttl_seconds == 3600
+    assert policy.ai_cache.openai_pass_ttl_seconds == 7200
+    assert policy.ai_cache.openai_failure_ttl_seconds == 3600
 
 
 def test_declared_scheduler_values_are_loaded_from_yaml(tmp_path: Path) -> None:
@@ -52,7 +54,7 @@ def test_declared_scheduler_values_are_loaded_from_yaml(tmp_path: Path) -> None:
         "scheduler:\n"
         "  browsing: {attempts: 5, reserve_successes: 4}\n"
         "  history: {min_runs: 4, min_success_ema: 0.8, recover_success_ema: 0.95, demote_after_failures: 3, max_age_seconds: 86400}\n"
-        "  ai_cache: {pass_ttl_seconds: 7200, failure_ttl_seconds: 900}\n",
+        "  ai_cache: {pass_ttl_seconds: 7200, failure_ttl_seconds: 900, openai_pass_ttl_seconds: 3600, openai_failure_ttl_seconds: 600}\n",
     )
     policy = load_scheduler_policy(path)
     assert policy.declared is True
@@ -67,6 +69,8 @@ def test_declared_scheduler_values_are_loaded_from_yaml(tmp_path: Path) -> None:
     )
     assert policy.ai_cache.pass_ttl_seconds == 7200
     assert policy.ai_cache.failure_ttl_seconds == 900
+    assert policy.ai_cache.openai_pass_ttl_seconds == 3600
+    assert policy.ai_cache.openai_failure_ttl_seconds == 600
 
 
 def test_invalid_reserve_threshold_is_rejected(tmp_path: Path) -> None:
@@ -146,3 +150,5 @@ def test_canonical_scheduler_block_enables_v2_quality_contract(repo_root: Path) 
     assert policy.history.max_age_seconds == 2592000
     assert policy.ai_cache.pass_ttl_seconds == 21600
     assert policy.ai_cache.failure_ttl_seconds == 3600
+    assert policy.ai_cache.openai_pass_ttl_seconds == 7200
+    assert policy.ai_cache.openai_failure_ttl_seconds == 3600
