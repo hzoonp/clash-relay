@@ -28,63 +28,71 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
+          def block(*lines: str) -> str:
+              return "\n".join(lines) + "\n"
+
           changelog = Path("CHANGELOG.md")
           text = changelog.read_text(encoding="utf-8")
           anchor = "## [Unreleased]\n\n"
           if text.count(anchor) != 1:
               raise SystemExit("unexpected CHANGELOG Unreleased anchor")
-          release = '''## [Unreleased]
-
-## [1.6.1] - 2026-09-02
-
-### Added
-
-- P24 adds a reviewed OpenAI/ChatGPT App network contract and a dedicated `cr_openai_app` rule overlay that locks the documented application surface to service-qualified OpenAI egress without changing the pinned ACL4SSR baseline.
-- OpenAI qualification now requires the primary ChatGPT probe plus Android and authentication critical TLS endpoints; supporting WorkOS/Cloudflare/CDN/telemetry probes remain diagnostic-only.
-- Production metrics and GitHub Actions summaries expose only aggregate OpenAI App-ready/TLS/DNS/timeout counts.
-
-### Changed
-
-- The AI qualification runtime now preserves the canonical HTTP/TLS/QUIC sniffer while retaining client-owned DNS; it does not restore managed DNS or Fake-IP.
-- OpenAI cache identity includes the reviewed App contract fingerprint, so this release invalidates stale OpenAI-only decisions while Claude/Gemini cache records remain independently reusable.
-- Post-qualification production audit requires the exact OpenAI App route lock ahead of ACL4SSR OpenAI and generic AI rules before the complete stable Mihomo matrix can validate publication.
-
-### Security
-
-- TLS certificate and hostname verification remain mandatory. `skip-cert-verify` is not introduced, and certificate failures are hard `tls_error` qualification failures.
-- Shared third-party infrastructure is routed with exact hosts unless the reviewed OpenAI network contract explicitly requires a wildcard family; broad WorkOS, Cloudflare, Stripe, Sentry, Datadog, Apple, and Imgix suffix capture is forbidden by tests.
-- The six public scenarios, `subscription_1` browsing/AI-only isolation and >2x filtering, client-owned DNS, ACL4SSR Online fidelity, versioned Cloudflare KV release transaction, and source-only GitHub Release policy remain unchanged.
-
-'''
+          release = block(
+              "## [Unreleased]",
+              "",
+              "## [1.6.1] - 2026-09-02",
+              "",
+              "### Added",
+              "",
+              "- P24 adds a reviewed OpenAI/ChatGPT App network contract and a dedicated `cr_openai_app` rule overlay that locks the documented application surface to service-qualified OpenAI egress without changing the pinned ACL4SSR baseline.",
+              "- OpenAI qualification now requires the primary ChatGPT probe plus Android and authentication critical TLS endpoints; supporting WorkOS/Cloudflare/CDN/telemetry probes remain diagnostic-only.",
+              "- Production metrics and GitHub Actions summaries expose only aggregate OpenAI App-ready/TLS/DNS/timeout counts.",
+              "",
+              "### Changed",
+              "",
+              "- The AI qualification runtime now preserves the canonical HTTP/TLS/QUIC sniffer while retaining client-owned DNS; it does not restore managed DNS or Fake-IP.",
+              "- OpenAI cache identity includes the reviewed App contract fingerprint, so this release invalidates stale OpenAI-only decisions while Claude/Gemini cache records remain independently reusable.",
+              "- Post-qualification production audit requires the exact OpenAI App route lock ahead of ACL4SSR OpenAI and generic AI rules before the complete stable Mihomo matrix can validate publication.",
+              "",
+              "### Security",
+              "",
+              "- TLS certificate and hostname verification remain mandatory. `skip-cert-verify` is not introduced, and certificate failures are hard `tls_error` qualification failures.",
+              "- Shared third-party infrastructure is routed with exact hosts unless the reviewed OpenAI network contract explicitly requires a wildcard family; broad WorkOS, Cloudflare, Stripe, Sentry, Datadog, Apple, and Imgix suffix capture is forbidden by tests.",
+              "- The six public scenarios, `subscription_1` browsing/AI-only isolation and >2x filtering, client-owned DNS, ACL4SSR Online fidelity, versioned Cloudflare KV release transaction, and source-only GitHub Release policy remain unchanged.",
+              "",
+          )
           changelog.write_text(text.replace(anchor, release, 1), encoding="utf-8")
 
           workflow = Path(".github/workflows/publish.yml")
           text = workflow.read_text(encoding="utf-8")
-          old = '''          cache = data.get("qualification_cache", {})
-          lines = [
-'''
-          new = '''          cache = data.get("qualification_cache", {})
-          openai_app = diagnostics.get("openai_app", {})
-          critical = openai_app.get("critical", {})
-          supporting = openai_app.get("supporting", {})
-          openai_probe = probes.get("ai_openai", {})
-          lines = [
-'''
+          old = block(
+              '          cache = data.get("qualification_cache", {})',
+              "          lines = [",
+          )
+          new = block(
+              '          cache = data.get("qualification_cache", {})',
+              '          openai_app = diagnostics.get("openai_app", {})',
+              '          critical = openai_app.get("critical", {})',
+              '          supporting = openai_app.get("supporting", {})',
+              '          openai_probe = probes.get("ai_openai", {})',
+              "          lines = [",
+          )
           if text.count(old) != 1:
               raise SystemExit("unexpected AI summary cache anchor")
           text = text.replace(old, new, 1)
 
-          old = '''              f"Selector failures: **{int(diagnostics.get('selector_failures', 0))}**",
-              "",
-              "| Service probe | Live tested | Qualified nodes |",
-'''
-          new = '''              f"Selector failures: **{int(diagnostics.get('selector_failures', 0))}**  ",
-              f"OpenAI App-ready nodes: **{int(openai_probe.get('qualified_nodes', 0))}**  ",
-              f"OpenAI critical endpoints: **{int(critical.get('endpoint_count', 0))}**; TLS / DNS / timeout failures: **{int(critical.get('tls_errors', 0))} / {int(critical.get('dns_errors', 0))} / {int(critical.get('timeouts', 0))}**  ",
-              f"OpenAI supporting endpoints: **{int(supporting.get('endpoint_count', 0))}**; TLS failures: **{int(supporting.get('tls_errors', 0))}**",
-              "",
-              "| Service probe | Live tested | Qualified nodes |",
-'''
+          old = block(
+              '              f"Selector failures: **{int(diagnostics.get(\'selector_failures\', 0))}**",',
+              '              "",',
+              '              "| Service probe | Live tested | Qualified nodes |",',
+          )
+          new = block(
+              '              f"Selector failures: **{int(diagnostics.get(\'selector_failures\', 0))}**  ",',
+              '              f"OpenAI App-ready nodes: **{int(openai_probe.get(\'qualified_nodes\', 0))}**  ",',
+              '              f"OpenAI critical endpoints: **{int(critical.get(\'endpoint_count\', 0))}**; TLS / DNS / timeout failures: **{int(critical.get(\'tls_errors\', 0))} / {int(critical.get(\'dns_errors\', 0))} / {int(critical.get(\'timeouts\', 0))}**  ",',
+              '              f"OpenAI supporting endpoints: **{int(supporting.get(\'endpoint_count\', 0))}**; TLS failures: **{int(supporting.get(\'tls_errors\', 0))}**",',
+              '              "",',
+              '              "| Service probe | Live tested | Qualified nodes |",',
+          )
           if text.count(old) != 1:
               raise SystemExit("unexpected AI summary lines anchor")
           workflow.write_text(text.replace(old, new, 1), encoding="utf-8")
