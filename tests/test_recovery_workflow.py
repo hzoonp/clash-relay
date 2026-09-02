@@ -31,7 +31,7 @@ def test_rollback_fetches_private_versioned_previous_release_without_subscriptio
 def test_rollback_runs_current_safety_audit_before_core_validation_and_activation() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     fetch = text.index("Fetch private previous release")
-    audit = text.index("Audit previous release against current safety policy")
+    audit = text.index("Audit previous release against current production policy")
     validate = text.index("Validate previous release with pinned stable Mihomo matrix")
     activate = text.index("Activate audited validated previous release")
     assert fetch < audit < validate < activate
