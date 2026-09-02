@@ -29,7 +29,7 @@ endpoint:        https://android.chat.openai.com/
 interval:        120 seconds
 timeout:         5000 ms
 lazy:            false
-expected-status: 200-499
+expected-status: 200-399/400-499
 selection:       stable-first fallback
 ```
 
@@ -62,6 +62,12 @@ generated
 ```
 
 The post-qualification production audit requires both the exact P24 OpenAI App route lock and the P25 client-path runtime contract. The final exact candidate must still pass every pinned stable Mihomo core before publication.
+
+## Exact historical rollback
+
+P25 is an availability/reliability layer, not a source-permission bypass. Normal publication must include the P25 client-path runtime contract. Emergency rollback remains able to restore the exact bytes of a previously validated P24 release: the rollback workflow explicitly allows only the recognized P24 server-qualified OpenAI group shape after the candidate has still passed the current source isolation, Routing V2, ACL4SSR fidelity, P24 route lock, and current stable Mihomo matrix. The rollback path never rewrites the historical candidate merely to manufacture P25 state.
+
+This narrow compatibility mode is available only through the explicit rollback audit flag and is not used by normal production publication.
 
 ## Cache and observability
 
