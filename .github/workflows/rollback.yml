@@ -64,6 +64,7 @@ jobs:
             --services services.yaml \
             --policies policies.yaml \
             --candidate .work/private/rollback.yaml \
+            --allow-legacy-openai-client-path \
             > .work/private/rollback-current-policy-audit.json
 
       - name: Validate previous release with pinned stable Mihomo matrix
@@ -77,7 +78,7 @@ jobs:
             --work-dir .work/bin/rollback-validation \
             > .work/private/rollback-validation-matrix.json \
             2> .work/rollback-validation.error; then
-            echo "::error title=Rollback validation failed::A pinned stable core rejected the preserved previous release. Detailed core output is intentionally suppressed."
+            echo "::error title=Mihomo rollback validation failed::A pinned stable core rejected the preserved previous release. Detailed core output is intentionally suppressed."
             exit 1
           fi
 
@@ -109,6 +110,9 @@ jobs:
               cores = json.load(handle).get("validated_cores", [])
           with open(".work/private/rollback-source.json", encoding="utf-8") as handle:
               source = json.load(handle)
+          with open(".work/private/rollback-current-policy-audit.json", encoding="utf-8") as handle:
+              audit = json.load(handle)
+          client_path = audit.get("openai_client_path", {})
           lines = [
               "## Production rollback",
               "",
@@ -116,9 +120,10 @@ jobs:
               f"Source: **{source.get('source', 'unknown')}**  ",
               f"Bytes: **{len(content)}**  ",
               f"SHA-256: `{hashlib.sha256(content).hexdigest()}`  ",
-              f"Validated cores: **{', '.join(cores)}**",
+              f"Validated cores: **{', '.join(cores)}**  ",
+              f"OpenAI client-path audit: **{client_path.get('status', 'unknown')}**",
               "",
-              "The activated release passed the current repository policy audit before core validation. No proxy payload values are shown.",
+              "The exact historical release passed current source/routing/OpenAI route-lock safety audits before core validation. A pre-P25 release may retain its historical server-qualified OpenAI runtime shape during emergency rollback; normal publication still requires the P25 client-path layer.",
               "",
           ]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:

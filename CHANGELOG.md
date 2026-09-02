@@ -4,6 +4,27 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-02
+
+### Added
+
+- P25 adds a post-qualification OpenAI client-path hardening stage that keeps P24 server-side App-ready qualification as admission control while generating dedicated client-local OpenAI runtime providers for FlClash/Mihomo.
+- Each qualified OpenAI region receives an isolated inline runtime provider whose local health check targets `https://android.chat.openai.com/` with normal TLS/hostname verification, a 120-second interval, a 5-second timeout, and non-lazy probing.
+- The final production audit now requires the OpenAI client-path runtime contract in addition to the P24 route lock, Routing V2, source reachability, ACL4SSR fidelity, and stable Mihomo matrix.
+
+### Changed
+
+- OpenAI runtime selection is stable-first fallback instead of latency racing: it prefers the declared region order, keeps using the first locally healthy route, and fails over when the user's own Mihomo core marks that path unavailable.
+- Service-qualified OpenAI nodes are cloned into deterministic runtime-only providers with isolated runtime names; the original AI providers remain unchanged for Claude, Gemini, generic AI routing, server qualification, and source-policy accounting.
+- OpenAI server-side qualification cache pass freshness is reduced from the generic six-hour window to two hours; Claude/Gemini keep the existing generic AI cache TTLs.
+- The unified private pipeline is now `generated -> browsing/transport -> AI server qualification -> OpenAI client-path hardening -> final candidate` before post-qualification audit and the stable Mihomo matrix.
+
+### Security
+
+- Client-path hardening does not disable certificate verification, restore managed/Fake-IP DNS, or broaden the OpenAI domain contract. It adds a second health layer on the actual Android/FlClash route without weakening P24 TLS gates.
+- Static Mihomo configuration does not expose durable error-type state, so this release does not claim a persistent 12-24 hour client-side TLS quarantine. Runtime failure handling uses documented provider health-check and fallback semantics only.
+- The six public scenarios, `subscription_1` browsing/AI-only isolation and >2x filtering, ACL4SSR Online fidelity, client-owned DNS, versioned Cloudflare KV release transaction, and source-only GitHub Release policy remain unchanged.
+
 ## [1.6.1] - 2026-09-02
 
 ### Added
@@ -250,7 +271,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/hzoonp/clash-relay/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/hzoonp/clash-relay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/hzoonp/clash-relay/compare/v1.4.1...v1.5.0

@@ -12,10 +12,10 @@ def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.6.1"
+    assert project["version"] == "1.6.2"
     assert __version__ == project["version"]
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.6.1] - 2026-09-02" in changelog
+    assert "## [1.6.2] - 2026-09-02" in changelog
 
 
 def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
@@ -32,6 +32,8 @@ def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> 
     assert policy.history.max_age_seconds == 2592000
     assert policy.ai_cache.pass_ttl_seconds == 21600
     assert policy.ai_cache.failure_ttl_seconds == 3600
+    assert policy.ai_cache.openai_pass_ttl_seconds == 7200
+    assert policy.ai_cache.openai_failure_ttl_seconds == 3600
 
 
 def test_v1_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) -> None:

@@ -39,6 +39,11 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path) -> None:
         "ai_stage",
         "{'status':'qualified','diagnostics':{'qualification_mode':'per-service'}}",
     )
+    _fake_stage(
+        scripts / "harden_openai_runtime.py",
+        "openai_runtime_stage",
+        "{'status':'passed','selection':'stable_first_fallback','runtime_regions':2}",
+    )
 
     output = tmp_path / "final.yaml"
     browsing_report = tmp_path / "browsing.json"
@@ -58,13 +63,18 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path) -> None:
     text = output.read_text(encoding="utf-8")
     assert "browsing_stage: true" in text
     assert "ai_stage: true" in text
+    assert "openai_runtime_stage: true" in text
     assert "browsing_stage" not in candidate.read_text(encoding="utf-8")
     assert result["status"] == "qualified"
     assert [row["name"] for row in result["stages"]] == [
         "generated",
         "browsing_transport_qualified",
         "ai_qualified",
+        "openai_client_path_hardened",
         "final_qualified",
     ]
+    assert result["ai"]["client_path_status"] == "passed"
+    assert result["ai"]["client_path_selection"] == "stable_first_fallback"
+    assert result["ai"]["client_path_regions"] == 2
     assert browsing_report.exists()
     assert ai_report.exists()

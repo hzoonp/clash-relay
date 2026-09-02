@@ -20,6 +20,17 @@ def _inputs(candidate_path: Path) -> dict:
                 "routing_surfaces_checked": 25,
                 "runtime_rules_checked": 22,
             },
+            "openai_client_path": {
+                "status": "passed",
+                "selection": "stable_first_fallback",
+                "runtime_regions": 2,
+                "runtime_providers": 2,
+                "runtime_nodes": 3,
+                "health_check": {
+                    "url": "SHOULD-NOT-LEAK",
+                    "name": "SHOULD-NOT-LEAK",
+                },
+            },
         },
         "browsing": {
             "status": "qualified",
@@ -105,8 +116,17 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "supporting_endpoints": 4,
         "supporting_tls_errors": 1,
     }
+    assert proof["ai"]["openai_client_path"] == {
+        "status": "passed",
+        "selection": "stable_first_fallback",
+        "runtime_regions": 2,
+        "runtime_providers": 2,
+        "runtime_nodes": 3,
+    }
     assert "OpenAI App-ready live nodes | 3" in markdown
     assert "OpenAI critical TLS / DNS / timeout failures | 2 / 1 / 3" in markdown
+    assert "OpenAI client-path selection | stable_first_fallback" in markdown
+    assert "OpenAI client-path nodes | 3" in markdown
     for secret in (
         "SECRET-NODE-NAME",
         "secret.example.invalid",

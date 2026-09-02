@@ -85,7 +85,11 @@ US -> SG -> JP -> TW -> KR -> HK -> OTHER
 
 手动选择地区绝不会静默跨国；自动模式只有当前优先地区整体不可用时才跨区。调度历史是私有匿名状态，只能在当前 live-qualified 集合中降级不稳定节点，不能扩大 source admission。
 
-AI 对 OpenAI、Claude、Gemini 分别独立验证。香港在 AI qualification 前排除，每个服务独立 fail-closed。OpenAI 另外执行经过审查的 ChatGPT App contract：只有所有 critical ChatGPT / Android / 认证 TLS endpoint 都通过正常证书与 hostname 校验的节点才是 App-ready。最终 `cr_openai_app` route lock 会把这组经过审查的应用网络面固定到 `__CR_AI_SERVICE_OPENAI`；共享第三方 CDN/遥测 endpoint 只用于诊断，绝不会成为关闭 TLS 校验的理由。
+AI 对 OpenAI、Claude、Gemini 分别独立验证。香港在 AI qualification 前排除，每个服务独立 fail-closed。OpenAI 另外执行经过审查的 ChatGPT App contract：只有所有 critical ChatGPT / Android / 认证 TLS endpoint 都通过正常证书与 hostname 校验的节点才允许进入 OpenAI qualified pool。最终 `cr_openai_app` route lock 会把这组经过审查的应用网络面固定到 `__CR_AI_SERVICE_OPENAI`；共享第三方 CDN/遥测 endpoint 只用于诊断，绝不会成为关闭 TLS 校验的理由。
+
+v1.6.2 在服务器准入之后再增加一层 **客户端真实链路健康检查**：只把服务器端已合格的 OpenAI 节点复制进隔离的 runtime provider，随后由手机上的 FlClash/Mihomo 每 120 秒通过 `https://android.chat.openai.com/` 检查当前实际的“Wi-Fi/移动网络 → FlClash → 节点 → OpenAI”路径。地区内和地区间均使用 stable-first fallback，优先保持当前第一条健康路径，而不是为了几十毫秒延迟频繁换节点。
+
+静态 Mihomo 配置没有可持久化的“错误类型 + 冷却时间”状态，因此本项目不会宣称已经实现客户端 TLS 错误 12–24 小时 quarantine。v1.6.2 使用的是 Mihomo 官方支持的 provider health-check 和 fallback 语义；如果未来要做持久 TLS-specific quarantine，需要可信的本地 controller/companion，而不是伪造静态配置能力。
 
 ## 生产发布模型
 
@@ -94,7 +98,8 @@ AI 对 OpenAI、Claude、Gemini 分别独立验证。香港在 AI qualification 
 ```text
 generated.yaml
   -> browsing + transport qualification
-  -> AI qualification
+  -> AI 服务器端 qualification
+  -> OpenAI client-path runtime hardening
   -> qualification 后策略审计
   -> tools/mihomo-versions.json 中全部 stable core
   -> versioned Cloudflare KV release transaction
@@ -118,9 +123,9 @@ Rollback 会读取 previous release，并使用**当前仓库策略**和当前 `
 
 ## 可观测性与隐私
 
-Production proof 和私有纵向 metrics 只保存聚合运维信息，例如 candidate SHA/大小、合格节点数量、地区 cohort 计数、AI 服务/App-ready 计数、release 状态、Mihomo 验证数量和有界阶段耗时。不会保存节点名、服务器、凭据、订阅 URL、探测 endpoint URL 或子进程详细诊断。
+Production proof 和私有纵向 metrics 只保存聚合运维信息，例如 candidate SHA/大小、合格节点数量、地区 cohort 计数、AI 服务/App-ready 计数、client-path runtime 计数、release 状态、Mihomo 验证数量和有界阶段耗时。不会保存节点名、服务器、凭据、订阅 URL、探测 endpoint URL 或子进程详细诊断。
 
-P18.1-P23 的长期生产契约见 [Production maturity](docs/production-maturity.md)；v1.6.1 的 App-ready 路由/TLS 契约见 [OpenAI App reliability](docs/openai-app-reliability.md)。
+P18.1-P23 的长期生产契约见 [Production maturity](docs/production-maturity.md)；OpenAI App-ready 路由/TLS 与 client-path runtime 契约见 [OpenAI App reliability](docs/openai-app-reliability.md)。
 
 ## GitHub Secrets / Variables
 

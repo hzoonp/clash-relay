@@ -79,6 +79,24 @@ def _safe_openai_app(value: Any) -> dict[str, int] | None:
     }
 
 
+def _safe_openai_client_path(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    status = value.get("status")
+    selection = value.get("selection")
+    if status not in {"passed", "fail_closed"}:
+        raise ValidationError("production proof received invalid OpenAI client-path status")
+    if selection not in {"stable_first_fallback", "reject"}:
+        raise ValidationError("production proof received invalid OpenAI client-path selection")
+    return {
+        "status": status,
+        "selection": selection,
+        "runtime_regions": max(0, int(value.get("runtime_regions", 0))),
+        "runtime_providers": max(0, int(value.get("runtime_providers", 0))),
+        "runtime_nodes": max(0, int(value.get("runtime_nodes", 0))),
+    }
+
+
 def build_production_proof(
     *,
     candidate_path: Path,
@@ -134,6 +152,9 @@ def build_production_proof(
     openai_app = _safe_openai_app(ai_diagnostics.get("openai_app"))
     if openai_app is not None:
         ai_proof["openai_app"] = openai_app
+    openai_client_path = _safe_openai_client_path(audit.get("openai_client_path"))
+    if openai_client_path is not None:
+        ai_proof["openai_client_path"] = openai_client_path
 
     proof: dict[str, Any] = {
         "status": "passed",
@@ -217,6 +238,17 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
                 f"| OpenAI critical TLS / DNS / timeout failures | {openai_app['critical_tls_errors']} / {openai_app['critical_dns_errors']} / {openai_app['critical_timeouts']} |",
                 f"| OpenAI supporting endpoints | {openai_app['supporting_endpoints']} |",
                 f"| OpenAI supporting TLS failures | {openai_app['supporting_tls_errors']} |",
+            ]
+        )
+    client_path = ai.get("openai_client_path")
+    if isinstance(client_path, dict):
+        lines.extend(
+            [
+                f"| OpenAI client-path | {client_path['status']} |",
+                f"| OpenAI client-path selection | {client_path['selection']} |",
+                f"| OpenAI client-path regions | {client_path['runtime_regions']} |",
+                f"| OpenAI client-path providers | {client_path['runtime_providers']} |",
+                f"| OpenAI client-path nodes | {client_path['runtime_nodes']} |",
             ]
         )
     fail_closed = ai.get("service_fail_closed", [])

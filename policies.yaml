@@ -14,6 +14,8 @@ scheduler:
   ai_cache:
     pass_ttl_seconds: 21600
     failure_ttl_seconds: 3600
+    openai_pass_ttl_seconds: 7200
+    openai_failure_ttl_seconds: 3600
 
 # Routing V2 keeps classification, source permissions, service qualification,
 # region policy, and scheduling as separate dimensions. Browsing owns an
