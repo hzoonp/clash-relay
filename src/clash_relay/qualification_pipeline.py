@@ -82,7 +82,7 @@ def run_qualification_pipeline(
     script_dir: Path | None = None,
     python_executable: str | None = None,
 ) -> dict[str, Any]:
-    """Run browsing+transport then AI qualification using immutable file stages."""
+    """Run immutable browsing, AI admission, and client-path hardening stages."""
     pipeline_started = time.perf_counter()
     if workers < 1:
         raise ValidationError("qualification workers must be at least 1")
@@ -104,6 +104,7 @@ def run_qualification_pipeline(
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"
     ai = stage_dir / "03-ai.yaml"
+    openai_runtime = stage_dir / "04-openai-client-path.yaml"
     try:
         shutil.copyfile(candidate, generated)
         shutil.copyfile(generated, browsing)
@@ -174,7 +175,24 @@ def run_qualification_pipeline(
     ai_elapsed_ms = _elapsed_ms(ai_started)
 
     try:
-        shutil.copyfile(ai, output)
+        shutil.copyfile(ai, openai_runtime)
+    except OSError as exc:
+        raise ValidationError("failed to prepare OpenAI client-path hardening stage") from exc
+    runtime_started = time.perf_counter()
+    runtime_summary = _run_json_stage(
+        "OpenAI client-path",
+        [
+            python,
+            str(scripts / "harden_openai_runtime.py"),
+            "--candidate",
+            str(openai_runtime),
+        ],
+    )
+    runtime_artifact = _artifact(openai_runtime, "openai_client_path_hardened")
+    runtime_elapsed_ms = _elapsed_ms(runtime_started)
+
+    try:
+        shutil.copyfile(openai_runtime, output)
     except OSError as exc:
         raise ValidationError("failed to emit final qualified candidate") from exc
     final_artifact = _artifact(output, "final_qualified")
@@ -183,6 +201,11 @@ def run_qualification_pipeline(
         QualificationStage("generated", generated, generated_artifact.fingerprint),
         QualificationStage("browsing_transport_qualified", browsing, browsing_artifact.fingerprint),
         QualificationStage("ai_qualified", ai, ai_artifact.fingerprint),
+        QualificationStage(
+            "openai_client_path_hardened",
+            openai_runtime,
+            runtime_artifact.fingerprint,
+        ),
         QualificationStage("final_qualified", output, final_artifact.fingerprint),
     )
     return {
@@ -191,6 +214,7 @@ def run_qualification_pipeline(
         "timings_ms": {
             "browsing_transport": browsing_elapsed_ms,
             "ai": ai_elapsed_ms,
+            "openai_client_path": runtime_elapsed_ms,
             "total": _elapsed_ms(pipeline_started),
         },
         "browsing": {
@@ -204,5 +228,8 @@ def run_qualification_pipeline(
             )
             if isinstance(ai_summary.get("diagnostics"), dict)
             else "unknown",
+            "client_path_status": runtime_summary.get("status"),
+            "client_path_selection": runtime_summary.get("selection", "unknown"),
+            "client_path_regions": runtime_summary.get("runtime_regions", 0),
         },
     }
