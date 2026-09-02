@@ -150,9 +150,7 @@ def test_service_qualified_client_path_candidate_is_accepted_by_real_mihomo(
     assert report["runtime_regions"] == 1
     assert report["runtime_nodes"] == 1
     runtime_providers = [
-        name
-        for name in candidate["proxy-providers"]
-        if name.startswith(RUNTIME_PROVIDER_PREFIX)
+        name for name in candidate["proxy-providers"] if name.startswith(RUNTIME_PROVIDER_PREFIX)
     ]
     assert len(runtime_providers) == 1
     assert candidate["proxy-providers"][runtime_providers[0]]["health-check"] == {
