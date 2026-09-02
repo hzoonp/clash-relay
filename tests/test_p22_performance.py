@@ -32,6 +32,12 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     def fake_stage(name, command):
         if name == "AI":
             return {"status": "qualified", "diagnostics": {"qualification_mode": "live"}}
+        if name == "OpenAI client-path":
+            return {
+                "status": "passed",
+                "selection": "stable_first_fallback",
+                "runtime_regions": 2,
+            }
         return {"status": "qualified", "automatic_nodes": 3}
 
     monkeypatch.setattr(pipeline, "_run_json_stage", fake_stage)
@@ -46,7 +52,12 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     )
 
     assert result["status"] == "qualified"
-    assert set(result["timings_ms"]) == {"browsing_transport", "ai", "total"}
+    assert set(result["timings_ms"]) == {
+        "browsing_transport",
+        "ai",
+        "openai_client_path",
+        "total",
+    }
     assert all(isinstance(value, float) and value >= 0 for value in result["timings_ms"].values())
     serialized = json.dumps(result)
     assert "command" not in serialized
