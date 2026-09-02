@@ -34,7 +34,7 @@ jobs:
       - name: Audit authoritative documentation contract
         run: python scripts/audit_documentation_contract.py
       - run: ruff check .
-      - run: ruff format --check .
+      - run: ruff format --diff --check .
       - name: Unit tests and coverage baseline
         run: |
           pytest -m "not integration" \
