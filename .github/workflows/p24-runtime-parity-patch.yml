@@ -22,6 +22,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
+          def block(*lines: str) -> str:
+              return "\n".join(lines) + "\n"
+
           def replace_once(path: str, old: str, new: str) -> None:
               target = Path(path)
               text = target.read_text(encoding="utf-8")
@@ -31,128 +34,134 @@ jobs:
 
           replace_once(
               "src/clash_relay/ai_qualification.py",
-              '''    hosts = base_config.get("hosts")
-          if isinstance(hosts, dict):
-              config["hosts"] = dict(hosts)
-          return config
-          ''',
-              '''    sniffer = base_config.get("sniffer")
-          if isinstance(sniffer, dict):
-              config["sniffer"] = dict(sniffer)
-          hosts = base_config.get("hosts")
-          if isinstance(hosts, dict):
-              config["hosts"] = dict(hosts)
-          return config
-          ''',
+              block(
+                  '    hosts = base_config.get("hosts")',
+                  '    if isinstance(hosts, dict):',
+                  '        config["hosts"] = dict(hosts)',
+                  '    return config',
+              ),
+              block(
+                  '    sniffer = base_config.get("sniffer")',
+                  '    if isinstance(sniffer, dict):',
+                  '        config["sniffer"] = dict(sniffer)',
+                  '    hosts = base_config.get("hosts")',
+                  '    if isinstance(hosts, dict):',
+                  '        config["hosts"] = dict(hosts)',
+                  '    return config',
+              ),
           )
 
           replace_once(
               "src/clash_relay/production_metrics.py",
-              '''def _clean_ai(value: Any) -> dict[str, Any] | None:
-              if not isinstance(value, dict):
-                  return None
-              qualified = value.get("qualified_by_service")
-              safe_services: dict[str, int] = {}
-              if isinstance(qualified, dict):
-                  for name, count in sorted(qualified.items()):
-                      if isinstance(name, str) and 0 < len(name) <= 64:
-                          safe_services[name] = _non_negative_int(count)
-              return {
-                  "candidate_nodes": _non_negative_int(value.get("candidate_nodes")),
-                  "qualified_by_service": safe_services,
-                  "live_service_probes": _non_negative_int(value.get("live_service_probes")),
-                  "cache_pass_hits": _non_negative_int(value.get("cache_pass_hits")),
-                  "cache_fail_hits": _non_negative_int(value.get("cache_fail_hits")),
-              }
-          ''',
-              '''def _clean_ai(value: Any) -> dict[str, Any] | None:
-              if not isinstance(value, dict):
-                  return None
-              qualified = value.get("qualified_by_service")
-              safe_services: dict[str, int] = {}
-              if isinstance(qualified, dict):
-                  for name, count in sorted(qualified.items()):
-                      if isinstance(name, str) and 0 < len(name) <= 64:
-                          safe_services[name] = _non_negative_int(count)
-              clean: dict[str, Any] = {
-                  "candidate_nodes": _non_negative_int(value.get("candidate_nodes")),
-                  "qualified_by_service": safe_services,
-                  "live_service_probes": _non_negative_int(value.get("live_service_probes")),
-                  "cache_pass_hits": _non_negative_int(value.get("cache_pass_hits")),
-                  "cache_fail_hits": _non_negative_int(value.get("cache_fail_hits")),
-              }
-              openai_app = value.get("openai_app")
-              if isinstance(openai_app, dict):
-                  clean["openai_app"] = {
-                      "app_ready_nodes": _non_negative_int(openai_app.get("app_ready_nodes")),
-                      "critical_endpoint_count": _non_negative_int(
-                          openai_app.get("critical_endpoint_count")
-                      ),
-                      "critical_tls_errors": _non_negative_int(openai_app.get("critical_tls_errors")),
-                      "critical_dns_errors": _non_negative_int(openai_app.get("critical_dns_errors")),
-                      "critical_timeouts": _non_negative_int(openai_app.get("critical_timeouts")),
-                      "supporting_endpoint_count": _non_negative_int(
-                          openai_app.get("supporting_endpoint_count")
-                      ),
-                      "supporting_tls_errors": _non_negative_int(
-                          openai_app.get("supporting_tls_errors")
-                      ),
-                  }
-              return clean
-          ''',
+              block(
+                  'def _clean_ai(value: Any) -> dict[str, Any] | None:',
+                  '    if not isinstance(value, dict):',
+                  '        return None',
+                  '    qualified = value.get("qualified_by_service")',
+                  '    safe_services: dict[str, int] = {}',
+                  '    if isinstance(qualified, dict):',
+                  '        for name, count in sorted(qualified.items()):',
+                  '            if isinstance(name, str) and 0 < len(name) <= 64:',
+                  '                safe_services[name] = _non_negative_int(count)',
+                  '    return {',
+                  '        "candidate_nodes": _non_negative_int(value.get("candidate_nodes")),',
+                  '        "qualified_by_service": safe_services,',
+                  '        "live_service_probes": _non_negative_int(value.get("live_service_probes")),',
+                  '        "cache_pass_hits": _non_negative_int(value.get("cache_pass_hits")),',
+                  '        "cache_fail_hits": _non_negative_int(value.get("cache_fail_hits")),',
+                  '    }',
+              ),
+              block(
+                  'def _clean_ai(value: Any) -> dict[str, Any] | None:',
+                  '    if not isinstance(value, dict):',
+                  '        return None',
+                  '    qualified = value.get("qualified_by_service")',
+                  '    safe_services: dict[str, int] = {}',
+                  '    if isinstance(qualified, dict):',
+                  '        for name, count in sorted(qualified.items()):',
+                  '            if isinstance(name, str) and 0 < len(name) <= 64:',
+                  '                safe_services[name] = _non_negative_int(count)',
+                  '    clean: dict[str, Any] = {',
+                  '        "candidate_nodes": _non_negative_int(value.get("candidate_nodes")),',
+                  '        "qualified_by_service": safe_services,',
+                  '        "live_service_probes": _non_negative_int(value.get("live_service_probes")),',
+                  '        "cache_pass_hits": _non_negative_int(value.get("cache_pass_hits")),',
+                  '        "cache_fail_hits": _non_negative_int(value.get("cache_fail_hits")),',
+                  '    }',
+                  '    openai_app = value.get("openai_app")',
+                  '    if isinstance(openai_app, dict):',
+                  '        clean["openai_app"] = {',
+                  '            "app_ready_nodes": _non_negative_int(openai_app.get("app_ready_nodes")),',
+                  '            "critical_endpoint_count": _non_negative_int(',
+                  '                openai_app.get("critical_endpoint_count")',
+                  '            ),',
+                  '            "critical_tls_errors": _non_negative_int(openai_app.get("critical_tls_errors")),',
+                  '            "critical_dns_errors": _non_negative_int(openai_app.get("critical_dns_errors")),',
+                  '            "critical_timeouts": _non_negative_int(openai_app.get("critical_timeouts")),',
+                  '            "supporting_endpoint_count": _non_negative_int(',
+                  '                openai_app.get("supporting_endpoint_count")',
+                  '            ),',
+                  '            "supporting_tls_errors": _non_negative_int(',
+                  '                openai_app.get("supporting_tls_errors")',
+                  '            ),',
+                  '        }',
+                  '    return clean',
+              ),
           )
 
           replace_once(
               "src/clash_relay/production_metrics.py",
-              '''        "ai": {
-                      "candidate_nodes": int(ai_diagnostics.get("tested_nodes", 0)),
-                      "qualified_by_service": dict(sorted(qualified_by_service.items())),
-                      "live_service_probes": int(qualification_cache.get("live_service_probes", 0)),
-                      "cache_pass_hits": int(qualification_cache.get("cache_pass_hits", 0)),
-                      "cache_fail_hits": int(qualification_cache.get("cache_fail_hits", 0)),
-                  },
-          ''',
-              '''        "ai": {
-                      "candidate_nodes": int(ai_diagnostics.get("tested_nodes", 0)),
-                      "qualified_by_service": dict(sorted(qualified_by_service.items())),
-                      "live_service_probes": int(qualification_cache.get("live_service_probes", 0)),
-                      "cache_pass_hits": int(qualification_cache.get("cache_pass_hits", 0)),
-                      "cache_fail_hits": int(qualification_cache.get("cache_fail_hits", 0)),
-                      "openai_app": {
-                          "app_ready_nodes": int(qualified_by_service.get("ai_openai", 0)),
-                          "critical_endpoint_count": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("critical", {})
-                              .get("endpoint_count", 0)
-                          ),
-                          "critical_tls_errors": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("critical", {})
-                              .get("tls_errors", 0)
-                          ),
-                          "critical_dns_errors": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("critical", {})
-                              .get("dns_errors", 0)
-                          ),
-                          "critical_timeouts": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("critical", {})
-                              .get("timeouts", 0)
-                          ),
-                          "supporting_endpoint_count": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("supporting", {})
-                              .get("endpoint_count", 0)
-                          ),
-                          "supporting_tls_errors": int(
-                              ai_diagnostics.get("openai_app", {})
-                              .get("supporting", {})
-                              .get("tls_errors", 0)
-                          ),
-                      },
-                  },
-          ''',
+              block(
+                  '        "ai": {',
+                  '            "candidate_nodes": int(ai_diagnostics.get("tested_nodes", 0)),',
+                  '            "qualified_by_service": dict(sorted(qualified_by_service.items())),',
+                  '            "live_service_probes": int(qualification_cache.get("live_service_probes", 0)),',
+                  '            "cache_pass_hits": int(qualification_cache.get("cache_pass_hits", 0)),',
+                  '            "cache_fail_hits": int(qualification_cache.get("cache_fail_hits", 0)),',
+                  '        },',
+              ),
+              block(
+                  '        "ai": {',
+                  '            "candidate_nodes": int(ai_diagnostics.get("tested_nodes", 0)),',
+                  '            "qualified_by_service": dict(sorted(qualified_by_service.items())),',
+                  '            "live_service_probes": int(qualification_cache.get("live_service_probes", 0)),',
+                  '            "cache_pass_hits": int(qualification_cache.get("cache_pass_hits", 0)),',
+                  '            "cache_fail_hits": int(qualification_cache.get("cache_fail_hits", 0)),',
+                  '            "openai_app": {',
+                  '                "app_ready_nodes": int(qualified_by_service.get("ai_openai", 0)),',
+                  '                "critical_endpoint_count": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("critical", {})',
+                  '                    .get("endpoint_count", 0)',
+                  '                ),',
+                  '                "critical_tls_errors": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("critical", {})',
+                  '                    .get("tls_errors", 0)',
+                  '                ),',
+                  '                "critical_dns_errors": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("critical", {})',
+                  '                    .get("dns_errors", 0)',
+                  '                ),',
+                  '                "critical_timeouts": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("critical", {})',
+                  '                    .get("timeouts", 0)',
+                  '                ),',
+                  '                "supporting_endpoint_count": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("supporting", {})',
+                  '                    .get("endpoint_count", 0)',
+                  '                ),',
+                  '                "supporting_tls_errors": int(',
+                  '                    ai_diagnostics.get("openai_app", {})',
+                  '                    .get("supporting", {})',
+                  '                    .get("tls_errors", 0)',
+                  '                ),',
+                  '            },',
+                  '        },',
+              ),
           )
 
           Path(".github/workflows/p24-runtime-parity-patch.yml").unlink()
