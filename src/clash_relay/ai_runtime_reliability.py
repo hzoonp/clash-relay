@@ -208,7 +208,9 @@ def apply_openai_client_path_hardening(config: dict[str, Any]) -> dict[str, Any]
             raise ValidationError("OpenAI client-path target references a non-OpenAI anchor")
         anchor = groups.get(anchor_name)
         if not isinstance(anchor, dict) or anchor.get("hidden") is not True:
-            raise ValidationError("OpenAI client-path target references a missing/non-hidden anchor")
+            raise ValidationError(
+                "OpenAI client-path target references a missing/non-hidden anchor"
+            )
         uses = anchor.get("use")
         filter_pattern = anchor.get("filter")
         if not isinstance(uses, list) or len(uses) != 1 or not isinstance(filter_pattern, str):
@@ -322,7 +324,9 @@ def audit_openai_client_path(config: dict[str, Any]) -> dict[str, Any]:
             raise ValidationError("OpenAI client-path runtime provider is empty")
         for proxy in payload:
             if not isinstance(proxy, dict) or not isinstance(proxy.get("name"), str):
-                raise ValidationError("OpenAI client-path runtime provider contains an unnamed proxy")
+                raise ValidationError(
+                    "OpenAI client-path runtime provider contains an unnamed proxy"
+                )
             if " [OAI:" not in str(proxy["name"]):
                 raise ValidationError("OpenAI client-path runtime proxy name is not isolated")
         runtime_nodes += len(payload)
