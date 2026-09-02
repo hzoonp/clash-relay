@@ -61,6 +61,24 @@ def _safe_release(value: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _safe_openai_app(value: Any) -> dict[str, int] | None:
+    if not isinstance(value, dict):
+        return None
+    critical = value.get("critical")
+    supporting = value.get("supporting")
+    if not isinstance(critical, dict) or not isinstance(supporting, dict):
+        return None
+    return {
+        "app_ready_live_nodes": max(0, int(critical.get("app_ready_live_nodes", 0))),
+        "critical_endpoints": max(0, int(critical.get("endpoint_count", 0))),
+        "critical_tls_errors": max(0, int(critical.get("tls_errors", 0))),
+        "critical_dns_errors": max(0, int(critical.get("dns_errors", 0))),
+        "critical_timeouts": max(0, int(critical.get("timeouts", 0))),
+        "supporting_endpoints": max(0, int(supporting.get("endpoint_count", 0))),
+        "supporting_tls_errors": max(0, int(supporting.get("tls_errors", 0))),
+    }
+
+
 def build_production_proof(
     *,
     candidate_path: Path,
@@ -105,6 +123,18 @@ def build_production_proof(
     if ai.get("status") != "qualified":
         raise ValidationError("production proof requires successful AI qualification")
 
+    ai_proof: dict[str, Any] = {
+        "tested": int(ai_diagnostics.get("tested_nodes", 0)),
+        "selector_failures": int(ai_diagnostics.get("selector_failures", 0)),
+        "service_qualified": {
+            str(name): int(count) for name, count in sorted(service_counts.items())
+        },
+        "service_fail_closed": sorted(str(name) for name in ai.get("service_fail_closed", [])),
+    }
+    openai_app = _safe_openai_app(ai_diagnostics.get("openai_app"))
+    if openai_app is not None:
+        ai_proof["openai_app"] = openai_app
+
     proof: dict[str, Any] = {
         "status": "passed",
         "candidate": {
@@ -129,14 +159,7 @@ def build_production_proof(
             "rejected": int(browsing.get("failed_nodes", 0)),
             "automatic": int(browsing.get("automatic_nodes", 0)),
         },
-        "ai": {
-            "tested": int(ai_diagnostics.get("tested_nodes", 0)),
-            "selector_failures": int(ai_diagnostics.get("selector_failures", 0)),
-            "service_qualified": {
-                str(name): int(count) for name, count in sorted(service_counts.items())
-            },
-            "service_fail_closed": sorted(str(name) for name in ai.get("service_fail_closed", [])),
-        },
+        "ai": ai_proof,
         "validated_cores": list(validated_cores),
         "publication": publication_status,
     }
@@ -185,6 +208,17 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     ]
     for name, count in service_counts.items():
         lines.append(f"| AI {name} qualified | {count} |")
+    openai_app = ai.get("openai_app")
+    if isinstance(openai_app, dict):
+        lines.extend(
+            [
+                f"| OpenAI App-ready live nodes | {openai_app['app_ready_live_nodes']} |",
+                f"| OpenAI critical endpoints | {openai_app['critical_endpoints']} |",
+                f"| OpenAI critical TLS / DNS / timeout failures | {openai_app['critical_tls_errors']} / {openai_app['critical_dns_errors']} / {openai_app['critical_timeouts']} |",
+                f"| OpenAI supporting endpoints | {openai_app['supporting_endpoints']} |",
+                f"| OpenAI supporting TLS failures | {openai_app['supporting_tls_errors']} |",
+            ]
+        )
     fail_closed = ai.get("service_fail_closed", [])
     lines.append(
         f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |"
@@ -206,7 +240,7 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "This proof contains aggregate metadata only; node names, servers, credentials, and subscription URLs are intentionally excluded.",
+            "This proof contains aggregate metadata only; node names, servers, credentials, endpoint URLs, and subscription URLs are intentionally excluded.",
             "",
         ]
     )
