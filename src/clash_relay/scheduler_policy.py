@@ -78,12 +78,8 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         ai_cache=AICachePolicy(
             pass_ttl_seconds=int(ai_cache.get("pass_ttl_seconds", 6 * 60 * 60)),
             failure_ttl_seconds=int(ai_cache.get("failure_ttl_seconds", 60 * 60)),
-            openai_pass_ttl_seconds=int(
-                ai_cache.get("openai_pass_ttl_seconds", 2 * 60 * 60)
-            ),
-            openai_failure_ttl_seconds=int(
-                ai_cache.get("openai_failure_ttl_seconds", 60 * 60)
-            ),
+            openai_pass_ttl_seconds=int(ai_cache.get("openai_pass_ttl_seconds", 2 * 60 * 60)),
+            openai_failure_ttl_seconds=int(ai_cache.get("openai_failure_ttl_seconds", 60 * 60)),
         ),
     )
     if result.browsing.attempts < 1 or result.browsing.attempts > 10:
@@ -129,8 +125,7 @@ def load_scheduler_policy(path: Path) -> SchedulerPolicy:
         )
     if (
         result.ai_cache.openai_failure_ttl_seconds < 60
-        or result.ai_cache.openai_failure_ttl_seconds
-        > result.ai_cache.openai_pass_ttl_seconds
+        or result.ai_cache.openai_failure_ttl_seconds > result.ai_cache.openai_pass_ttl_seconds
     ):
         raise ValidationError(
             "scheduler.ai_cache.openai_failure_ttl_seconds must be between 60s and OpenAI pass TTL"
