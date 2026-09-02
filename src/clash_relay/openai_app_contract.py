@@ -50,7 +50,6 @@ _EXACT_HOSTS = (
     "challenges.cloudflare.com",
     "chat.openai.com",
     "desktop.chat.openai.com",
-    "desktop.chatgpt.com",
     "forwarder.workos.com",
     "humb.apple.com",
     "images.workoscdn.com",
