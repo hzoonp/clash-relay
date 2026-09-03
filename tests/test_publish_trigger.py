@@ -153,7 +153,9 @@ def test_promotion_guard_precedes_matrix_and_release_transaction() -> None:
     text = WORKFLOW.read_text()
     baseline = text.index("Fetch current production baseline")
     guard = text.index("Enforce production promotion guard")
-    validation = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+    validation = text.index(
+        "Validate exact qualified candidate with the pinned stable Mihomo matrix"
+    )
     publish = text.index("Publish versioned validated release transaction")
     assert baseline < guard < validation < publish
     assert "python scripts/fetch_current_config.py" in text[baseline:guard]
