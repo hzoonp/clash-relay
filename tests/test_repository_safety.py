@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from clash_relay.policy_document import load_policy_document
+
 AI_COUNTRY_GROUPS = [
     "AI · 美国",
     "AI · 新加坡",
@@ -58,7 +60,7 @@ def test_public_production_skips_individual_invalid_proxy_entries(repo_root: Pat
 def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
     repo_root: Path,
 ) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
     acl = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
 
@@ -118,44 +120,43 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error" not in ci
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    assert publish.count("continue-on-error: true") == 2
-    assert publish.count("always()") == 1
-    assert (
-        "- name: Remove private candidate\n        if: always()\n        run: rm -rf .work/private"
-    ) in publish
-
-    pipeline_start = publish.index("- name: Run unified private production pipeline")
-    guard_start = publish.index("- name: Enforce production promotion guard")
-    matrix_start = publish.index(
-        "- name: Validate exact qualified candidate with the pinned stable Mihomo matrix"
+    lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
+        encoding="utf-8"
     )
-    release_start = publish.index("- name: Publish versioned validated release transaction")
-    ai_state = publish.index("- name: Persist private AI qualification cache")
-    history_state = publish.index("- name: Persist private scheduler history")
-    result = publish.index("- name: Record publication result")
-    release_block = publish[release_start:ai_state]
-    assert "continue-on-error" not in release_block
-    assert "always()" not in release_block
-    assert "continue-on-error: true" in publish[ai_state:history_state]
-    assert "continue-on-error: true" in publish[history_state:result]
 
-    assert ".work/private/config.yaml" in publish
-    assert "python scripts/run_production_pipeline.py" in publish
-    assert "python scripts/check_promotion_guard.py" in publish
-    assert "python scripts/validate_mihomo_matrix.py" in publish
-    assert "python scripts/publish_release_bundle.py" in publish
+    assert "continue-on-error" not in publish
+    assert "always()" not in publish
+    assert publish.count("python scripts/run_production_release.py") == 1
+    assert "python scripts/run_production_pipeline.py" not in publish
+    assert "python scripts/check_promotion_guard.py" not in publish
+    assert "python scripts/validate_mihomo_matrix.py" not in publish
+    assert "python scripts/publish_release_bundle.py" not in publish
     assert "python scripts/qualify_candidate.py" not in publish
     assert "python scripts/qualify_ai.py" not in publish
     assert "python - <<" not in publish
     assert "v1.19.30" not in publish
     assert "v1.19.29" not in publish
-    assert pipeline_start < guard_start < matrix_start < release_start
+
+    qualify = lifecycle.index("pipeline = self._qualify(binary)")
+    guard = lifecycle.index("promotion = self._promotion_guard()")
+    matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
+    release = lifecycle.index("release = self._publish_release()")
+    persist = lifecycle.index("derived_state = self._persist_derived_state()")
+    assert qualify < guard < matrix < release < persist
+    assert lifecycle.count("best_effort=True") == 2
+    assert "persist_ai_qualification_cache" in lifecycle
+    assert "persist_scheduler_history" in lifecycle
+    assert "finally:" in lifecycle
+    assert "shutil.rmtree(self.paths.private_dir" in lifecycle
 
 
 def test_public_production_has_no_sensitive_github_publisher(repo_root: Path) -> None:
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
+        encoding="utf-8"
+    )
     assert "github.ref == 'refs/heads/main'" in publish
-    assert "--mode cloudflare_kv" in publish
+    assert 'publication_gate(project.config, "cloudflare_kv")' in lifecycle
     assert "CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}" in publish
     assert "CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}" in publish
     assert "CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}" in publish
