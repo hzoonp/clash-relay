@@ -137,7 +137,9 @@ class ProductionPipeline:
                 if text and not text.endswith("\n"):
                     handle.write("\n")
         except OSError as exc:
-            raise ValidationError("production lifecycle could not append the Actions summary") from exc
+            raise ValidationError(
+                "production lifecycle could not append the Actions summary"
+            ) from exc
 
     def _script_command(self, name: str, *args: str) -> list[str]:
         return [sys.executable, str(self.paths.scripts_dir / name), *args]
