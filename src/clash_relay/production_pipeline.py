@@ -68,7 +68,9 @@ def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"production pipeline could not read JSON input {path.name!r}") from exc
+        raise ValidationError(
+            f"production pipeline could not read JSON input {path.name!r}"
+        ) from exc
     if not isinstance(value, dict):
         raise ValidationError(f"production pipeline JSON input {path.name!r} must be an object")
     return value
