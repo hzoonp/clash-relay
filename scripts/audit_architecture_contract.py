@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when P27-P32 architecture boundaries regress."""
+"""Fail CI when the P27-P38 architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 
 from clash_relay.policy_contract import load_policy_contract
 from clash_relay.policy_document import load_policy_document
+from clash_relay.util import load_yaml_file
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,8 +20,7 @@ def main() -> int:
     policy_document = load_policy_document(ROOT / "policies.yaml")
     contract = load_policy_contract(policy_document.document)
 
-    # P27: routing shadow/audit are consumers of the declared contract, never a
-    # second source of public selector names.
+    # P27/P35: declaration truth is explicit. No Python routing-name/default fallback.
     for relative in (
         "src/clash_relay/routing_shadow.py",
         "src/clash_relay/routing_v2_audit.py",
@@ -33,8 +33,16 @@ def main() -> int:
                 )
         if "load_policy_contract" not in content:
             raise SystemExit(f"architecture audit: {relative} does not consume PolicyContract")
+    policy_contract = _text("src/clash_relay/policy_contract.py")
+    routing_policy = _text("src/clash_relay/routing_policy_v2.py")
+    if "_LEGACY_DEFAULT_CONTRACT" in policy_contract:
+        raise SystemExit("architecture audit: legacy PolicyContract defaults remain")
+    if "_default_document" in routing_policy:
+        raise SystemExit("architecture audit: legacy Routing V2 defaults remain")
+    if "routing policy and routing.contract are required" not in policy_contract:
+        raise SystemExit("architecture audit: PolicyContract no longer fails closed")
 
-    # P28: production reachability and builder provider traversal are owned by RuntimeGraph.
+    # P28: RuntimeGraph is the topology truth.
     production_audit = _text("src/clash_relay/production_audit.py")
     if "RuntimeGraph" not in production_audit or "def _reachable_sources(" in production_audit:
         raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
@@ -42,26 +50,70 @@ def main() -> int:
     if "RuntimeGraph" not in builder or ".provider_order(" not in builder:
         raise SystemExit("architecture audit: builder bypasses RuntimeGraph provider traversal")
 
-    # P29/P31: workflow orchestration delegates business stages to application scripts.
+    # P33: Actions invokes one application entrypoint and contains no business pipeline.
     workflow = _text(".github/workflows/publish.yml")
-    if "scripts/run_production_pipeline.py" not in workflow:
-        raise SystemExit("architecture audit: publish workflow bypasses ProductionPipeline")
-    if "scripts/check_promotion_guard.py" not in workflow:
-        raise SystemExit("architecture audit: publish workflow bypasses Promotion Guard")
+    if workflow.count("python scripts/run_production_release.py") != 1:
+        raise SystemExit("architecture audit: publish workflow must invoke one production entrypoint")
+    forbidden_leaf_scripts = (
+        "run_production_pipeline.py",
+        "fetch_current_config.py",
+        "check_promotion_guard.py",
+        "validate_mihomo_matrix.py",
+        "publish_release_bundle.py",
+        "render_production_proof.py",
+        "load_scheduler_history.py",
+        "load_ai_qualification_cache.py",
+    )
+    for name in forbidden_leaf_scripts:
+        if name in workflow:
+            raise SystemExit(f"architecture audit: workflow directly orchestrates {name}")
     if "python - <<" in workflow or "python - <<'PY'" in workflow:
-        raise SystemExit(
-            "architecture audit: publish workflow contains inline Python business logic"
-        )
+        raise SystemExit("architecture audit: publish workflow contains inline Python business logic")
+    if len(workflow.splitlines()) >= 100:
+        raise SystemExit("architecture audit: publish workflow is no longer a thin adapter")
 
-    # P30: split physical policy declarations must normalize before domain use.
-    if not (ROOT / "schemas/policy-manifest.schema.json").is_file():
-        raise SystemExit("architecture audit: Policy Model v2 schema is missing")
-    if not (ROOT / "src/clash_relay/policy_document.py").is_file():
-        raise SystemExit("architecture audit: Policy Model v2 normalizer is missing")
+    lifecycle = _text("src/clash_relay/production_lifecycle.py")
+    ordered_stages = (
+        "generation = self._generate()",
+        "self._load_derived_state()",
+        "binary = self._download_primary_mihomo()",
+        "pipeline = self._qualify(binary)",
+        "promotion = self._promotion_guard()",
+        "matrix = self._validate_matrix(binary)",
+        "release = self._publish_release()",
+        "derived_state = self._persist_derived_state()",
+        "proof = self._render_existing_proof(release=release)",
+        "manifest = self._render_release_manifest(",
+    )
+    positions = [lifecycle.find(stage) for stage in ordered_stages]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
+        raise SystemExit("architecture audit: production lifecycle stage order regressed")
+    if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
+        raise SystemExit("architecture audit: private production state is not always cleaned")
 
-    # P31: promotion policy is a public declaration, not a hidden workflow threshold.
+    # P34: canonical physical policy is v2 and has four disjoint domain fragments.
+    raw_manifest = load_yaml_file(ROOT / "policies.yaml")
+    expected_fragments = {"routing", "scheduling", "classification", "topology"}
+    if not isinstance(raw_manifest, dict) or raw_manifest.get("version") != 2:
+        raise SystemExit("architecture audit: canonical policies.yaml is not Policy Model v2")
+    fragments = raw_manifest.get("fragments")
+    if not isinstance(fragments, dict) or set(fragments) != expected_fragments:
+        raise SystemExit("architecture audit: canonical Policy Model v2 fragment layout drifted")
+    if not (ROOT / "scripts/migrate_policy_v2.py").is_file():
+        raise SystemExit("architecture audit: Policy Model v2 migration tool is missing")
+
+    # P36: generic Services are an explicit compatibility-only extension, not production truth.
+    services = load_yaml_file(ROOT / "services.yaml")
+    if services != {"version": 1, "services": []}:
+        raise SystemExit("architecture audit: canonical services.yaml gained production semantics")
+
+    # P31/P37: promotion policy and aggregate release proof remain explicit public contracts.
     if not (ROOT / "promotion-guard.yaml").is_file():
         raise SystemExit("architecture audit: promotion-guard.yaml is missing")
+    if not (ROOT / "src/clash_relay/release_manifest.py").is_file():
+        raise SystemExit("architecture audit: aggregate release manifest is missing")
+    if "release-manifest.json" not in lifecycle or "render_release_manifest_markdown" not in lifecycle:
+        raise SystemExit("architecture audit: production lifecycle omits P37 release manifest")
 
     print("architecture contract audit: passed")
     return 0
