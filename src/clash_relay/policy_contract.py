@@ -1,9 +1,10 @@
 """Declarative names and fidelity contracts for the canonical production profile.
 
-The core compiler/audits consume this structure instead of embedding production
-selector names, region labels, or ACL4SSR binding targets in Python. A default
-contract preserves compatibility for older forks that declare Routing V2 but
-have not yet added the P15 contract block.
+The production compiler and audits consume ``routing.contract`` as the sole
+source of runtime selector names, compatibility bindings, AI aliases, and
+classification ordering.  A legacy fallback remains only for projects that do
+not declare Routing V2 at all; once a ``routing`` block is present the contract
+is mandatory and fail-closed.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ from typing import Any
 
 from .errors import ConfigurationError
 
-_DEFAULT_CONTRACT: dict[str, Any] = {
+# Compatibility only.  Canonical/production projects declare routing.contract
+# explicitly in policies.yaml.  Do not add new production semantics here.
+_LEGACY_DEFAULT_CONTRACT: dict[str, Any] = {
     "public_groups": {
         "general": "代理选择",
         "browsing": "网页浏览",
@@ -105,6 +108,17 @@ class AiPolicyContract:
     def canonical_region_display(self) -> dict[str, str]:
         return {region: names[0] for region, names in self.region_display_names.items() if names}
 
+    @property
+    def display_region_codes(self) -> dict[str, str]:
+        return {
+            display_name: region
+            for region, display_names in self.region_display_names.items()
+            for display_name in display_names
+        }
+
+    def region_for_display(self, display_name: str) -> str | None:
+        return self.display_region_codes.get(display_name)
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimePolicyContract:
@@ -123,6 +137,30 @@ class RuntimePolicyContract:
     @property
     def visible_groups(self) -> frozenset[str]:
         return frozenset(self.public_groups.values())
+
+    def public_group(self, purpose: str) -> str:
+        try:
+            return self.public_groups[purpose]
+        except KeyError as exc:
+            raise ConfigurationError(
+                f"routing contract has no public group for purpose {purpose!r}"
+            ) from exc
+
+    def automatic_group(self, purpose: str) -> str:
+        try:
+            return self.automatic_groups[purpose]
+        except KeyError as exc:
+            raise ConfigurationError(
+                f"routing contract has no automatic group for purpose {purpose!r}"
+            ) from exc
+
+    def binding_target(self, source_id: str) -> str:
+        try:
+            return self.binding_targets[source_id]
+        except KeyError as exc:
+            raise ConfigurationError(
+                f"routing contract has no target for binding {source_id!r}"
+            ) from exc
 
 
 def _string_mapping(value: Any, *, field: str) -> dict[str, str]:
@@ -148,8 +186,12 @@ def _string_list(value: Any, *, field: str, allow_empty: bool = False) -> tuple[
 def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
     routing = policies.get("routing")
     raw = routing.get("contract") if isinstance(routing, dict) else None
+    if isinstance(routing, dict) and raw is None:
+        raise ConfigurationError(
+            "routing.contract is required whenever the routing policy is declared"
+        )
     declared = raw is not None
-    document = _DEFAULT_CONTRACT if raw is None else raw
+    document = _LEGACY_DEFAULT_CONTRACT if raw is None else raw
     if not isinstance(document, dict):
         raise ConfigurationError("routing contract must be a mapping")
 
@@ -192,6 +234,14 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
     }
     if len(region_display_names) != len(region_raw):
         raise ConfigurationError("routing contract region names must be strings")
+
+    all_region_displays = [
+        display_name
+        for display_names in region_display_names.values()
+        for display_name in display_names
+    ]
+    if len(all_region_displays) != len(set(all_region_displays)):
+        raise ConfigurationError("routing contract AI region display aliases must be globally unique")
 
     binding_targets = _string_mapping(document.get("binding_targets"), field="binding_targets")
     priority_raw = document.get("priority_edges")
@@ -254,6 +304,7 @@ def policy_contract_summary(contract: RuntimePolicyContract) -> dict[str, Any]:
         "public_groups": dict(contract.public_groups),
         "automatic_groups": dict(contract.automatic_groups),
         "required_ai_exclusions": list(contract.ai.required_excluded_regions),
+        "compatibility_selectors": len(contract.compatibility_selectors),
         "bindings": len(contract.binding_targets),
         "priority_edges": len(contract.priority_edges),
     }
