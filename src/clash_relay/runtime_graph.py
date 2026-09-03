@@ -243,6 +243,32 @@ class RuntimeGraph:
         reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
         return reachability.providers
 
+    def provider_order(self, target: str) -> tuple[str, ...]:
+        """Return providers in deterministic group traversal order.
+
+        This query intentionally mirrors the manual-selection surface: it walks
+        group references breadth-first and ignores proxy dialers, while all
+        topology validation remains owned by ``walk``/``walk_resolved``.
+        """
+
+        pending = [target]
+        visited: set[str] = set()
+        providers: list[str] = []
+        while pending:
+            name = pending.pop(0)
+            if name in visited:
+                continue
+            visited.add(name)
+            if name not in self.groups:
+                continue
+            for provider_name in self.group_uses(name):
+                if provider_name in self.providers and provider_name not in providers:
+                    providers.append(provider_name)
+            pending.extend(
+                member for member in self.group_members(name) if member in self.groups
+            )
+        return tuple(providers)
+
     def reachable_sources(
         self,
         target: str,
