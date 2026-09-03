@@ -8,9 +8,7 @@ from pathlib import Path
 
 def _load_script(repo_root: Path):
     path = repo_root / "scripts" / "harden_openai_runtime.py"
-    spec = importlib.util.spec_from_file_location(
-        "test_harden_openai_runtime_script", path
-    )
+    spec = importlib.util.spec_from_file_location("test_harden_openai_runtime_script", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -18,7 +16,10 @@ def _load_script(repo_root: Path):
 
 
 def test_runtime_operation_status_cannot_override_pipeline_success(
-    repo_root: Path, tmp_path: Path, monkeypatch, capsys
+    repo_root: Path,
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
 ) -> None:
     module = _load_script(repo_root)
     candidate = tmp_path / "candidate.yaml"
@@ -34,9 +35,7 @@ def test_runtime_operation_status_cannot_override_pipeline_success(
             "runtime_nodes": 4,
         },
     )
-    monkeypatch.setattr(
-        sys, "argv", ["harden_openai_runtime.py", "--candidate", str(candidate)]
-    )
+    monkeypatch.setattr(sys, "argv", ["harden_openai_runtime.py", "--candidate", str(candidate)])
 
     assert module.main() == 0
     result = json.loads(capsys.readouterr().out)
