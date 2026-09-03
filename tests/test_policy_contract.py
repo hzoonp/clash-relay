@@ -45,7 +45,7 @@ def test_contract_rejects_missing_public_scenario_name() -> None:
 def test_declared_routing_requires_an_explicit_contract() -> None:
     policies = deepcopy(load_yaml_file(ROOT / "policies.yaml"))
     del policies["routing"]["contract"]
-    with pytest.raises(ConfigurationError, match="routing.contract is required"):
+    with pytest.raises(ConfigurationError, match=r"routing\.contract is required"):
         load_policy_contract(policies)
 
 
