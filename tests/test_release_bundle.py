@@ -81,6 +81,27 @@ def test_release_publication_versions_exact_bytes_and_updates_pointers() -> None
     assert metadata["release_id"] == first_id
 
 
+def test_unchanged_refresh_is_idempotent_and_preserves_previous_release() -> None:
+    kv = MemoryKV()
+    key = "production-config"
+    first = b"version: first\n"
+    second = b"version: second\n"
+    publish_release_bundle(factory=kv.factory, production_key=key, content=first)
+    publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+    keys = release_keys(key)
+    previous_before = kv.values[keys.previous_pointer]
+
+    result = publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    assert result["status"] == "unchanged"
+    assert result["production_changed"] is False
+    assert result["release_id"] == release_id_for(second)
+    assert kv.values[key] == second
+    assert kv.values[keys.current_pointer].decode().strip() == release_id_for(second)
+    assert kv.values[keys.previous_pointer] == previous_before
+    assert kv.values[keys.previous_pointer].decode().strip() == release_id_for(first)
+
+
 def test_failed_pointer_commit_restores_previous_production_bytes() -> None:
     kv = MemoryKV()
     key = "production-config"
