@@ -74,7 +74,9 @@ def test_secrets_are_scoped_to_the_single_pipeline_step() -> None:
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
     assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
     assert text.count("CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}") == 1
-    assert text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 1
+    assert (
+        text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 1
+    )
 
 
 def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
