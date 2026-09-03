@@ -38,8 +38,8 @@ def _expose_manual_provider_choices(
 ) -> None:
     """Let node-owning groups expose providers without altering policy-only groups.
 
-    Provider reachability is derived from the canonical RuntimeGraph rather
-    than a builder-local traversal implementation.
+    Provider reachability and deterministic traversal order are derived from the
+    canonical RuntimeGraph rather than a builder-local traversal implementation.
     """
 
     excluded = excluded_groups or set()
@@ -56,8 +56,7 @@ def _expose_manual_provider_choices(
         references = public.get("proxies", [])
         if not isinstance(references, list) or len(references) != 1:
             continue
-        anchor_name = str(references[0])
-        provider_names = sorted(graph.reachable_providers(anchor_name))
+        provider_names = list(graph.provider_order(str(references[0])))
         if provider_names:
             public["use"] = provider_names
 
