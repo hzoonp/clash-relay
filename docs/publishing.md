@@ -8,6 +8,12 @@ The production workflow is designed to run from a public repository without turn
 
 Production deployment is restricted to `refs/heads/main`. Pull requests continue to use fictional sources and do not receive production subscription Secrets.
 
+### Scheduled automatic refresh
+
+P26 schedules the same production workflow every six hours with `17 */6 * * *` UTC. Scheduled runs are trusted default-branch production runs, not a lighter-weight synchronization path. They re-fetch the current private subscription Secrets and execute the complete generation, source audit, browsing/transport qualification, AI qualification, OpenAI client-path hardening, post-qualification audit, pinned stable Mihomo matrix, and versioned Cloudflare KV transaction before client-visible bytes can change.
+
+Push and scheduled events resolve `publish_requested=true`. Manual `workflow_dispatch` remains a dry run by default and resolves publication only when `publish=true` is explicitly selected. If the exact final candidate is already active, the release transaction returns `status: unchanged` with `production_changed: false`; the fixed production bytes and previous-release pointer remain unchanged. Existing FlClash/Mihomo clients continue using the same authenticated Worker subscription URL.
+
 ## Secret masking before generation
 
 `CLASH_RELAY_SUBSCRIPTIONS` is intentionally one structured GitHub Secret so an arbitrary number of subscriptions can be declared without changing workflow YAML. The deployment job parses the mapping in memory and emits GitHub `::add-mask::` commands for every URL before subscription fetch begins.
@@ -155,6 +161,8 @@ The source-only GitHub release workflow remains separate from production configu
 ## Failure semantics
 
 The fixed Cloudflare production key is updated only after generation, qualification, current-policy audit, and every pinned stable-core validation succeeds. Subscription errors, schema errors, graph errors, qualification infrastructure errors, current-policy failures, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or release staging failures leave the previous production value in place.
+
+Scheduled refresh follows the same fail-closed semantics. An upstream subscription outage or a newly introduced node set that cannot pass the existing production gates does not replace the last known-good fixed production value.
 
 When the client-facing production write succeeds but a later pointer commit fails, P17 attempts compensating restoration of the exact prior production bytes. Release objects are immutable and may remain staged even when activation fails; an unreferenced staged release is not client-visible.
 
