@@ -4,6 +4,18 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-03
+
+### Fixed
+
+- P25.1 keeps the unified qualification stage protocol status fixed at `passed` after successful OpenAI client-path hardening, while preserving the hardener's operation result separately as `runtime_status`.
+- Regression coverage now prevents runtime metadata from overriding the top-level pipeline success contract used by production publication.
+
+### Security
+
+- This hotfix does not change OpenAI route locking, normal TLS certificate and hostname verification, source isolation, client-owned DNS, stable-first client fallback, or any of the six public routing scenarios.
+
+
 ## [1.6.2] - 2026-09-02
 
 ### Added

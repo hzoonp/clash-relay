@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 
-def test_v162_openai_client_path_release_contract(repo_root: Path) -> None:
+def test_v163_openai_client_path_release_contract(repo_root: Path) -> None:
     with (repo_root / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -14,10 +14,11 @@ def test_v162_openai_client_path_release_contract(repo_root: Path) -> None:
     runtime = (repo_root / "src" / "clash_relay" / "ai_runtime_reliability.py").read_text(
         encoding="utf-8"
     )
+    hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
     audit = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.6.2"
-    assert "## [1.6.2] - 2026-09-02" in changelog
+    assert project["version"] == "1.6.3"
+    assert "## [1.6.3] - 2026-09-03" in changelog
     assert "client-path" in readme
     assert "normal TLS certificate and hostname verification" in docs
     assert "does not restore managed Fake-IP DNS" in docs
@@ -27,6 +28,8 @@ def test_v162_openai_client_path_release_contract(repo_root: Path) -> None:
     assert "openai_pass_ttl_seconds" in qualifier
     assert "android.chat.openai.com" in runtime
     assert "stable_first_fallback" in runtime
+    assert 'result["runtime_status"]' in hardener
+    assert 'result["status"] = "passed"' in hardener
     assert "audit_route_lock" in audit
     assert "allow-legacy-openai-client-path" in audit
 
