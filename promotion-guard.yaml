@@ -1,0 +1,12 @@
+version: 1
+enabled: true
+minimum_total_node_ratio: 0.50
+minimum_provider_ratio: 0.50
+minimum_source_ratio_by_use:
+  general: 0.50
+  browsing: 0.50
+  ai: 0.50
+minimum_sources_by_use:
+  general: 1
+  browsing: 1
+  ai: 1
