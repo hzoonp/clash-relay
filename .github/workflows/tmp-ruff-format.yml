@@ -21,16 +21,16 @@ jobs:
       - name: Install locked development dependencies
         run: python -m pip install --requirement requirements-dev.lock --editable .
       - name: Apply Ruff formatter
-        run: ruff format tests/test_harden_openai_runtime_script.py
+        run: ruff format .
       - name: Commit formatter result
         shell: bash
         run: |
-          if git diff --quiet -- tests/test_harden_openai_runtime_script.py; then
+          if git diff --quiet; then
             echo "No formatter changes required."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tests/test_harden_openai_runtime_script.py
+          git add --all
           git commit -m "style: apply Ruff 0.14.10 formatter"
           git push origin HEAD:p25.1-qualification-status-hotfix
