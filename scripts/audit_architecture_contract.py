@@ -49,7 +49,9 @@ def main() -> int:
     if "scripts/check_promotion_guard.py" not in workflow:
         raise SystemExit("architecture audit: publish workflow bypasses Promotion Guard")
     if "python - <<" in workflow or "python - <<'PY'" in workflow:
-        raise SystemExit("architecture audit: publish workflow contains inline Python business logic")
+        raise SystemExit(
+            "architecture audit: publish workflow contains inline Python business logic"
+        )
 
     # P30: split physical policy declarations must normalize before domain use.
     if not (ROOT / "schemas/policy-manifest.schema.json").is_file():
