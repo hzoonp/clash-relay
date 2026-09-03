@@ -47,7 +47,7 @@ class ProductionLifecyclePaths:
     scripts_dir: Path
 
     @classmethod
-    def canonical(cls, root: Path) -> "ProductionLifecyclePaths":
+    def canonical(cls, root: Path) -> ProductionLifecyclePaths:
         root = root.resolve()
         work = root / ".work"
         return cls(
