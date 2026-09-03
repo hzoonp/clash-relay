@@ -50,20 +50,23 @@ def test_workflow_permissions_keep_production_read_only(repo_root: Path) -> None
 
 
 def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path) -> None:
-    text = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    workflow = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
+        encoding="utf-8"
+    )
 
-    assert "actions/upload-artifact" not in text
-    assert "gh release" not in text
-    assert "publish-gist" not in text
-    assert '      - "scripts/**"' in text
+    assert "actions/upload-artifact" not in workflow
+    assert "gh release" not in workflow
+    assert "publish-gist" not in workflow
+    assert '      - "scripts/**"' in workflow
+    assert "continue-on-error" not in workflow
+    assert workflow.count("python scripts/run_production_release.py") == 1
 
-    publish = text.index("Publish versioned validated release transaction")
-    assert "continue-on-error" not in text[:publish]
-    assert text.count("continue-on-error: true") == 2
-
-    ai = text.index("Persist private AI qualification cache")
-    history = text.index("Persist private scheduler history")
-    proof = text.index("Record publication result")
+    publish = lifecycle.index("release = self._publish_release()")
+    ai = lifecycle.index('stage="persist_ai_qualification_cache"')
+    history = lifecycle.index('stage="persist_scheduler_history"')
+    proof = lifecycle.index("proof = self._render_existing_proof(release=release)")
     assert publish < ai < history < proof
-    assert "continue-on-error: true" in text[ai:history]
-    assert "continue-on-error: true" in text[history:proof]
+    assert lifecycle.count("best_effort=True") == 2
+    assert "finally:" in lifecycle
+    assert "shutil.rmtree(self.paths.private_dir" in lifecycle
