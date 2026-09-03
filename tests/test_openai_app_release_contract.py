@@ -12,7 +12,10 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
         encoding="utf-8"
     )
     hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
-    audit = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
+    audit_adapter = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
+    pipeline = (repo_root / "src" / "clash_relay" / "production_pipeline.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "## [1.6.3] - 2026-09-03" in changelog
     assert "client-path" in readme
@@ -26,8 +29,10 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     assert "stable_first_fallback" in runtime
     assert 'result["runtime_status"]' in hardener
     assert 'result["status"] = "passed"' in hardener
-    assert "audit_route_lock" in audit
-    assert "allow-legacy-openai-client-path" in audit
+    assert "audit_route_lock" in pipeline
+    assert "audit_openai_client_path" in pipeline
+    assert "allow-legacy-openai-client-path" in audit_adapter
+    assert "audit_candidate" in audit_adapter
 
 
 def test_no_temporary_p24_or_p25_workflow_remains(repo_root: Path) -> None:
