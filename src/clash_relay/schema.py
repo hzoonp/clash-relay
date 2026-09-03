@@ -38,6 +38,13 @@ def validate_schema(instance: Any, schema_name: str, *, source: str, output: boo
 
 
 def load_and_validate(path: Path, schema_name: str) -> Any:
+    # Policy Model v2 is a physical composition format. Normalize it here so
+    # every existing domain consumer continues to receive one validated policy
+    # mapping and never needs to know whether the source was monolithic or split.
+    if schema_name == "policies.schema.json":
+        from .policy_document import load_policy_document
+
+        return load_policy_document(path).document
     data = load_yaml_file(path)
     validate_schema(data, schema_name, source=str(path))
     return data

@@ -39,14 +39,14 @@ def test_canonical_sources_are_optional_but_degradation_cannot_relax_permissions
 def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -> None:
     text = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     publish = text.index("Publish versioned validated release transaction")
-    assert text.index("Audit source-to-scenario isolation") < publish
-    assert text.index("Qualify private candidate through the unified pipeline") < publish
-    assert text.index("Re-audit qualified candidate") < publish
-    assert (
-        text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
-        < publish
-    )
+    pipeline = text.index("Run unified private production pipeline")
+    guard = text.index("Enforce production promotion guard")
+    matrix = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+    assert pipeline < guard < matrix < publish
+    assert "--pre-audit .work/private/production-audit.json" in text[:publish]
+    assert "--post-audit .work/private/post-qualification-audit.json" in text[:publish]
     assert "--manifest tools/mihomo-versions.json" in text[:publish]
+    assert "scripts/check_promotion_guard.py" in text[:publish]
     assert "scripts/snapshot_previous_config.py" not in text
     assert "clash-relay publish-cloudflare-kv" not in text
     assert publish < text.index("Persist private AI qualification cache")

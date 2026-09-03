@@ -124,6 +124,11 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
         "- name: Remove private candidate\n        if: always()\n        run: rm -rf .work/private"
     ) in publish
 
+    pipeline_start = publish.index("- name: Run unified private production pipeline")
+    guard_start = publish.index("- name: Enforce production promotion guard")
+    matrix_start = publish.index(
+        "- name: Validate exact qualified candidate with the pinned stable Mihomo matrix"
+    )
     release_start = publish.index("- name: Publish versioned validated release transaction")
     ai_state = publish.index("- name: Persist private AI qualification cache")
     history_state = publish.index("- name: Persist private scheduler history")
@@ -135,16 +140,16 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error: true" in publish[history_state:result]
 
     assert ".work/private/config.yaml" in publish
-    assert "python scripts/qualify_candidate.py" in publish
+    assert "python scripts/run_production_pipeline.py" in publish
+    assert "python scripts/check_promotion_guard.py" in publish
     assert "python scripts/validate_mihomo_matrix.py" in publish
     assert "python scripts/publish_release_bundle.py" in publish
+    assert "python scripts/qualify_candidate.py" not in publish
     assert "python scripts/qualify_ai.py" not in publish
+    assert "python - <<" not in publish
     assert "v1.19.30" not in publish
     assert "v1.19.29" not in publish
-    assert publish.index("python scripts/qualify_candidate.py") < publish.index(
-        "python scripts/validate_mihomo_matrix.py"
-    )
-    assert publish.index("python scripts/validate_mihomo_matrix.py") < release_start
+    assert pipeline_start < guard_start < matrix_start < release_start
 
 
 def test_public_production_has_no_sensitive_github_publisher(repo_root: Path) -> None:

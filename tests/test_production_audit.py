@@ -73,6 +73,7 @@ def test_production_audit_reports_only_aggregate_source_counts(
     assert pools["general"]["nodes"] > 0
     assert "special" not in pools["general"]["sources"]
     assert summary["reachability"]["status"] == "passed"
+    assert summary["reachability"]["graph_engine"] == "RuntimeGraph"
     assert summary["reachability"]["groups_checked"] > 0
 
     markdown = render_production_summary_markdown(summary)
@@ -139,6 +140,17 @@ def test_production_audit_fails_when_final_fallback_can_reach_restricted_pool(
     final_group["proxies"].append("Residential")
 
     with pytest.raises(ValidationError, match="routing reachability boundary violated"):
+        audit_production_candidate(project, candidate)
+
+
+def test_production_audit_fails_closed_on_unresolved_runtime_target(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    project = _with_acl_surfaces(_project(project_paths), candidate)
+    _group(candidate, "Final")["proxies"] = ["missing-runtime-target"]
+
+    with pytest.raises(ValidationError, match="unresolved references"):
         audit_production_candidate(project, candidate)
 
 

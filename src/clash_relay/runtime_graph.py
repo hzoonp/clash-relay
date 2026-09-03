@@ -1,9 +1,8 @@
 """Canonical, side-effect-free view of a generated Mihomo runtime graph.
 
-P14 introduces this module as the shared graph boundary for audits and later
-qualification stages.  It deliberately does not generate or mutate Mihomo
-configuration; it only normalizes graph traversal and immutable candidate
-stage transitions.
+RuntimeGraph is the topology truth for generated candidates.  Audits and
+post-generation transforms must consume this module instead of maintaining
+private BFS/DFS implementations over proxy groups and providers.
 """
 
 from __future__ import annotations
@@ -229,14 +228,54 @@ class RuntimeGraph:
             unresolved=frozenset(unresolved),
         )
 
+    def walk_resolved(self, target: str) -> GraphReachability:
+        """Walk a target and fail closed if any runtime reference is unresolved."""
+
+        result = self.walk(target)
+        if result.unresolved:
+            unresolved = ", ".join(sorted(result.unresolved))
+            raise ValidationError(
+                f"runtime graph target {target!r} has unresolved references: {unresolved}"
+            )
+        return result
+
+    def reachable_providers(self, target: str, *, require_resolved: bool = False) -> frozenset[str]:
+        reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
+        return reachability.providers
+
+    def provider_order(self, target: str) -> tuple[str, ...]:
+        """Return providers in deterministic group traversal order.
+
+        This query intentionally mirrors the manual-selection surface: it walks
+        group references breadth-first and ignores proxy dialers, while all
+        topology validation remains owned by ``walk``/``walk_resolved``.
+        """
+
+        pending = [target]
+        visited: set[str] = set()
+        providers: list[str] = []
+        while pending:
+            name = pending.pop(0)
+            if name in visited:
+                continue
+            visited.add(name)
+            if name not in self.groups:
+                continue
+            for provider_name in self.group_uses(name):
+                if provider_name in self.providers and provider_name not in providers:
+                    providers.append(provider_name)
+            pending.extend(member for member in self.group_members(name) if member in self.groups)
+        return tuple(providers)
+
     def reachable_sources(
         self,
         target: str,
         *,
         proxy_sources: Mapping[str, str],
         provider_sources: Mapping[str, set[str] | frozenset[str]] | None = None,
+        require_resolved: bool = False,
     ) -> frozenset[str]:
-        reachability = self.walk(target)
+        reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
         found = {str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources}
         if provider_sources is not None:
             for provider in reachability.providers:

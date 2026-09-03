@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .policy_document import load_policy_document
 from .runtime_graph import CandidateArtifact
-from .util import atomic_write, load_yaml_file
+from .util import atomic_write, dump_yaml, load_yaml_file
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,29 @@ def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000.0, 3)
 
 
+def _qualification_policy_input(policies: Path, stage_dir: Path) -> tuple[Path, int]:
+    """Normalize only Policy Model v2 while preserving the historical v1 contract.
+
+    The standalone qualification runner has always allowed tests and advanced
+    callers to hand child executors a lightweight or even deferred v1 policy
+    path.  Production validates the project before entering this function, so
+    eagerly schema-validating every v1 path here would be an unnecessary
+    compatibility break.  V2 manifests, however, must be composed before the
+    legacy child executors can consume them.
+    """
+
+    if not policies.is_file():
+        return policies, 1
+    raw = load_yaml_file(policies)
+    if not isinstance(raw, dict) or raw.get("version") != 2 or "fragments" not in raw:
+        return policies, 1
+
+    policy_document = load_policy_document(policies)
+    normalized_policies = stage_dir / "00-policies.normalized.yaml"
+    atomic_write(normalized_policies, dump_yaml(policy_document.document, header=False))
+    return normalized_policies, policy_document.model_version
+
+
 def run_qualification_pipeline(
     *,
     candidate: Path,
@@ -101,6 +125,8 @@ def run_qualification_pipeline(
     browsing_report.parent.mkdir(parents=True, exist_ok=True)
     ai_report.parent.mkdir(parents=True, exist_ok=True)
 
+    qualification_policies, policy_model_version = _qualification_policy_input(policies, stage_dir)
+
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"
     ai = stage_dir / "03-ai.yaml"
@@ -118,7 +144,7 @@ def run_qualification_pipeline(
         "--candidate",
         str(browsing),
         "--policies",
-        str(policies),
+        str(qualification_policies),
         "--mihomo-bin",
         str(mihomo_bin),
         "--workers",
@@ -151,7 +177,7 @@ def run_qualification_pipeline(
         "--candidate",
         str(ai),
         "--policies",
-        str(policies),
+        str(qualification_policies),
         "--mihomo-bin",
         str(mihomo_bin),
         "--workers",
@@ -210,6 +236,7 @@ def run_qualification_pipeline(
     )
     return {
         "status": "qualified",
+        "policy_model_version": policy_model_version,
         "stages": [{"name": row.name, "fingerprint": row.fingerprint} for row in stages],
         "timings_ms": {
             "browsing_transport": browsing_elapsed_ms,

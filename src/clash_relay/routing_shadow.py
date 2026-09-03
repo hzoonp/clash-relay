@@ -5,17 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from .config_loader import ProjectDefinition
+from .policy_contract import RuntimePolicyContract, load_policy_contract
 from .routing_model import compile_routing_model
 from .routing_policy_v2 import load_routing_policy_v2
-
-_ACL_COMPATIBILITY_MEMBERS = {
-    "全球直连": ["DIRECT", "代理选择", "自动选择"],
-    "广告拦截": ["REJECT", "DIRECT"],
-    "谷歌FCM": ["代理选择", "全球直连", "自动选择"],
-    "微软服务": ["全球直连", "代理选择"],
-    "苹果服务": ["代理选择", "全球直连"],
-    "漏网之鱼": ["代理选择", "全球直连", "自动选择"],
-}
 
 
 def _declared_members(group: dict[str, Any] | None) -> list[str]:
@@ -32,6 +24,32 @@ def _declared_members(group: dict[str, Any] | None) -> list[str]:
     return result
 
 
+def _priority_contract_applied(
+    by_source: dict[str, dict[str, Any]], contract: RuntimePolicyContract
+) -> bool:
+    """Validate declared ordering without inventing a second ordering model.
+
+    The OpenAI binding is optional in legacy/pre-extension declarations.  Every
+    other edge is required; optional edges are enforced whenever OpenAI is
+    materialized.
+    """
+
+    required_ids = {
+        source_id for edge in contract.priority_edges if "openai" not in edge for source_id in edge
+    }
+    if not required_ids <= set(by_source):
+        return False
+
+    for before, after in contract.priority_edges:
+        if "openai" in (before, after) and (before not in by_source or after not in by_source):
+            continue
+        if before not in by_source or after not in by_source:
+            return False
+        if int(by_source[before]["priority"]) >= int(by_source[after]["priority"]):
+            return False
+    return True
+
+
 def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     """Verify the finalized Routing V2 declaration/configuration graph.
 
@@ -46,6 +64,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     if model is None:
         return {"status": "disabled"}
     policy = load_routing_policy_v2(project.policies)
+    contract = load_policy_contract(project.policies)
 
     bindings = model["bindings"]
     by_source = {str(row["source_id"]): row for row in bindings}
@@ -61,87 +80,53 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         for row in project.acl4ssr.get("groups", [])
         if isinstance(row, dict) and isinstance(row.get("display_name"), str)
     }
-    ai_group = groups.get("人工智能")
-    current_ai_regions: list[str] = []
+    ai_group = groups.get(contract.public_group("ai"))
+    current_codes: list[str] = []
     if isinstance(ai_group, dict):
         for member in ai_group.get("members", []):
             name = member.get("group") if isinstance(member, dict) else None
-            if isinstance(name, str) and name.startswith("AI · "):
-                current_ai_regions.append(name.removeprefix("AI · "))
-    label_to_code = {
-        "美国": "US",
-        "新加坡": "SG",
-        "日本": "JP",
-        "台湾": "TW",
-        "韩国": "KR",
-        "其他地区": "OTHER",
-        "香港": "HK",
-    }
-    current_codes = [label_to_code[name] for name in current_ai_regions if name in label_to_code]
+            if not isinstance(name, str):
+                continue
+            region = contract.ai.region_for_display(name)
+            if region is not None:
+                current_codes.append(region)
 
-    media_members = _declared_members(groups.get("流媒体"))
-    messaging_members = _declared_members(groups.get("消息通讯"))
-    download_members = _declared_members(groups.get("下载流量"))
+    media_name = contract.public_group("media")
+    messaging_name = contract.public_group("messaging")
+    download_name = contract.public_group("download")
+
+    media_members = _declared_members(groups.get(media_name))
+    messaging_members = _declared_members(groups.get(messaging_name))
+    download_members = _declared_members(groups.get(download_name))
     media_applied = (
         bool(media_members)
-        and media_members[0] == "媒体自动"
-        and by_source.get("proxy_media", {}).get("target") == "流媒体"
+        and media_members[0] == contract.automatic_group("media")
+        and by_source.get("proxy_media", {}).get("target") == contract.binding_target("proxy_media")
         and "youtube" not in by_source
         and "netflix" not in by_source
     )
     messaging_applied = (
         bool(messaging_members)
-        and messaging_members[0] == "通讯自动"
-        and by_source.get("telegram", {}).get("target") == "消息通讯"
+        and messaging_members[0] == contract.automatic_group("messaging")
+        and by_source.get("telegram", {}).get("target") == contract.binding_target("telegram")
     )
     download_applied = (
         policy.download.mode == "general_auto"
         and bool(download_members)
-        and download_members[0] == "下载自动"
-        and by_source.get("download", {}).get("target") == "下载流量"
+        and download_members[0] == contract.automatic_group("download")
+        and by_source.get("download", {}).get("target") == contract.binding_target("download")
     )
     browsing_applied = (
         browsing_rules == 1
-        and by_source.get("proxy_lite", {}).get("target") == "网页浏览"
+        and by_source.get("proxy_lite", {}).get("target") == contract.binding_target("proxy_lite")
         and "proxy_gfwlist" not in by_source
     )
-    compatibility_applied = "应用净化" not in groups and all(
-        _declared_members(groups.get(name)) == expected
-        for name, expected in _ACL_COMPATIBILITY_MEMBERS.items()
+    disabled_groups_applied = all(name not in groups for name in contract.disabled_groups)
+    compatibility_applied = disabled_groups_applied and all(
+        _declared_members(groups.get(name)) == list(expected)
+        for name, expected in contract.compatibility_selectors.items()
     )
-
-    required_order = [
-        "telegram",
-        "ai",
-        "proxy_media",
-        "download",
-        "proxy_lite",
-        "china_domain",
-        "china_company_ip",
-        "geoip_cn",
-    ]
-    openai_present = "openai" in by_source
-    order_applied = all(source_id in by_source for source_id in required_order)
-    if order_applied:
-        priorities = {
-            source_id: int(by_source[source_id]["priority"]) for source_id in required_order
-        }
-        order_applied = (
-            priorities["telegram"]
-            < priorities["ai"]
-            < priorities["proxy_media"]
-            < priorities["download"]
-            < priorities["proxy_lite"]
-            < priorities["china_domain"]
-            < priorities["china_company_ip"]
-            < priorities["geoip_cn"]
-        )
-        if openai_present:
-            order_applied = order_applied and (
-                priorities["telegram"]
-                < int(by_source["openai"]["priority"])
-                < priorities["proxy_media"]
-            )
+    order_applied = _priority_contract_applied(by_source, contract)
 
     ai_applied = current_codes == list(policy.ai.preferred_regions)
     healthy = all(
@@ -184,7 +169,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         "acl4ssr_fidelity": {
             "compatibility_selectors_applied": compatibility_applied,
             "classification_order_applied": order_applied,
-            "ban_program_ad_disabled": "应用净化" not in groups,
+            "ban_program_ad_disabled": disabled_groups_applied,
             "intentional_extensions": ["ai", "openai", "download"],
         },
         "ai": {
