@@ -18,9 +18,10 @@ from .models import BuildResult, Node, SubscriptionSpec
 from .node_policy import filter_proxies_by_multiplier
 from .redact import redact_text
 from .routing_policy import apply_acl4ssr_source_exclusions
+from .runtime_graph import RuntimeGraph
 from .secrets import resolve_subscription_urls
 from .subscription_parser import parse_subscription
-from .util import dump_yaml, sha256_text, unique
+from .util import dump_yaml, sha256_text
 from .validator import validate_generated_config
 
 Fetcher = Callable[..., str]
@@ -35,41 +36,17 @@ def _failure_is_fatal(spec: SubscriptionSpec, project: ProjectDefinition) -> boo
 def _expose_manual_provider_choices(
     output: dict[str, Any], *, excluded_groups: set[str] | None = None
 ) -> None:
-    """Let node-owning groups expose providers without altering policy-only groups."""
+    """Let node-owning groups expose providers without altering policy-only groups.
+
+    Provider reachability is derived from the canonical RuntimeGraph rather
+    than a builder-local traversal implementation.
+    """
 
     excluded = excluded_groups or set()
-    providers = output.get("proxy-providers", {})
     groups = output.get("proxy-groups", [])
-    if not isinstance(providers, dict) or not isinstance(groups, list):
+    if not isinstance(groups, list):
         return
-
-    by_name = {
-        group["name"]: group
-        for group in groups
-        if isinstance(group, dict) and isinstance(group.get("name"), str)
-    }
-
-    def provider_names_from_anchor(anchor_name: str) -> list[str]:
-        found: list[str] = []
-        pending = [anchor_name]
-        visited: set[str] = set()
-        while pending:
-            group_name = pending.pop(0)
-            if group_name in visited:
-                continue
-            visited.add(group_name)
-            group = by_name.get(group_name)
-            if not isinstance(group, dict):
-                continue
-            uses = group.get("use", [])
-            if isinstance(uses, list):
-                found.extend(name for name in uses if isinstance(name, str) and name in providers)
-            references = group.get("proxies", [])
-            if isinstance(references, list):
-                pending.extend(
-                    name for name in references if isinstance(name, str) and name in by_name
-                )
-        return unique(found)
+    graph = RuntimeGraph.from_candidate(output)
 
     for public in groups:
         if not isinstance(public, dict) or public.get("hidden", False):
@@ -79,7 +56,8 @@ def _expose_manual_provider_choices(
         references = public.get("proxies", [])
         if not isinstance(references, list) or len(references) != 1:
             continue
-        provider_names = provider_names_from_anchor(str(references[0]))
+        anchor_name = str(references[0])
+        provider_names = sorted(graph.reachable_providers(anchor_name))
         if provider_names:
             public["use"] = provider_names
 
