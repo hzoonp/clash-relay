@@ -43,7 +43,9 @@ def migrate(*, source: Path, output: Path, fragment_dir: Path, force: bool) -> N
     try:
         fragment_dir.relative_to(output_parent)
     except ValueError as exc:
-        raise ConfigurationError("policy fragment directory must stay under the output root") from exc
+        raise ConfigurationError(
+            "policy fragment directory must stay under the output root"
+        ) from exc
 
     if fragment_dir.exists():
         if not force:
