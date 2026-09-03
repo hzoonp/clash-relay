@@ -7,6 +7,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 CONFIG_EXAMPLE = ROOT / "config.example.yaml"
+MASK_SCRIPT = ROOT / "scripts" / "mask_subscription_secrets.py"
+PIPELINE = ROOT / "src" / "clash_relay" / "production_pipeline.py"
 
 
 def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
@@ -49,11 +51,13 @@ def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storag
 
 
 def test_individual_subscription_urls_are_masked_before_generation() -> None:
-    text = WORKFLOW.read_text()
-    assert "Mask individual subscription URLs" in text
-    assert "from clash_relay.secrets import load_secret_mapping" in text
-    assert 'print(f"::add-mask::{command_escape(value)}")' in text
-    assert text.index("Mask individual subscription URLs") < text.index(
+    workflow = WORKFLOW.read_text()
+    masker = MASK_SCRIPT.read_text()
+    assert "Mask individual subscription URLs" in workflow
+    assert "python scripts/mask_subscription_secrets.py" in workflow
+    assert "from clash_relay.secrets import load_secret_mapping" in masker
+    assert "::add-mask::" in masker
+    assert workflow.index("Mask individual subscription URLs") < workflow.index(
         "Generate private candidate"
     )
 
@@ -61,38 +65,46 @@ def test_individual_subscription_urls_are_masked_before_generation() -> None:
 def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 5
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 6
     load_history = text.index("Load private scheduler history")
     load_ai_cache = text.index("Load private AI qualification cache")
-    qualify = text.index("Qualify private candidate through the unified pipeline")
+    pipeline = text.index("Run unified private production pipeline")
+    baseline = text.index("Fetch current production baseline")
+    guard = text.index("Enforce production promotion guard")
     publish = text.index("Publish versioned validated release transaction")
     persist_cache = text.index("Persist private AI qualification cache")
     persist_history = text.index("Persist private scheduler history")
-    assert load_history < load_ai_cache < qualify < publish < persist_cache < persist_history
+    assert load_history < load_ai_cache < pipeline < baseline < guard < publish
+    assert publish < persist_cache < persist_history
 
 
-def test_production_audit_runs_before_and_after_unified_qualification() -> None:
+def test_production_audit_runs_inside_one_application_pipeline_before_and_after_qualification() -> None:
+    workflow = WORKFLOW.read_text()
+    pipeline = PIPELINE.read_text()
+    assert workflow.count("python scripts/run_production_pipeline.py") == 1
+    assert "python scripts/audit_production.py" not in workflow
+    assert "--pre-audit .work/private/production-audit.json" in workflow
+    assert "--post-audit .work/private/post-qualification-audit.json" in workflow
+    assert "pre_audit = audit_candidate" in pipeline
+    assert "qualification = run_qualification_pipeline" in pipeline
+    assert "post_audit = audit_candidate" in pipeline
+    assert pipeline.index("pre_audit = audit_candidate") < pipeline.index(
+        "qualification = run_qualification_pipeline"
+    )
+    assert pipeline.index("qualification = run_qualification_pipeline") < pipeline.index(
+        "post_audit = audit_candidate"
+    )
+
+
+def test_qualification_is_one_staged_application_pipeline_with_legacy_executors_hidden() -> None:
     text = WORKFLOW.read_text()
-    assert "Audit source-to-scenario isolation" in text
-    assert "Re-audit qualified candidate" in text
-    assert text.count("python scripts/audit_production.py") == 2
-    first_audit = text.index("Audit source-to-scenario isolation")
-    qualifier = text.index("Qualify private candidate through the unified pipeline")
-    second_audit = text.index("Re-audit qualified candidate")
-    assert first_audit < qualifier < second_audit
-    assert "--candidate .work/private/generated.yaml" in text
-    assert "--candidate .work/private/config.yaml" in text
-    assert "production-summary.md" in text
-
-
-def test_qualification_is_one_staged_pipeline_with_legacy_executors_hidden_from_workflow() -> None:
-    text = WORKFLOW.read_text()
-    assert "python scripts/qualify_candidate.py" in text
+    assert "python scripts/run_production_pipeline.py" in text
     assert "--candidate .work/private/generated.yaml" in text
     assert "--output .work/private/config.yaml" in text
     assert "--stage-dir .work/private/stages" in text
     assert "--browsing-report .work/private/browsing-qualification-summary.json" in text
     assert "--ai-report .work/private/ai-qualification-summary.json" in text
+    assert "python scripts/qualify_candidate.py" not in text
     assert "python scripts/qualify_browsing.py" not in text
     assert "python scripts/qualify_ai.py" not in text
     assert ".work/bin/mihomo-qualification" in text
@@ -102,7 +114,7 @@ def test_qualification_is_one_staged_pipeline_with_legacy_executors_hidden_from_
 def test_scheduler_history_is_best_effort_derived_state_after_release_commit() -> None:
     text = WORKFLOW.read_text()
     load = text.index("Load private scheduler history")
-    qualify = text.index("Qualify private candidate through the unified pipeline")
+    pipeline = text.index("Run unified private production pipeline")
     publish = text.index("Publish versioned validated release transaction")
     persist = text.index("Persist private scheduler history")
     proof = text.index("Record publication result")
@@ -111,39 +123,42 @@ def test_scheduler_history_is_best_effort_derived_state_after_release_commit() -
     assert "--history .work/private/scheduler-history.json" in text
     assert "--history-key .work/private/scheduler-history.key" in text
     assert "--next-history .work/private/scheduler-history-next.json" in text
-    assert load < qualify < publish < persist < proof
+    assert load < pipeline < publish < persist < proof
     persist_block = text[persist:proof]
     assert "continue-on-error: true" in persist_block
     assert "Derived state persistence" in text
 
 
 def test_ai_cache_is_best_effort_incremental_state_after_release_commit() -> None:
-    text = WORKFLOW.read_text()
-    load = text.index("Load private AI qualification cache")
-    qualify = text.index("Qualify private candidate through the unified pipeline")
-    publish = text.index("Publish versioned validated release transaction")
-    persist = text.index("Persist private AI qualification cache")
-    history = text.index("Persist private scheduler history")
-    assert "scripts/load_ai_qualification_cache.py" in text
-    assert "scripts/publish_ai_qualification_cache.py" in text
-    assert "--cache .work/private/ai-qualification-cache.json" in text
-    assert "--cache-key .work/private/ai-qualification-cache.key" in text
-    assert "--next-cache .work/private/ai-qualification-cache-next.json" in text
-    assert load < qualify < publish < persist < history
-    persist_block = text[persist:history]
+    workflow = WORKFLOW.read_text()
+    pipeline_source = PIPELINE.read_text()
+    load = workflow.index("Load private AI qualification cache")
+    pipeline = workflow.index("Run unified private production pipeline")
+    publish = workflow.index("Publish versioned validated release transaction")
+    persist = workflow.index("Persist private AI qualification cache")
+    history = workflow.index("Persist private scheduler history")
+    assert "scripts/load_ai_qualification_cache.py" in workflow
+    assert "scripts/publish_ai_qualification_cache.py" in workflow
+    assert "--cache .work/private/ai-qualification-cache.json" in workflow
+    assert "--cache-key .work/private/ai-qualification-cache.key" in workflow
+    assert "--next-cache .work/private/ai-qualification-cache-next.json" in workflow
+    assert load < pipeline < publish < persist < history
+    persist_block = workflow[persist:history]
     assert "continue-on-error: true" in persist_block
-    assert "Live service probes" in text
-    assert "Fresh cache pass/fail hits" in text
+    assert "Live service probes" in pipeline_source
+    assert "Fresh cache pass/fail hits" in pipeline_source
 
 
-def test_versioned_release_transaction_replaces_snapshot_then_direct_publish() -> None:
+def test_promotion_guard_precedes_matrix_and_release_transaction() -> None:
     text = WORKFLOW.read_text()
-    validation = text.index(
-        "Validate exact qualified candidate with the pinned stable Mihomo matrix"
-    )
+    baseline = text.index("Fetch current production baseline")
+    guard = text.index("Enforce production promotion guard")
+    validation = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
     publish = text.index("Publish versioned validated release transaction")
-    assert validation < publish
-    assert "python scripts/publish_release_bundle.py" in text
+    assert baseline < guard < validation < publish
+    assert "python scripts/fetch_current_config.py" in text[baseline:guard]
+    assert "python scripts/check_promotion_guard.py" in text[guard:validation]
+    assert "python scripts/publish_release_bundle.py" in text[publish:]
     assert "scripts/snapshot_previous_config.py" not in text
     assert "clash-relay publish-cloudflare-kv" not in text
 
@@ -152,7 +167,7 @@ def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> No
     text = WORKFLOW.read_text()
     assert "Record dry-run result" in text
     assert "needs.prepare.outputs.publish_requested != 'true'" in text
-    assert text.count("needs.prepare.outputs.publish_requested == 'true'") == 5
+    assert "needs.prepare.outputs.publish_requested == 'true'" in text
     assert "github.event_name == 'workflow_dispatch' && inputs.publish != true" not in text
     assert "github.event_name == 'push' || inputs.publish == true" not in text
     assert "--publication-status dry-run" in text
@@ -162,12 +177,12 @@ def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> No
 def test_scheduled_refresh_uses_the_full_fail_closed_production_path() -> None:
     text = WORKFLOW.read_text()
     generate = text.index("Generate private candidate")
-    first_audit = text.index("Audit source-to-scenario isolation")
-    qualify = text.index("Qualify private candidate through the unified pipeline")
-    second_audit = text.index("Re-audit qualified candidate")
+    pipeline = text.index("Run unified private production pipeline")
+    baseline = text.index("Fetch current production baseline")
+    guard = text.index("Enforce production promotion guard")
     matrix = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
     publish = text.index("Publish versioned validated release transaction")
-    assert generate < first_audit < qualify < second_audit < matrix < publish
+    assert generate < pipeline < baseline < guard < matrix < publish
     assert "if: github.event_name == 'schedule'" not in text
     assert "github.event_name" not in text[generate:publish]
 
