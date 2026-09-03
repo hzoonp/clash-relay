@@ -169,7 +169,7 @@ def test_scheduled_refresh_uses_the_full_fail_closed_production_path() -> None:
     publish = text.index("Publish versioned validated release transaction")
     assert generate < first_audit < qualify < second_audit < matrix < publish
     assert "if: github.event_name == 'schedule'" not in text
-    assert "schedule" not in text[generate:publish]
+    assert "github.event_name" not in text[generate:publish]
 
 
 def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:
