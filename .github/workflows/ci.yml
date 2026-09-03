@@ -36,7 +36,7 @@ jobs:
       - name: Audit P27-P32 architecture contract
         run: python scripts/audit_architecture_contract.py
       - run: ruff check .
-      - run: ruff format --diff .
+      - run: ruff format --check .
       - name: Unit tests and coverage baseline
         run: |
           pytest -m "not integration" \
