@@ -264,9 +264,7 @@ class RuntimeGraph:
             for provider_name in self.group_uses(name):
                 if provider_name in self.providers and provider_name not in providers:
                     providers.append(provider_name)
-            pending.extend(
-                member for member in self.group_members(name) if member in self.groups
-            )
+            pending.extend(member for member in self.group_members(name) if member in self.groups)
         return tuple(providers)
 
     def reachable_sources(
