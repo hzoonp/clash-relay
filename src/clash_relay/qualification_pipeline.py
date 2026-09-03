@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .policy_document import load_policy_document
 from .runtime_graph import CandidateArtifact
-from .util import atomic_write, load_yaml_file
+from .util import atomic_write, dump_yaml, load_yaml_file
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,10 @@ def run_qualification_pipeline(
     browsing_report.parent.mkdir(parents=True, exist_ok=True)
     ai_report.parent.mkdir(parents=True, exist_ok=True)
 
+    policy_document = load_policy_document(policies)
+    normalized_policies = stage_dir / "00-policies.normalized.yaml"
+    atomic_write(normalized_policies, dump_yaml(policy_document.document, header=False))
+
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"
     ai = stage_dir / "03-ai.yaml"
@@ -118,7 +123,7 @@ def run_qualification_pipeline(
         "--candidate",
         str(browsing),
         "--policies",
-        str(policies),
+        str(normalized_policies),
         "--mihomo-bin",
         str(mihomo_bin),
         "--workers",
@@ -151,7 +156,7 @@ def run_qualification_pipeline(
         "--candidate",
         str(ai),
         "--policies",
-        str(policies),
+        str(normalized_policies),
         "--mihomo-bin",
         str(mihomo_bin),
         "--workers",
@@ -210,6 +215,7 @@ def run_qualification_pipeline(
     )
     return {
         "status": "qualified",
+        "policy_model_version": policy_document.model_version,
         "stages": [{"name": row.name, "fingerprint": row.fingerprint} for row in stages],
         "timings_ms": {
             "browsing_transport": browsing_elapsed_ms,
