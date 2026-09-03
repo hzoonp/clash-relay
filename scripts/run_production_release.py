@@ -18,7 +18,9 @@ from clash_relay.production_lifecycle import (
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the canonical clash-relay production lifecycle.")
+    parser = argparse.ArgumentParser(
+        description="Run the canonical clash-relay production lifecycle."
+    )
     parser.add_argument("--root", type=Path, default=Path("."))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--publish", action="store_true", dest="publish")
