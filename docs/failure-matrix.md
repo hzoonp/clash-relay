@@ -14,6 +14,8 @@ Production is intentionally fail-closed at the publication boundary. A failed ru
 | Gemini has zero qualified nodes | Fail closed only for Gemini; OpenAI/Claude remain independent. |
 | ACL4SSR/rule acquisition or parsing fails | Candidate generation fails before publication; existing production stays untouched. |
 | Source-to-scenario reachability audit fails before or after qualification | Abort; do not publish. |
+| Qualified candidate collapses below the configured Promotion Guard inventory/source-diversity ratio relative to the current production value | Abort before core-matrix validation and before release activation. Keep the exact current production bytes active. A source-use threshold applies only when that use exists in the current production topology. |
+| Current production baseline is absent because this is the first publication | Promotion Guard records `first_release` and allows the normal remaining fail-closed gates to decide publication. |
 | Any pinned stable Mihomo core declared in `tools/mihomo-versions.json` rejects the exact candidate | Abort before production activation. Workflow YAML does not maintain a second core-version list. |
 | Cloudflare versioned release transaction fails before activation | Abort; existing production remains active. |
 | Cloudflare versioned release transaction fails after the client-facing key changes but before pointer commit | Attempt compensating restoration of the previous exact production bytes and release pointers; report failure if compensation cannot be completed. |
@@ -29,11 +31,14 @@ The production write ordering is:
 
 ```text
 private generation
-  -> source reachability audit
+  -> ProductionPipeline pre-qualification composite audit
   -> unified qualification
        -> live browsing / transport qualification
        -> per-service AI qualification
-  -> post-qualification reachability + Routing V2 audit
+       -> OpenAI client-path hardening
+  -> ProductionPipeline post-qualification composite audit
+  -> fetch exact client-visible current production baseline
+  -> Promotion Guard relative degradation check
   -> every stable Mihomo core in tools/mihomo-versions.json
   -> stage and read-back verify immutable SHA-256 release objects
   -> activate exact production-config bytes and commit release pointers
@@ -41,7 +46,7 @@ private generation
   -> aggregate production proof
 ```
 
-Any failure before production activation leaves the previous production value active. A failure during the multi-key Cloudflare KV commit invokes the compensating P17 restoration path when previous production bytes exist. Auxiliary state is derived optimization/observability data and must never become a prerequisite that relaxes a live safety gate or falsely turn an already committed validated release into a failed deployment.
+Any failure before production activation leaves the previous production value active. The Promotion Guard is deliberately positioned before the stable-core matrix and release transaction because its purpose is to reject a technically valid but sharply degraded refresh before any production mutation occurs. A failure during the multi-key Cloudflare KV commit invokes the compensating P17 restoration path when previous production bytes exist. Auxiliary state is derived optimization/observability data and must never become a prerequisite that relaxes a live safety gate or falsely turn an already committed validated release into a failed deployment.
 
 ## Rollback ordering invariant
 
