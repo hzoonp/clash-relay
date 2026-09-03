@@ -78,7 +78,9 @@ def test_secrets_are_scoped_to_the_steps_that_need_them() -> None:
     assert publish < persist_cache < persist_history
 
 
-def test_production_audit_runs_inside_one_application_pipeline_before_and_after_qualification() -> None:
+def test_production_audit_runs_inside_one_application_pipeline_before_and_after_qualification() -> (
+    None
+):
     workflow = WORKFLOW.read_text()
     pipeline = PIPELINE.read_text()
     assert workflow.count("python scripts/run_production_pipeline.py") == 1
