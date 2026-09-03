@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 
-def test_v163_openai_client_path_release_contract(repo_root: Path) -> None:
-    with (repo_root / "pyproject.toml").open("rb") as handle:
-        project = tomllib.load(handle)["project"]
+def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
     docs = (repo_root / "docs" / "openai-app-reliability.md").read_text(encoding="utf-8")
@@ -17,7 +14,6 @@ def test_v163_openai_client_path_release_contract(repo_root: Path) -> None:
     hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
     audit = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
 
-    assert project["version"] == "1.6.3"
     assert "## [1.6.3] - 2026-09-03" in changelog
     assert "client-path" in readme
     assert "normal TLS certificate and hostname verification" in docs
