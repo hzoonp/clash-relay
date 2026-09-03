@@ -8,6 +8,7 @@ import yaml
 from clash_relay.acl4ssr import parse_acl4ssr_list
 from clash_relay.builder import build_candidate
 from clash_relay.errors import ConfigurationError, GenerationError
+from clash_relay.policy_document import load_policy_document
 from clash_relay.util import dump_yaml
 
 
@@ -210,7 +211,7 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     direct = yaml.safe_load((repo_root / "rules/direct.yaml").read_text(encoding="utf-8"))
     assert direct == {"version": 1, "rules": []}
 
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     assert set(policies["capabilities"]) == {"general"}
     assert policies["chains"] == []
     pools = {item["id"]: item for item in policies["pools"]}
