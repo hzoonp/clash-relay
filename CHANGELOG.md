@@ -4,6 +4,24 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-03
+
+### Added
+
+- P26 adds automatic production subscription refresh on a six-hour GitHub Actions schedule, so upstream subscription changes are periodically regenerated, qualified, validated, and published without requiring a repository commit or manual dispatch.
+- Push, schedule, and manual dispatch now resolve one explicit `publish_requested` workflow contract: pushes and scheduled runs publish after validation, while manual dispatch remains a dry run unless `publish=true` is explicitly selected.
+- Regression coverage freezes the scheduled trigger and verifies that republishing identical validated bytes remains idempotent without rotating the previous-release pointer.
+
+### Changed
+
+- Scheduled refreshes use the same unified private generation, source-isolation audit, browsing/transport qualification, AI qualification, OpenAI client-path hardening, post-qualification audit, pinned stable Mihomo matrix, and versioned Cloudflare KV release transaction as existing production pushes.
+- Repeated scheduled runs with unchanged final bytes keep the existing production release active with `status: unchanged` and `production_changed: false`; no synthetic release rotation is introduced.
+
+### Security
+
+- Automatic refresh does not create a lower-trust publication path: failed subscription fetches, qualification failures, policy audits, Mihomo validation failures, or Cloudflare publication failures still leave the previous production value intact.
+- Subscription URLs and generated configuration bytes remain private runner/KV data, and the six public FlClash scenarios, `subscription_1` browsing/AI-only isolation, >2x filtering, ACL4SSR fidelity, client-owned DNS, and normal TLS verification remain unchanged.
+
 ## [1.6.3] - 2026-09-03
 
 ### Fixed
@@ -283,7 +301,9 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/hzoonp/clash-relay/compare/v1.6.3...v1.7.0
+[1.6.3]: https://github.com/hzoonp/clash-relay/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/hzoonp/clash-relay/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/hzoonp/clash-relay/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/hzoonp/clash-relay/compare/v1.5.0...v1.6.0

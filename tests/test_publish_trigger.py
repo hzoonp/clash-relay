@@ -9,15 +9,28 @@ WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 CONFIG_EXAMPLE = ROOT / "config.example.yaml"
 
 
-def test_publish_runs_on_main_and_manual_dispatch() -> None:
+def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
     text = WORKFLOW.read_text()
     assert "  push:\n" in text
     assert "      - main\n" in text
+    assert "  schedule:\n" in text
+    assert '    - cron: "17 */6 * * *"\n' in text
     assert "  workflow_dispatch:\n" in text
     assert "      publish:\n" in text
     assert "        default: false\n" in text
     assert "clash-relay-publish-${{ github.ref }}" in text
     assert "github.ref == 'refs/heads/main'" in text
+
+
+def test_publication_mode_unifies_push_schedule_and_manual_dispatch() -> None:
+    text = WORKFLOW.read_text()
+    assert "publish_requested: ${{ steps.mode.outputs.publish_requested }}" in text
+    assert "Resolve publication mode" in text
+    assert "push|schedule)" in text
+    assert "workflow_dispatch)" in text
+    assert 'if [[ "$MANUAL_PUBLISH" == "true" ]]' in text
+    assert 'echo "publish_requested=$publish_requested" >> "$GITHUB_OUTPUT"' in text
+    assert "Unsupported publication event" in text
 
 
 def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storage() -> None:
@@ -138,10 +151,25 @@ def test_versioned_release_transaction_replaces_snapshot_then_direct_publish() -
 def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> None:
     text = WORKFLOW.read_text()
     assert "Record dry-run result" in text
-    assert "github.event_name == 'workflow_dispatch' && inputs.publish != true" in text
-    assert "github.event_name == 'push' || inputs.publish == true" in text
+    assert "needs.prepare.outputs.publish_requested != 'true'" in text
+    assert text.count("needs.prepare.outputs.publish_requested == 'true'") == 5
+    assert "github.event_name == 'workflow_dispatch' && inputs.publish != true" not in text
+    assert "github.event_name == 'push' || inputs.publish == true" not in text
     assert "--publication-status dry-run" in text
     assert "--publication-status published" in text
+
+
+def test_scheduled_refresh_uses_the_full_fail_closed_production_path() -> None:
+    text = WORKFLOW.read_text()
+    generate = text.index("Generate private candidate")
+    first_audit = text.index("Audit source-to-scenario isolation")
+    qualify = text.index("Qualify private candidate through the unified pipeline")
+    second_audit = text.index("Re-audit qualified candidate")
+    matrix = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
+    publish = text.index("Publish versioned validated release transaction")
+    assert generate < first_audit < qualify < second_audit < matrix < publish
+    assert "if: github.event_name == 'schedule'" not in text
+    assert "github.event_name" not in text[generate:publish]
 
 
 def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:

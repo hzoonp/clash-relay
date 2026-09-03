@@ -18,10 +18,13 @@ Fork
   -> manual dry-run (publish=false)
   -> inspect aggregate production proof
   -> publish=true
+  -> automatic six-hour production refresh
   -> validated rollback when required
 ```
 
 `clash-relay doctor` validates public declarations, private subscription-secret readiness, the pinned Mihomo manifest, and optionally Cloudflare read connectivity without publishing configuration bytes.
+
+After the first successful publication, P26 re-fetches the private upstream subscriptions every six hours and runs the same full production gates before the fixed Cloudflare KV production key can change. Push and scheduled runs publish only validated bytes; manual dispatch remains a dry run unless `publish=true` is explicitly selected. If the final candidate is byte-for-byte unchanged, publication is idempotent and the previous-release pointer is not rotated. Existing FlClash clients keep using the same authenticated Worker subscription URL.
 
 ## Public scenarios
 

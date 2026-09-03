@@ -85,9 +85,11 @@ clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 
 发布流程先写入并 read-back 验证不可变 release 对象，再激活固定客户端 production key，最后提交 release pointers。Cloudflare KV 不支持跨 key 事务，因此 pointer commit 异常时使用补偿恢复上一版本的精确生产字节。
 
+首次成功发布后，P26 会每 6 小时自动运行同一条生产 Workflow（UTC `17 */6 * * *`）。定时刷新不是简化路径：订阅获取、生成、source isolation、browsing/transport 与 AI qualification、OpenAI client-path hardening、qualification 后审计，以及全部 stable Mihomo 验证都必须通过后才能发布。如果最终字节没有变化，则 release 保持 `status: unchanged`，并且不会旋转 `previous-release-v1`。
+
 ## 7. 配置 FlClash / Mihomo
 
-客户端继续使用固定 production key 对应的私有订阅入口。内部 release SHA 改变时，客户端 URL 不需要变化。
+客户端继续使用固定 production key 对应的私有订阅入口。内部 release SHA 改变时，客户端 URL 不需要变化；P26 定时刷新也不要求在 FlClash 中更换订阅 URL。
 
 顶层只显示：
 

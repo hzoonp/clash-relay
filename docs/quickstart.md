@@ -79,9 +79,11 @@ Run the workflow with `publish = true`, or merge a validated change to `main` wh
 
 Publication stages immutable release objects first, verifies exact read-back bytes, activates the fixed client-facing production key, then commits release pointers. Cloudflare KV does not provide cross-key transactions, so pointer-commit failures use compensating restoration of the previous exact production bytes.
 
+After the first successful publication, P26 automatically runs the same production workflow every six hours (`17 */6 * * *` UTC). Scheduled refresh is not a shortcut: subscription fetch, generation, source isolation, browsing/transport and AI qualification, OpenAI client-path hardening, post-audit, and every stable Mihomo validation must all pass before publication. If the final bytes have not changed, the release remains active with `status: unchanged` and `previous-release-v1` is not rotated.
+
 ## 7. Configure FlClash / Mihomo
 
-Use the existing private endpoint that serves the fixed production KV key. The client-facing key does not change when the internal release SHA changes.
+Use the existing private endpoint that serves the fixed production KV key. The client-facing key does not change when the internal release SHA changes, and scheduled refresh does not require replacing the subscription URL in FlClash.
 
 Top-level FlClash decisions remain:
 

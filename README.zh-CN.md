@@ -18,10 +18,13 @@ Fork
   -> 手动 dry-run（publish=false）
   -> 查看聚合 production proof
   -> publish=true
+  -> 每 6 小时自动刷新生产订阅
   -> 必要时执行经过验证的回滚（release-aware rollback）
 ```
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
+
+首次成功发布后，P26 会每 6 小时重新获取私有上游订阅，并在固定 Cloudflare KV production key 发生变化前执行与正式发布完全相同的生产门禁。Push 和定时运行只会发布通过完整验证的字节；手动触发仍默认 dry-run，只有明确设置 `publish=true` 才发布。如果最终 candidate 与当前生产配置逐字节一致，则发布保持幂等，不会旋转 previous-release 指针。FlClash 继续使用原来的经过认证的 Worker 订阅 URL，无需更换地址。
 
 ## 六个公开场景
 

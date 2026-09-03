@@ -16,6 +16,8 @@ on:
       - "requirements.lock"
       - "tools/mihomo-versions.json"
       - ".github/workflows/publish.yml"
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       publish:
@@ -37,8 +39,35 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       configured: ${{ steps.detect.outputs.configured }}
+      publish_requested: ${{ steps.mode.outputs.publish_requested }}
     steps:
       - uses: actions/checkout@v6
+      - id: mode
+        name: Resolve publication mode
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push|schedule)
+              publish_requested=true
+              ;;
+            workflow_dispatch)
+              if [[ "$MANUAL_PUBLISH" == "true" ]]; then
+                publish_requested=true
+              else
+                publish_requested=false
+              fi
+              ;;
+            *)
+              echo "Unsupported publication event: $EVENT_NAME" >&2
+              exit 2
+              ;;
+          esac
+          echo "publish_requested=$publish_requested" >> "$GITHUB_OUTPUT"
+          echo "Publication mode resolved for event=$EVENT_NAME; publish_requested=$publish_requested"
       - id: detect
         name: Detect canonical user declarations
         shell: bash
@@ -285,7 +314,7 @@ jobs:
           fi
 
       - name: Record dry-run result
-        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
+        if: needs.prepare.outputs.publish_requested != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -303,7 +332,7 @@ jobs:
 
       - name: Publish versioned validated release transaction
         id: publish-release
-        if: github.event_name == 'push' || inputs.publish == true
+        if: needs.prepare.outputs.publish_requested == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -319,7 +348,7 @@ jobs:
 
       - name: Persist private AI qualification cache
         id: persist-ai
-        if: github.event_name == 'push' || inputs.publish == true
+        if: needs.prepare.outputs.publish_requested == 'true'
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -336,7 +365,7 @@ jobs:
 
       - name: Persist private scheduler history
         id: persist-history
-        if: github.event_name == 'push' || inputs.publish == true
+        if: needs.prepare.outputs.publish_requested == 'true'
         continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -353,7 +382,7 @@ jobs:
 
       - name: Record best-effort state warning
         if: >-
-          (github.event_name == 'push' || inputs.publish == true) &&
+          needs.prepare.outputs.publish_requested == 'true' &&
           (steps.persist-ai.outcome == 'failure' || steps.persist-history.outcome == 'failure')
         shell: bash
         run: |
@@ -361,7 +390,7 @@ jobs:
           printf '%s\n' '## Derived state persistence' '' 'Production config is committed. One or more optional cache/history writes failed and will be rebuilt by later qualification runs.' '' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record publication result
-        if: github.event_name == 'push' || inputs.publish == true
+        if: needs.prepare.outputs.publish_requested == 'true'
         shell: bash
         run: |
           set -euo pipefail
