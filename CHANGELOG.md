@@ -4,6 +4,31 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-04
+
+### Added
+
+- P33 adds one canonical production application entrypoint, `scripts/run_production_release.py`, which owns generation, private derived-state loading, qualification/audits, Promotion Guard, the pinned stable Mihomo matrix, the existing versioned release transaction, post-commit derived-state persistence, and production proof. GitHub Actions is now a thin environment adapter instead of a second orchestration engine.
+- P34 migrates canonical production to physical Policy Model v2 with separate routing, scheduling, classification, and topology fragments, plus `scripts/migrate_policy_v2.py` for deterministic v1-to-v2 migration with normalized-equivalence verification.
+- P37 adds a privacy-safe aggregate release manifest containing exact config/release identity, Policy Model/project version, runtime inventory counts, source-use aggregates, qualification/Promotion Guard state, validated Mihomo cores, timestamp, and commit SHA when available.
+
+### Changed
+
+- P35 removes the legacy Python `PolicyContract` and Routing V2 default documents. Routing consumers now require an explicit `routing` declaration and `routing.contract` and fail closed instead of silently inheriting group names, bindings, region aliases, or exclusions.
+- P36 freezes canonical `services.yaml` as an empty compatibility-only extension point. Production routing and service qualification semantics remain owned by Policy Model v2 rather than a second generic Service domain.
+- P38 establishes v1.8.0 as the stabilization boundary for the P27-P38 architecture, preserving Python 3.11/3.12/3.13 coverage, deterministic generation, repository safety checks, and the pinned real-Mihomo stable matrix.
+
+### Compatibility
+
+- The fixed client-facing Cloudflare KV production key, six FlClash public scenario names, source permissions, ACL4SSR ordering, scheduled refresh cadence, and `subscription_1` browsing/AI-only plus >2x filtering contract are unchanged.
+- Physical v1 policy documents remain readable by `PolicyDocument` for compatible projects, but consumers that use Routing V2 must explicitly declare routing semantics; implicit Routing V2/PolicyContract defaults are no longer supported.
+- The P17 immutable `.release-v1.<sha>.config` / `.manifest` format and current/previous release pointers are unchanged, so historical rollback verification remains byte-compatible.
+
+### Security
+
+- The production ordering remains fail closed: qualification/audits, Promotion Guard, and every pinned stable Mihomo core must pass before the existing Cloudflare release activation transaction can change the client-visible value.
+- P37 release-manifest output is aggregate-only and excludes node names, servers, ports, credentials, subscription URLs, probe endpoints, and child-process diagnostics. Private candidate files are removed from the runner in a `finally` cleanup path.
+
 ## [1.7.0] - 2026-09-03
 
 ### Added
@@ -301,7 +326,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/hzoonp/clash-relay/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/hzoonp/clash-relay/compare/v1.6.3...v1.7.0
 [1.6.3]: https://github.com/hzoonp/clash-relay/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/hzoonp/clash-relay/compare/v1.6.1...v1.6.2
