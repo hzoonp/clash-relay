@@ -54,7 +54,9 @@ def _markdown(report: dict) -> str:
             f"Candidate/baseline ratios: **nodes {ratios.get('total_nodes', 'n/a')} / providers {ratios.get('providers', 'n/a')}**"
         )
     if violations:
-        lines.extend(["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"])
+        lines.extend(
+            ["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"]
+        )
     lines.extend(
         [
             "",
