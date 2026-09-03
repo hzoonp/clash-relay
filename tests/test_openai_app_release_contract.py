@@ -14,9 +14,7 @@ def test_v163_openai_client_path_release_contract(repo_root: Path) -> None:
     runtime = (repo_root / "src" / "clash_relay" / "ai_runtime_reliability.py").read_text(
         encoding="utf-8"
     )
-    hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(
-        encoding="utf-8"
-    )
+    hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
     audit = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
 
     assert project["version"] == "1.6.3"
