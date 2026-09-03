@@ -241,7 +241,9 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
         for display_name in display_names
     ]
     if len(all_region_displays) != len(set(all_region_displays)):
-        raise ConfigurationError("routing contract AI region display aliases must be globally unique")
+        raise ConfigurationError(
+            "routing contract AI region display aliases must be globally unique"
+        )
 
     binding_targets = _string_mapping(document.get("binding_targets"), field="binding_targets")
     priority_raw = document.get("priority_edges")
