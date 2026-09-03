@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clash-relay.invalid/schema/promotion-guard.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "enabled",
+    "minimum_total_node_ratio",
+    "minimum_provider_ratio",
+    "minimum_source_ratio_by_use",
+    "minimum_sources_by_use"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "enabled": {"type": "boolean"},
+    "minimum_total_node_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "minimum_provider_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "minimum_source_ratio_by_use": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "minimum_sources_by_use": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 100}
+    }
+  }
+}
