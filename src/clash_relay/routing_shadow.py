@@ -97,7 +97,6 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
     media_name = contract.public_group("media")
     messaging_name = contract.public_group("messaging")
     download_name = contract.public_group("download")
-    browsing_name = contract.public_group("browsing")
 
     media_members = _declared_members(groups.get(media_name))
     messaging_members = _declared_members(groups.get(messaging_name))
