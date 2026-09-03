@@ -137,11 +137,13 @@ def test_p18_preserves_production_metrics_after_versioned_release_commit() -> No
     publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
 
     release = lifecycle.index("release = self._publish_release()")
-    persist = lifecycle.index('stage="persist_scheduler_history"')
+    persist = lifecycle.index("derived_state = self._persist_derived_state()")
     proof = lifecycle.index("proof = self._render_existing_proof(release=release)")
 
     assert release < persist < proof
-    assert "best_effort=True" in lifecycle[persist:proof]
+    assert 'stage="persist_scheduler_history"' in lifecycle
+    assert 'stage="persist_ai_qualification_cache"' in lifecycle
+    assert lifecycle.count("best_effort=True") == 2
     assert 'key_name=f"{production_key}.production-metrics-v1"' in publisher
     assert "metrics = _persist_metrics(" in publisher
     assert '"production_metrics": metrics' in publisher
