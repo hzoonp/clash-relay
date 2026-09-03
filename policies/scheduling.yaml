@@ -1,0 +1,58 @@
+scheduler:
+  browsing:
+    attempts: 3
+    reserve_successes: 2
+    region_switch_interval: 300
+  history:
+    min_runs: 2
+    min_success_ema: 0.8
+    recover_success_ema: 0.9
+    demote_after_failures: 2
+    max_age_seconds: 2592000
+  ai_cache:
+    pass_ttl_seconds: 21600
+    failure_ttl_seconds: 3600
+    openai_pass_ttl_seconds: 7200
+    openai_failure_ttl_seconds: 3600
+
+probes:
+  connectivity:
+    url: https://www.gstatic.com/generate_204
+    method: HEAD
+    expected_status: "204"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  browsing:
+    url: https://www.gstatic.com/generate_204
+    method: HEAD
+    expected_status: "204"
+    interval: 180
+    timeout: 3000
+    lazy: false
+    tolerance: 150
+  ai_openai:
+    url: https://chatgpt.com/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
+    tolerance: 50
+  ai_claude:
+    url: https://claude.ai/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
+    tolerance: 50
+  ai_gemini:
+    url: https://gemini.google.com/
+    method: HEAD
+    expected_status: "200-399"
+    interval: 3600
+    timeout: 5000
+    lazy: false
+    tolerance: 50

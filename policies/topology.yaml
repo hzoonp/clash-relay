@@ -1,0 +1,122 @@
+pools:
+  - id: general
+    display_name: __CR_GENERAL_INVENTORY
+    module: general
+    source_use: general
+    regions: [ANY]
+    fallback_order: [ANY]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: error
+    probe: connectivity
+    rule_priority: 1000
+    rules: null
+
+  - id: browsing
+    display_name: __CR_BROWSING_INVENTORY
+    module: general
+    source_use: browsing
+    regions: [US, SG, JP, TW, KR, HK, OTHER]
+    fallback_order: [US, SG, JP, TW, KR, HK, OTHER]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: error
+    probe: browsing
+    rule_priority: 1010
+    rules: null
+
+  - id: ai_sg
+    display_name: AI · 新加坡
+    module: general
+    source_use: ai
+    regions: [SG]
+    fallback_order: [SG]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1100
+    rules: null
+
+  - id: ai_jp
+    display_name: AI · 日本
+    module: general
+    source_use: ai
+    regions: [JP]
+    fallback_order: [JP]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1110
+    rules: null
+
+  - id: ai_us
+    display_name: AI · 美国
+    module: general
+    source_use: ai
+    regions: [US]
+    fallback_order: [US]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1120
+    rules: null
+
+  - id: ai_tw
+    display_name: AI · 台湾
+    module: general
+    source_use: ai
+    regions: [TW]
+    fallback_order: [TW]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1140
+    rules: null
+
+  - id: ai_kr
+    display_name: AI · 韩国
+    module: general
+    source_use: ai
+    regions: [KR]
+    fallback_order: [KR]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1150
+    rules: null
+
+  - id: ai_other
+    display_name: AI · 其他地区
+    module: general
+    source_use: ai
+    regions: [OTHER]
+    fallback_order: [OTHER]
+    capabilities_any: [general]
+    capabilities_all: []
+    excluded_capabilities: []
+    allowed_cost_levels: [standard]
+    on_empty: reject
+    probe: connectivity
+    rule_priority: 1160
+    rules: null
+
+chains: []

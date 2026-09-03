@@ -44,33 +44,13 @@ class RoutingPolicyV2:
             raise ConfigurationError(f"routing v2 has no policy for scenario {scenario!r}") from exc
 
 
-def _default_document() -> dict[str, Any]:
-    return {
-        "version": 2,
-        "scenarios": {
-            "direct": {"source_use": "general", "scheduler_profile": "direct"},
-            "general": {"source_use": "general", "scheduler_profile": "connectivity"},
-            "browsing": {"source_use": "browsing", "scheduler_profile": "browsing"},
-            "media": {"source_use": "general", "scheduler_profile": "media"},
-            "download": {"source_use": "general", "scheduler_profile": "download"},
-            "ai": {"source_use": "ai", "scheduler_profile": "ai"},
-            "final": {"source_use": "general", "scheduler_profile": "connectivity"},
-        },
-        "ai": {
-            "excluded_regions": ["HK"],
-            "preferred_regions": ["US", "SG", "JP", "TW", "KR", "OTHER"],
-        },
-        "download": {"mode": "direct"},
-    }
-
-
 def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
-    """Normalize the optional Routing V2 block with safe v1-compatible defaults."""
+    """Load explicit Routing V2 policy; implicit legacy defaults are not accepted."""
 
-    raw = policies.get("routing")
-    declared = raw is not None
-    document = _default_document() if raw is None else raw
-    if not isinstance(document, dict) or int(document.get("version", 0)) != 2:
+    document = policies.get("routing")
+    if not isinstance(document, dict):
+        raise ConfigurationError("routing policy is required and must declare version 2")
+    if int(document.get("version", 0)) != 2:
         raise ConfigurationError("routing policy must declare version 2")
 
     raw_scenarios = document.get("scenarios")
@@ -123,7 +103,7 @@ def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
         raise ConfigurationError(f"unknown routing download mode {download_mode!r}")
 
     return RoutingPolicyV2(
-        declared=declared,
+        declared=True,
         scenarios=scenarios,
         ai=AiRoutingPolicy(excluded_regions=excluded, preferred_regions=preferred),
         download=DownloadRoutingPolicy(mode=download_mode),

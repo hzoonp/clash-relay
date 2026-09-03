@@ -1,0 +1,28 @@
+capabilities:
+  general:
+    description: Ordinary egress suitable for ACL4SSR-managed routing.
+    restricted: false
+
+cost_levels: [standard]
+
+country_classification:
+  default: OTHER
+  aliases:
+    HK:
+      - '(?i)(香港|Hong ?Kong|HKG|🇭🇰)'
+      - '(?i)(^|[^A-Za-z])HK([^A-Za-z]|$)'
+    TW:
+      - '(?i)(台湾|臺灣|台北|Taiwan|Taipei|TPE|🇹🇼)'
+      - '(?i)(^|[^A-Za-z])TW([^A-Za-z]|$)'
+    SG:
+      - '(?i)(新加坡|狮城|獅城|Singapore|SIN|🇸🇬)'
+      - '(?i)(^|[^A-Za-z])SG([^A-Za-z]|$)'
+    JP:
+      - '(?i)(日本|东京|東京|大阪|Japan|Tokyo|Osaka|NRT|KIX|🇯🇵)'
+      - '(?i)(^|[^A-Za-z])JP([^A-Za-z]|$)'
+    US:
+      - '(?i)(美国|美國|洛杉矶|洛杉磯|圣何塞|聖何塞|西雅图|西雅圖|纽约|紐約|达拉斯|達拉斯|United ?States|Los ?Angeles|San ?Jose|Seattle|New ?York|Dallas|LAX|SJC|SEA|JFK|DFW|🇺🇸)'
+      - '(?i)(^|[^A-Za-z])USA?([^A-Za-z]|$)'
+    KR:
+      - '(?i)(韩国|韓國|首尔|首爾|Korea|Seoul|ICN|🇰🇷)'
+      - '(?i)(^|[^A-Za-z])KR([^A-Za-z]|$)'
