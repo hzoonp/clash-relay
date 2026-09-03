@@ -1,9 +1,8 @@
 """Canonical, side-effect-free view of a generated Mihomo runtime graph.
 
-P14 introduces this module as the shared graph boundary for audits and later
-qualification stages.  It deliberately does not generate or mutate Mihomo
-configuration; it only normalizes graph traversal and immutable candidate
-stage transitions.
+RuntimeGraph is the topology truth for generated candidates.  Audits and
+post-generation transforms must consume this module instead of maintaining
+private BFS/DFS implementations over proxy groups and providers.
 """
 
 from __future__ import annotations
@@ -229,14 +228,30 @@ class RuntimeGraph:
             unresolved=frozenset(unresolved),
         )
 
+    def walk_resolved(self, target: str) -> GraphReachability:
+        """Walk a target and fail closed if any runtime reference is unresolved."""
+
+        result = self.walk(target)
+        if result.unresolved:
+            unresolved = ", ".join(sorted(result.unresolved))
+            raise ValidationError(
+                f"runtime graph target {target!r} has unresolved references: {unresolved}"
+            )
+        return result
+
+    def reachable_providers(self, target: str, *, require_resolved: bool = False) -> frozenset[str]:
+        reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
+        return reachability.providers
+
     def reachable_sources(
         self,
         target: str,
         *,
         proxy_sources: Mapping[str, str],
         provider_sources: Mapping[str, set[str] | frozenset[str]] | None = None,
+        require_resolved: bool = False,
     ) -> frozenset[str]:
-        reachability = self.walk(target)
+        reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
         found = {str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources}
         if provider_sources is not None:
             for provider in reachability.providers:
