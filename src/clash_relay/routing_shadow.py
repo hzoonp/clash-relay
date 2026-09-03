@@ -169,7 +169,6 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         "acl4ssr_fidelity": {
             "compatibility_selectors_applied": compatibility_applied,
             "classification_order_applied": order_applied,
-            "disabled_groups_applied": disabled_groups_applied,
             "ban_program_ad_disabled": disabled_groups_applied,
             "intentional_extensions": ["ai", "openai", "download"],
         },
