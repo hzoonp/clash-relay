@@ -27,10 +27,7 @@ def test_policy_model_v2_composes_to_the_same_domain_document(tmp_path: Path) ->
     )
     _write(
         tmp_path / "policies/classification.yaml",
-        {
-            key: canonical[key]
-            for key in ("capabilities", "cost_levels", "country_classification")
-        },
+        {key: canonical[key] for key in ("capabilities", "cost_levels", "country_classification")},
     )
     _write(
         tmp_path / "policies/qualification.yaml",
