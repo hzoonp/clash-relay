@@ -10,6 +10,7 @@ from clash_relay.builder import build_candidate
 from clash_relay.errors import GenerationError
 from clash_relay.models import Node
 from clash_relay.node_policy import filter_proxies_by_multiplier, node_name_multiplier
+from clash_relay.policy_document import load_policy_document
 from clash_relay.routing_policy import apply_acl4ssr_source_exclusions
 from clash_relay.selector import select_nodes
 
@@ -273,7 +274,7 @@ def test_canonical_subscription_1_is_browsing_and_ai_only(repo_root: Path) -> No
 
 
 def test_canonical_browsing_route_is_separate_from_application_routes(repo_root: Path) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     pools = {item["id"]: item for item in policies["pools"]}
     assert pools["general"]["source_use"] == "general"
     assert pools["browsing"]["source_use"] == "browsing"
