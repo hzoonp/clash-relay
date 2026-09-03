@@ -129,7 +129,8 @@ def build_release_manifest(
         "qualification": {
             "status": str(qualification.get("status", "unknown")),
             "policy_model_version": int(
-                qualification.get("policy_model_version", policy_model_version) or policy_model_version
+                qualification.get("policy_model_version", policy_model_version)
+                or policy_model_version
             ),
         },
         "promotion_guard": {
