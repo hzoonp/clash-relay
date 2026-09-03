@@ -132,19 +132,21 @@ def assess_promotion(
     if provider_ratio < policy.minimum_provider_ratio:
         violations.append("provider_ratio")
 
-    use_ratios: dict[str, dict[str, float | int]] = {}
+    use_ratios: dict[str, dict[str, float | int | bool]] = {}
     required_uses = set(policy.minimum_source_ratio_by_use) | set(policy.minimum_sources_by_use)
     for source_use in sorted(required_uses):
         current_sources = candidate_inventory.sources_by_use.get(source_use, 0)
         baseline_sources = baseline_inventory.sources_by_use.get(source_use, 0)
+        configured_in_baseline = source_use in baseline_inventory.sources_by_use
         source_ratio = _ratio(current_sources, baseline_sources)
         minimum_ratio = policy.minimum_source_ratio_by_use.get(source_use, 0.0)
         minimum_sources = policy.minimum_sources_by_use.get(source_use, 0)
-        if current_sources < minimum_sources:
+        if configured_in_baseline and current_sources < minimum_sources:
             violations.append(f"minimum_sources:{source_use}")
-        if source_ratio < minimum_ratio:
+        if configured_in_baseline and source_ratio < minimum_ratio:
             violations.append(f"source_ratio:{source_use}")
         use_ratios[source_use] = {
+            "configured_in_baseline": configured_in_baseline,
             "source_ratio": round(source_ratio, 4),
             "candidate_sources": current_sources,
             "baseline_sources": baseline_sources,
