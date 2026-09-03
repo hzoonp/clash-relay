@@ -4,6 +4,8 @@ from pathlib import Path
 
 import yaml
 
+from clash_relay.policy_document import load_policy_document
+
 
 def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> None:
     manifest = yaml.safe_load((repo_root / "rules/acl4ssr.yaml").read_text(encoding="utf-8"))
@@ -27,7 +29,7 @@ def test_canonical_public_surface_contains_only_scenarios(repo_root: Path) -> No
 
 
 def test_ai_region_dimension_hard_excludes_hong_kong(repo_root: Path) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     ai_pools = [pool for pool in policies["pools"] if pool["source_use"] == "ai"]
 
     assert ai_pools
