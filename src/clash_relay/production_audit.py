@@ -8,11 +8,11 @@ from typing import Any
 
 from .config_loader import ProjectDefinition
 from .errors import ValidationError
+from .runtime_graph import RuntimeGraph
 from .runtime_names import canonical_source_id
 from .util import safe_identifier
 
 _RUNTIME_SOURCE = re.compile(r"^\[[^\]]+\]\s+([^/]+)/")
-_BUILTINS = frozenset({"DIRECT", "REJECT", "PASS", "COMPATIBLE"})
 _DEFAULT_SOURCE_USE = "general"
 
 
@@ -39,131 +39,33 @@ def _runtime_source_id(
         raise ValidationError("production audit found ambiguous runtime source labels") from exc
 
 
-def _groups_by_name(candidate: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    rows = candidate.get("proxy-groups")
-    if not isinstance(rows, list):
-        raise ValidationError("production reachability audit requires proxy-groups")
-    groups: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if not isinstance(row, dict) or not isinstance(row.get("name"), str):
-            raise ValidationError("production reachability audit found a malformed proxy group")
-        name = str(row["name"])
-        if name in groups:
-            raise ValidationError(f"production reachability audit found duplicate group {name!r}")
-        groups[name] = row
-    return groups
-
-
-def _provider_graph(
-    providers: dict[str, Any],
+def _runtime_source_maps(
+    graph: RuntimeGraph,
     *,
     known_source_ids: set[str],
-) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[str, str]]:
-    provider_sources: dict[str, set[str]] = {}
-    provider_dialers: dict[str, set[str]] = {}
-    runtime_sources: dict[str, str] = {}
+) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """Attach subscription identity to RuntimeGraph provider/proxy indexes."""
 
-    for provider_name, provider in providers.items():
-        if not isinstance(provider_name, str) or not isinstance(provider, dict):
-            raise ValidationError("production reachability audit found a malformed provider")
-        payload = provider.get("payload")
-        if not isinstance(payload, list):
-            raise ValidationError(
-                f"production reachability audit found provider {provider_name!r} without payload"
-            )
+    provider_sources: dict[str, set[str]] = {}
+    runtime_sources: dict[str, str] = {}
+    for provider_name, proxy_names in graph.provider_proxies.items():
         sources: set[str] = set()
-        dialers: set[str] = set()
-        for proxy in payload:
-            if not isinstance(proxy, dict):
-                raise ValidationError(
-                    f"production reachability audit found malformed proxy in {provider_name!r}"
-                )
+        for runtime_name in proxy_names:
+            proxy = graph.proxies[runtime_name]
             source_id = _runtime_source_id(
-                proxy, provider_name=provider_name, known_source_ids=known_source_ids
+                proxy,
+                provider_name=provider_name,
+                known_source_ids=known_source_ids,
             )
             sources.add(source_id)
-            runtime_name = str(proxy["name"])
             previous = runtime_sources.get(runtime_name)
             if previous is not None and previous != source_id:
                 raise ValidationError(
                     "runtime proxy name resolves to multiple subscription sources"
                 )
             runtime_sources[runtime_name] = source_id
-            dialer = proxy.get("dialer-proxy")
-            if isinstance(dialer, str) and dialer:
-                dialers.add(dialer)
         provider_sources[provider_name] = sources
-        provider_dialers[provider_name] = dialers
-    return provider_sources, provider_dialers, runtime_sources
-
-
-def _reachable_sources(
-    target: str,
-    *,
-    groups: dict[str, dict[str, Any]],
-    provider_sources: dict[str, set[str]],
-    provider_dialers: dict[str, set[str]],
-    runtime_sources: dict[str, str],
-    memo: dict[str, frozenset[str]],
-    visiting: set[str] | None = None,
-) -> frozenset[str]:
-    if target in _BUILTINS:
-        return frozenset()
-    runtime_source = runtime_sources.get(target)
-    if runtime_source is not None:
-        return frozenset({runtime_source})
-    cached = memo.get(target)
-    if cached is not None:
-        return cached
-
-    group = groups.get(target)
-    if group is None:
-        return frozenset()
-    active = set() if visiting is None else set(visiting)
-    if target in active:
-        raise ValidationError(f"production reachability audit found a cycle at {target!r}")
-    active.add(target)
-
-    found: set[str] = set()
-    uses = group.get("use", [])
-    if isinstance(uses, list):
-        for provider_name in uses:
-            if not isinstance(provider_name, str):
-                continue
-            found.update(provider_sources.get(provider_name, set()))
-            for dialer in provider_dialers.get(provider_name, set()):
-                found.update(
-                    _reachable_sources(
-                        dialer,
-                        groups=groups,
-                        provider_sources=provider_sources,
-                        provider_dialers=provider_dialers,
-                        runtime_sources=runtime_sources,
-                        memo=memo,
-                        visiting=active,
-                    )
-                )
-
-    references = group.get("proxies", [])
-    if isinstance(references, list):
-        for reference in references:
-            if not isinstance(reference, str):
-                continue
-            found.update(
-                _reachable_sources(
-                    reference,
-                    groups=groups,
-                    provider_sources=provider_sources,
-                    provider_dialers=provider_dialers,
-                    runtime_sources=runtime_sources,
-                    memo=memo,
-                    visiting=active,
-                )
-            )
-
-    result = frozenset(found)
-    memo[target] = result
-    return result
+    return provider_sources, runtime_sources
 
 
 def _assert_use_allowed(
@@ -228,29 +130,28 @@ def _audit_reachability(
     candidate: dict[str, Any],
     *,
     subscriptions: dict[str, Any],
-    providers: dict[str, Any],
+    graph: RuntimeGraph,
 ) -> dict[str, Any]:
-    groups = _groups_by_name(candidate)
-    provider_sources, provider_dialers, runtime_sources = _provider_graph(
-        providers, known_source_ids=set(subscriptions)
+    provider_sources, runtime_sources = _runtime_source_maps(
+        graph, known_source_ids=set(subscriptions)
     )
-    memo: dict[str, frozenset[str]] = {}
+
+    def reachable(target: str) -> frozenset[str]:
+        return graph.reachable_sources(
+            target,
+            proxy_sources=runtime_sources,
+            provider_sources=provider_sources,
+            require_resolved=True,
+        )
+
     use_counts: Counter[str] = Counter()
     groups_checked = 0
 
     for group_name, source_use in sorted(_expected_group_uses(project).items()):
-        if group_name not in groups:
+        if group_name not in graph.groups:
             continue
-        reachable = _reachable_sources(
-            group_name,
-            groups=groups,
-            provider_sources=provider_sources,
-            provider_dialers=provider_dialers,
-            runtime_sources=runtime_sources,
-            memo=memo,
-        )
         _assert_use_allowed(
-            reachable,
+            reachable(group_name),
             source_use,
             subscriptions=subscriptions,
             surface=f"group:{group_name}",
@@ -270,16 +171,8 @@ def _audit_reachability(
                 continue
             source_use = str(row.get("source_use", _DEFAULT_SOURCE_USE))
             target = str(row["target"])
-            reachable = _reachable_sources(
-                target,
-                groups=groups,
-                provider_sources=provider_sources,
-                provider_dialers=provider_dialers,
-                runtime_sources=runtime_sources,
-                memo=memo,
-            )
             _assert_use_allowed(
-                reachable,
+                reachable(target),
                 source_use,
                 subscriptions=subscriptions,
                 surface=f"rule-source:{row['id']}",
@@ -293,16 +186,8 @@ def _audit_reachability(
             if module is not None and not modules.get(str(module), False):
                 continue
             source_use = str(row.get("source_use", _DEFAULT_SOURCE_USE))
-            reachable = _reachable_sources(
-                str(row["target"]),
-                groups=groups,
-                provider_sources=provider_sources,
-                provider_dialers=provider_dialers,
-                runtime_sources=runtime_sources,
-                memo=memo,
-            )
             _assert_use_allowed(
-                reachable,
+                reachable(str(row["target"])),
                 source_use,
                 subscriptions=subscriptions,
                 surface=f"inline-rule:{row['id']}",
@@ -313,16 +198,8 @@ def _audit_reachability(
         final_target = manifest.get("final_target")
         if isinstance(final_target, str):
             final_use = str(manifest.get("final_source_use", _DEFAULT_SOURCE_USE))
-            reachable = _reachable_sources(
-                final_target,
-                groups=groups,
-                provider_sources=provider_sources,
-                provider_dialers=provider_dialers,
-                runtime_sources=runtime_sources,
-                memo=memo,
-            )
             _assert_use_allowed(
-                reachable,
+                reachable(final_target),
                 final_use,
                 subscriptions=subscriptions,
                 surface="final-target",
@@ -351,16 +228,8 @@ def _audit_reachability(
                 target = parts[1]
             if source_use is None or target is None:
                 continue
-            reachable = _reachable_sources(
-                target,
-                groups=groups,
-                provider_sources=provider_sources,
-                provider_dialers=provider_dialers,
-                runtime_sources=runtime_sources,
-                memo=memo,
-            )
             _assert_use_allowed(
-                reachable,
+                reachable(target),
                 source_use,
                 subscriptions=subscriptions,
                 surface=f"runtime-rule:{parts[0]}:{parts[1]}",
@@ -369,6 +238,7 @@ def _audit_reachability(
 
     return {
         "status": "passed",
+        "graph_engine": "RuntimeGraph",
         "groups_checked": groups_checked,
         "routing_surfaces_checked": routing_surfaces_checked,
         "runtime_rules_checked": runtime_rules_checked,
@@ -388,10 +258,8 @@ def audit_production_candidate(
     It never returns node names, servers, ports, credentials, or subscription URLs.
     """
 
-    providers = candidate.get("proxy-providers")
-    if not isinstance(providers, dict):
-        raise ValidationError("production audit requires proxy-providers")
-
+    graph = RuntimeGraph.from_candidate(candidate)
+    providers = graph.providers
     subscriptions = {item.id: item for item in project.subscriptions if item.enabled}
     pool_rows: list[dict[str, Any]] = []
 
@@ -408,10 +276,6 @@ def audit_production_candidate(
             provider = providers.get(provider_name)
             if provider is None:
                 continue
-            if not isinstance(provider, dict):
-                raise ValidationError(
-                    f"production audit found malformed provider {provider_name!r}"
-                )
             payload = provider.get("payload")
             if not isinstance(payload, list):
                 raise ValidationError(
@@ -454,7 +318,7 @@ def audit_production_candidate(
         project,
         candidate,
         subscriptions=subscriptions,
-        providers=providers,
+        graph=graph,
     )
 
     source_reports = {}
@@ -533,6 +397,7 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
             "",
             "### Reachability audit",
             "",
+            f"Graph engine: **{reachability.get('graph_engine', 'RuntimeGraph')}**  ",
             f"Declared groups checked: **{reachability['groups_checked']}**  ",
             f"Routing surfaces checked: **{reachability['routing_surfaces_checked']}**  ",
             f"Runtime rules checked: **{reachability['runtime_rules_checked']}**",
