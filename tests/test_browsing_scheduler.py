@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
+from clash_relay.policy_document import load_policy_document
 
 
 def test_canonical_browsing_pool_uses_active_stability_probe(repo_root: Path) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     probe = policies["probes"]["browsing"]
     assert probe == {
         "url": "https://www.gstatic.com/generate_204",
