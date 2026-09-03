@@ -72,11 +72,7 @@ def load_browsing_probe_spec(policies_path: Path) -> dict[str, Any]:
         raise ValidationError("browsing qualification requires policy pools and probes")
 
     pool = next(
-        (
-            item
-            for item in pools
-            if isinstance(item, dict) and item.get("id") == BROWSING_POOL_ID
-        ),
+        (item for item in pools if isinstance(item, dict) and item.get("id") == BROWSING_POOL_ID),
         None,
     )
     if not isinstance(pool, dict):
