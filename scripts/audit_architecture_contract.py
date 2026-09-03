@@ -53,7 +53,9 @@ def main() -> int:
     # P33: Actions invokes one application entrypoint and contains no business pipeline.
     workflow = _text(".github/workflows/publish.yml")
     if workflow.count("python scripts/run_production_release.py") != 1:
-        raise SystemExit("architecture audit: publish workflow must invoke one production entrypoint")
+        raise SystemExit(
+            "architecture audit: publish workflow must invoke one production entrypoint"
+        )
     forbidden_leaf_scripts = (
         "run_production_pipeline.py",
         "fetch_current_config.py",
@@ -68,7 +70,9 @@ def main() -> int:
         if name in workflow:
             raise SystemExit(f"architecture audit: workflow directly orchestrates {name}")
     if "python - <<" in workflow or "python - <<'PY'" in workflow:
-        raise SystemExit("architecture audit: publish workflow contains inline Python business logic")
+        raise SystemExit(
+            "architecture audit: publish workflow contains inline Python business logic"
+        )
     if len(workflow.splitlines()) >= 100:
         raise SystemExit("architecture audit: publish workflow is no longer a thin adapter")
 
@@ -112,7 +116,10 @@ def main() -> int:
         raise SystemExit("architecture audit: promotion-guard.yaml is missing")
     if not (ROOT / "src/clash_relay/release_manifest.py").is_file():
         raise SystemExit("architecture audit: aggregate release manifest is missing")
-    if "release-manifest.json" not in lifecycle or "render_release_manifest_markdown" not in lifecycle:
+    if (
+        "release-manifest.json" not in lifecycle
+        or "render_release_manifest_markdown" not in lifecycle
+    ):
         raise SystemExit("architecture audit: production lifecycle omits P37 release manifest")
 
     print("architecture contract audit: passed")
