@@ -71,9 +71,7 @@ def _inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> Invento
         providers_by_use[source_use] = providers_by_use.get(source_use, 0) + int(
             row.get("providers", 0) or 0
         )
-        nodes_by_use[source_use] = nodes_by_use.get(source_use, 0) + int(
-            row.get("nodes", 0) or 0
-        )
+        nodes_by_use[source_use] = nodes_by_use.get(source_use, 0) + int(row.get("nodes", 0) or 0)
 
     return InventoryCount(
         nodes=len(runtime_nodes),
@@ -91,9 +89,7 @@ def _ratio(current: int, baseline: int) -> float:
 
 
 def _safe_inventory(value: InventoryCount) -> dict[str, Any]:
-    uses = sorted(
-        set(value.sources_by_use) | set(value.providers_by_use) | set(value.nodes_by_use)
-    )
+    uses = sorted(set(value.sources_by_use) | set(value.providers_by_use) | set(value.nodes_by_use))
     return {
         "nodes": value.nodes,
         "providers": value.providers,
