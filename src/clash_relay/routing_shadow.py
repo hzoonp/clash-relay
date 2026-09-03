@@ -35,10 +35,7 @@ def _priority_contract_applied(
     """
 
     required_ids = {
-        source_id
-        for edge in contract.priority_edges
-        if "openai" not in edge
-        for source_id in edge
+        source_id for edge in contract.priority_edges if "openai" not in edge for source_id in edge
     }
     if not required_ids <= set(by_source):
         return False
