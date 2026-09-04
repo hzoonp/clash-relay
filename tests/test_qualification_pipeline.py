@@ -26,8 +26,7 @@ def _fake_stage(path: Path, marker: str, payload: str) -> None:
 def _pipeline_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     candidate = tmp_path / "candidate.yaml"
     candidate.write_text("proxy-groups: []\nproxy-providers: {}\nproxies: []\n", encoding="utf-8")
-    policies = tmp_path / "policies.yaml"
-    policies.write_text("version: 1\n", encoding="utf-8")
+    policies = Path(__file__).resolve().parent / "fixtures/project/policies.yaml"
     mihomo = tmp_path / "mihomo"
     mihomo.write_text("fake", encoding="utf-8")
     scripts = tmp_path / "scripts"
@@ -78,6 +77,7 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path) -> None:
     assert "openai_runtime_stage: true" in text
     assert "browsing_stage" not in candidate.read_text(encoding="utf-8")
     assert result["status"] == "qualified"
+    assert result["policy_model_version"] == 2
     assert result["browsing"]["stage_attempts"] == 1
     assert result["browsing"]["recovered_by_retry"] is False
     assert result["browsing"]["recovered_failure_category"] is None
