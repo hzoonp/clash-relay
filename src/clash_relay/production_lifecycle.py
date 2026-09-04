@@ -1,6 +1,6 @@
 """Single application-layer owner for the production release lifecycle.
 
-GitHub Actions is intentionally a thin adapter.  This module owns production
+GitHub Actions is intentionally a thin adapter. This module owns production
 execution order while delegating the already proven immutable Cloudflare release
 transaction to ``release_bundle`` through its existing script adapter.
 """
@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from .production_pipeline import (
 )
 from .publication import publication_gate
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
+from .release_reliability import ReleasePhase, ReleaseProgress
 from .util import atomic_write
 
 
@@ -101,6 +103,7 @@ class ProductionPipeline:
         self.publish = publish
         self.workers = workers
         self.warnings: list[str] = []
+        self.timings_ms: dict[str, float] = {}
 
     def _private(self, name: str) -> Path:
         return self.paths.private_dir / name
@@ -140,6 +143,9 @@ class ProductionPipeline:
             raise ValidationError(
                 "production lifecycle could not append the Actions summary"
             ) from exc
+
+    def _record_timing(self, name: str, started: float) -> None:
+        self.timings_ms[name] = round((time.perf_counter() - started) * 1000.0, 3)
 
     def _script_command(self, name: str, *args: str) -> list[str]:
         return [sys.executable, str(self.paths.scripts_dir / name), *args]
@@ -408,6 +414,21 @@ class ProductionPipeline:
         )
         return {"status": "completed", "ai_cache": cache, "scheduler_history": history}
 
+    def _persist_production_metrics(self) -> dict[str, Any]:
+        if not self.publish:
+            return {"status": "skipped", "reason": "dry_run"}
+        return self._run_command(
+            stage="persist_production_metrics",
+            command=self._script_command(
+                "publish_production_metrics.py",
+                *self._common_project_args(),
+                "--private-dir",
+                str(self.paths.private_dir),
+            ),
+            output=self._private("production-metrics-publish.json"),
+            best_effort=True,
+        )
+
     def _render_existing_proof(self, *, release: dict[str, Any] | None) -> dict[str, Any]:
         command = self._script_command(
             "render_production_proof.py",
@@ -470,6 +491,43 @@ class ProductionPipeline:
         self._append_summary(self._public("release-manifest.md"))
         return manifest
 
+    def _post_commit_proof(self, *, release: dict[str, Any] | None) -> dict[str, Any]:
+        try:
+            return self._render_existing_proof(release=release)
+        except (OSError, ValidationError):
+            if not self.publish:
+                raise
+            self.warnings.append("render_production_proof")
+            return {"status": "unavailable", "reason": "post_commit_observability_failed"}
+
+    def _post_commit_manifest(
+        self,
+        *,
+        promotion: dict[str, Any],
+        matrix: dict[str, Any],
+        release: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        try:
+            return self._render_release_manifest(
+                promotion=promotion,
+                matrix=matrix,
+                release=release,
+            )
+        except (OSError, ValidationError):
+            if not self.publish:
+                raise
+            self.warnings.append("render_release_manifest")
+            return None
+
+    def _write_lifecycle_observability(self, progress: ReleaseProgress) -> None:
+        self._write_json(
+            self._private("lifecycle-observability.json"),
+            {
+                "timings_ms": dict(sorted(self.timings_ms.items())),
+                "release_progress": progress.safe_summary(),
+            },
+        )
+
     def run(self) -> dict[str, Any]:
         if not self.paths.config.is_file() or not self.paths.subscriptions.is_file():
             return {
@@ -479,6 +537,7 @@ class ProductionPipeline:
             }
 
         self._prepare_dirs()
+        progress = ReleaseProgress(publish=self.publish)
         try:
             project = ProjectPaths(
                 config=self.paths.config,
@@ -488,28 +547,74 @@ class ProductionPipeline:
             ).load()
             publication_gate(project.config, "cloudflare_kv")
 
+            started = time.perf_counter()
             generation = self._generate()
+            self._record_timing("generation", started)
+            progress.advance(ReleasePhase.PREPARED)
+
+            started = time.perf_counter()
             self._load_derived_state()
+            self._record_timing("derived_state_load", started)
+
+            started = time.perf_counter()
             binary = self._download_primary_mihomo()
+            self._record_timing("mihomo_download", started)
+
+            started = time.perf_counter()
             pipeline = self._qualify(binary)
+            self._record_timing("qualification", started)
+            progress.advance(ReleasePhase.QUALIFIED)
+
+            started = time.perf_counter()
             promotion = self._promotion_guard()
+            self._record_timing("promotion_guard", started)
+
+            started = time.perf_counter()
             matrix = self._validate_matrix(binary)
+            self._record_timing("mihomo_matrix", started)
+            progress.advance(ReleasePhase.PROMOTED)
+
+            started = time.perf_counter()
             release = self._publish_release()
+            self._record_timing("publication", started)
+            if self.publish:
+                progress.advance(ReleasePhase.PUBLISHED)
+
+            started = time.perf_counter()
             derived_state = self._persist_derived_state()
-            proof = self._render_existing_proof(release=release)
-            manifest = self._render_release_manifest(
+            self._record_timing("derived_state_persist", started)
+
+            proof = self._post_commit_proof(release=release)
+            manifest = self._post_commit_manifest(
                 promotion=promotion,
                 matrix=matrix,
                 release=release,
             )
+            if proof.get("status") == "passed" and manifest is not None:
+                progress.advance(ReleasePhase.VERIFIED)
+
+            self._write_lifecycle_observability(progress)
+            started = time.perf_counter()
+            metrics = self._persist_production_metrics()
+            self._record_timing("production_metrics", started)
 
             if self.warnings:
                 print(
-                    "::warning title=Derived state persistence::Production release is valid, "
-                    "but one or more optional derived-state stages failed: "
+                    "::warning title=Post-release state/observability::Production release is valid, "
+                    "but one or more optional post-release stages failed: "
                     + ", ".join(sorted(self.warnings))
                 )
 
+            release_id = (
+                manifest.get("release_id")
+                if manifest is not None
+                else release.get("release_id") if release is not None else None
+            )
+            config_sha256 = (
+                manifest.get("config_sha256")
+                if manifest is not None
+                else release.get("sha256") if release is not None else None
+            )
             return {
                 "status": "passed",
                 "publication_status": "published" if self.publish else "dry-run",
@@ -518,10 +623,13 @@ class ProductionPipeline:
                 "promotion_guard": promotion.get("status"),
                 "mihomo_matrix": matrix.get("status"),
                 "release_status": release.get("status") if release is not None else "dry-run",
-                "release_id": manifest.get("release_id"),
-                "config_sha256": manifest.get("config_sha256"),
-                "proof_status": proof.get("status", "passed"),
+                "release_phase": progress.phase,
+                "release_id": release_id,
+                "config_sha256": config_sha256,
+                "proof_status": proof.get("status", "unavailable"),
+                "manifest_status": "passed" if manifest is not None else "unavailable",
                 "derived_state": derived_state.get("status"),
+                "production_metrics": metrics.get("status"),
                 "warnings": sorted(self.warnings),
             }
         finally:
