@@ -20,7 +20,7 @@ _SECTION_OWNERS = {
     "pools": "topology",
     "chains": "topology",
 }
-_REQUIRED_FRAGMENTS = ("routing", "scheduling", "classification", "topology")
+_REQUIRED_FRAGMENTS = frozenset({"routing", "scheduling", "classification", "topology"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,10 +68,10 @@ def load_policy_document(path: Path) -> PolicyDocument:
     fragments = raw["fragments"]
     if not isinstance(fragments, dict):
         raise ConfigurationError("policy manifest fragments must be a mapping")
-    if tuple(fragments) != _REQUIRED_FRAGMENTS:
+    if set(fragments) != _REQUIRED_FRAGMENTS:
         raise ConfigurationError(
-            "policy manifest must declare exactly these fragments in order: "
-            + ", ".join(_REQUIRED_FRAGMENTS)
+            "policy manifest must declare exactly these fragments: "
+            + ", ".join(sorted(_REQUIRED_FRAGMENTS))
         )
 
     # The semantic schema predates the physical v2 split and retains version: 1
@@ -84,10 +84,8 @@ def load_policy_document(path: Path) -> PolicyDocument:
         fragment_name = str(fragment_name)
         target = _safe_fragment_path(path, str(relative))
         fragment = load_yaml_file(target)
-        if not isinstance(fragment, dict) or not fragment:
-            raise ConfigurationError(
-                f"policy fragment {fragment_name!r} must contain a non-empty mapping"
-            )
+        if not isinstance(fragment, dict):
+            raise ConfigurationError(f"policy fragment {fragment_name!r} must contain a mapping")
         if "version" in fragment or "fragments" in fragment:
             raise ConfigurationError(
                 f"policy fragment {fragment_name!r} must not declare version/fragments"
