@@ -186,7 +186,9 @@ def main() -> int:
     ):
         content = _text(relative)
         if "services_path" in content or '"--services"' in content:
-            raise SystemExit(f"architecture audit: {relative} retained generic Services runtime API")
+            raise SystemExit(
+                f"architecture audit: {relative} retained generic Services runtime API"
+            )
 
     # P31/P37: promotion policy and aggregate release proof remain explicit public contracts.
     if not (ROOT / "promotion-guard.yaml").is_file():
