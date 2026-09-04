@@ -48,15 +48,18 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     assert "publish_release_bundle.py" not in workflow
 
     qualify = lifecycle.index("pipeline = self._qualify(binary)")
-    guard = lifecycle.index("promotion = self._promotion_guard()")
+    guard = lifecycle.index("promotion = self._promotion_guard(project)")
     matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
-    publish = lifecycle.index("release = self._publish_release()")
-    persist = lifecycle.index("derived_state = self._persist_derived_state()")
+    publish = lifecycle.index("release = self._publish_release(project)")
+    persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
     assert qualify < guard < matrix < publish < persist
     assert "run_production_pipeline(" in lifecycle[:publish]
-    assert "check_promotion_guard.py" in lifecycle[:publish]
-    assert "validate_mihomo_matrix.py" in lifecycle[:publish]
-    assert "publish_release_bundle.py" in lifecycle
+    assert "run_promotion_guard(" in lifecycle[:publish]
+    assert "validate_mihomo_matrix(" in lifecycle[:publish]
+    assert "publish_production_release(" in lifecycle
+    assert "check_promotion_guard.py" not in lifecycle
+    assert "validate_mihomo_matrix.py" not in lifecycle
+    assert "publish_release_bundle.py" not in lifecycle
     assert "scripts/snapshot_previous_config.py" not in lifecycle
     assert "clash-relay publish-cloudflare-kv" not in lifecycle
 
