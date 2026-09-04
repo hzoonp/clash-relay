@@ -15,7 +15,9 @@ on:
       - "src/**"
       - "scripts/**"
       - "requirements.lock"
+      - "requirements-dev.lock"
       - "tools/mihomo-versions.json"
+      - ".github/workflows/validate.yml"
       - ".github/workflows/publish.yml"
   schedule:
     - cron: "17 */6 * * *"
@@ -35,17 +37,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate production SHA
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
+
   deploy:
     name: Run canonical production lifecycle
-    if: github.ref == 'refs/heads/main'
+    needs: validate
+    if: github.ref == 'refs/heads/main' && needs.validate.outputs.validated_sha == github.sha
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.validate.outputs.validated_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.lock
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
       - run: python -m pip install --requirement requirements.lock --editable .
 
       - name: Mask individual subscription URLs
@@ -57,6 +76,7 @@ jobs:
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
           CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}
+          CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
