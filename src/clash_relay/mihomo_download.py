@@ -65,9 +65,7 @@ def default_architecture() -> str:
     raise ValidationError(f"unsupported host architecture: {machine}")
 
 
-def _load_entry(
-    manifest: Path, channel: str, tag: str | None
-) -> tuple[str, dict[str, str], str]:
+def _load_entry(manifest: Path, channel: str, tag: str | None) -> tuple[str, dict[str, str], str]:
     try:
         document = json.loads(manifest.read_text(encoding="utf-8"))
         entries = document[channel]
@@ -200,9 +198,7 @@ def download_pinned_mihomo(
             f"https://api.github.com/repos/{repository}/releases/tags/{pinned_tag}"
         )
         if channel == "stable" and release.get("prerelease"):
-            raise ValidationError(
-                f"pinned stable tag {pinned_tag} is marked prerelease by GitHub"
-            )
+            raise ValidationError(f"pinned stable tag {pinned_tag} is marked prerelease by GitHub")
         pattern = re.compile(patterns[resolved_arch])
         assets = [asset for asset in release.get("assets", []) if pattern.fullmatch(asset["name"])]
         if len(assets) != 1:
