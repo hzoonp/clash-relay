@@ -10,6 +10,17 @@ import yaml
 from clash_relay.builder import build_candidate
 from clash_relay.util import dump_yaml
 
+_POLICY_SECTION_OWNERS = {
+    "routing": "routing",
+    "scheduler": "scheduling",
+    "probes": "scheduling",
+    "capabilities": "classification",
+    "cost_levels": "classification",
+    "country_classification": "classification",
+    "pools": "topology",
+    "chains": "topology",
+}
+
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
@@ -22,7 +33,6 @@ def project_paths(repo_root: Path) -> dict[str, Path]:
     return {
         "config_path": root / "config.yaml",
         "subscriptions_path": root / "subscriptions.yaml",
-        "services_path": root / "services.yaml",
         "policies_path": root / "policies.yaml",
     }
 
@@ -54,7 +64,6 @@ def project_factory(tmp_path: Path, repo_root: Path):
         return root, {
             "config_path": root / "config.yaml",
             "subscriptions_path": root / "subscriptions.yaml",
-            "services_path": root / "services.yaml",
             "policies_path": root / "policies.yaml",
         }
 
@@ -65,6 +74,32 @@ def project_factory(tmp_path: Path, repo_root: Path):
 def yaml_editor():
     def edit(path: Path, callback):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("version") == 2 and isinstance(
+            data.get("fragments"), dict
+        ):
+            fragment_docs: dict[str, dict] = {}
+            merged: dict = {"version": 1}
+            for name, relative in data["fragments"].items():
+                target = path.parent / str(relative)
+                fragment = yaml.safe_load(target.read_text(encoding="utf-8"))
+                if fragment is None:
+                    fragment = {}
+                fragment_docs[str(name)] = fragment
+                merged.update(fragment)
+            callback(merged)
+            for name, relative in data["fragments"].items():
+                document = {
+                    key: value
+                    for key, value in merged.items()
+                    if key != "version" and _POLICY_SECTION_OWNERS.get(key) == name
+                }
+                target = path.parent / str(relative)
+                target.write_text(
+                    yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+                    encoding="utf-8",
+                )
+            return copy.deepcopy(merged)
+
         callback(data)
         path.write_text(dump_yaml(data), encoding="utf-8")
         return copy.deepcopy(data)
