@@ -6,13 +6,15 @@ import pytest
 
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ConfigurationError
+from clash_relay.policy_document import load_policy_document
 from clash_relay.schema import load_and_validate
 
 
 def test_all_public_examples_validate(repo_root: Path) -> None:
     load_and_validate(repo_root / "config.example.yaml", "config.schema.json")
     load_and_validate(repo_root / "subscriptions.example.yaml", "subscriptions.schema.json")
-    load_and_validate(repo_root / "policies.yaml", "policies.schema.json")
+    policies = load_policy_document(repo_root / "policies.yaml")
+    assert policies.model_version == 2
 
 
 def test_fixture_project_loads(project_paths: dict[str, Path]) -> None:
