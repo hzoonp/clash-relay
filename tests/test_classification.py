@@ -4,11 +4,11 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import yaml
 
 from clash_relay.classify import classify_proxy, deduplicate_nodes
 from clash_relay.errors import GenerationError
 from clash_relay.models import SubscriptionSpec
+from clash_relay.policy_document import load_policy_document
 from clash_relay.selector import select_nodes
 
 
@@ -44,7 +44,7 @@ def _proxy(name: str = "Node") -> dict:
 @pytest.fixture(scope="module")
 def policies(repo_root: Path) -> dict:
     path = repo_root / "tests/fixtures/project/policies.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return load_policy_document(path).document
 
 
 def test_country_name_classifier_is_auxiliary(policies: dict) -> None:
