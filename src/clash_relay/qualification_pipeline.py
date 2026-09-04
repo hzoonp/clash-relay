@@ -1,20 +1,20 @@
-"""Unified staged qualification orchestration for private production candidates."""
+"""Unified in-process qualification orchestration for private production candidates."""
 
 from __future__ import annotations
 
 import json
 import shutil
-import subprocess
-import sys
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .ai_application import run_ai_qualification
+from .browsing_application import run_browsing_qualification
 from .errors import ValidationError
+from .openai_application import harden_openai_client_path
 from .policy_document import load_policy_document
-from .qualification_reliability import QualificationFailureCategory, parse_failure_category
+from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
 from .util import atomic_write, load_yaml_file
 
@@ -54,25 +54,6 @@ class QualificationStage:
     fingerprint: str
 
 
-class QualificationStageError(ValidationError):
-    """Structured child-stage rejection used for retry policy decisions."""
-
-    def __init__(
-        self,
-        name: str,
-        *,
-        category: QualificationFailureCategory,
-        retryable: bool,
-        context: str | None = None,
-    ) -> None:
-        self.category = category
-        self.retryable = retryable
-        suffix = f"; aggregate diagnostics={context}" if context else ""
-        super().__init__(
-            f"{name} qualification stage rejected the candidate [{category.value}]{suffix}"
-        )
-
-
 def _artifact(path: Path, stage: str) -> CandidateArtifact:
     document = load_yaml_file(path)
     if not isinstance(document, dict):
@@ -80,85 +61,30 @@ def _artifact(path: Path, stage: str) -> CandidateArtifact:
     return CandidateArtifact.from_document(stage, document)
 
 
-def _rejection_document(stdout: str) -> dict[str, Any] | None:
-    try:
-        document = json.loads(stdout)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(document, dict) or document.get("status") != "rejected":
-        return None
-    return document
+def _safe_rejection_context(error: QualificationStageRejected) -> str | None:
+    """Render aggregate-only typed diagnostics without runtime identities."""
 
-
-def _safe_rejection_context(document: dict[str, Any] | None) -> str | None:
-    """Return child-provided aggregate diagnostics without runtime identities."""
-    if document is None:
-        return None
-
-    safe: dict[str, Any] = {}
-    stage = document.get("stage")
-    if isinstance(stage, str) and stage in {
-        "setup",
-        "browsing",
-        "history",
-        "browsing_rewrite",
-        "transport",
-    }:
-        safe["stage"] = stage
-    category = parse_failure_category(document.get("failure_category"))
-    if category is not None:
-        safe["failure_category"] = category.value
-        safe["retryable"] = document.get("retryable") is True
-    for section_name in ("diagnostics", "transport_diagnostics"):
-        section = document.get(section_name)
-        if not isinstance(section, dict):
-            continue
+    safe: dict[str, Any] = {
+        "stage": error.stage,
+        "failure_category": error.category.value,
+        "retryable": error.retryable,
+    }
+    for section_name, section in (
+        ("diagnostics", error.diagnostics),
+        ("transport_diagnostics", error.transport_diagnostics),
+    ):
         filtered = {key: section[key] for key in sorted(section) if key in _SAFE_DIAGNOSTIC_KEYS}
         if filtered:
             safe[section_name] = filtered
-    if not safe:
-        return None
     return json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _run_json_stage(name: str, command: Sequence[str]) -> dict[str, Any]:
-    try:
-        result = subprocess.run(
-            list(command),
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        raise ValidationError(f"failed to start {name} qualification stage") from exc
-    if result.returncode != 0:
-        # Child stderr may contain provider/runtime identities. Retry policy and
-        # public diagnostics come only from the structured stdout contract.
-        document = _rejection_document(result.stdout)
-        category = (
-            parse_failure_category(document.get("failure_category"))
-            if document is not None
-            else None
-        )
-        if category is None:
-            category = QualificationFailureCategory.PROTOCOL_ERROR
-        retryable = document is not None and document.get("retryable") is True
-        if category is not QualificationFailureCategory.TRANSIENT:
-            retryable = False
-        raise QualificationStageError(
-            name,
-            category=category,
-            retryable=retryable,
-            context=_safe_rejection_context(document),
-        )
-    try:
-        document = json.loads(result.stdout)
-    except json.JSONDecodeError as exc:
-        raise ValidationError(f"{name} qualification stage returned invalid JSON") from exc
-    if not isinstance(document, dict) or document.get("status") not in {"qualified", "passed"}:
-        raise ValidationError(f"{name} qualification stage did not report success")
-    return document
+def _stage_error(name: str, error: QualificationStageRejected) -> ValidationError:
+    context = _safe_rejection_context(error)
+    suffix = f"; aggregate diagnostics={context}" if context else ""
+    return ValidationError(
+        f"{name} qualification stage rejected the candidate [{error.category.value}]{suffix}"
+    )
 
 
 def _json_text(document: dict[str, Any]) -> str:
@@ -192,10 +118,9 @@ def run_qualification_pipeline(
     cache: Path | None = None,
     cache_key: Path | None = None,
     next_cache: Path | None = None,
-    script_dir: Path | None = None,
-    python_executable: str | None = None,
 ) -> dict[str, Any]:
     """Run immutable browsing, AI admission, and client-path hardening stages."""
+
     pipeline_started = time.perf_counter()
     if workers < 1:
         raise ValidationError("qualification workers must be at least 1")
@@ -207,8 +132,6 @@ def run_qualification_pipeline(
         if any(provided) and not all(provided):
             raise ValidationError(f"{label} inputs must be supplied together")
 
-    scripts = Path("scripts") if script_dir is None else script_dir
-    python = python_executable or sys.executable
     stage_dir.mkdir(parents=True, exist_ok=True)
     output.parent.mkdir(parents=True, exist_ok=True)
     browsing_report.parent.mkdir(parents=True, exist_ok=True)
@@ -226,29 +149,6 @@ def run_qualification_pipeline(
         raise ValidationError("failed to prepare private qualification stages") from exc
 
     generated_artifact = _artifact(generated, "generated")
-    browsing_command = [
-        python,
-        str(scripts / "qualify_browsing.py"),
-        "--candidate",
-        str(browsing),
-        "--policies",
-        str(qualification_policies),
-        "--mihomo-bin",
-        str(mihomo_bin),
-        "--workers",
-        str(workers),
-    ]
-    if history is not None and history_key is not None and next_history is not None:
-        browsing_command.extend(
-            [
-                "--history",
-                str(history),
-                "--history-key",
-                str(history_key),
-                "--next-history",
-                str(next_history),
-            ]
-        )
     browsing_started = time.perf_counter()
     browsing_summary: dict[str, Any] | None = None
     browsing_attempts_used = 0
@@ -262,11 +162,19 @@ def run_qualification_pipeline(
         except OSError as exc:
             raise ValidationError("failed to prepare browsing qualification stage") from exc
         try:
-            browsing_summary = _run_json_stage("browsing/transport", browsing_command)
+            browsing_summary = run_browsing_qualification(
+                candidate=browsing,
+                policies=qualification_policies,
+                mihomo_bin=mihomo_bin,
+                workers=workers,
+                history=history,
+                history_key=history_key,
+                next_history=next_history,
+            )
             break
-        except QualificationStageError as exc:
+        except QualificationStageRejected as exc:
             if not exc.retryable or browsing_attempts_used >= _BROWSING_STAGE_ATTEMPTS:
-                raise
+                raise _stage_error("browsing/transport", exc) from exc
             recovered_failure_category = exc.category.value
     if browsing_summary is None:  # pragma: no cover - defensive invariant
         raise ValidationError("browsing/transport qualification produced no result")
@@ -278,31 +186,16 @@ def run_qualification_pipeline(
         shutil.copyfile(browsing, ai)
     except OSError as exc:
         raise ValidationError("failed to prepare AI qualification stage") from exc
-    ai_command = [
-        python,
-        str(scripts / "qualify_ai.py"),
-        "--candidate",
-        str(ai),
-        "--policies",
-        str(qualification_policies),
-        "--mihomo-bin",
-        str(mihomo_bin),
-        "--workers",
-        str(workers),
-    ]
-    if cache is not None and cache_key is not None and next_cache is not None:
-        ai_command.extend(
-            [
-                "--cache",
-                str(cache),
-                "--cache-key",
-                str(cache_key),
-                "--next-cache",
-                str(next_cache),
-            ]
-        )
     ai_started = time.perf_counter()
-    ai_summary = _run_json_stage("AI", ai_command)
+    ai_summary = run_ai_qualification(
+        candidate=ai,
+        policies=qualification_policies,
+        mihomo_bin=mihomo_bin,
+        workers=workers,
+        cache=cache,
+        cache_key=cache_key,
+        next_cache=next_cache,
+    )
     atomic_write(ai_report, _json_text(ai_summary))
     ai_artifact = _artifact(ai, "ai_qualified")
     ai_elapsed_ms = _elapsed_ms(ai_started)
@@ -312,15 +205,7 @@ def run_qualification_pipeline(
     except OSError as exc:
         raise ValidationError("failed to prepare OpenAI client-path hardening stage") from exc
     runtime_started = time.perf_counter()
-    runtime_summary = _run_json_stage(
-        "OpenAI client-path",
-        [
-            python,
-            str(scripts / "harden_openai_runtime.py"),
-            "--candidate",
-            str(openai_runtime),
-        ],
-    )
+    runtime_summary = harden_openai_client_path(openai_runtime)
     runtime_artifact = _artifact(openai_runtime, "openai_client_path_hardened")
     runtime_elapsed_ms = _elapsed_ms(runtime_started)
 

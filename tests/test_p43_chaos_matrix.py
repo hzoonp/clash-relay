@@ -69,13 +69,15 @@ def test_post_commit_observability_is_not_a_publication_gate(repo_root: Path) ->
         encoding="utf-8"
     )
 
-    publish = lifecycle.index("release = self._publish_release()")
+    publish = lifecycle.index("release = self._publish_release(project)")
     proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
-    metrics = lifecycle.index("metrics = self._persist_production_metrics()")
+    metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
     assert publish < proof < metrics
     assert 'self.warnings.append("render_production_proof")' in lifecycle
     assert 'self.warnings.append("render_release_manifest")' in lifecycle
-    assert 'stage="persist_production_metrics"' in lifecycle
-    assert (
-        "best_effort=True" in lifecycle[lifecycle.index("def _persist_production_metrics") : proof]
-    )
+    assert '"persist_production_metrics",' in lifecycle
+
+    metrics_start = lifecycle.index("    def _persist_production_metrics(")
+    metrics_end = lifecycle.index("    def _render_existing_proof", metrics_start)
+    metrics_body = lifecycle[metrics_start:metrics_end]
+    assert "self._best_effort_state(" in metrics_body

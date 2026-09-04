@@ -138,15 +138,18 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "v1.19.29" not in publish
 
     qualify = lifecycle.index("pipeline = self._qualify(binary)")
-    guard = lifecycle.index("promotion = self._promotion_guard()")
+    guard = lifecycle.index("promotion = self._promotion_guard(project)")
     matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
-    release = lifecycle.index("release = self._publish_release()")
-    persist = lifecycle.index("derived_state = self._persist_derived_state()")
+    release = lifecycle.index("release = self._publish_release(project)")
+    persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
     assert qualify < guard < matrix < release < persist
-    assert lifecycle.count("best_effort=True") == 3
+    assert lifecycle.count("self._best_effort_state(") == 3
     assert "persist_ai_qualification_cache" in lifecycle
     assert "persist_scheduler_history" in lifecycle
     assert "persist_production_metrics" in lifecycle
+    assert "check_promotion_guard.py" not in lifecycle
+    assert "validate_mihomo_matrix.py" not in lifecycle
+    assert "publish_release_bundle.py" not in lifecycle
     assert "finally:" in lifecycle
     assert "shutil.rmtree(self.paths.private_dir" in lifecycle
 

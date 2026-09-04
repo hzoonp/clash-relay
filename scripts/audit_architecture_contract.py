@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P27-P47 architecture boundaries regress."""
+"""Fail CI when the P27-P48 architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -107,16 +107,16 @@ def main() -> int:
     lifecycle = _text("src/clash_relay/production_lifecycle.py")
     ordered_stages = (
         "generation = self._generate()",
-        "self._load_derived_state()",
+        "self._load_derived_state(project)",
         "binary = self._download_primary_mihomo()",
         "pipeline = self._qualify(binary)",
-        "promotion = self._promotion_guard()",
+        "promotion = self._promotion_guard(project)",
         "matrix = self._validate_matrix(binary)",
-        "release = self._publish_release()",
-        "derived_state = self._persist_derived_state()",
+        "release = self._publish_release(project)",
+        "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
-        "metrics = self._persist_production_metrics()",
+        "metrics = self._persist_production_metrics(project)",
     )
     positions = [lifecycle.find(stage) for stage in ordered_stages]
     if any(position < 0 for position in positions) or positions != sorted(positions):
@@ -124,45 +124,118 @@ def main() -> int:
     if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
         raise SystemExit("architecture audit: private production state is not always cleaned")
 
-    # P39: typed retry contract replaces exception-message matching and only transient may retry.
+    # P39/P48: qualification retry is typed and package-to-package, never stdout JSON IPC.
     qualification = _text("src/clash_relay/qualification_pipeline.py")
     reliability = _text("src/clash_relay/qualification_reliability.py")
-    if (
-        "QualificationStageError" not in qualification
-        or "parse_failure_category" not in qualification
-    ):
-        raise SystemExit("architecture audit: P39 typed qualification contract is missing")
+    if "QualificationStageRejected" not in qualification:
+        raise SystemExit("architecture audit: typed qualification rejection contract is missing")
     if '"qualification stage rejected the candidate" in str(exc)' in qualification:
         raise SystemExit("architecture audit: qualification retry regressed to message matching")
-    if "QualificationFailureCategory.TRANSIENT" not in qualification:
-        raise SystemExit("architecture audit: retry is no longer transient-only")
-    if "_whole_browsing_probe_transient" not in reliability:
-        raise SystemExit("architecture audit: whole-probe transient classifier is missing")
+    if "exc.retryable" not in qualification or "_whole_browsing_probe_transient" not in reliability:
+        raise SystemExit(
+            "architecture audit: transient-only qualification retry contract regressed"
+        )
+    for token in (
+        "subprocess",
+        "sys.executable",
+        "_run_json_stage",
+        "script_dir",
+        "python_executable",
+        "qualify_browsing.py",
+        "qualify_ai.py",
+        "harden_openai_runtime.py",
+    ):
+        if token in qualification:
+            raise SystemExit(f"architecture audit: qualification retained Python IPC token {token}")
+    for token in (
+        "run_browsing_qualification(",
+        "run_ai_qualification(",
+        "harden_openai_client_path(",
+    ):
+        if token not in qualification:
+            raise SystemExit(f"architecture audit: qualification bypasses application API {token}")
 
-    # P40: release progress wraps, but never replaces, the proven release transaction.
+    # P48: lifecycle calls typed package services directly; scripts are adapters only.
+    production_pipeline = _text("src/clash_relay/production_pipeline.py")
+    for token in ("script_dir", "python_executable"):
+        if token in production_pipeline:
+            raise SystemExit(
+                f"architecture audit: production pipeline retained subprocess API {token}"
+            )
+    for token in (
+        "subprocess",
+        "sys.executable",
+        "_script_command",
+        "_run_command",
+        "scripts_dir",
+    ):
+        if token in lifecycle:
+            raise SystemExit(
+                f"architecture audit: production lifecycle retained Python IPC token {token}"
+            )
+    for token in (
+        "download_pinned_mihomo(",
+        "validate_mihomo_matrix(",
+        "fetch_current_production_config(",
+        "run_promotion_guard(",
+        "publish_production_release(",
+        "persist_ai_qualification_cache(",
+        "persist_scheduler_history(",
+        "persist_production_metrics(",
+        "render_production_proof_application(",
+    ):
+        if token not in lifecycle:
+            raise SystemExit(f"architecture audit: lifecycle bypasses application service {token}")
+
+    production_application = _text("src/clash_relay/production_application.py")
+    mihomo_matrix_application = _text("src/clash_relay/mihomo_matrix_application.py")
+    if "commit_release_bundle(" not in production_application:
+        raise SystemExit(
+            "architecture audit: in-process publication bypasses proven release transaction"
+        )
+    if "download_pinned_mihomo(" not in mihomo_matrix_application:
+        raise SystemExit(
+            "architecture audit: Mihomo matrix still delegates download through a script"
+        )
+    for relative in (
+        "scripts/qualify_browsing.py",
+        "scripts/qualify_ai.py",
+        "scripts/harden_openai_runtime.py",
+        "scripts/download_mihomo.py",
+        "scripts/validate_mihomo_matrix.py",
+        "scripts/fetch_current_config.py",
+        "scripts/check_promotion_guard.py",
+        "scripts/publish_release_bundle.py",
+        "scripts/render_production_proof.py",
+        "scripts/load_scheduler_history.py",
+        "scripts/load_ai_qualification_cache.py",
+        "scripts/publish_scheduler_history.py",
+        "scripts/publish_ai_qualification_cache.py",
+        "scripts/publish_production_metrics.py",
+    ):
+        if "subprocess" in _text(relative):
+            raise SystemExit(
+                f"architecture audit: thin adapter {relative} still launches subprocesses"
+            )
+
+    # P40: release progress wraps the proven in-process release transaction.
     if "ReleaseProgress" not in lifecycle or "ReleasePhase.PUBLISHED" not in lifecycle:
         raise SystemExit("architecture audit: explicit release progress contract is missing")
-    if "publish_release_bundle.py" not in lifecycle:
-        raise SystemExit("architecture audit: lifecycle bypasses the proven release transaction")
     release_reliability = _text("src/clash_relay/release_reliability.py")
     for phase in ("PREPARED", "QUALIFIED", "PROMOTED", "PUBLISHED", "VERIFIED"):
         if phase not in release_reliability:
             raise SystemExit(f"architecture audit: release progress lost {phase.lower()} phase")
 
-    # P41: metrics are an explicit lifecycle-owned, aggregate-only best-effort stage.
-    scheduler_publisher = _text("scripts/publish_scheduler_history.py")
-    metrics_publisher = _text("scripts/publish_production_metrics.py")
-    if "production_metrics" in scheduler_publisher or "build_metrics_run" in scheduler_publisher:
-        raise SystemExit(
-            "architecture audit: production metrics leaked back into scheduler persistence"
-        )
-    if 'stage="persist_production_metrics"' not in lifecycle or "best_effort=True" not in lifecycle:
+    # P41: metrics remain an explicit lifecycle-owned, aggregate-only best-effort stage.
+    if '"persist_production_metrics"' not in lifecycle or "_best_effort_state(" not in lifecycle:
         raise SystemExit(
             "architecture audit: lifecycle does not own best-effort production metrics"
         )
     for token in ("append_metrics_run", "metrics_summary", "production-metrics-v1"):
-        if token not in metrics_publisher:
-            raise SystemExit(f"architecture audit: production metrics publisher missing {token}")
+        if token not in production_application:
+            raise SystemExit(
+                f"architecture audit: production application missing metrics token {token}"
+            )
 
     # P34/P42: canonical physical policy is current v2 with four owned domain fragments.
     raw_manifest = load_yaml_file(ROOT / "policies.yaml")

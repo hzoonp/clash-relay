@@ -83,33 +83,36 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
     text = LIFECYCLE.read_text()
     stages = [
         "generation = self._generate()",
-        "self._load_derived_state()",
+        "self._load_derived_state(project)",
         "binary = self._download_primary_mihomo()",
         "pipeline = self._qualify(binary)",
-        "promotion = self._promotion_guard()",
+        "promotion = self._promotion_guard(project)",
         "matrix = self._validate_matrix(binary)",
-        "release = self._publish_release()",
-        "derived_state = self._persist_derived_state()",
+        "release = self._publish_release(project)",
+        "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
-        "metrics = self._persist_production_metrics()",
+        "metrics = self._persist_production_metrics(project)",
     ]
     positions = [text.index(stage) for stage in stages]
     assert positions == sorted(positions)
     assert "run_production_pipeline(" in text
-    assert "check_promotion_guard.py" in text
-    assert "validate_mihomo_matrix.py" in text
-    assert "publish_release_bundle.py" in text
+    assert "run_promotion_guard(" in text
+    assert "validate_mihomo_matrix(" in text
+    assert "publish_production_release(" in text
+    assert "check_promotion_guard.py" not in text
+    assert "validate_mihomo_matrix.py" not in text
+    assert "publish_release_bundle.py" not in text
     assert "finally:" in text
     assert "shutil.rmtree(self.paths.private_dir" in text
 
 
 def test_derived_state_persistence_remains_post_commit_and_best_effort() -> None:
     text = LIFECYCLE.read_text()
-    publish = text.index("release = self._publish_release()")
-    persist = text.index("derived_state = self._persist_derived_state()")
+    publish = text.index("release = self._publish_release(project)")
+    persist = text.index("derived_state = self._persist_derived_state(project)")
     assert publish < persist
-    assert text.count("best_effort=True") == 3
+    assert text.count("self._best_effort_state(") == 3
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
 
@@ -129,7 +132,8 @@ def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constan
     workflow = WORKFLOW.read_text()
     lifecycle = LIFECYCLE.read_text()
     assert "tools/mihomo-versions.json" in lifecycle
-    assert "validate_mihomo_matrix.py" in lifecycle
+    assert "validate_mihomo_matrix(" in lifecycle
+    assert "validate_mihomo_matrix.py" not in lifecycle
     assert "v1.19.30" not in workflow
     assert "v1.19.29" not in workflow
     assert "v1.19.30" not in lifecycle

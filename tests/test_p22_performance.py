@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import clash_relay.mihomo_matrix_application as matrix
 import clash_relay.qualification_pipeline as pipeline
-
-
-def _load_matrix_script(repo_root: Path):
-    path = repo_root / "scripts" / "validate_mihomo_matrix.py"
-    spec = importlib.util.spec_from_file_location("test_validate_mihomo_matrix", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_qualification_pipeline_reports_only_aggregate_phase_timings(
@@ -28,19 +19,25 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
         "_artifact",
         lambda path, stage: SimpleNamespace(fingerprint=f"fingerprint-{stage}"),
     )
-
-    def fake_stage(name, command):
-        if name == "AI":
-            return {"status": "qualified", "diagnostics": {"qualification_mode": "live"}}
-        if name == "OpenAI client-path":
-            return {
-                "status": "passed",
-                "selection": "stable_first_fallback",
-                "runtime_regions": 2,
-            }
-        return {"status": "qualified", "automatic_nodes": 3}
-
-    monkeypatch.setattr(pipeline, "_run_json_stage", fake_stage)
+    monkeypatch.setattr(
+        pipeline,
+        "run_browsing_qualification",
+        lambda **_kwargs: {"status": "qualified", "automatic_nodes": 3},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_ai_qualification",
+        lambda **_kwargs: {"status": "qualified", "diagnostics": {"qualification_mode": "live"}},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "harden_openai_client_path",
+        lambda _candidate: {
+            "status": "passed",
+            "selection": "stable_first_fallback",
+            "runtime_regions": 2,
+        },
+    )
     result = pipeline.run_qualification_pipeline(
         candidate=candidate,
         output=tmp_path / "out" / "config.yaml",
@@ -65,9 +62,8 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
 
 
 def test_stable_matrix_reuses_primary_and_downloads_only_remaining_core(
-    repo_root: Path, tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch
 ) -> None:
-    matrix = _load_matrix_script(repo_root)
     candidate = tmp_path / "config.yaml"
     candidate.write_text("test: true\n", encoding="utf-8")
     primary = tmp_path / "mihomo-primary"
@@ -76,33 +72,26 @@ def test_stable_matrix_reuses_primary_and_downloads_only_remaining_core(
 
     monkeypatch.setattr(matrix, "load_mihomo_tags", lambda manifest, channel: ("v1", "v2"))
 
-    def fake_download(tag, *, manifest, channel, work_dir):
+    def fake_download(*, tag, manifest, channel, output, **_kwargs):
         downloads.append(tag)
-        path = work_dir / tag
-        path.write_text("binary", encoding="utf-8")
-        return path
+        output.write_text("binary", encoding="utf-8")
+        return {"tag": tag, "output": str(output)}
 
-    monkeypatch.setattr(matrix, "_download", fake_download)
+    monkeypatch.setattr(matrix, "download_pinned_mihomo", fake_download)
     monkeypatch.setattr(
         matrix,
         "validate_with_mihomo",
         lambda binary, candidate, startup_seconds: {"status": "passed"},
     )
 
-    assert (
-        matrix.main(
-            [
-                "--candidate",
-                str(candidate),
-                "--work-dir",
-                str(tmp_path / "cores"),
-                "--reuse-primary-bin",
-                str(primary),
-            ]
-        )
-        == 0
+    result = matrix.validate_mihomo_matrix(
+        candidate=candidate,
+        manifest=tmp_path / "versions.json",
+        channel="stable",
+        work_dir=tmp_path / "cores",
+        reuse_primary_bin=primary,
     )
-    result = json.loads(capsys.readouterr().out)
+
     assert downloads == ["v2"]
     assert result["validated_cores"] == ["v1", "v2"]
     assert result["downloaded_cores"] == 1

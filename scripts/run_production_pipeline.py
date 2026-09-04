@@ -74,7 +74,6 @@ def main(argv: list[str] | None = None) -> int:
             ),
             build_report_path=args.build_report,
             workers=args.workers,
-            script_dir=Path(__file__).resolve().parent,
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0

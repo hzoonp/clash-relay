@@ -8,10 +8,16 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
     docs = (repo_root / "docs" / "openai-app-reliability.md").read_text(encoding="utf-8")
     qualifier = (repo_root / "scripts" / "qualify_ai.py").read_text(encoding="utf-8")
+    ai_application = (repo_root / "src" / "clash_relay" / "ai_application.py").read_text(
+        encoding="utf-8"
+    )
     runtime = (repo_root / "src" / "clash_relay" / "ai_runtime_reliability.py").read_text(
         encoding="utf-8"
     )
     hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
+    openai_application = (repo_root / "src" / "clash_relay" / "openai_application.py").read_text(
+        encoding="utf-8"
+    )
     audit_adapter = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
     pipeline = (repo_root / "src" / "clash_relay" / "production_pipeline.py").read_text(
         encoding="utf-8"
@@ -22,13 +28,17 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     assert "normal TLS certificate and hostname verification" in docs
     assert "does not restore managed Fake-IP DNS" in docs
     assert "exact bytes of a previously validated P24 release" in docs
-    assert "openai_app_critical_probes" in qualifier
-    assert "cache_service_key" in qualifier
-    assert "openai_pass_ttl_seconds" in qualifier
+    assert "run_ai_qualification" in qualifier
+    assert "openai_app_critical_probes" not in qualifier
+    assert "openai_app_critical_probes" in ai_application
+    assert "cache_service_key" in ai_application
+    assert "openai_pass_ttl_seconds" in ai_application
     assert "android.chat.openai.com" in runtime
     assert "stable_first_fallback" in runtime
-    assert 'result["runtime_status"]' in hardener
-    assert 'result["status"] = "passed"' in hardener
+    assert "harden_openai_client_path" in hardener
+    assert "rewrite_openai_client_path_candidate" not in hardener
+    assert 'report["runtime_status"]' in openai_application
+    assert 'report["status"] = "passed"' in openai_application
     assert "audit_route_lock" in pipeline
     assert "audit_openai_client_path" in pipeline
     assert "allow-legacy-openai-client-path" in audit_adapter

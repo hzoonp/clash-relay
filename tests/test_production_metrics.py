@@ -13,6 +13,7 @@ from clash_relay.production_metrics import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
+PRODUCTION_APPLICATION = ROOT / "src" / "clash_relay" / "production_application.py"
 PUBLISH_HISTORY = ROOT / "scripts" / "publish_scheduler_history.py"
 PUBLISH_METRICS = ROOT / "scripts" / "publish_production_metrics.py"
 
@@ -188,21 +189,24 @@ def test_invalid_metrics_state_safely_resets() -> None:
 
 def test_lifecycle_owns_metrics_independently_after_release_commit() -> None:
     lifecycle = PRODUCTION_LIFECYCLE.read_text(encoding="utf-8")
+    application = PRODUCTION_APPLICATION.read_text(encoding="utf-8")
     scheduler_publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
     metrics_publisher = PUBLISH_METRICS.read_text(encoding="utf-8")
 
-    release = lifecycle.index("release = self._publish_release()")
-    persist = lifecycle.index("derived_state = self._persist_derived_state()")
+    release = lifecycle.index("release = self._publish_release(project)")
+    persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
     proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
-    metrics = lifecycle.index("metrics = self._persist_production_metrics()")
+    metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
 
     assert release < persist < proof < metrics
-    assert 'stage="persist_scheduler_history"' in lifecycle
-    assert 'stage="persist_ai_qualification_cache"' in lifecycle
-    assert 'stage="persist_production_metrics"' in lifecycle
-    assert lifecycle.count("best_effort=True") == 3
+    assert '"persist_scheduler_history",' in lifecycle
+    assert '"persist_ai_qualification_cache",' in lifecycle
+    assert '"persist_production_metrics",' in lifecycle
+    assert lifecycle.count("self._best_effort_state(") == 3
     assert "production_metrics" not in scheduler_publisher
     assert "build_metrics_run" not in scheduler_publisher
-    assert 'key_name=f"{production_key}.production-metrics-v1"' in metrics_publisher
-    assert "build_metrics_run(" in metrics_publisher
-    assert "metrics_summary(next_state)" in metrics_publisher
+    assert "persist_production_metrics" in metrics_publisher
+    assert "build_metrics_run" not in metrics_publisher
+    assert "production-metrics-v1" in application
+    assert "build_metrics_run(" in application
+    assert "metrics_summary(next_state)" in application

@@ -5,8 +5,8 @@ import argparse
 import json
 from pathlib import Path
 
-from clash_relay.ai_runtime_reliability import rewrite_openai_client_path_candidate
 from clash_relay.errors import ClashRelayError
+from clash_relay.openai_application import harden_openai_client_path
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,13 +20,10 @@ def _parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _parser().parse_args()
     try:
-        report = rewrite_openai_client_path_candidate(args.candidate)
+        result = harden_openai_client_path(args.candidate)
     except ClashRelayError as exc:
         print(f"error: {exc}")
         return 2
-    result = dict(report)
-    result["runtime_status"] = str(result.pop("status", "unknown"))
-    result["status"] = "passed"
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
