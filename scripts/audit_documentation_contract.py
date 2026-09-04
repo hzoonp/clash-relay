@@ -27,11 +27,15 @@ REQUIRED = {
         "tools/mihomo-versions.json",
         "previous-release-v1",
         "clash-relay doctor",
+        "Policy Model v2",
+        "migrate_policy_v2.py",
     ),
     "docs/quickstart.zh-CN.md": (
         "tools/mihomo-versions.json",
         "previous-release-v1",
         "clash-relay doctor",
+        "Policy Model v2",
+        "migrate_policy_v2.py",
     ),
 }
 
@@ -40,6 +44,11 @@ FORBIDDEN = (
     "Mihomo v1.19.30 / v1.19.29",
     "previous-good snapshot",
     "dual-core validated rollback",
+    "services.yaml",
+    "Policy Model v1 remains readable",
+    "Policy Model v1 仍可",
+    "current/deprecated",
+    "current` 还是 `deprecated",
 )
 
 
