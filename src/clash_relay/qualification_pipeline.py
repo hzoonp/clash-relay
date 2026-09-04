@@ -17,6 +17,34 @@ from .policy_document import load_policy_document
 from .runtime_graph import CandidateArtifact
 from .util import atomic_write, dump_yaml, load_yaml_file
 
+_BROWSING_STAGE_ATTEMPTS = 2
+_BROWSING_RETRY_DELAY_SECONDS = 1.0
+_SAFE_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "qualification_mode",
+        "attempts_per_node",
+        "required_successes",
+        "tested_nodes",
+        "qualified_nodes",
+        "stable_nodes",
+        "reserve_nodes",
+        "failed_nodes",
+        "successful_samples",
+        "failed_samples",
+        "tcp_qualified_nodes",
+        "udp_qualified_nodes",
+        "quic_path_nodes",
+        "tcp_failed_nodes",
+        "udp_failed_nodes",
+        "static_udp_disabled_nodes",
+        "selector_failures",
+        "tcp_attempts",
+        "tcp_required_successes",
+        "udp_timeout_ms",
+        "outcomes",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class QualificationStage:
@@ -32,6 +60,31 @@ def _artifact(path: Path, stage: str) -> CandidateArtifact:
     return CandidateArtifact.from_document(stage, document)
 
 
+def _safe_rejection_context(stdout: str) -> str | None:
+    """Return child-provided aggregate diagnostics without runtime identities."""
+    try:
+        document = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(document, dict) or document.get("status") != "rejected":
+        return None
+
+    safe: dict[str, Any] = {}
+    stage = document.get("stage")
+    if isinstance(stage, str) and stage in {"browsing", "transport"}:
+        safe["stage"] = stage
+    for section_name in ("diagnostics", "transport_diagnostics"):
+        section = document.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        filtered = {key: section[key] for key in sorted(section) if key in _SAFE_DIAGNOSTIC_KEYS}
+        if filtered:
+            safe[section_name] = filtered
+    if not safe:
+        return None
+    return json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
 def _run_json_stage(name: str, command: Sequence[str]) -> dict[str, Any]:
     try:
         result = subprocess.run(
@@ -44,9 +97,11 @@ def _run_json_stage(name: str, command: Sequence[str]) -> dict[str, Any]:
     except OSError as exc:
         raise ValidationError(f"failed to start {name} qualification stage") from exc
     if result.returncode != 0:
-        # Child diagnostics can contain provider/runtime details. Keep the public
-        # orchestration error deliberately aggregate-only.
-        raise ValidationError(f"{name} qualification stage rejected the candidate")
+        # Child stderr may contain provider/runtime identities. Only surface the
+        # explicitly whitelisted aggregate JSON contract emitted on stdout.
+        context = _safe_rejection_context(result.stdout)
+        suffix = f"; aggregate diagnostics={context}" if context else ""
+        raise ValidationError(f"{name} qualification stage rejected the candidate{suffix}")
     try:
         document = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
@@ -69,9 +124,9 @@ def _qualification_policy_input(policies: Path, stage_dir: Path) -> tuple[Path, 
 
     The standalone qualification runner has always allowed tests and advanced
     callers to hand child executors a lightweight or even deferred v1 policy
-    path.  Production validates the project before entering this function, so
+    path. Production validates the project before entering this function, so
     eagerly schema-validating every v1 path here would be an unnecessary
-    compatibility break.  V2 manifests, however, must be composed before the
+    compatibility break. V2 manifests, however, must be composed before the
     legacy child executors can consume them.
     """
 
@@ -133,7 +188,6 @@ def run_qualification_pipeline(
     openai_runtime = stage_dir / "04-openai-client-path.yaml"
     try:
         shutil.copyfile(candidate, generated)
-        shutil.copyfile(generated, browsing)
     except OSError as exc:
         raise ValidationError("failed to prepare private qualification stages") from exc
 
@@ -162,7 +216,25 @@ def run_qualification_pipeline(
             ]
         )
     browsing_started = time.perf_counter()
-    browsing_summary = _run_json_stage("browsing/transport", browsing_command)
+    browsing_summary: dict[str, Any] | None = None
+    browsing_attempts_used = 0
+    for attempt in range(_BROWSING_STAGE_ATTEMPTS):
+        browsing_attempts_used = attempt + 1
+        if attempt:
+            time.sleep(_BROWSING_RETRY_DELAY_SECONDS)
+        try:
+            shutil.copyfile(generated, browsing)
+        except OSError as exc:
+            raise ValidationError("failed to prepare browsing qualification stage") from exc
+        try:
+            browsing_summary = _run_json_stage("browsing/transport", browsing_command)
+            break
+        except ValidationError as exc:
+            retryable = "qualification stage rejected the candidate" in str(exc)
+            if not retryable or browsing_attempts_used >= _BROWSING_STAGE_ATTEMPTS:
+                raise
+    if browsing_summary is None:  # pragma: no cover - defensive invariant
+        raise ValidationError("browsing/transport qualification produced no result")
     atomic_write(browsing_report, _json_text(browsing_summary))
     browsing_artifact = _artifact(browsing, "browsing_transport_qualified")
     browsing_elapsed_ms = _elapsed_ms(browsing_started)
@@ -247,6 +319,7 @@ def run_qualification_pipeline(
         "browsing": {
             "status": browsing_summary.get("status"),
             "automatic_nodes": browsing_summary.get("automatic_nodes", 0),
+            "stage_attempts": browsing_attempts_used,
         },
         "ai": {
             "status": ai_summary.get("status"),
