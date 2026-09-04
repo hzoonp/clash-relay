@@ -96,13 +96,32 @@ def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
     assert "AI · 香港" not in members
 
 
-def test_lock_files_pin_every_dependency(repo_root: Path) -> None:
+def _logical_requirements(path: Path) -> list[str]:
+    logical: list[str] = []
+    current: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        current.append(line.removesuffix("\\").strip())
+        if not line.endswith("\\"):
+            logical.append(" ".join(current))
+            current = []
+    assert not current
+    return logical
+
+
+def test_lock_files_pin_and_hash_every_external_dependency(repo_root: Path) -> None:
     for filename in ["requirements.lock", "requirements-dev.lock"]:
-        for raw in (repo_root / filename).read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or line.startswith("-r "):
+        for requirement in _logical_requirements(repo_root / filename):
+            if requirement.startswith("-r "):
                 continue
-            assert "==" in line, f"unlocked dependency in {filename}: {line}"
+            assert "==" in requirement.split()[0], (
+                f"unlocked dependency in {filename}: {requirement}"
+            )
+            assert "--hash=sha256:" in requirement, (
+                f"unhashed dependency in {filename}: {requirement}"
+            )
 
 
 def test_workflows_parse_as_yaml(repo_root: Path) -> None:
@@ -116,8 +135,13 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     repo_root: Path,
 ) -> None:
     ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     assert "always()" not in ci
     assert "continue-on-error" not in ci
+    assert "uses: ./.github/workflows/validate.yml" in ci
+    assert "--require-hashes" in validate
+    assert "--cov-fail-under=68" in validate
+    assert "mypy --follow-imports=skip" in validate
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
@@ -127,6 +151,8 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error" not in publish
     assert "always()" not in publish
     assert publish.count("python scripts/run_production_release.py") == 1
+    assert "uses: ./.github/workflows/validate.yml" in publish
+    assert "needs.validate.outputs.validated_sha == github.sha" in publish
     assert "python scripts/run_production_pipeline.py" not in publish
     assert "python scripts/check_promotion_guard.py" not in publish
     assert "python scripts/validate_mihomo_matrix.py" not in publish
