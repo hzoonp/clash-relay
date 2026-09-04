@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -279,7 +280,7 @@ def test_new_ai_service_is_configuration_only(project_factory, fixture_env, yaml
         document["modules"]["perplexity"] = True
 
     def add_pool(document):
-        item = dict(document["pools"][1])
+        item = copy.deepcopy(document["pools"][1])
         item.update(
             id="perplexity",
             display_name="Perplexity",
