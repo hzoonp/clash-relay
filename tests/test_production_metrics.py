@@ -7,12 +7,14 @@ from clash_relay.production_metrics import (
     append_metrics_run,
     build_metrics_run,
     empty_metrics,
+    metrics_summary,
     parse_metrics_bytes,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
 PUBLISH_HISTORY = ROOT / "scripts" / "publish_scheduler_history.py"
+PUBLISH_METRICS = ROOT / "scripts" / "publish_production_metrics.py"
 
 
 def _browsing() -> dict:
@@ -93,6 +95,58 @@ def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
     }
 
 
+def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text("private-config-bytes\n", encoding="utf-8")
+    run = build_metrics_run(
+        candidate_path=candidate,
+        browsing=_browsing(),
+        ai=_ai(),
+        qualification={
+            "status": "qualified",
+            "stages": [{"name": "private-name-must-not-survive"}],
+            "timings_ms": {"total": 321.5},
+            "browsing": {
+                "stage_attempts": 2,
+                "recovered_by_retry": True,
+                "recovered_failure_category": "transient",
+            },
+        },
+        promotion_guard={"status": "passed", "violations": []},
+        lifecycle={
+            "timings_ms": {"generation": 10.0, "qualification": 200.0},
+            "release_progress": {
+                "phase": "verified",
+                "history": ["prepared", "qualified", "promoted", "published", "verified"],
+                "publication_requested": True,
+            },
+        },
+        epoch=1234,
+    )
+    serialized = json.dumps(run, sort_keys=True)
+
+    assert run["qualification"] == {
+        "status": "qualified",
+        "stage_count": 1,
+        "browsing_attempts": 2,
+        "recovered_by_retry": True,
+        "recovered_failure_category": "transient",
+    }
+    assert run["promotion_guard"] == {"status": "passed", "violations": 0}
+    assert run["lifecycle"]["release_progress"]["phase"] == "verified"
+    assert "private-name-must-not-survive" not in serialized
+    assert "private-config-bytes" not in serialized
+
+    state = append_metrics_run(empty_metrics(), run)
+    summary = metrics_summary(state)
+    assert summary["latest_qualification_attempts"] == 2
+    assert summary["latest_recovered_by_retry"] is True
+    assert summary["latest_promotion_guard_status"] == "passed"
+    assert summary["latest_release_phase"] == "verified"
+    assert summary["retry_runs"] == 1
+    assert summary["retry_recoveries"] == 1
+
+
 def test_metrics_ring_retains_only_latest_30_runs(tmp_path: Path) -> None:
     candidate = tmp_path / "config.yaml"
     state = empty_metrics()
@@ -132,18 +186,23 @@ def test_invalid_metrics_state_safely_resets() -> None:
     assert "SECRET" not in json.dumps(state)
 
 
-def test_p18_preserves_production_metrics_after_versioned_release_commit() -> None:
+def test_lifecycle_owns_metrics_independently_after_release_commit() -> None:
     lifecycle = PRODUCTION_LIFECYCLE.read_text(encoding="utf-8")
-    publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
+    scheduler_publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
+    metrics_publisher = PUBLISH_METRICS.read_text(encoding="utf-8")
 
     release = lifecycle.index("release = self._publish_release()")
     persist = lifecycle.index("derived_state = self._persist_derived_state()")
-    proof = lifecycle.index("proof = self._render_existing_proof(release=release)")
+    proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
+    metrics = lifecycle.index("metrics = self._persist_production_metrics()")
 
-    assert release < persist < proof
+    assert release < persist < proof < metrics
     assert 'stage="persist_scheduler_history"' in lifecycle
     assert 'stage="persist_ai_qualification_cache"' in lifecycle
-    assert lifecycle.count("best_effort=True") == 2
-    assert 'key_name=f"{production_key}.production-metrics-v1"' in publisher
-    assert "metrics = _persist_metrics(" in publisher
-    assert '"production_metrics": metrics' in publisher
+    assert 'stage="persist_production_metrics"' in lifecycle
+    assert lifecycle.count("best_effort=True") == 3
+    assert "production_metrics" not in scheduler_publisher
+    assert "build_metrics_run" not in scheduler_publisher
+    assert 'key_name=f"{production_key}.production-metrics-v1"' in metrics_publisher
+    assert "build_metrics_run(" in metrics_publisher
+    assert "metrics_summary(next_state)" in metrics_publisher
