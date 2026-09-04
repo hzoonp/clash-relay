@@ -59,8 +59,7 @@ def _validate_fragment_owner(fragment_name: str, section: str) -> None:
     expected = _SECTION_OWNERS.get(section)
     if expected is not None and fragment_name != expected:
         raise ConfigurationError(
-            f"policy section {section!r} belongs to fragment {expected!r}, "
-            f"not {fragment_name!r}"
+            f"policy section {section!r} belongs to fragment {expected!r}, not {fragment_name!r}"
         )
 
 
