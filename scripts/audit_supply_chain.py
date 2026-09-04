@@ -38,7 +38,9 @@ def _audit_lock(path: Path) -> None:
             raise SystemExit(
                 f"supply-chain audit: unpinned dependency in {path.name}: {head}"
             )
-        hashes = [token for token in requirement.split() if token.startswith("--hash=sha256:")]
+        hashes = [
+            token for token in requirement.split() if token.startswith("--hash=sha256:")
+        ]
         if not hashes:
             raise SystemExit(f"supply-chain audit: unhashed dependency in {path.name}: {head}")
         for token in hashes:
@@ -76,7 +78,9 @@ def main() -> int:
     _audit_lock(ROOT / "requirements-dev.lock")
     _audit_workflow_actions()
 
-    validate = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    validate = (ROOT / ".github" / "workflows" / "validate.yml").read_text(
+        encoding="utf-8"
+    )
     for token in (
         "workflow_call:",
         "validated_sha:",
@@ -90,7 +94,9 @@ def main() -> int:
         if token not in validate:
             raise SystemExit(f"supply-chain audit: reusable validation gate missing {token}")
 
-    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(
+        encoding="utf-8"
+    )
     for token in (
         "uses: ./.github/workflows/validate.yml",
         "needs.validate.outputs.validated_sha == github.sha",
@@ -102,7 +108,9 @@ def main() -> int:
         if token not in publish:
             raise SystemExit(f"supply-chain audit: publication SHA binding missing {token}")
 
-    entrypoint = (ROOT / "scripts" / "run_production_release.py").read_text(encoding="utf-8")
+    entrypoint = (ROOT / "scripts" / "run_production_release.py").read_text(
+        encoding="utf-8"
+    )
     for token in ("GITHUB_ACTIONS", "GITHUB_SHA", "CLASH_RELAY_VALIDATED_SHA"):
         if token not in entrypoint:
             raise SystemExit(f"supply-chain audit: publication entrypoint missing {token}")
