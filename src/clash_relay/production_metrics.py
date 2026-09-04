@@ -13,6 +13,17 @@ _STATE_VERSION = 1
 _MAX_RUNS = 30
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 _MAX_TIMING_MS = 24 * 60 * 60 * 1000
+_FAILURE_CATEGORIES = frozenset(
+    {
+        "transient",
+        "policy_rejection",
+        "core_rejection",
+        "configuration",
+        "process_error",
+        "protocol_error",
+    }
+)
+_RELEASE_PHASES = frozenset({"prepared", "qualified", "promoted", "published", "verified"})
 
 
 def empty_metrics() -> dict[str, Any]:
@@ -170,7 +181,51 @@ def _clean_qualification(value: Any) -> dict[str, Any] | None:
         return None
     stages = value.get("stages")
     stage_count = len(stages) if isinstance(stages, list) else 0
-    return {"status": "qualified", "stage_count": stage_count}
+    clean: dict[str, Any] = {"status": "qualified", "stage_count": stage_count}
+    browsing = value.get("browsing")
+    if isinstance(browsing, dict):
+        attempts = max(1, _non_negative_int(browsing.get("stage_attempts"), 1))
+        clean["browsing_attempts"] = attempts
+        clean["recovered_by_retry"] = browsing.get("recovered_by_retry") is True
+        category = browsing.get("recovered_failure_category")
+        if isinstance(category, str) and category in _FAILURE_CATEGORIES:
+            clean["recovered_failure_category"] = category
+    return clean
+
+
+def _clean_promotion_guard(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    status = value.get("status")
+    if not isinstance(status, str) or status not in {"passed", "skipped", "not_applicable"}:
+        return None
+    violations = value.get("violations")
+    return {
+        "status": status,
+        "violations": len(violations) if isinstance(violations, list) else 0,
+    }
+
+
+def _clean_lifecycle(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    clean: dict[str, Any] = {}
+    timings = _clean_performance(value.get("timings_ms"))
+    if timings is not None:
+        clean["timings_ms"] = timings
+    progress = value.get("release_progress")
+    if isinstance(progress, dict):
+        phase = progress.get("phase")
+        history = progress.get("history")
+        if isinstance(phase, str) and phase in _RELEASE_PHASES:
+            safe_progress: dict[str, Any] = {"phase": phase}
+            if isinstance(history, list) and all(
+                isinstance(item, str) and item in _RELEASE_PHASES for item in history
+            ):
+                safe_progress["history"] = list(history)
+            safe_progress["publication_requested"] = progress.get("publication_requested") is True
+            clean["release_progress"] = safe_progress
+    return clean or None
 
 
 def _clean_run(run: Any) -> dict[str, Any] | None:
@@ -205,6 +260,8 @@ def _clean_run(run: Any) -> dict[str, Any] | None:
         ("mihomo", _clean_mihomo),
         ("performance", _clean_performance),
         ("qualification", _clean_qualification),
+        ("promotion_guard", _clean_promotion_guard),
+        ("lifecycle", _clean_lifecycle),
     ):
         value = cleaner(run.get(key))
         if value is not None:
@@ -241,6 +298,8 @@ def build_metrics_run(
     qualification: dict[str, Any] | None = None,
     release: dict[str, Any] | None = None,
     mihomo_matrix: dict[str, Any] | None = None,
+    promotion_guard: dict[str, Any] | None = None,
+    lifecycle: dict[str, Any] | None = None,
     epoch: int | None = None,
 ) -> dict[str, Any]:
     content = candidate_path.read_bytes()
@@ -327,6 +386,10 @@ def build_metrics_run(
         run["release"] = release
     if mihomo_matrix is not None:
         run["mihomo"] = mihomo_matrix
+    if promotion_guard is not None:
+        run["promotion_guard"] = promotion_guard
+    if lifecycle is not None:
+        run["lifecycle"] = lifecycle
     clean = _clean_run(run)
     if clean is None:
         raise ValueError("failed to build aggregate production metrics run")
@@ -362,6 +425,39 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
     performance = (
         latest.get("performance", {}) if isinstance(latest.get("performance"), dict) else {}
     )
+    qualification = (
+        latest.get("qualification", {})
+        if isinstance(latest.get("qualification"), dict)
+        else {}
+    )
+    promotion = (
+        latest.get("promotion_guard", {})
+        if isinstance(latest.get("promotion_guard"), dict)
+        else {}
+    )
+    lifecycle = latest.get("lifecycle", {}) if isinstance(latest.get("lifecycle"), dict) else {}
+    lifecycle_timings = (
+        lifecycle.get("timings_ms", {})
+        if isinstance(lifecycle.get("timings_ms"), dict)
+        else {}
+    )
+    release_progress = (
+        lifecycle.get("release_progress", {})
+        if isinstance(lifecycle.get("release_progress"), dict)
+        else {}
+    )
+    retry_runs = 0
+    retry_recoveries = 0
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        row = run.get("qualification")
+        if not isinstance(row, dict):
+            continue
+        if _non_negative_int(row.get("browsing_attempts"), 1) > 1:
+            retry_runs += 1
+        if row.get("recovered_by_retry") is True:
+            retry_recoveries += 1
     summary: dict[str, Any] = {
         "runs": len(runs),
         "latest_candidate_sha256": latest["candidate_sha256"],
@@ -371,6 +467,13 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_release_status": release.get("status", "unknown"),
         "latest_validated_core_count": mihomo.get("validated_core_count", 0),
         "latest_pipeline_total_ms": performance.get("total", 0.0),
+        "latest_generation_ms": lifecycle_timings.get("generation", 0.0),
+        "latest_qualification_attempts": qualification.get("browsing_attempts", 1),
+        "latest_recovered_by_retry": qualification.get("recovered_by_retry", False),
+        "latest_promotion_guard_status": promotion.get("status", "unknown"),
+        "latest_release_phase": release_progress.get("phase", "unknown"),
+        "retry_runs": retry_runs,
+        "retry_recoveries": retry_recoveries,
     }
     if isinstance(previous, dict):
         summary["previous_candidate_sha256"] = previous.get("candidate_sha256")
