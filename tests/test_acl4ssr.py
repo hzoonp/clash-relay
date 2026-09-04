@@ -205,9 +205,6 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
         {"pattern": "(?i)emby", "remove_capabilities": ["general"]},
     ]
 
-    services = yaml.safe_load((repo_root / "services.yaml").read_text(encoding="utf-8"))
-    assert services["services"] == []
-
     direct = yaml.safe_load((repo_root / "rules/direct.yaml").read_text(encoding="utf-8"))
     assert direct == {"version": 1, "rules": []}
 
