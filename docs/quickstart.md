@@ -18,9 +18,9 @@ The first manual workflow defaults to `publish=false`. Treat a successful dry ru
 
 ## 1. Fork without adding credentials
 
-Keep `config.yaml`, `subscriptions.yaml`, `services.yaml`, `policies.yaml`, schemas, rules, source code, and workflows public. Real subscription URLs and generated production `config.yaml` bytes **must never be committed**. Private credentials and generated config are never committed or uploaded as an Artifact/Release/Gist.
+Keep `config.yaml`, `subscriptions.yaml`, `policies.yaml`, policy fragments, schemas, rules, source code, and workflows public. Real subscription URLs and generated production `config.yaml` bytes **must never be committed**. Private credentials and generated config are never committed or uploaded as an Artifact/Release/Gist.
 
-Canonical production uses Policy Model v2. `policies.yaml` is only the manifest; routing, scheduling, classification, and topology have separate owned fragments. Policy Model v1 remains readable for migration compatibility but doctor reports it as `deprecated`.
+Canonical production requires Policy Model v2. `policies.yaml` is only the manifest; routing, scheduling, classification, and topology have separate owned fragments. A legacy monolithic policy file is not a runtime input. Convert it offline with `scripts/migrate_policy_v2.py` before running clash-relay.
 
 ## 2. Add subscription secrets
 
@@ -62,7 +62,7 @@ clash-relay doctor --public-only
 The public report includes:
 
 - enabled subscription count and Secret names;
-- Policy Model version and whether it is current/deprecated;
+- Policy Model v2 readiness;
 - pinned stable Mihomo-core count;
 - scheduler declaration status;
 - concrete next steps for the first dry run.
