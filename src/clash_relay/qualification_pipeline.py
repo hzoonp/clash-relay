@@ -16,7 +16,7 @@ from .errors import ValidationError
 from .policy_document import load_policy_document
 from .qualification_reliability import QualificationFailureCategory, parse_failure_category
 from .runtime_graph import CandidateArtifact
-from .util import atomic_write, dump_yaml, load_yaml_file
+from .util import atomic_write, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
 _BROWSING_RETRY_DELAY_SECONDS = 1.0
@@ -169,13 +169,11 @@ def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000.0, 3)
 
 
-def _qualification_policy_input(policies: Path, stage_dir: Path) -> tuple[Path, int]:
-    """Compose the required Policy Model v2 manifest for child executors."""
+def _qualification_policy_input(policies: Path) -> tuple[Path, int]:
+    """Validate and pass through the required Policy Model v2 manifest."""
 
     policy_document = load_policy_document(policies)
-    normalized_policies = stage_dir / "00-policies.normalized.yaml"
-    atomic_write(normalized_policies, dump_yaml(policy_document.document, header=False))
-    return normalized_policies, policy_document.model_version
+    return policies, policy_document.model_version
 
 
 def run_qualification_pipeline(
@@ -216,7 +214,7 @@ def run_qualification_pipeline(
     browsing_report.parent.mkdir(parents=True, exist_ok=True)
     ai_report.parent.mkdir(parents=True, exist_ok=True)
 
-    qualification_policies, policy_model_version = _qualification_policy_input(policies, stage_dir)
+    qualification_policies, policy_model_version = _qualification_policy_input(policies)
 
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"
