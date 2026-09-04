@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P27-P46 architecture boundaries regress."""
+"""Fail CI when the P27-P47 architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -42,13 +42,40 @@ def main() -> int:
     if "routing policy and routing.contract are required" not in policy_contract:
         raise SystemExit("architecture audit: PolicyContract no longer fails closed")
 
-    # P28: RuntimeGraph is the topology truth.
+    # P28/P47: RuntimeGraph is topology truth and builder crosses one compiler/serializer boundary.
     production_audit = _text("src/clash_relay/production_audit.py")
     if "RuntimeGraph" not in production_audit or "def _reachable_sources(" in production_audit:
         raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
+
     builder = _text("src/clash_relay/builder.py")
-    if "RuntimeGraph" not in builder or ".provider_order(" not in builder:
-        raise SystemExit("architecture audit: builder bypasses RuntimeGraph provider traversal")
+    compiler = _text("src/clash_relay/policy_compiler.py")
+    serializer = _text("src/clash_relay/mihomo_serializer.py")
+    if "compile_runtime_graph(" not in builder or "serialize_runtime_graph(" not in builder:
+        raise SystemExit("architecture audit: builder bypasses compiler/serializer boundary")
+    if "generate_config(" in builder or "RuntimeGraph" in builder or ".provider_order(" in builder:
+        raise SystemExit("architecture audit: builder resumed topology construction/traversal")
+    for token in (
+        "apply_acl4ssr_group_semantics",
+        "apply_acl4ssr_source_exclusions",
+        "harden_browsing_runtime",
+        "_expose_manual_provider_choices",
+    ):
+        if token in builder:
+            raise SystemExit(f"architecture audit: builder resumed post-generation pass {token}")
+        if token not in compiler:
+            raise SystemExit(f"architecture audit: PolicyCompiler no longer owns pass {token}")
+    if "RuntimeGraph.from_candidate(output)" not in compiler or ".provider_order(" not in compiler:
+        raise SystemExit("architecture audit: PolicyCompiler does not freeze/traverse RuntimeGraph")
+    if "copy.deepcopy(dict(graph.candidate))" not in serializer:
+        raise SystemExit("architecture audit: Mihomo serializer no longer detaches compiled graph")
+
+    for path in (ROOT / "src" / "clash_relay").glob("*.py"):
+        if path.name in {"generator.py", "policy_compiler.py"}:
+            continue
+        if "generate_config(" in path.read_text(encoding="utf-8"):
+            raise SystemExit(
+                f"architecture audit: low-level runtime draft generator escaped PolicyCompiler: {path.name}"
+            )
 
     # P33: Actions invokes one application entrypoint and contains no business pipeline.
     workflow = _text(".github/workflows/publish.yml")

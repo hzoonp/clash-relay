@@ -7,18 +7,15 @@ from pathlib import Path
 from typing import Any
 
 from .acl4ssr import load_acl4ssr_rules
-from .acl4ssr_policy import apply_acl4ssr_group_semantics
-from .browsing_runtime import harden_browsing_runtime, validate_browsing_public_surface
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
 from .errors import FetchError, GenerationError, SubscriptionError
 from .fetch import fetch_subscription
-from .generator import generate_config
+from .mihomo_serializer import serialize_runtime_graph
 from .models import BuildResult, Node, SubscriptionSpec
 from .node_policy import filter_proxies_by_multiplier
+from .policy_compiler import compile_runtime_graph
 from .redact import redact_text
-from .routing_policy import apply_acl4ssr_source_exclusions
-from .runtime_graph import RuntimeGraph
 from .secrets import resolve_subscription_urls
 from .subscription_parser import parse_subscription
 from .util import dump_yaml, sha256_text
@@ -31,34 +28,6 @@ def _failure_is_fatal(spec: SubscriptionSpec, project: ProjectDefinition) -> boo
     return spec.on_error == "fail" or (
         spec.required and project.config["generation"]["fail_on_required_subscription_error"]
     )
-
-
-def _expose_manual_provider_choices(
-    output: dict[str, Any], *, excluded_groups: set[str] | None = None
-) -> None:
-    """Let node-owning groups expose providers without altering policy-only groups.
-
-    Provider reachability and deterministic traversal order are derived from the
-    canonical RuntimeGraph rather than a builder-local traversal implementation.
-    """
-
-    excluded = excluded_groups or set()
-    groups = output.get("proxy-groups", [])
-    if not isinstance(groups, list):
-        return
-    graph = RuntimeGraph.from_candidate(output)
-
-    for public in groups:
-        if not isinstance(public, dict) or public.get("hidden", False):
-            continue
-        if public.get("name") in excluded:
-            continue
-        references = public.get("proxies", [])
-        if not isinstance(references, list) or len(references) != 1:
-            continue
-        provider_names = list(graph.provider_order(str(references[0])))
-        if provider_names:
-            public["use"] = provider_names
 
 
 def _with_acl4ssr_attribution(
@@ -164,7 +133,6 @@ def build_candidate(
         timeout=generation["fetch_timeout_seconds"],
     )
     acl_groups = list(project.acl4ssr.get("groups", [])) if project.acl4ssr else []
-    acl_group_names = {str(item["display_name"]) for item in acl_groups}
     final_target = (
         str(project.acl4ssr["final_target"])
         if project.acl4ssr and project.acl4ssr.get("final_target")
@@ -173,40 +141,21 @@ def build_candidate(
     final_excluded_sources = (
         list(project.acl4ssr.get("final_excluded_sources", [])) if project.acl4ssr else []
     )
-    output, generator_report = generate_config(
+
+    compiled = compile_runtime_graph(
         root=project.root,
         config=project.config,
         policies=project.policies,
         nodes=deduplicated,
+        known_source_ids={spec.id for spec in enabled_specs},
         external_rule_providers=external_rule_providers,
         external_rules=external_rules,
-        external_groups=acl_groups,
-        final_target=final_target,
-    )
-    acl_group_semantics = (
-        apply_acl4ssr_group_semantics(
-            output,
-            group_specs=acl_groups,
-            pool_specs=list(project.policies["pools"]),
-        )
-        if acl_groups
-        else {}
-    )
-    source_exclusions = apply_acl4ssr_source_exclusions(
-        output,
-        group_specs=acl_groups,
-        known_source_ids={spec.id for spec in enabled_specs},
-        rule_specs=external_rules,
+        acl_groups=acl_groups,
         final_target=final_target,
         final_excluded_sources=final_excluded_sources,
     )
-    _expose_manual_provider_choices(output, excluded_groups=acl_group_names)
-    browsing_runtime = (
-        harden_browsing_runtime(output, project.policies)
-        if acl_groups
-        else {"status": "not_applicable"}
-    )
-    validate_browsing_public_surface(output)
+    output = serialize_runtime_graph(compiled.graph)
+
     validate_generated_config(output, secret_urls=secret_values)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
     yaml_text = _with_acl4ssr_attribution(
@@ -217,6 +166,7 @@ def build_candidate(
     for value in secret_values:
         if value and value in yaml_text:
             raise GenerationError("a subscription URL secret leaked into candidate YAML")
+
     report: dict[str, Any] = {
         "schema_version": 1,
         "candidate_sha256": sha256_text(yaml_text),
@@ -226,14 +176,8 @@ def build_candidate(
         "usable_nodes": len(deduplicated),
         "duplicates_removed": duplicate_count,
         "multiplier_filtered_nodes": multiplier_filtered_nodes,
-        **generator_report,
+        **compiled.report,
     }
     if acl_report is not None:
         report["rule_sources"] = {"acl4ssr": acl_report}
-    if acl_group_semantics:
-        report["acl4ssr_groups"] = acl_group_semantics
-    if source_exclusions:
-        report["source_exclusions"] = source_exclusions
-    if browsing_runtime.get("status") != "not_applicable":
-        report["browsing_runtime"] = browsing_runtime
     return BuildResult(output, yaml_text, report, secret_values)
