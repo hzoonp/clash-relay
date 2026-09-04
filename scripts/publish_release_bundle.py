@@ -25,7 +25,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
-    parser.add_argument("--services", type=_path, default=Path("services.yaml"))
     parser.add_argument("--policies", type=_path, default=Path("policies.yaml"))
     parser.add_argument("--candidate", type=_path, required=True)
     return parser
@@ -37,7 +36,6 @@ def main(argv: list[str] | None = None) -> int:
         project = load_project(
             config_path=args.config,
             subscriptions_path=args.subscriptions,
-            services_path=args.services,
             policies_path=args.policies,
         )
         publication_gate(project.config, "cloudflare_kv")
