@@ -30,7 +30,7 @@ jobs:
               p = Path(path)
               text = p.read_text(encoding="utf-8")
               if old not in text:
-                  raise SystemExit(f"expected patch anchor missing: {path}")
+                  raise SystemExit(f"expected patch anchor missing: {path}: {old[:60]!r}")
               p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           replace_once(
@@ -96,7 +96,6 @@ jobs:
               'secret_url = "https://example.com/subscription?token=SUPER-SECRET-TOKEN"',
               'secret_url = "https://example.com/subscription/SUPER-SECRET-TOKEN"',
           )
-
           replace_once(
               "tests/test_v1_contract.py",
               'assert project["version"] == "1.8.0"',
@@ -110,15 +109,13 @@ jobs:
 
           replace_once(
               "tests/test_publish_trigger.py",
-              '''        "derived_state = self._persist_derived_state()",
-                      "proof = self._render_existing_proof(release=release)",
-                      "manifest = self._render_release_manifest(",
-                  ]''',
-              '''        "derived_state = self._persist_derived_state()",
-                      "proof = self._post_commit_proof(release=release)",
-                      "manifest = self._post_commit_manifest(",
-                      "metrics = self._persist_production_metrics()",
-                  ]''',
+              '        "proof = self._render_existing_proof(release=release)",',
+              '        "proof = self._post_commit_proof(release=release)",',
+          )
+          replace_once(
+              "tests/test_publish_trigger.py",
+              '        "manifest = self._render_release_manifest(",',
+              '        "manifest = self._post_commit_manifest(",\n        "metrics = self._persist_production_metrics()",',
           )
           replace_once(
               "tests/test_publish_trigger.py",
@@ -127,12 +124,13 @@ jobs:
           )
           replace_once(
               "tests/test_publish_trigger.py",
-              '''    assert text.index("proof = self._render_existing_proof") < text.index(
-                      "manifest = self._render_release_manifest"
-                  )''',
-              '''    assert text.index("proof = self._post_commit_proof") < text.index(
-                      "manifest = self._post_commit_manifest"
-                  )''',
+              'text.index("proof = self._render_existing_proof")',
+              'text.index("proof = self._post_commit_proof")',
+          )
+          replace_once(
+              "tests/test_publish_trigger.py",
+              '"manifest = self._render_release_manifest"',
+              '"manifest = self._post_commit_manifest"',
           )
 
           replace_once(
@@ -142,24 +140,19 @@ jobs:
           )
           replace_once(
               "tests/test_repository_safety.py",
-              '''    assert "persist_scheduler_history" in lifecycle
-                  assert "finally:" in lifecycle''',
-              '''    assert "persist_scheduler_history" in lifecycle
-                  assert "persist_production_metrics" in lifecycle
-                  assert "finally:" in lifecycle''',
+              '    assert "persist_scheduler_history" in lifecycle\n',
+              '    assert "persist_scheduler_history" in lifecycle\n    assert "persist_production_metrics" in lifecycle\n',
           )
 
           english = Path("docs/quickstart.md")
           text = english.read_text(encoding="utf-8")
-          marker = "## Compatibility safety contract"
-          if marker not in text:
+          if "## Compatibility safety contract" not in text:
               text += '''\n## Compatibility safety contract\n\nThe established browsing scheduler contract remains explicit: **3/3** successful live samples is Stable and **2/3** is Reserve. Private scheduler history continues to use **HMAC-SHA256** fingerprints and cannot promote a current live-failed node. OpenAI, Claude, and Gemini remain independently qualified. Manual recovery still uses **Roll back production config** with **confirm = true**, validates every stable core in **tools/mihomo-versions.json**, resolves **previous-release-v1**, and applies the **current-policy** audit before activation.\n'''
               english.write_text(text, encoding="utf-8")
 
           chinese = Path("docs/quickstart.zh-CN.md")
           text = chinese.read_text(encoding="utf-8")
-          marker = "## 兼容性安全契约"
-          if marker not in text:
+          if "## 兼容性安全契约" not in text:
               text += '''\n## 兼容性安全契约\n\n既有 browsing scheduler 契约保持不变：实时探测 **3/3** 成功进入 Stable，**2/3** 成功进入 Reserve。私有 scheduler history 继续使用 **HMAC-SHA256** fingerprint，不能把当前 live-failed 节点提升回 Stable。OpenAI、Claude、Gemini 继续独立 qualification。手动恢复仍通过 **Roll back production config**，必须设置 **confirm = true**，验证 **tools/mihomo-versions.json** 中全部 stable core，解析 **previous-release-v1**，并在激活前执行 **current-policy** audit。\n'''
               chinese.write_text(text, encoding="utf-8")
           PY
@@ -182,6 +175,7 @@ jobs:
             tests/test_production_metrics.py \
             tests/test_publish_trigger.py \
             tests/test_p43_chaos_matrix.py \
+            tests/test_repository_safety.py \
             tests/test_v1_contract.py
       - name: Commit fixes
         run: |
