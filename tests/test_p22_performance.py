@@ -28,19 +28,25 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
         "_artifact",
         lambda path, stage: SimpleNamespace(fingerprint=f"fingerprint-{stage}"),
     )
-
-    def fake_stage(name, command):
-        if name == "AI":
-            return {"status": "qualified", "diagnostics": {"qualification_mode": "live"}}
-        if name == "OpenAI client-path":
-            return {
-                "status": "passed",
-                "selection": "stable_first_fallback",
-                "runtime_regions": 2,
-            }
-        return {"status": "qualified", "automatic_nodes": 3}
-
-    monkeypatch.setattr(pipeline, "_run_json_stage", fake_stage)
+    monkeypatch.setattr(
+        pipeline,
+        "run_browsing_qualification",
+        lambda **_kwargs: {"status": "qualified", "automatic_nodes": 3},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_ai_qualification",
+        lambda **_kwargs: {"status": "qualified", "diagnostics": {"qualification_mode": "live"}},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "harden_openai_client_path",
+        lambda _candidate: {
+            "status": "passed",
+            "selection": "stable_first_fallback",
+            "runtime_regions": 2,
+        },
+    )
     result = pipeline.run_qualification_pipeline(
         candidate=candidate,
         output=tmp_path / "out" / "config.yaml",
