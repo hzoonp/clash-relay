@@ -16,7 +16,7 @@ from .errors import ValidationError
 from .policy_document import load_policy_document
 from .qualification_reliability import QualificationFailureCategory, parse_failure_category
 from .runtime_graph import CandidateArtifact
-from .util import atomic_write, dump_yaml, load_yaml_file
+from .util import atomic_write, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
 _BROWSING_RETRY_DELAY_SECONDS = 1.0
@@ -169,27 +169,11 @@ def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000.0, 3)
 
 
-def _qualification_policy_input(policies: Path, stage_dir: Path) -> tuple[Path, int]:
-    """Normalize only Policy Model v2 while preserving the historical v1 contract.
-
-    The standalone qualification runner has always allowed tests and advanced
-    callers to hand child executors a lightweight or even deferred v1 policy
-    path. Production validates the project before entering this function, so
-    eagerly schema-validating every v1 path here would be an unnecessary
-    compatibility break. V2 manifests, however, must be composed before the
-    legacy child executors can consume them.
-    """
-
-    if not policies.is_file():
-        return policies, 1
-    raw = load_yaml_file(policies)
-    if not isinstance(raw, dict) or raw.get("version") != 2 or "fragments" not in raw:
-        return policies, 1
+def _qualification_policy_input(policies: Path) -> tuple[Path, int]:
+    """Validate and pass through the required Policy Model v2 manifest."""
 
     policy_document = load_policy_document(policies)
-    normalized_policies = stage_dir / "00-policies.normalized.yaml"
-    atomic_write(normalized_policies, dump_yaml(policy_document.document, header=False))
-    return normalized_policies, policy_document.model_version
+    return policies, policy_document.model_version
 
 
 def run_qualification_pipeline(
@@ -230,7 +214,7 @@ def run_qualification_pipeline(
     browsing_report.parent.mkdir(parents=True, exist_ok=True)
     ai_report.parent.mkdir(parents=True, exist_ok=True)
 
-    qualification_policies, policy_model_version = _qualification_policy_input(policies, stage_dir)
+    qualification_policies, policy_model_version = _qualification_policy_input(policies)
 
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"

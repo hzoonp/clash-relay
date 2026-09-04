@@ -28,14 +28,12 @@ from .util import atomic_write
 class ProjectPaths:
     config: Path
     subscriptions: Path
-    services: Path
     policies: Path
 
     def load(self) -> ProjectDefinition:
         return load_project(
             config_path=self.config,
             subscriptions_path=self.subscriptions,
-            services_path=self.services,
             policies_path=self.policies,
         )
 

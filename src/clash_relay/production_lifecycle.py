@@ -38,7 +38,6 @@ class ProductionLifecyclePaths:
     root: Path
     config: Path
     subscriptions: Path
-    services: Path
     policies: Path
     promotion_guard: Path
     mihomo_manifest: Path
@@ -56,7 +55,6 @@ class ProductionLifecyclePaths:
             root=root,
             config=root / "config.yaml",
             subscriptions=root / "subscriptions.yaml",
-            services=root / "services.yaml",
             policies=root / "policies.yaml",
             promotion_guard=root / "promotion-guard.yaml",
             mihomo_manifest=root / "tools/mihomo-versions.json",
@@ -203,8 +201,6 @@ class ProductionPipeline:
             str(self.paths.config),
             "--subscriptions",
             str(self.paths.subscriptions),
-            "--services",
-            str(self.paths.services),
             "--policies",
             str(self.paths.policies),
         ]
@@ -220,7 +216,6 @@ class ProductionPipeline:
         result = build_candidate(
             config_path=self.paths.config,
             subscriptions_path=self.paths.subscriptions,
-            services_path=self.paths.services,
             policies_path=self.paths.policies,
             env=os.environ,
         )
@@ -284,7 +279,6 @@ class ProductionPipeline:
             project_paths=ProjectPaths(
                 config=self.paths.config,
                 subscriptions=self.paths.subscriptions,
-                services=self.paths.services,
                 policies=self.paths.policies,
             ),
             qualification_paths=QualificationPaths(
@@ -529,7 +523,11 @@ class ProductionPipeline:
         )
 
     def run(self) -> dict[str, Any]:
-        if not self.paths.config.is_file() or not self.paths.subscriptions.is_file():
+        if (
+            not self.paths.config.is_file()
+            or not self.paths.subscriptions.is_file()
+            or not self.paths.policies.is_file()
+        ):
             return {
                 "status": "skipped",
                 "publication_status": "not_applicable",
@@ -542,7 +540,6 @@ class ProductionPipeline:
             project = ProjectPaths(
                 config=self.paths.config,
                 subscriptions=self.paths.subscriptions,
-                services=self.paths.services,
                 policies=self.paths.policies,
             ).load()
             publication_gate(project.config, "cloudflare_kv")

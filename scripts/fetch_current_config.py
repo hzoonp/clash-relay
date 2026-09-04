@@ -19,7 +19,6 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=Path, default=Path("subscriptions.yaml"))
-    parser.add_argument("--services", type=Path, default=Path("services.yaml"))
     parser.add_argument("--policies", type=Path, default=Path("policies.yaml"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-missing", action="store_true")
@@ -37,7 +36,6 @@ def main(argv: list[str] | None = None) -> int:
         project = load_project(
             config_path=args.config,
             subscriptions_path=args.subscriptions,
-            services_path=args.services,
             policies_path=args.policies,
         )
         production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])

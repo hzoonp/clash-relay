@@ -1,0 +1,34 @@
+capabilities:
+  general:
+    description: Ordinary egress suitable for normal browsing.
+    restricted: false
+  ai:
+    description: Explicitly approved for AI services.
+    restricted: false
+  bulk:
+    description: Suitable for sustained video, download, file, or CDN traffic.
+    restricted: false
+  residential:
+    description: Residential or home IP; opt-in only.
+    restricted: true
+  emby:
+    description: Dedicated EMBY route; opt-in only.
+    restricted: true
+  high_multiplier:
+    description: Expensive or high-ratio route; opt-in only.
+    restricted: true
+  chain:
+    description: Explicit chain exit route; opt-in only.
+    restricted: true
+
+cost_levels: [free, low, standard, premium, expensive]
+
+country_classification:
+  default: OTHER
+  aliases:
+    US:
+      - "(?i)(?:^|[ _|\\-])(?:US|USA|United States|美国|美國)(?:$|[ _|\\-])"
+    JP:
+      - "(?i)(?:^|[ _|\\-])(?:JP|Japan|Tokyo|日本)(?:$|[ _|\\-])"
+    SG:
+      - "(?i)(?:^|[ _|\\-])(?:SG|Singapore|新加坡|狮城|獅城)(?:$|[ _|\\-])"

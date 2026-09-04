@@ -6,20 +6,26 @@ import pytest
 
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ConfigurationError
+from clash_relay.policy_document import load_policy_document
 from clash_relay.schema import load_and_validate
 
 
 def test_all_public_examples_validate(repo_root: Path) -> None:
     load_and_validate(repo_root / "config.example.yaml", "config.schema.json")
     load_and_validate(repo_root / "subscriptions.example.yaml", "subscriptions.schema.json")
-    load_and_validate(repo_root / "services.yaml", "services.schema.json")
-    load_and_validate(repo_root / "policies.yaml", "policies.schema.json")
+    policies = load_policy_document(repo_root / "policies.yaml")
+    assert policies.model_version == 2
 
 
 def test_fixture_project_loads(project_paths: dict[str, Path]) -> None:
     project = load_project(**project_paths)
     assert [item.id for item in project.subscriptions] == ["primary", "secondary", "special"]
-    assert len(project.services["services"]) == 3
+    assert {item["id"] for item in project.policies["pools"]} >= {
+        "general",
+        "chatgpt",
+        "claude",
+        "gemini",
+    }
 
 
 def test_arbitrary_subscription_count_is_data_driven(project_factory, yaml_editor) -> None:
@@ -49,7 +55,7 @@ def test_duplicate_subscription_identity_fails(project_factory, yaml_editor, fie
 
 def test_unknown_module_fails(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
-    yaml_editor(paths["services_path"], lambda data: data["services"][0].update(module="missing"))
+    yaml_editor(paths["policies_path"], lambda data: data["pools"][0].update(module="missing"))
     with pytest.raises(ConfigurationError, match="undeclared module"):
         load_project(**paths)
 
@@ -138,8 +144,8 @@ def test_fallback_outside_regions_fails(project_factory, yaml_editor) -> None:
 def test_rule_path_traversal_fails(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
     yaml_editor(
-        paths["services_path"],
-        lambda data: data["services"][0].update(rules="../outside.yaml"),
+        paths["policies_path"],
+        lambda data: data["pools"][1].update(rules="../outside.yaml"),
     )
     with pytest.raises(ConfigurationError, match="escapes"):
         load_project(**paths)
@@ -148,8 +154,8 @@ def test_rule_path_traversal_fails(project_factory, yaml_editor) -> None:
 def test_missing_rule_file_fails(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
     yaml_editor(
-        paths["services_path"],
-        lambda data: data["services"][0].update(rules="rules/missing.yaml"),
+        paths["policies_path"],
+        lambda data: data["pools"][1].update(rules="rules/missing.yaml"),
     )
     with pytest.raises(ConfigurationError, match="does not exist"):
         load_project(**paths)
@@ -158,8 +164,8 @@ def test_missing_rule_file_fails(project_factory, yaml_editor) -> None:
 def test_invalid_expected_status_fails(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
     yaml_editor(
-        paths["services_path"],
-        lambda data: data["services"][0]["probe"].update(expected_status="999"),
+        paths["policies_path"],
+        lambda data: data["probes"]["chatgpt"].update(expected_status="999"),
     )
     with pytest.raises(ConfigurationError, match="expected_status"):
         load_project(**paths)
@@ -167,10 +173,9 @@ def test_invalid_expected_status_fails(project_factory, yaml_editor) -> None:
 
 def test_probe_method_must_be_head(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
-    # Bypass schema const only to prove schema rejects it.
     yaml_editor(
-        paths["services_path"],
-        lambda data: data["services"][0]["probe"].update(method="GET"),
+        paths["policies_path"],
+        lambda data: data["probes"]["chatgpt"].update(method="GET"),
     )
     with pytest.raises(ConfigurationError, match="schema validation"):
         load_project(**paths)

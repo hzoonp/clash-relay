@@ -79,7 +79,6 @@ def run_doctor(
     *,
     config_path: Path = Path("config.yaml"),
     subscriptions_path: Path = Path("subscriptions.yaml"),
-    services_path: Path = Path("services.yaml"),
     policies_path: Path = Path("policies.yaml"),
     secret_file: Path | None = None,
     mihomo_manifest: Path = Path("tools/mihomo-versions.json"),
@@ -95,7 +94,6 @@ def run_doctor(
     project = load_project(
         config_path=config_path,
         subscriptions_path=subscriptions_path,
-        services_path=services_path,
         policies_path=policies_path,
     )
     policy_document = load_policy_document(policies_path)
@@ -109,13 +107,12 @@ def run_doctor(
         "public": {
             "status": "ready",
             "enabled_subscriptions": len(enabled),
-            "services": len(project.services["services"]),
             "pools": len(project.policies["pools"]),
             "chains": len(project.policies["chains"]),
             "stable_mihomo_cores": len(stable_tags),
             "scheduler_policy_declared": scheduler.declared,
             "policy_model_version": policy_document.model_version,
-            "policy_model_status": policy_document.compatibility_status,
+            "policy_model_status": "current",
         },
         "subscriptions": {"status": "skipped", "enabled": len(enabled)},
         "cloudflare": {"status": "skipped"},

@@ -18,7 +18,7 @@ def _load_matrix_script(repo_root: Path):
 
 
 def test_qualification_pipeline_reports_only_aggregate_phase_timings(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, repo_root: Path
 ) -> None:
     candidate = tmp_path / "generated.yaml"
     candidate.write_text("test: true\n", encoding="utf-8")
@@ -44,7 +44,7 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     result = pipeline.run_qualification_pipeline(
         candidate=candidate,
         output=tmp_path / "out" / "config.yaml",
-        policies=tmp_path / "policies.yaml",
+        policies=repo_root / "tests/fixtures/project/policies.yaml",
         mihomo_bin=tmp_path / "mihomo",
         stage_dir=tmp_path / "stages",
         browsing_report=tmp_path / "reports" / "browsing.json",

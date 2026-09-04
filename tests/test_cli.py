@@ -15,8 +15,6 @@ def _project_args(project_paths: dict[str, Path]) -> list[str]:
         str(project_paths["config_path"]),
         "--subscriptions",
         str(project_paths["subscriptions_path"]),
-        "--services",
-        str(project_paths["services_path"]),
         "--policies",
         str(project_paths["policies_path"]),
     ]

@@ -18,9 +18,9 @@
 
 ## 1. Fork 时不要加入任何凭据
 
-`config.yaml`、`subscriptions.yaml`、`services.yaml`、`policies.yaml`、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节不能提交进仓库。私有凭据和生成后的生产配置从不 commit，也不会上传到 GitHub Artifact / Release / Gist。
+`config.yaml`、`subscriptions.yaml`、`policies.yaml`、policy fragments、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节不能提交进仓库。私有凭据和生成后的生产配置从不 commit，也不会上传到 GitHub Artifact / Release / Gist。
 
-Canonical production 已使用 Policy Model v2：`policies.yaml` 只作为 manifest，routing、scheduling、classification、topology 分别由独立 fragment 持有。Policy Model v1 仍可用于迁移兼容，但 doctor 会将其标记为 `deprecated`。
+Canonical production 只接受 Policy Model v2：`policies.yaml` 只作为 manifest，routing、scheduling、classification、topology 分别由独立 fragment 持有。旧的单文件 Policy Model v1 不再是运行时输入；如需迁移，先离线运行 `scripts/migrate_policy_v2.py` 转换后再使用 clash-relay。
 
 ## 2. 添加订阅 Secret
 
@@ -68,7 +68,7 @@ clash-relay doctor --public-only
 公共报告会明确给出：
 
 - 已启用订阅数量和对应 Secret 名称；
-- Policy Model 版本，以及当前是 `current` 还是 `deprecated`；
+- Policy Model v2 readiness；
 - pinned stable Mihomo core 数量；
 - scheduler policy 是否声明；
 - 下一步首次 dry-run 操作建议。

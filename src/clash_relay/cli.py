@@ -30,7 +30,6 @@ def _path(value: str) -> Path:
 def _add_project_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
-    parser.add_argument("--services", type=_path, default=Path("services.yaml"))
     parser.add_argument("--policies", type=_path, default=Path("policies.yaml"))
 
 
@@ -56,7 +55,6 @@ def _build_from_args(args: argparse.Namespace):
     return build_candidate(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
         secret_file=args.secret_file,
     )
@@ -66,13 +64,11 @@ def _command_validate_project(args: argparse.Namespace) -> int:
     project = load_project(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
     )
     summary = {
         "status": "ok",
         "enabled_subscriptions": sum(1 for item in project.subscriptions if item.enabled),
-        "services": len(project.services["services"]),
         "pools": len(project.policies["pools"]),
         "chains": len(project.policies["chains"]),
     }
@@ -84,7 +80,6 @@ def _command_doctor(args: argparse.Namespace) -> int:
     report = run_doctor(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
         secret_file=args.secret_file,
         mihomo_manifest=args.mihomo_manifest,
@@ -149,7 +144,6 @@ def _command_publication_gate(args: argparse.Namespace) -> int:
     project = load_project(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
     )
     publication_gate(project.config, args.mode, args.acknowledgement)
@@ -161,7 +155,6 @@ def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
     project = load_project(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
     )
     publication_gate(project.config, "cloudflare_kv")
@@ -190,7 +183,6 @@ def _command_publish_gist(args: argparse.Namespace) -> int:
     project = load_project(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
     )
     publication_gate(project.config, "gist", args.acknowledgement)

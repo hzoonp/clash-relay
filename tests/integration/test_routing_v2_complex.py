@@ -61,7 +61,6 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     result = build_candidate(
         config_path=repo_root / "config.yaml",
         subscriptions_path=repo_root / "subscriptions.yaml",
-        services_path=repo_root / "services.yaml",
         policies_path=repo_root / "policies.yaml",
         secret_file=secret_file,
         env={},
@@ -165,7 +164,6 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     project = load_project(
         config_path=repo_root / "config.yaml",
         subscriptions_path=repo_root / "subscriptions.yaml",
-        services_path=repo_root / "services.yaml",
         policies_path=repo_root / "policies.yaml",
     )
     audit = audit_routing_v2(project, candidate)

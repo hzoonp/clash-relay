@@ -10,7 +10,6 @@ def _paths(repo_root: Path) -> dict[str, Path]:
     return {
         "config_path": repo_root / "config.yaml",
         "subscriptions_path": repo_root / "subscriptions.yaml",
-        "services_path": repo_root / "services.yaml",
         "policies_path": repo_root / "policies.yaml",
         "mihomo_manifest": repo_root / "tools/mihomo-versions.json",
     }

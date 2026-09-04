@@ -10,6 +10,7 @@ from typing import Any
 
 from .errors import ConfigurationError
 from .models import SubscriptionSpec
+from .policy_document import load_policy_document
 from .schema import load_and_validate
 from .status import parse_expected_status
 
@@ -20,7 +21,6 @@ class ProjectDefinition:
     config: dict[str, Any]
     subscriptions_document: dict[str, Any]
     subscriptions: tuple[SubscriptionSpec, ...]
-    services: dict[str, Any]
     policies: dict[str, Any]
     acl4ssr: dict[str, Any] | None
 
@@ -126,20 +126,18 @@ def load_project(
     *,
     config_path: Path,
     subscriptions_path: Path,
-    services_path: Path,
     policies_path: Path,
 ) -> ProjectDefinition:
     config = load_and_validate(config_path, "config.schema.json")
     _sniffer_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
-    services = load_and_validate(services_path, "services.schema.json")
-    policies = load_and_validate(policies_path, "policies.schema.json")
+    policy_document = load_policy_document(policies_path)
+    policies = policy_document.document
     root = Path(
         os.path.commonpath(
             [
                 config_path.resolve().parent,
                 subscriptions_path.resolve().parent,
-                services_path.resolve().parent,
                 policies_path.resolve().parent,
             ]
         )
@@ -148,14 +146,12 @@ def load_project(
     subscription_rows = subscriptions_document["subscriptions"]
     _ensure_unique(subscription_rows, "id", "subscription IDs")
     _ensure_unique(subscription_rows, "secret_name", "subscription secret names")
-    service_rows = services["services"]
     pool_rows = policies["pools"]
     chain_rows = policies["chains"]
-    _ensure_unique(service_rows, "id", "service IDs")
     _ensure_unique(pool_rows, "id", "pool IDs")
     _ensure_unique(chain_rows, "id", "chain IDs")
-    all_units = service_rows + pool_rows + chain_rows
-    _ensure_unique(all_units, "id", "service/pool/chain IDs")
+    all_units = pool_rows + chain_rows
+    _ensure_unique(all_units, "id", "pool/chain IDs")
     _ensure_unique(all_units, "display_name", "public group names")
 
     modules = config["modules"]
@@ -253,20 +249,6 @@ def load_project(
     probe_names = set(policies["probes"])
     for name, probe in policies["probes"].items():
         _probe_semantics(probe, f"probe {name!r}")
-    for service in service_rows:
-        _probe_semantics(service["probe"], f"service {service['id']!r} probe")
-        used_caps = set(service["required_capabilities"]) | set(service["excluded_capabilities"])
-        if used_caps - capabilities:
-            raise ConfigurationError(f"service {service['id']!r} uses unknown capabilities")
-        if set(service["allowed_cost_levels"]) - cost_levels:
-            raise ConfigurationError(f"service {service['id']!r} uses unknown cost levels")
-        if set(service["countries"]) - countries:
-            raise ConfigurationError(f"service {service['id']!r} uses unknown countries")
-        if not set(service["fallback_order"]).issubset(service["countries"]):
-            raise ConfigurationError(
-                f"service {service['id']!r} fallback_order is outside its countries"
-            )
-        _resolve_rule(root, service["rules"])
     for pool in pool_rows:
         if pool["probe"] not in probe_names:
             raise ConfigurationError(f"pool {pool['id']!r} references unknown probe")
@@ -370,7 +352,6 @@ def load_project(
         config=config,
         subscriptions_document=subscriptions_document,
         subscriptions=tuple(specs),
-        services=services,
         policies=policies,
         acl4ssr=acl4ssr,
     )

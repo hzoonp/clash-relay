@@ -101,13 +101,6 @@ def _expected_group_uses(project: ProjectDefinition) -> dict[str, str]:
         for pool in project.policies["pools"]
         if modules.get(str(pool["module"]), False)
     }
-    expected.update(
-        {
-            str(service["display_name"]): str(service["source_use"])
-            for service in project.services["services"]
-            if modules.get(str(service["module"]), False)
-        }
-    )
 
     if project.acl4ssr is not None:
         for group in project.acl4ssr.get("groups", []):

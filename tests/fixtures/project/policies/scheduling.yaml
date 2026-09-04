@@ -1,0 +1,41 @@
+probes:
+  connectivity:
+    url: https://www.gstatic.com/generate_204
+    method: HEAD
+    expected_status: "204"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  chatgpt:
+    url: https://api.openai.com/v1/models
+    method: HEAD
+    expected_status: "200/401/403"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  claude:
+    url: https://api.anthropic.com/v1/messages
+    method: HEAD
+    expected_status: "400/401/403/405"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  gemini:
+    url: https://generativelanguage.googleapis.com/v1beta/models
+    method: HEAD
+    expected_status: "200/400/401/403/405"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50
+  google_play:
+    url: https://play.googleapis.com/generate_204
+    method: HEAD
+    expected_status: "200/204/401/404"
+    interval: 300
+    timeout: 5000
+    lazy: true
+    tolerance: 50

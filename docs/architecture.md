@@ -6,13 +6,13 @@
 
 The production pipeline is staged and fail closed:
 
-1. **Declaration loading** validates `config.yaml`, `subscriptions.yaml`, `services.yaml`, `policies.yaml`, and rule files against JSON Schema and cross-file semantic constraints.
+1. **Declaration loading** validates `config.yaml`, `subscriptions.yaml`, the Policy Model v2 `policies.yaml` manifest and its four owned fragments, plus rule files against JSON Schema and cross-file semantic constraints. Physical Policy Model v1 is not a runtime input; `scripts/migrate_policy_v2.py` is the offline migration path.
 2. **Secret resolution** maps logical `secret_name` values to URLs from `CLASH_RELAY_SUBSCRIPTIONS`, a same-name environment variable, or an ignored local secret file.
 3. **Fetch** permits HTTPS by default, rejects URL userinfo and private IP literals, bounds transfer/decompression size, validates redirect destinations, and returns UTF-8 text.
 4. **Parse/sanitize** accepts common Clash/Mihomo YAML and proxy URIs, rejects YAML aliases, validates proxy shape, and strips user-controlled chaining/interface/routing fields.
 5. **Classification** combines source defaults, optional name rules, country aliases, and authoritative exact-node metadata into an immutable node model.
 6. **Eligibility selection** applies source use, country, capability any/all/exclude, and cost constraints. Source priority is deterministic ordering only.
-7. **Generation** creates inline providers and layered hidden groups programmatically. Runtime proxy names include scope, source ID, and a fingerprint suffix.
+7. **Generation and policy passes** create inline providers and layered hidden groups programmatically, then apply the current ACL4SSR/source-isolation/manual-provider/browsing-runtime passes before final static validation. Runtime proxy names include scope, source ID, and a fingerprint suffix. P47 will replace these post-generation topology mutations with one graph compiler boundary.
 8. **RuntimeGraph audit** normalizes groups/providers/proxies/dialer edges and verifies Routing V2 and source-to-scenario contracts against the concrete generated graph.
 9. **Qualification pipeline** copies the generated private candidate through browsing/transport and AI qualification stages, producing one explicit final candidate instead of mutating the generator output across unrelated workflow steps.
 10. **Static/current-policy audit** is repeated against the exact qualified candidate.
@@ -23,18 +23,19 @@ The production pipeline is staged and fail closed:
 
 There are three deliberately separate models:
 
-- **Declarations** describe desired policy and source permissions.
+- **Declarations** describe desired policy and source permissions. Policy Model v2 is physically split into `routing`, `scheduling`, `classification`, and `topology` fragments.
 - **`RuntimeGraph`** is a side-effect-free normalized view of a concrete Mihomo candidate.
 - **`CandidateArtifact`** identifies immutable logical transitions between generated and qualified stages.
 
-`RuntimeGraph` is an audit/traversal model, not a second serializer. The deterministic generator remains the only Mihomo YAML constructor.
+`RuntimeGraph` is currently an audit/traversal model, not a serializer. Until P47 lands, `generator.py` produces the initial Mihomo graph and builder-owned policy passes may still rewrite that graph before final validation and serialization. P47 is responsible for collapsing this into one authoritative graph compiler.
 
-The canonical production names and Routing V2 fidelity rules are data under `routing.contract` in `policies.yaml`. Core validation code consumes that contract rather than embedding production group names or region exclusions as Python constants.
+The canonical production names and Routing V2 fidelity rules are data under `routing.contract` in the routing policy fragment. Core validation code consumes that contract rather than embedding production group names or region exclusions as Python constants.
 
 ## Module responsibilities
 
 | Module | Responsibility |
 |---|---|
+| `policy_document.py` | require and compose Policy Model v2 into the canonical semantic policy document |
 | `config_loader.py` | schema loading and cross-file semantics |
 | `secrets.py` | URL injection only |
 | `fetch.py` | bounded network/local fixture reads |
@@ -42,7 +43,7 @@ The canonical production names and Routing V2 fidelity rules are data under `rou
 | `subscription_parser.py` | untrusted subscription extraction and sanitization |
 | `classify.py` | country/capability/cost assignment and deduplication |
 | `selector.py` | pure business eligibility predicates |
-| `generator.py` | deterministic Mihomo graph construction |
+| `generator.py` | deterministic initial Mihomo graph construction |
 | `runtime_graph.py` | normalized candidate traversal and immutable stage model |
 | `policy_contract.py` | declarative production Routing V2 contract |
 | `routing_v2_audit.py` | current contract versus concrete RuntimeGraph audit |
@@ -57,7 +58,7 @@ The canonical production names and Routing V2 fidelity rules are data under `rou
 
 ## Scheduling graph
 
-For a regular service or pool:
+For a regular pool:
 
 ```text
 Public SELECT (one implementation target)
@@ -67,7 +68,7 @@ Public SELECT (one implementation target)
         -> qualified runtime proxies
 ```
 
-The provider and AUTO layer share the service's data-driven probe definition. Mihomo makes live choices only within nodes that already passed static business eligibility.
+The provider and AUTO layer share the pool's data-driven probe definition from the scheduling policy domain. Mihomo makes live choices only within nodes that already passed static business eligibility.
 
 ### Empty behavior
 

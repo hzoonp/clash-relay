@@ -19,7 +19,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Load private AI qualification cache from KV.")
     parser.add_argument("--config", type=_path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
-    parser.add_argument("--services", type=_path, default=Path("services.yaml"))
     parser.add_argument("--policies", type=_path, default=Path("policies.yaml"))
     parser.add_argument("--output", type=_path, required=True)
     parser.add_argument("--fingerprint-key-output", type=_path, required=True)
@@ -31,7 +30,6 @@ def main(argv: list[str] | None = None) -> int:
     project = load_project(
         config_path=args.config,
         subscriptions_path=args.subscriptions,
-        services_path=args.services,
         policies_path=args.policies,
     )
     token = os.environ.get("CLOUDFLARE_API_TOKEN", "")

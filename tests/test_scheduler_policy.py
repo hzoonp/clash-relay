@@ -14,20 +14,33 @@ from clash_relay.scheduler_policy import (
 
 
 def _minimal_policy(path: Path, scheduler: str = "") -> None:
+    policy_dir = path.parent / "policies"
+    policy_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "version: 1\n"
+        "version: 2\n"
+        "fragments:\n"
+        "  routing: policies/routing.yaml\n"
+        "  scheduling: policies/scheduling.yaml\n"
+        "  classification: policies/classification.yaml\n"
+        "  topology: policies/topology.yaml\n",
+        encoding="utf-8",
+    )
+    (policy_dir / "routing.yaml").write_text("{}\n", encoding="utf-8")
+    (policy_dir / "scheduling.yaml").write_text(
         f"{scheduler}"
+        "probes:\n"
+        "  connectivity:\n"
+        "    {url: https://example.invalid/204, method: HEAD, expected_status: '204', interval: 300, timeout: 5000, lazy: true, tolerance: 50}\n",
+        encoding="utf-8",
+    )
+    (policy_dir / "classification.yaml").write_text(
         "capabilities:\n"
         "  general: {description: General, restricted: false}\n"
         "cost_levels: [standard]\n"
-        "country_classification: {default: OTHER, aliases: {}}\n"
-        "probes:\n"
-        "  connectivity:\n"
-        "    {url: https://example.invalid/204, method: HEAD, expected_status: '204', interval: 300, timeout: 5000, lazy: true, tolerance: 50}\n"
-        "pools: []\n"
-        "chains: []\n",
+        "country_classification: {default: OTHER, aliases: {}}\n",
         encoding="utf-8",
     )
+    (policy_dir / "topology.yaml").write_text("pools: []\nchains: []\n", encoding="utf-8")
 
 
 def test_missing_scheduler_block_preserves_conservative_defaults(tmp_path: Path) -> None:

@@ -33,7 +33,7 @@ jobs:
         run: clash-relay doctor --public-only
       - name: Audit authoritative documentation contract
         run: python scripts/audit_documentation_contract.py
-      - name: Audit P27-P45 architecture contract
+      - name: Audit P27-P46 architecture contract
         run: python scripts/audit_architecture_contract.py
       - run: ruff check .
       - run: ruff format --check .
@@ -71,7 +71,6 @@ jobs:
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services tests/fixtures/project/services.yaml \
             --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/first.yaml \
@@ -79,7 +78,6 @@ jobs:
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services tests/fixtures/project/services.yaml \
             --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/second.yaml
@@ -87,7 +85,6 @@ jobs:
           clash-relay generate \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services tests/fixtures/project/services.yaml \
             --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --output .work/first.yaml \
@@ -121,7 +118,6 @@ jobs:
           clash-relay build \
             --config tests/fixtures/project/config.yaml \
             --subscriptions tests/fixtures/project/subscriptions.yaml \
-            --services tests/fixtures/project/services.yaml \
             --policies tests/fixtures/project/policies.yaml \
             --secret-file .work/fixture-secrets.yaml \
             --mihomo-bin .work/bin/mihomo \
