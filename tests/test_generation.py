@@ -278,8 +278,8 @@ def test_new_ai_service_is_configuration_only(project_factory, fixture_env, yaml
     def add_module(document):
         document["modules"]["perplexity"] = True
 
-    def add_service(document):
-        item = dict(document["services"][0])
+    def add_pool(document):
+        item = dict(document["pools"][1])
         item.update(
             id="perplexity",
             display_name="Perplexity",
@@ -287,10 +287,10 @@ def test_new_ai_service_is_configuration_only(project_factory, fixture_env, yaml
             rules="rules/perplexity.yaml",
             rule_priority=130,
         )
-        document["services"].append(item)
+        document["pools"].append(item)
 
     yaml_editor(paths["config_path"], add_module)
-    yaml_editor(paths["services_path"], add_service)
+    yaml_editor(paths["policies_path"], add_pool)
     result = _build(paths, fixture_env)
     assert "Perplexity" in result.report["public_groups"]
     assert any(name.startswith("cr_perplexity_") for name in result.config["proxy-providers"])
