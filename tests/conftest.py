@@ -74,8 +74,10 @@ def project_factory(tmp_path: Path, repo_root: Path):
 def yaml_editor():
     def edit(path: Path, callback):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and data.get("version") == 2 and isinstance(
-            data.get("fragments"), dict
+        if (
+            isinstance(data, dict)
+            and data.get("version") == 2
+            and isinstance(data.get("fragments"), dict)
         ):
             fragment_docs: dict[str, dict] = {}
             merged: dict = {"version": 1}
