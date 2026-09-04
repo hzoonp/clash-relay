@@ -229,9 +229,7 @@ def run_ai_qualification(
         diagnostics["tested_nodes"] = len(fingerprints)
 
     qualified_by_probe: dict[str, set[str]] = {}
-    expected_candidate_nodes: int | None = (
-        len(fingerprints) if fingerprints is not None else None
-    )
+    expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
     total_live = 0
     total_cache_pass = 0
     total_cache_fail = 0
