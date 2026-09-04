@@ -1,0 +1,138 @@
+name: Validate commit
+
+on:
+  workflow_call:
+    outputs:
+      validated_sha:
+        description: Exact commit SHA that completed every required validation gate
+        value: ${{ jobs.validated.outputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Python ${{ matrix.python }} quality
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Verify fork public readiness
+        run: clash-relay doctor --public-only
+      - name: Audit authoritative documentation contract
+        run: python scripts/audit_documentation_contract.py
+      - name: Audit architecture contract
+        run: python scripts/audit_architecture_contract.py
+      - run: ruff check .
+      - run: ruff format --check .
+      - name: Unit tests and coverage floor
+        run: |
+          pytest -m "not integration" \
+            --cov=clash_relay \
+            --cov-fail-under=68 \
+            --cov-report=term-missing \
+            --cov-report=xml:.work/coverage-${{ matrix.python }}.xml \
+            --junitxml=.work/unit-${{ matrix.python }}.xml
+      - run: python scripts/repository_audit.py
+
+  deterministic-generation:
+    name: Deterministic fictional generation
+    needs: quality
+    runs-on: ubuntu-latest
+    outputs:
+      mihomo_tags: ${{ steps.versions.outputs.tags }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - id: versions
+        name: Export pinned stable Mihomo matrix
+        run: python scripts/export_mihomo_matrix.py --channel stable --github-output "$GITHUB_OUTPUT"
+      - name: Verify pinned ACL4SSR Online fidelity
+        run: python scripts/audit_acl4ssr_fidelity.py
+      - run: python scripts/make_fixture_sources.py
+      - name: Generate twice and compare bytes
+        run: |
+          clash-relay generate \
+            --config tests/fixtures/project/config.yaml \
+            --subscriptions tests/fixtures/project/subscriptions.yaml \
+            --policies tests/fixtures/project/policies.yaml \
+            --secret-file .work/fixture-secrets.yaml \
+            --output .work/first.yaml \
+            --report .work/first.json
+          clash-relay generate \
+            --config tests/fixtures/project/config.yaml \
+            --subscriptions tests/fixtures/project/subscriptions.yaml \
+            --policies tests/fixtures/project/policies.yaml \
+            --secret-file .work/fixture-secrets.yaml \
+            --output .work/second.yaml
+          cmp .work/first.yaml .work/second.yaml
+          clash-relay generate \
+            --config tests/fixtures/project/config.yaml \
+            --subscriptions tests/fixtures/project/subscriptions.yaml \
+            --policies tests/fixtures/project/policies.yaml \
+            --secret-file .work/fixture-secrets.yaml \
+            --output .work/first.yaml \
+            --check
+
+  stable-mihomo:
+    name: Mihomo ${{ matrix.tag }}
+    needs: deterministic-generation
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.deterministic-generation.outputs.mihomo_tags) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - run: python -m pip install --requirement requirements-dev.lock --editable .
+      - name: Download and verify official Mihomo asset
+        run: |
+          python scripts/download_mihomo.py \
+            --channel stable \
+            --tag "${{ matrix.tag }}" \
+            --output .work/bin/mihomo
+      - run: python scripts/make_fixture_sources.py
+      - name: Generate, core-validate, then write
+        run: |
+          clash-relay build \
+            --config tests/fixtures/project/config.yaml \
+            --subscriptions tests/fixtures/project/subscriptions.yaml \
+            --policies tests/fixtures/project/policies.yaml \
+            --secret-file .work/fixture-secrets.yaml \
+            --mihomo-bin .work/bin/mihomo \
+            --output .work/config.yaml \
+            --report .work/build.json
+      - name: Real startup and provider HEAD integration tests
+        env:
+          MIHOMO_BIN: ${{ github.workspace }}/.work/bin/mihomo
+        run: pytest -m integration tests/integration --junitxml=.work/integration-${{ matrix.tag }}.xml
+
+  validated:
+    name: Validated SHA
+    needs: [quality, deterministic-generation, stable-mihomo]
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - id: sha
+        name: Bind validation result to exact commit SHA
+        run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
