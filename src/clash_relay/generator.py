@@ -58,15 +58,7 @@ def _test_fields(probe: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalized_selector(unit: dict[str, Any], *, service: bool) -> dict[str, Any]:
-    if service:
-        return {
-            "source_use": unit["source_use"],
-            "capabilities_any": [],
-            "capabilities_all": list(unit["required_capabilities"]),
-            "excluded_capabilities": list(unit["excluded_capabilities"]),
-            "allowed_cost_levels": list(unit["allowed_cost_levels"]),
-        }
+def _normalized_selector(unit: dict[str, Any]) -> dict[str, Any]:
     return {
         "source_use": unit["source_use"],
         "capabilities_any": list(unit["capabilities_any"]),
@@ -144,20 +136,19 @@ def _add_public_group(groups: list[dict[str, Any]], *, display_name: str, anchor
     )
 
 
-def _add_regular_unit(
+def _add_regular_pool(
     providers: dict[str, Any],
     groups: list[dict[str, Any]],
     nodes: list[Node],
     unit: dict[str, Any],
     *,
     probe: dict[str, Any],
-    service: bool,
 ) -> tuple[dict[str, Any], str]:
     unit_id = unit["id"]
     token = _scope_token(unit_id)
-    regions = unit["countries"] if service else unit["regions"]
+    regions = unit["regions"]
     fallback_order = unit["fallback_order"]
-    selector = _normalized_selector(unit, service=service)
+    selector = _normalized_selector(unit)
     auto_by_region: dict[str, str] = {}
     region_counts: dict[str, int] = {}
     total_fingerprints: set[str] = set()
@@ -414,7 +405,6 @@ def generate_config(
     *,
     root: Path,
     config: dict[str, Any],
-    services: dict[str, Any],
     policies: dict[str, Any],
     nodes: list[Node],
     external_rule_providers: dict[str, Any] | None = None,
@@ -439,31 +429,18 @@ def generate_config(
         [pool for pool in pools if pool["id"] != "general"],
         key=lambda item: (item["rule_priority"], item["id"]),
     )
-    ordered_units: list[tuple[str, dict[str, Any]]] = []
-    ordered_units.extend(("pool", item) for item in general_pools)
-    ordered_units.extend(
-        ("service", item)
-        for item in sorted(
-            services["services"], key=lambda item: (item["rule_priority"], item["id"])
-        )
-    )
-    ordered_units.extend(("pool", item) for item in other_pools)
-
-    for kind, unit in ordered_units:
+    for unit in [*general_pools, *other_pools]:
         if not modules.get(unit["module"], False):
             continue
-        probe = unit["probe"] if kind == "service" else policies["probes"][unit["probe"]]
-        report, anchor_name = _add_regular_unit(
+        report, anchor_name = _add_regular_pool(
             providers,
             groups,
             nodes,
             unit,
-            probe=probe,
-            service=kind == "service",
+            probe=policies["probes"][unit["probe"]],
         )
         pool_report.append(report)
-        if kind == "pool":
-            pool_anchors[str(unit["id"])] = anchor_name
+        pool_anchors[str(unit["id"])] = anchor_name
 
     for chain in sorted(policies["chains"], key=lambda item: item["id"]):
         if not modules.get(chain["module"], False):
@@ -490,17 +467,6 @@ def generate_config(
 
     available_targets = _BUILTINS | {str(group["name"]) for group in groups}
     rule_rows: list[tuple[int, str, int, str]] = []
-    for service in services["services"]:
-        if modules.get(service["module"], False):
-            for order, rule in enumerate(_load_rules(root, service["rules"])):
-                rule_rows.append(
-                    (
-                        service["rule_priority"],
-                        f"service:{service['id']}",
-                        order,
-                        _render_rule(rule, service["display_name"]),
-                    )
-                )
     for pool in policies["pools"]:
         if modules.get(pool["module"], False) and pool["rules"]:
             for order, rule in enumerate(_load_rules(root, pool["rules"])):
