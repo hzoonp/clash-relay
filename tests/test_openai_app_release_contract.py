@@ -15,9 +15,9 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
         encoding="utf-8"
     )
     hardener = (repo_root / "scripts" / "harden_openai_runtime.py").read_text(encoding="utf-8")
-    openai_application = (
-        repo_root / "src" / "clash_relay" / "openai_application.py"
-    ).read_text(encoding="utf-8")
+    openai_application = (repo_root / "src" / "clash_relay" / "openai_application.py").read_text(
+        encoding="utf-8"
+    )
     audit_adapter = (repo_root / "scripts" / "audit_production.py").read_text(encoding="utf-8")
     pipeline = (repo_root / "src" / "clash_relay" / "production_pipeline.py").read_text(
         encoding="utf-8"
