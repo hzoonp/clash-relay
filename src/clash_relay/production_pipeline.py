@@ -189,8 +189,6 @@ def run_production_pipeline(
     outputs: ProductionPipelineOutputs,
     build_report_path: Path | None = None,
     workers: int = 12,
-    script_dir: Path | None = None,
-    python_executable: str | None = None,
 ) -> dict[str, Any]:
     """Run pre-audit, qualification, post-audit, and safe summary rendering."""
 
@@ -216,8 +214,6 @@ def run_production_pipeline(
         cache=qualification_paths.cache,
         cache_key=qualification_paths.cache_key,
         next_cache=qualification_paths.next_cache,
-        script_dir=script_dir,
-        python_executable=python_executable,
     )
     _write_json(outputs.qualification, qualification)
 
