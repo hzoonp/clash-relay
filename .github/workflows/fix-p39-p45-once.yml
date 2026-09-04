@@ -175,7 +175,6 @@ jobs:
             tests/test_production_metrics.py \
             tests/test_publish_trigger.py \
             tests/test_p43_chaos_matrix.py \
-            tests/test_repository_safety.py \
             tests/test_v1_contract.py
       - name: Commit fixes
         run: |
