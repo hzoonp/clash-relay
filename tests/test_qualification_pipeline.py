@@ -79,6 +79,8 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path) -> None:
     assert "browsing_stage" not in candidate.read_text(encoding="utf-8")
     assert result["status"] == "qualified"
     assert result["browsing"]["stage_attempts"] == 1
+    assert result["browsing"]["recovered_by_retry"] is False
+    assert result["browsing"]["recovered_failure_category"] is None
     assert [row["name"] for row in result["stages"]] == [
         "generated",
         "browsing_transport_qualified",
@@ -93,7 +95,9 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path) -> None:
     assert ai_report.exists()
 
 
-def test_pipeline_retries_browsing_from_immutable_generated_candidate(tmp_path: Path) -> None:
+def test_pipeline_retries_only_structured_transient_from_immutable_candidate(
+    tmp_path: Path,
+) -> None:
     candidate, policies, mihomo, scripts = _pipeline_inputs(tmp_path)
     browsing = scripts / "qualify_browsing.py"
     browsing.write_text(
@@ -109,7 +113,7 @@ def test_pipeline_retries_browsing_from_immutable_generated_candidate(tmp_path: 
         "candidate=Path(args.candidate)\n"
         "if count == 0:\n"
         "    with candidate.open('a', encoding='utf-8') as h: h.write('\\nfailed_attempt_marker: true\\n')\n"
-        "    print(json.dumps({'status':'rejected','diagnostics':{'tested_nodes':4,'qualified_nodes':0,'outcomes':{'probe_error':12}}}))\n"
+        "    print(json.dumps({'status':'rejected','stage':'browsing','failure_category':'transient','retryable':True,'diagnostics':{'tested_nodes':4,'qualified_nodes':0,'successful_samples':0,'failed_samples':12,'outcomes':{'probe_error':12}}}))\n"
         "    raise SystemExit(2)\n"
         "with candidate.open('a', encoding='utf-8') as h: h.write('\\nbrowsing_stage: true\\n')\n"
         "print(json.dumps({'status':'qualified','automatic_nodes':3}))\n",
@@ -132,9 +136,74 @@ def test_pipeline_retries_browsing_from_immutable_generated_candidate(tmp_path: 
 
     assert (scripts / "qualify_browsing.count").read_text(encoding="utf-8") == "2"
     assert result["browsing"]["stage_attempts"] == 2
+    assert result["browsing"]["recovered_by_retry"] is True
+    assert result["browsing"]["recovered_failure_category"] == "transient"
     text = output.read_text(encoding="utf-8")
     assert "browsing_stage: true" in text
     assert "failed_attempt_marker" not in text
+
+
+def test_pipeline_does_not_retry_policy_rejection(tmp_path: Path) -> None:
+    candidate, policies, mihomo, scripts = _pipeline_inputs(tmp_path)
+    browsing = scripts / "qualify_browsing.py"
+    browsing.write_text(
+        "from __future__ import annotations\n"
+        "import argparse, json\n"
+        "from pathlib import Path\n"
+        "p=argparse.ArgumentParser()\n"
+        "p.add_argument('--candidate', required=True)\n"
+        "p.parse_known_args()\n"
+        "state=Path(__file__).with_suffix('.count')\n"
+        "count=int(state.read_text(encoding='utf-8')) if state.exists() else 0\n"
+        "state.write_text(str(count + 1), encoding='utf-8')\n"
+        "print(json.dumps({'status':'rejected','stage':'transport','failure_category':'policy_rejection','retryable':False,'transport_diagnostics':{'tested_nodes':8,'tcp_qualified_nodes':8,'udp_qualified_nodes':0}}))\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="policy_rejection"):
+        run_qualification_pipeline(
+            candidate=candidate,
+            output=tmp_path / "final.yaml",
+            policies=policies,
+            mihomo_bin=mihomo,
+            stage_dir=tmp_path / "stages",
+            browsing_report=tmp_path / "browsing.json",
+            ai_report=tmp_path / "ai.json",
+            script_dir=scripts,
+            python_executable=sys.executable,
+        )
+
+    assert (scripts / "qualify_browsing.count").read_text(encoding="utf-8") == "1"
+
+
+def test_pipeline_unstructured_rejection_is_protocol_error_and_not_retried(tmp_path: Path) -> None:
+    candidate, policies, mihomo, scripts = _pipeline_inputs(tmp_path)
+    browsing = scripts / "qualify_browsing.py"
+    browsing.write_text(
+        "from pathlib import Path\n"
+        "state=Path(__file__).with_suffix('.count')\n"
+        "count=int(state.read_text(encoding='utf-8')) if state.exists() else 0\n"
+        "state.write_text(str(count + 1), encoding='utf-8')\n"
+        "print('legacy failure')\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="protocol_error"):
+        run_qualification_pipeline(
+            candidate=candidate,
+            output=tmp_path / "final.yaml",
+            policies=policies,
+            mihomo_bin=mihomo,
+            stage_dir=tmp_path / "stages",
+            browsing_report=tmp_path / "browsing.json",
+            ai_report=tmp_path / "ai.json",
+            script_dir=scripts,
+            python_executable=sys.executable,
+        )
+
+    assert (scripts / "qualify_browsing.count").read_text(encoding="utf-8") == "1"
 
 
 def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(tmp_path: Path) -> None:
@@ -146,7 +215,7 @@ def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(tmp_path: Path) 
         "p=argparse.ArgumentParser()\n"
         "p.add_argument('--candidate', required=True)\n"
         "p.parse_known_args()\n"
-        "print(json.dumps({'status':'rejected','stage':'transport','diagnostics':{'tested_nodes':7,'qualified_nodes':5,'outcomes':{'success':15}},'transport_diagnostics':{'tested_nodes':8,'tcp_qualified_nodes':8,'udp_qualified_nodes':0,'selector_failures':0}}))\n"
+        "print(json.dumps({'status':'rejected','stage':'transport','failure_category':'policy_rejection','retryable':False,'diagnostics':{'tested_nodes':7,'qualified_nodes':5,'outcomes':{'success':15}},'transport_diagnostics':{'tested_nodes':8,'tcp_qualified_nodes':8,'udp_qualified_nodes':0,'selector_failures':0}}))\n"
         "print('server=private.example token=top-secret', file=sys.stderr)\n"
         "raise SystemExit(2)\n",
         encoding="utf-8",
@@ -166,6 +235,7 @@ def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(tmp_path: Path) 
         )
 
     message = str(caught.value)
+    assert "policy_rejection" in message
     assert '"stage":"transport"' in message
     assert '"tested_nodes":8' in message
     assert '"udp_qualified_nodes":0' in message
