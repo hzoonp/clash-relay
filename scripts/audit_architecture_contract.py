@@ -121,10 +121,7 @@ def main() -> int:
     positions = [lifecycle.find(stage) for stage in ordered_stages]
     if any(position < 0 for position in positions) or positions != sorted(positions):
         raise SystemExit("architecture audit: production lifecycle stage order regressed")
-    if (
-        "finally:" not in lifecycle
-        or "shutil.rmtree(self.paths.private_dir" not in lifecycle
-    ):
+    if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
         raise SystemExit("architecture audit: private production state is not always cleaned")
 
     # P39/P48: qualification retry is typed and package-to-package, never stdout JSON IPC.
@@ -134,11 +131,10 @@ def main() -> int:
         raise SystemExit("architecture audit: typed qualification rejection contract is missing")
     if '"qualification stage rejected the candidate" in str(exc)' in qualification:
         raise SystemExit("architecture audit: qualification retry regressed to message matching")
-    if (
-        "exc.retryable" not in qualification
-        or "_whole_browsing_probe_transient" not in reliability
-    ):
-        raise SystemExit("architecture audit: transient-only qualification retry contract regressed")
+    if "exc.retryable" not in qualification or "_whole_browsing_probe_transient" not in reliability:
+        raise SystemExit(
+            "architecture audit: transient-only qualification retry contract regressed"
+        )
     for token in (
         "subprocess",
         "sys.executable",
@@ -174,7 +170,9 @@ def main() -> int:
         "scripts_dir",
     ):
         if token in lifecycle:
-            raise SystemExit(f"architecture audit: production lifecycle retained Python IPC token {token}")
+            raise SystemExit(
+                f"architecture audit: production lifecycle retained Python IPC token {token}"
+            )
     for token in (
         "download_pinned_mihomo(",
         "validate_mihomo_matrix(",
@@ -196,7 +194,9 @@ def main() -> int:
             "architecture audit: in-process publication bypasses proven release transaction"
         )
     if "download_pinned_mihomo(" not in mihomo_matrix_application:
-        raise SystemExit("architecture audit: Mihomo matrix still delegates download through a script")
+        raise SystemExit(
+            "architecture audit: Mihomo matrix still delegates download through a script"
+        )
     for relative in (
         "scripts/qualify_browsing.py",
         "scripts/qualify_ai.py",
@@ -214,7 +214,9 @@ def main() -> int:
         "scripts/publish_production_metrics.py",
     ):
         if "subprocess" in _text(relative):
-            raise SystemExit(f"architecture audit: thin adapter {relative} still launches subprocesses")
+            raise SystemExit(
+                f"architecture audit: thin adapter {relative} still launches subprocesses"
+            )
 
     # P40: release progress wraps the proven in-process release transaction.
     if "ReleaseProgress" not in lifecycle or "ReleasePhase.PUBLISHED" not in lifecycle:
@@ -231,7 +233,9 @@ def main() -> int:
         )
     for token in ("append_metrics_run", "metrics_summary", "production-metrics-v1"):
         if token not in production_application:
-            raise SystemExit(f"architecture audit: production application missing metrics token {token}")
+            raise SystemExit(
+                f"architecture audit: production application missing metrics token {token}"
+            )
 
     # P34/P42: canonical physical policy is current v2 with four owned domain fragments.
     raw_manifest = load_yaml_file(ROOT / "policies.yaml")
