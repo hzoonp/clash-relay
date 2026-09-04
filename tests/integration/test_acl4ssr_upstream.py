@@ -208,7 +208,6 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     result = build_candidate(
         config_path=repo_root / "config.yaml",
         subscriptions_path=repo_root / "subscriptions.yaml",
-        services_path=repo_root / "services.yaml",
         policies_path=repo_root / "policies.yaml",
         secret_file=secret_file,
         env={},
