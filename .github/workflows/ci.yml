@@ -33,7 +33,7 @@ jobs:
         run: clash-relay doctor --public-only
       - name: Audit authoritative documentation contract
         run: python scripts/audit_documentation_contract.py
-      - name: Audit P27-P32 architecture contract
+      - name: Audit P27-P38 architecture contract
         run: python scripts/audit_architecture_contract.py
       - run: ruff check .
       - run: ruff format --check .

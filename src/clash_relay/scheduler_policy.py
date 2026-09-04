@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .policy_document import load_policy_document
 from .scheduler_history import fingerprint_runtime_name
-from .util import load_yaml_file
 
 
 @dataclass(frozen=True)
@@ -52,9 +52,7 @@ def _mapping(value: Any, label: str) -> dict[str, Any]:
 
 
 def load_scheduler_policy(path: Path) -> SchedulerPolicy:
-    document = load_yaml_file(path)
-    if not isinstance(document, dict):
-        raise ValidationError("policies document must be a mapping")
+    document = load_policy_document(path).document
     declared = "scheduler" in document
     scheduler = _mapping(document.get("scheduler"), "scheduler policy")
     browsing = _mapping(scheduler.get("browsing"), "scheduler.browsing")

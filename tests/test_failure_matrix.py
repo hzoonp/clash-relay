@@ -37,20 +37,28 @@ def test_canonical_sources_are_optional_but_degradation_cannot_relax_permissions
 
 
 def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -> None:
-    text = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    publish = text.index("Publish versioned validated release transaction")
-    pipeline = text.index("Run unified private production pipeline")
-    guard = text.index("Enforce production promotion guard")
-    matrix = text.index("Validate exact qualified candidate with the pinned stable Mihomo matrix")
-    assert pipeline < guard < matrix < publish
-    assert "--pre-audit .work/private/production-audit.json" in text[:publish]
-    assert "--post-audit .work/private/post-qualification-audit.json" in text[:publish]
-    assert "--manifest tools/mihomo-versions.json" in text[:publish]
-    assert "scripts/check_promotion_guard.py" in text[:publish]
-    assert "scripts/snapshot_previous_config.py" not in text
-    assert "clash-relay publish-cloudflare-kv" not in text
-    assert publish < text.index("Persist private AI qualification cache")
-    assert publish < text.index("Persist private scheduler history")
+    workflow = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert workflow.count("python scripts/run_production_release.py") == 1
+    assert "check_promotion_guard.py" not in workflow
+    assert "validate_mihomo_matrix.py" not in workflow
+    assert "publish_release_bundle.py" not in workflow
+
+    qualify = lifecycle.index("pipeline = self._qualify(binary)")
+    guard = lifecycle.index("promotion = self._promotion_guard()")
+    matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
+    publish = lifecycle.index("release = self._publish_release()")
+    persist = lifecycle.index("derived_state = self._persist_derived_state()")
+    assert qualify < guard < matrix < publish < persist
+    assert "run_production_pipeline(" in lifecycle[:publish]
+    assert "check_promotion_guard.py" in lifecycle[:publish]
+    assert "validate_mihomo_matrix.py" in lifecycle[:publish]
+    assert "publish_release_bundle.py" in lifecycle
+    assert "scripts/snapshot_previous_config.py" not in lifecycle
+    assert "clash-relay publish-cloudflare-kv" not in lifecycle
 
 
 def test_rollback_is_confirmed_current_policy_matrix_validated_and_fail_closed(

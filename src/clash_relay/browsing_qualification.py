@@ -19,6 +19,7 @@ from statistics import median
 from typing import Any
 
 from .errors import ValidationError
+from .policy_document import load_policy_document
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
@@ -64,9 +65,7 @@ def _exact_filter(names: set[str]) -> str:
 
 def load_browsing_probe_spec(policies_path: Path) -> dict[str, Any]:
     """Load the probe referenced by the canonical browsing pool."""
-    document = load_yaml_file(policies_path)
-    if not isinstance(document, dict):
-        raise ValidationError("browsing qualification requires a valid policies mapping")
+    document = load_policy_document(policies_path).document
     pools = document.get("pools")
     probes = document.get("probes")
     if not isinstance(pools, list) or not isinstance(probes, dict):

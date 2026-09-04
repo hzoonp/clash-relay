@@ -1,10 +1,8 @@
-"""Declarative names and fidelity contracts for the canonical production profile.
+"""Declarative runtime naming/fidelity contract for Routing Model V2.
 
-The production compiler and audits consume ``routing.contract`` as the sole
-source of runtime selector names, compatibility bindings, AI aliases, and
-classification ordering.  A legacy fallback remains only for projects that do
-not declare Routing V2 at all; once a ``routing`` block is present the contract
-is mandatory and fail-closed.
+There is deliberately no Python fallback contract.  Any consumer that requires
+routing semantics must receive an explicit ``routing.contract`` declaration and
+fails closed otherwise.
 """
 
 from __future__ import annotations
@@ -13,88 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConfigurationError
-
-# Compatibility only.  Canonical/production projects declare routing.contract
-# explicitly in policies.yaml.  Do not add new production semantics here.
-_LEGACY_DEFAULT_CONTRACT: dict[str, Any] = {
-    "public_groups": {
-        "general": "代理选择",
-        "browsing": "网页浏览",
-        "ai": "人工智能",
-        "media": "流媒体",
-        "messaging": "消息通讯",
-        "download": "下载流量",
-    },
-    "automatic_groups": {
-        "media": "媒体自动",
-        "messaging": "通讯自动",
-        "download": "下载自动",
-    },
-    "general_region_choices": [
-        "香港节点",
-        "台湾节点",
-        "新加坡节点",
-        "日本节点",
-        "美国节点",
-        "韩国节点",
-        "DIRECT",
-    ],
-    "compatibility_selectors": {
-        "全球直连": ["DIRECT", "代理选择", "自动选择"],
-        "广告拦截": ["REJECT", "DIRECT"],
-        "谷歌FCM": ["代理选择", "全球直连", "自动选择"],
-        "微软服务": ["全球直连", "代理选择"],
-        "苹果服务": ["代理选择", "全球直连"],
-        "漏网之鱼": ["代理选择", "全球直连", "自动选择"],
-    },
-    "disabled_groups": ["应用净化"],
-    "ai": {
-        "service_targets": {
-            "openai": "__CR_AI_SERVICE_OPENAI",
-            "claude": "__CR_AI_SERVICE_CLAUDE",
-            "gemini": "__CR_AI_SERVICE_GEMINI",
-        },
-        "service_prefixes": {
-            "openai": "__CR_AI_OPENAI_",
-            "claude": "__CR_AI_CLAUDE_",
-            "gemini": "__CR_AI_GEMINI_",
-        },
-        "region_display_names": {
-            "HK": ["AI · 香港", "AI · HK"],
-            "TW": ["AI · 台湾", "AI · TW"],
-            "SG": ["AI · 新加坡", "AI · SG"],
-            "JP": ["AI · 日本", "AI · JP"],
-            "US": ["AI · 美国", "AI · US"],
-            "KR": ["AI · 韩国", "AI · KR"],
-            "OTHER": ["AI · 其他地区", "AI · OTHER"],
-        },
-        "required_excluded_regions": ["HK"],
-    },
-    "binding_targets": {
-        "telegram": "消息通讯",
-        "ai": "人工智能",
-        "openai": "人工智能",
-        "proxy_media": "流媒体",
-        "download": "下载流量",
-        "proxy_lite": "网页浏览",
-        "china_domain": "全球直连",
-        "china_company_ip": "全球直连",
-        "geoip_cn": "全球直连",
-    },
-    "priority_edges": [
-        ["telegram", "ai"],
-        ["telegram", "openai"],
-        ["ai", "proxy_media"],
-        ["openai", "proxy_media"],
-        ["proxy_media", "download"],
-        ["download", "proxy_lite"],
-        ["proxy_lite", "china_domain"],
-        ["china_domain", "china_company_ip"],
-        ["china_company_ip", "geoip_cn"],
-    ],
-    "acl4ssr_baseline": "ProxyMedia -> ProxyLite -> ChinaDomain -> ChinaCompanyIp -> GEOIP CN",
-    "intentional_deviations": ["BanProgramAD disabled", "AI extension", "Download extension"],
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,13 +101,11 @@ def _string_list(value: Any, *, field: str, allow_empty: bool = False) -> tuple[
 
 def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
     routing = policies.get("routing")
-    raw = routing.get("contract") if isinstance(routing, dict) else None
-    if isinstance(routing, dict) and raw is None:
-        raise ConfigurationError(
-            "routing.contract is required whenever the routing policy is declared"
-        )
-    declared = raw is not None
-    document = _LEGACY_DEFAULT_CONTRACT if raw is None else raw
+    if not isinstance(routing, dict):
+        raise ConfigurationError("routing policy and routing.contract are required")
+    document = routing.get("contract")
+    if document is None:
+        raise ConfigurationError("routing.contract is required")
     if not isinstance(document, dict):
         raise ConfigurationError("routing contract must be a mapping")
 
@@ -265,7 +179,7 @@ def load_policy_contract(policies: dict[str, Any]) -> RuntimePolicyContract:
         priority_edges.append(pair)
 
     return RuntimePolicyContract(
-        declared=declared,
+        declared=True,
         public_groups=public_groups,
         automatic_groups=automatic_groups,
         general_region_choices=_string_list(

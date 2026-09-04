@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from clash_relay.config_loader import load_project
+from clash_relay.policy_document import load_policy_document
 from clash_relay.routing_policy_v2 import load_routing_policy_v2
 from clash_relay.routing_shadow import routing_drift_summary
 
@@ -135,7 +136,7 @@ def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> N
 
 
 def test_final_routing_v2_ai_inventory_has_no_hong_kong(repo_root: Path) -> None:
-    policies = yaml.safe_load((repo_root / "policies.yaml").read_text(encoding="utf-8"))
+    policies = load_policy_document(repo_root / "policies.yaml").document
     ai_pools = [row for row in policies["pools"] if row["source_use"] == "ai"]
 
     assert ai_pools

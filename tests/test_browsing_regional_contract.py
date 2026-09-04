@@ -3,13 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from clash_relay.browsing_regions import DEFAULT_BROWSING_REGIONS
+from clash_relay.policy_document import load_policy_document
 from clash_relay.util import load_yaml_file
 
 
 def test_canonical_browsing_policy_is_region_first_and_independent_from_ai(
     repo_root: Path,
 ) -> None:
-    policies = load_yaml_file(repo_root / "policies.yaml")
+    policies = load_policy_document(repo_root / "policies.yaml").document
     preferred = policies["routing"]["browsing"]["preferred_regions"]
     ai_preferred = policies["routing"]["ai"]["preferred_regions"]
     pool = next(item for item in policies["pools"] if item["id"] == "browsing")
@@ -28,7 +29,7 @@ def test_canonical_browsing_policy_is_region_first_and_independent_from_ai(
 
 
 def test_canonical_country_classifier_covers_every_browsing_region(repo_root: Path) -> None:
-    policies = load_yaml_file(repo_root / "policies.yaml")
+    policies = load_policy_document(repo_root / "policies.yaml").document
     classifier = policies["country_classification"]
 
     assert classifier["default"] == "OTHER"
