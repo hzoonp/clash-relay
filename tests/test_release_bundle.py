@@ -20,6 +20,7 @@ from clash_relay.release_bundle import (
 class MemoryKV:
     values: dict[str, bytes] = field(default_factory=dict)
     fail_once: set[str] = field(default_factory=set)
+    fail_once_message: dict[str, str] = field(default_factory=dict)
     fail_content_once: set[tuple[str, bytes]] = field(default_factory=set)
     ambiguous_once: set[str] = field(default_factory=set)
     fail_always: set[str] = field(default_factory=set)
@@ -34,6 +35,8 @@ class MemoryKV:
             def publish(self, *, content: bytes) -> dict:
                 if key in store.fail_always:
                     raise PublicationError("simulated persistent write failure")
+                if key in store.fail_once_message:
+                    raise PublicationError(store.fail_once_message.pop(key))
                 if key in store.fail_once:
                     store.fail_once.remove(key)
                     raise PublicationError("simulated write failure")
@@ -135,6 +138,23 @@ def test_ambiguous_successful_production_put_is_recovered_by_exact_readback() ->
     )
 
 
+def test_ambiguous_successful_pointer_put_is_recovered_by_exact_readback() -> None:
+    kv = MemoryKV()
+    key = "production-config"
+    first = b"version: first\n"
+    second = b"version: second\n"
+    publish_release_bundle(factory=kv.factory, production_key=key, content=first)
+    keys = release_keys(key)
+    kv.ambiguous_once.add(keys.current_pointer)
+
+    result = publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    assert result["status"] == "published"
+    assert kv.values[key] == second
+    assert parse_release_pointer(kv.values[keys.current_pointer]) == release_id_for(second)
+    assert parse_release_pointer(kv.values[keys.previous_pointer]) == release_id_for(first)
+
+
 def test_first_release_activation_failure_restores_empty_pointer_state() -> None:
     kv = MemoryKV()
     key = "production-config"
@@ -162,6 +182,53 @@ def test_incomplete_compensation_is_reported_explicitly() -> None:
         publish_release_bundle(factory=kv.factory, production_key=key, content=second)
 
     assert kv.values[key] == second
+
+
+@pytest.mark.parametrize(
+    "failure",
+    (
+        "Cloudflare API request failed with HTTP 429",
+        "Cloudflare API request failed with HTTP 503",
+        "Cloudflare API request failed",
+    ),
+)
+def test_pre_activation_api_failure_never_changes_client_visible_bytes(failure: str) -> None:
+    kv = MemoryKV()
+    key = "production-config"
+    first = b"first\n"
+    second = b"second\n"
+    publish_release_bundle(factory=kv.factory, production_key=key, content=first)
+    keys = release_keys(key)
+    kv.fail_once_message[keys.config(release_id_for(second))] = failure
+
+    with pytest.raises(PublicationError, match="Cloudflare API request failed"):
+        publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    assert kv.values[key] == first
+    assert parse_release_pointer(kv.values[keys.current_pointer]) == release_id_for(first)
+
+
+def test_rollback_rehearsal_round_trips_exact_versioned_bytes() -> None:
+    kv = MemoryKV()
+    key = "production-config"
+    first = b"version: first\n"
+    second = b"version: second\n"
+    publish_release_bundle(factory=kv.factory, production_key=key, content=first)
+    publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    previous, metadata = read_previous_release(factory=kv.factory, production_key=key)
+    result = publish_release_bundle(factory=kv.factory, production_key=key, content=previous)
+    keys = release_keys(key)
+
+    assert metadata["release_id"] == release_id_for(first)
+    assert result["status"] == "published"
+    assert result["release_id"] == release_id_for(first)
+    assert result["previous_release_id"] == release_id_for(second)
+    assert kv.values[key] == first
+    assert parse_release_pointer(kv.values[keys.current_pointer]) == release_id_for(first)
+    assert parse_release_pointer(kv.values[keys.previous_pointer]) == release_id_for(second)
+    assert kv.values[keys.manifest(release_id_for(first))] == manifest_bytes(first)
+    assert kv.values[keys.manifest(release_id_for(second))] == manifest_bytes(second)
 
 
 def test_previous_reader_falls_back_to_legacy_slot() -> None:
