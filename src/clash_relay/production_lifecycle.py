@@ -1,8 +1,8 @@
 """Single application-layer owner for the production release lifecycle.
 
 GitHub Actions is intentionally a thin adapter. This module owns production
-execution order while delegating the already proven immutable Cloudflare release
-transaction to ``release_bundle`` through its existing script adapter.
+execution order and calls package application services directly. The only
+remaining process boundaries are true external programs such as Mihomo.
 """
 
 from __future__ import annotations
@@ -10,17 +10,29 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
-from .errors import ValidationError
+from .config_loader import ProjectDefinition
+from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate
+from .mihomo_download import download_pinned_mihomo
+from .mihomo_matrix_application import validate_mihomo_matrix
 from .policy_document import load_policy_document
+from .production_application import (
+    fetch_current_production_config,
+    load_ai_qualification_cache_state,
+    load_scheduler_history_state,
+    persist_ai_qualification_cache,
+    persist_production_metrics,
+    persist_scheduler_history,
+    publish_production_release,
+    render_production_proof_application,
+    run_promotion_guard,
+)
 from .production_pipeline import (
     ProductionPipelineOutputs,
     ProjectPaths,
@@ -45,7 +57,6 @@ class ProductionLifecyclePaths:
     private_dir: Path
     public_dir: Path
     bin_dir: Path
-    scripts_dir: Path
 
     @classmethod
     def canonical(cls, root: Path) -> ProductionLifecyclePaths:
@@ -62,7 +73,6 @@ class ProductionLifecyclePaths:
             private_dir=work / "private",
             public_dir=work / "public",
             bin_dir=work / "bin",
-            scripts_dir=root / "scripts",
         )
 
 
@@ -145,66 +155,6 @@ class ProductionPipeline:
     def _record_timing(self, name: str, started: float) -> None:
         self.timings_ms[name] = round((time.perf_counter() - started) * 1000.0, 3)
 
-    def _script_command(self, name: str, *args: str) -> list[str]:
-        return [sys.executable, str(self.paths.scripts_dir / name), *args]
-
-    def _run_command(
-        self,
-        *,
-        stage: str,
-        command: list[str],
-        output: Path,
-        stderr_path: Path | None = None,
-        best_effort: bool = False,
-    ) -> dict[str, Any]:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        stderr_handle = None
-        try:
-            if stderr_path is not None:
-                stderr_path.parent.mkdir(parents=True, exist_ok=True)
-                stderr_handle = stderr_path.open("w", encoding="utf-8")
-            with output.open("w", encoding="utf-8") as stdout_handle:
-                result = subprocess.run(
-                    command,
-                    cwd=self.paths.root,
-                    check=False,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    text=True,
-                    encoding="utf-8",
-                )
-        except OSError as exc:
-            if best_effort:
-                self.warnings.append(stage)
-                return {"status": "unavailable", "reason": "stage_start_failed"}
-            raise ValidationError(f"production lifecycle could not start stage {stage!r}") from exc
-        finally:
-            if stderr_handle is not None:
-                stderr_handle.close()
-
-        if result.returncode != 0:
-            if best_effort:
-                self.warnings.append(stage)
-                return {"status": "unavailable", "reason": "stage_failed"}
-            raise ValidationError(f"production lifecycle stage {stage!r} failed")
-        try:
-            return self._load_json(output)
-        except ValidationError:
-            if best_effort:
-                self.warnings.append(stage)
-                return {"status": "unavailable", "reason": "invalid_stage_result"}
-            raise
-
-    def _common_project_args(self) -> list[str]:
-        return [
-            "--config",
-            str(self.paths.config),
-            "--subscriptions",
-            str(self.paths.subscriptions),
-            "--policies",
-            str(self.paths.policies),
-        ]
-
     def _prepare_dirs(self) -> None:
         shutil.rmtree(self.paths.private_dir, ignore_errors=True)
         shutil.rmtree(self.paths.public_dir, ignore_errors=True)
@@ -230,46 +180,30 @@ class ProductionPipeline:
         self._write_json(self._private("generation-summary.json"), summary)
         return summary
 
-    def _load_derived_state(self) -> None:
-        common = self._common_project_args()
-        self._run_command(
-            stage="load_scheduler_history",
-            command=self._script_command(
-                "load_scheduler_history.py",
-                *common,
-                "--output",
-                str(self._private("scheduler-history.json")),
-                "--fingerprint-key-output",
-                str(self._private("scheduler-history.key")),
-            ),
-            output=self._private("scheduler-history-load.json"),
+    def _load_derived_state(self, project: ProjectDefinition) -> None:
+        scheduler = load_scheduler_history_state(
+            project=project,
+            output=self._private("scheduler-history.json"),
+            fingerprint_key_output=self._private("scheduler-history.key"),
+            env=os.environ,
         )
-        self._run_command(
-            stage="load_ai_qualification_cache",
-            command=self._script_command(
-                "load_ai_qualification_cache.py",
-                *common,
-                "--output",
-                str(self._private("ai-qualification-cache.json")),
-                "--fingerprint-key-output",
-                str(self._private("ai-qualification-cache.key")),
-            ),
-            output=self._private("ai-qualification-cache-load.json"),
+        self._write_json(self._private("scheduler-history-load.json"), scheduler)
+        ai_cache = load_ai_qualification_cache_state(
+            project=project,
+            output=self._private("ai-qualification-cache.json"),
+            fingerprint_key_output=self._private("ai-qualification-cache.key"),
+            env=os.environ,
         )
+        self._write_json(self._private("ai-qualification-cache-load.json"), ai_cache)
 
     def _download_primary_mihomo(self) -> Path:
         binary = self.paths.bin_dir / "mihomo-qualification"
-        self._run_command(
-            stage="download_primary_mihomo",
-            command=self._script_command(
-                "download_mihomo.py",
-                "--channel",
-                "stable",
-                "--output",
-                str(binary),
-            ),
-            output=self.paths.work_dir / "download-qualification.json",
+        result = download_pinned_mihomo(
+            manifest=self.paths.mihomo_manifest,
+            channel="stable",
+            output=binary,
         )
+        self._write_json(self.paths.work_dir / "download-qualification.json", result)
         if not binary.is_file():
             raise ValidationError("production lifecycle did not obtain the primary Mihomo binary")
         return binary
@@ -303,153 +237,111 @@ class ProductionPipeline:
             ),
             build_report_path=self._private("build-report.json"),
             workers=self.workers,
-            script_dir=self.paths.scripts_dir,
-            python_executable=sys.executable,
         )
         self._write_json(self._private("production-pipeline.json"), result)
         self._append_summary(self._private("production-summary.md"))
         return result
 
-    def _promotion_guard(self) -> dict[str, Any]:
+    def _promotion_guard(self, project: ProjectDefinition) -> dict[str, Any]:
         if not self.publish:
             return {"status": "skipped", "reason": "dry_run"}
-        common = self._common_project_args()
-        self._run_command(
-            stage="fetch_current_production",
-            command=self._script_command(
-                "fetch_current_config.py",
-                *common,
-                "--output",
-                str(self._private("current-production.yaml")),
-                "--allow-missing",
-            ),
-            output=self._private("current-production-fetch.json"),
+        baseline = fetch_current_production_config(
+            project=project,
+            output=self._private("current-production.yaml"),
+            allow_missing=True,
+            env=os.environ,
         )
-        report = self._run_command(
-            stage="promotion_guard",
-            command=self._script_command(
-                "check_promotion_guard.py",
-                *common,
-                "--guard",
-                str(self.paths.promotion_guard),
-                "--candidate",
-                str(self._private("config.yaml")),
-                "--baseline",
-                str(self._private("current-production.yaml")),
-                "--report",
-                str(self._private("promotion-guard.json")),
-                "--markdown",
-                str(self._private("promotion-guard.md")),
-            ),
-            output=self._private("promotion-guard-output.json"),
+        self._write_json(self._private("current-production-fetch.json"), baseline)
+        report = run_promotion_guard(
+            project=project,
+            candidate_path=self._private("config.yaml"),
+            baseline_path=self._private("current-production.yaml"),
+            guard_path=self.paths.promotion_guard,
+            report_path=self._private("promotion-guard.json"),
+            markdown_path=self._private("promotion-guard.md"),
         )
         self._append_summary(self._private("promotion-guard.md"))
         return report
 
     def _validate_matrix(self, binary: Path) -> dict[str, Any]:
-        return self._run_command(
-            stage="mihomo_stable_matrix",
-            command=self._script_command(
-                "validate_mihomo_matrix.py",
-                "--candidate",
-                str(self._private("config.yaml")),
-                "--manifest",
-                str(self.paths.mihomo_manifest),
-                "--channel",
-                "stable",
-                "--work-dir",
-                str(self.paths.bin_dir / "validation"),
-                "--reuse-primary-bin",
-                str(binary),
-            ),
-            output=self._private("mihomo-validation-matrix.json"),
-            stderr_path=self.paths.work_dir / "mihomo-validation-matrix.error",
+        result = validate_mihomo_matrix(
+            candidate=self._private("config.yaml"),
+            manifest=self.paths.mihomo_manifest,
+            channel="stable",
+            work_dir=self.paths.bin_dir / "validation",
+            reuse_primary_bin=binary,
         )
+        self._write_json(self._private("mihomo-validation-matrix.json"), result)
+        return result
 
-    def _publish_release(self) -> dict[str, Any] | None:
+    def _publish_release(self, project: ProjectDefinition) -> dict[str, Any] | None:
         if not self.publish:
             return None
-        return self._run_command(
-            stage="publish_release_transaction",
-            command=self._script_command(
-                "publish_release_bundle.py",
-                *self._common_project_args(),
-                "--candidate",
-                str(self._private("config.yaml")),
-            ),
-            output=self._private("release-publication.json"),
+        result = publish_production_release(
+            project=project,
+            candidate_path=self._private("config.yaml"),
+            env=os.environ,
         )
+        self._write_json(self._private("release-publication.json"), result)
+        return result
 
-    def _persist_derived_state(self) -> dict[str, Any]:
+    def _best_effort_state(self, stage: str, operation) -> dict[str, Any]:
+        try:
+            return operation()
+        except (OSError, ValueError, ClashRelayError):
+            self.warnings.append(stage)
+            return {"status": "unavailable", "reason": "stage_failed"}
+
+    def _persist_derived_state(self, project: ProjectDefinition) -> dict[str, Any]:
         if not self.publish:
             return {"status": "skipped", "reason": "dry_run"}
-        common = self._common_project_args()
-        cache = self._run_command(
-            stage="persist_ai_qualification_cache",
-            command=self._script_command(
-                "publish_ai_qualification_cache.py",
-                *common,
-                "--state",
-                str(self._private("ai-qualification-cache-next.json")),
+        cache = self._best_effort_state(
+            "persist_ai_qualification_cache",
+            lambda: persist_ai_qualification_cache(
+                project=project,
+                state=self._private("ai-qualification-cache-next.json"),
+                env=os.environ,
             ),
-            output=self._private("ai-qualification-cache-publish.json"),
-            best_effort=True,
         )
-        history = self._run_command(
-            stage="persist_scheduler_history",
-            command=self._script_command(
-                "publish_scheduler_history.py",
-                *common,
-                "--state",
-                str(self._private("scheduler-history-next.json")),
+        self._write_json(self._private("ai-qualification-cache-publish.json"), cache)
+        history = self._best_effort_state(
+            "persist_scheduler_history",
+            lambda: persist_scheduler_history(
+                project=project,
+                state=self._private("scheduler-history-next.json"),
+                env=os.environ,
             ),
-            output=self._private("scheduler-history-publish.json"),
-            best_effort=True,
         )
+        self._write_json(self._private("scheduler-history-publish.json"), history)
         return {"status": "completed", "ai_cache": cache, "scheduler_history": history}
 
-    def _persist_production_metrics(self) -> dict[str, Any]:
+    def _persist_production_metrics(self, project: ProjectDefinition) -> dict[str, Any]:
         if not self.publish:
             return {"status": "skipped", "reason": "dry_run"}
-        return self._run_command(
-            stage="persist_production_metrics",
-            command=self._script_command(
-                "publish_production_metrics.py",
-                *self._common_project_args(),
-                "--private-dir",
-                str(self.paths.private_dir),
+        result = self._best_effort_state(
+            "persist_production_metrics",
+            lambda: persist_production_metrics(
+                project=project,
+                private_dir=self.paths.private_dir,
+                env=os.environ,
             ),
-            output=self._private("production-metrics-publish.json"),
-            best_effort=True,
         )
+        self._write_json(self._private("production-metrics-publish.json"), result)
+        return result
 
     def _render_existing_proof(self, *, release: dict[str, Any] | None) -> dict[str, Any]:
-        command = self._script_command(
-            "render_production_proof.py",
-            "--candidate",
-            str(self._private("config.yaml")),
-            "--audit",
-            str(self._private("post-qualification-audit.json")),
-            "--browsing",
-            str(self._private("browsing-qualification-summary.json")),
-            "--ai",
-            str(self._private("ai-qualification-summary.json")),
-            "--qualification",
-            str(self._private("qualification-pipeline-summary.json")),
-            "--validated-cores-report",
-            str(self._private("mihomo-validation-matrix.json")),
-            "--publication-status",
-            "published" if self.publish else "dry-run",
-            "--markdown",
-            str(self._private("production-proof.md")),
+        proof = render_production_proof_application(
+            candidate=self._private("config.yaml"),
+            audit=self._private("post-qualification-audit.json"),
+            browsing=self._private("browsing-qualification-summary.json"),
+            ai=self._private("ai-qualification-summary.json"),
+            qualification=self._private("qualification-pipeline-summary.json"),
+            release=self._private("release-publication.json") if release is not None else None,
+            validated_cores_report=self._private("mihomo-validation-matrix.json"),
+            publication_status="published" if self.publish else "dry-run",
+            markdown=self._private("production-proof.md"),
         )
-        if release is not None:
-            command.extend(["--release", str(self._private("release-publication.json"))])
-        proof = self._run_command(
-            stage="render_production_proof",
-            command=command,
-            output=self._private("production-proof.json"),
-        )
+        self._write_json(self._private("production-proof.json"), proof)
         self._append_summary(self._private("production-proof.md"))
         return proof
 
@@ -550,7 +442,7 @@ class ProductionPipeline:
             progress.advance(ReleasePhase.PREPARED)
 
             started = time.perf_counter()
-            self._load_derived_state()
+            self._load_derived_state(project)
             self._record_timing("derived_state_load", started)
 
             started = time.perf_counter()
@@ -563,7 +455,7 @@ class ProductionPipeline:
             progress.advance(ReleasePhase.QUALIFIED)
 
             started = time.perf_counter()
-            promotion = self._promotion_guard()
+            promotion = self._promotion_guard(project)
             self._record_timing("promotion_guard", started)
 
             started = time.perf_counter()
@@ -572,13 +464,13 @@ class ProductionPipeline:
             progress.advance(ReleasePhase.PROMOTED)
 
             started = time.perf_counter()
-            release = self._publish_release()
+            release = self._publish_release(project)
             self._record_timing("publication", started)
             if self.publish:
                 progress.advance(ReleasePhase.PUBLISHED)
 
             started = time.perf_counter()
-            derived_state = self._persist_derived_state()
+            derived_state = self._persist_derived_state(project)
             self._record_timing("derived_state_persist", started)
 
             proof = self._post_commit_proof(release=release)
@@ -592,7 +484,7 @@ class ProductionPipeline:
 
             self._write_lifecycle_observability(progress)
             started = time.perf_counter()
-            metrics = self._persist_production_metrics()
+            metrics = self._persist_production_metrics(project)
             self._record_timing("production_metrics", started)
 
             if self.warnings:
