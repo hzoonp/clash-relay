@@ -17,9 +17,7 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
         return (
             {
                 "proxy-providers": {},
-                "proxy-groups": [
-                    {"name": "base", "type": "select", "proxies": ["DIRECT"]}
-                ],
+                "proxy-groups": [{"name": "base", "type": "select", "proxies": ["DIRECT"]}],
                 "rules": ["MATCH,DIRECT"],
             },
             {"proxy_groups": 1},
@@ -87,9 +85,7 @@ def test_mihomo_serializer_detaches_compiled_runtime_graph() -> None:
     graph = compiler.RuntimeGraph.from_candidate(
         {
             "proxy-providers": {},
-            "proxy-groups": [
-                {"name": "public", "type": "select", "proxies": ["DIRECT"]}
-            ],
+            "proxy-groups": [{"name": "public", "type": "select", "proxies": ["DIRECT"]}],
             "rules": ["MATCH,DIRECT"],
         }
     )
