@@ -100,7 +100,10 @@ def main() -> int:
     # P39: typed retry contract replaces exception-message matching and only transient may retry.
     qualification = _text("src/clash_relay/qualification_pipeline.py")
     reliability = _text("src/clash_relay/qualification_reliability.py")
-    if "QualificationStageError" not in qualification or "parse_failure_category" not in qualification:
+    if (
+        "QualificationStageError" not in qualification
+        or "parse_failure_category" not in qualification
+    ):
         raise SystemExit("architecture audit: P39 typed qualification contract is missing")
     if '"qualification stage rejected the candidate" in str(exc)' in qualification:
         raise SystemExit("architecture audit: qualification retry regressed to message matching")
@@ -123,9 +126,13 @@ def main() -> int:
     scheduler_publisher = _text("scripts/publish_scheduler_history.py")
     metrics_publisher = _text("scripts/publish_production_metrics.py")
     if "production_metrics" in scheduler_publisher or "build_metrics_run" in scheduler_publisher:
-        raise SystemExit("architecture audit: production metrics leaked back into scheduler persistence")
+        raise SystemExit(
+            "architecture audit: production metrics leaked back into scheduler persistence"
+        )
     if 'stage="persist_production_metrics"' not in lifecycle or "best_effort=True" not in lifecycle:
-        raise SystemExit("architecture audit: lifecycle does not own best-effort production metrics")
+        raise SystemExit(
+            "architecture audit: lifecycle does not own best-effort production metrics"
+        )
     for token in ("append_metrics_run", "metrics_summary", "production-metrics-v1"):
         if token not in metrics_publisher:
             raise SystemExit(f"architecture audit: production metrics publisher missing {token}")
