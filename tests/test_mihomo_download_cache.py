@@ -77,9 +77,7 @@ def test_unverified_missing_digest_download_is_not_cached(tmp_path: Path, monkey
                 "stable": [
                     {
                         "tag": "v1.19.30",
-                        "asset_patterns": {
-                            "linux-amd64": "mihomo-linux-amd64-v1\\.19\\.30"
-                        },
+                        "asset_patterns": {"linux-amd64": "mihomo-linux-amd64-v1\\.19\\.30"},
                     }
                 ],
             }
