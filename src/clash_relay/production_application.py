@@ -119,7 +119,9 @@ def load_scheduler_history_state(
     )
     fingerprint_key_output.parent.mkdir(parents=True, exist_ok=True)
     if token and transport_status in {"loaded", "missing"}:
-        fingerprint_key_output.write_text(derive_fingerprint_key(token).hex() + "\n", encoding="ascii")
+        fingerprint_key_output.write_text(
+            derive_fingerprint_key(token).hex() + "\n", encoding="ascii"
+        )
     else:
         fingerprint_key_output.write_text("", encoding="ascii")
     os.chmod(fingerprint_key_output, 0o600)
@@ -240,7 +242,9 @@ def render_promotion_guard_markdown(report: dict[str, Any]) -> str:
             f"Candidate/baseline ratios: **nodes {ratios.get('total_nodes', 'n/a')} / providers {ratios.get('providers', 'n/a')}**"
         )
     if violations:
-        lines.extend(["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"])
+        lines.extend(
+            ["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"]
+        )
     lines.extend(
         [
             "",
