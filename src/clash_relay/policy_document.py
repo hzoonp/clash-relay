@@ -1,11 +1,4 @@
-"""Load physical policy configuration into one canonical domain document.
-
-Policy Model v1 is the deprecated historical monolithic ``policies.yaml``.
-Policy Model v2 is a small manifest whose named domain fragments contribute
-disjoint top-level policy sections. All consumers receive the same normalized
-v1-shaped mapping, so physical file layout never leaks into routing/generation
-logic.
-"""
+"""Compose the canonical Policy Model v2 manifest into one domain document."""
 
 from __future__ import annotations
 
@@ -27,18 +20,14 @@ _SECTION_OWNERS = {
     "pools": "topology",
     "chains": "topology",
 }
+_REQUIRED_FRAGMENTS = ("routing", "scheduling", "classification", "topology")
 
 
 @dataclass(frozen=True, slots=True)
 class PolicyDocument:
-    model_version: int
     document: dict[str, Any]
     sources: tuple[Path, ...]
-    deprecated: bool = False
-
-    @property
-    def compatibility_status(self) -> str:
-        return "deprecated" if self.deprecated else "current"
+    model_version: int = 2
 
 
 def _safe_fragment_path(manifest: Path, relative: str) -> Path:
@@ -64,26 +53,30 @@ def _validate_fragment_owner(fragment_name: str, section: str) -> None:
 
 
 def load_policy_document(path: Path) -> PolicyDocument:
-    """Load deprecated v1 or compose current v2, then validate canonical semantics."""
+    """Load the only supported runtime policy format: Policy Model v2."""
 
     raw = load_yaml_file(path)
     if not isinstance(raw, dict):
         raise ConfigurationError(f"{path} must contain a policy mapping")
-
     if raw.get("version") != 2 or "fragments" not in raw:
-        validate_schema(raw, "policies.schema.json", source=str(path))
-        return PolicyDocument(
-            model_version=1,
-            document=raw,
-            sources=(path.resolve(),),
-            deprecated=True,
+        raise ConfigurationError(
+            "Policy Model v2 manifest is required; migrate legacy policy files with "
+            "scripts/migrate_policy_v2.py before running clash-relay"
         )
 
     validate_schema(raw, "policy-manifest.schema.json", source=str(path))
     fragments = raw["fragments"]
     if not isinstance(fragments, dict):
         raise ConfigurationError("policy manifest fragments must be a mapping")
+    if tuple(fragments) != _REQUIRED_FRAGMENTS:
+        raise ConfigurationError(
+            "policy manifest must declare exactly these fragments in order: "
+            + ", ".join(_REQUIRED_FRAGMENTS)
+        )
 
+    # The semantic schema predates the physical v2 split and retains version: 1
+    # as its internal normalized-document marker. This is not an accepted input
+    # format: callers can enter only through the v2 manifest above.
     merged: dict[str, Any] = {"version": 1}
     sources: list[Path] = [path.resolve()]
     owners: dict[str, str] = {}
@@ -119,15 +112,10 @@ def load_policy_document(path: Path) -> PolicyDocument:
         "policies.schema.json",
         source=f"{path} (composed policy model v2)",
     )
-    return PolicyDocument(
-        model_version=2,
-        document=merged,
-        sources=tuple(sources),
-        deprecated=False,
-    )
+    return PolicyDocument(document=merged, sources=tuple(sources))
 
 
 def load_policies(path: Path) -> dict[str, Any]:
-    """Compatibility helper for consumers that only need the normalized mapping."""
+    """Compose the canonical v2 policy manifest for domain consumers."""
 
     return load_policy_document(path).document
