@@ -121,7 +121,10 @@ def main() -> int:
     positions = [lifecycle.find(stage) for stage in ordered_stages]
     if any(position < 0 for position in positions) or positions != sorted(positions):
         raise SystemExit("architecture audit: production lifecycle stage order regressed")
-    if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
+    if (
+        "finally:" not in lifecycle
+        or "shutil.rmtree(self.paths.private_dir" not in lifecycle
+    ):
         raise SystemExit("architecture audit: private production state is not always cleaned")
 
     # P39/P48: qualification retry is typed and package-to-package, never stdout JSON IPC.
@@ -131,7 +134,10 @@ def main() -> int:
         raise SystemExit("architecture audit: typed qualification rejection contract is missing")
     if '"qualification stage rejected the candidate" in str(exc)' in qualification:
         raise SystemExit("architecture audit: qualification retry regressed to message matching")
-    if "exc.retryable" not in qualification or "_whole_browsing_probe_transient" not in reliability:
+    if (
+        "exc.retryable" not in qualification
+        or "_whole_browsing_probe_transient" not in reliability
+    ):
         raise SystemExit("architecture audit: transient-only qualification retry contract regressed")
     for token in (
         "subprocess",
@@ -157,7 +163,9 @@ def main() -> int:
     production_pipeline = _text("src/clash_relay/production_pipeline.py")
     for token in ("script_dir", "python_executable"):
         if token in production_pipeline:
-            raise SystemExit(f"architecture audit: production pipeline retained subprocess API {token}")
+            raise SystemExit(
+                f"architecture audit: production pipeline retained subprocess API {token}"
+            )
     for token in (
         "subprocess",
         "sys.executable",
@@ -184,7 +192,9 @@ def main() -> int:
     production_application = _text("src/clash_relay/production_application.py")
     mihomo_matrix_application = _text("src/clash_relay/mihomo_matrix_application.py")
     if "commit_release_bundle(" not in production_application:
-        raise SystemExit("architecture audit: in-process publication bypasses proven release transaction")
+        raise SystemExit(
+            "architecture audit: in-process publication bypasses proven release transaction"
+        )
     if "download_pinned_mihomo(" not in mihomo_matrix_application:
         raise SystemExit("architecture audit: Mihomo matrix still delegates download through a script")
     for relative in (
