@@ -26,9 +26,10 @@ def test_runtime_operation_status_cannot_override_pipeline_success(
     candidate.write_text("proxy-groups: []\nproxy-providers: {}\n", encoding="utf-8")
     monkeypatch.setattr(
         module,
-        "rewrite_openai_client_path_candidate",
+        "harden_openai_client_path",
         lambda path: {
-            "status": "hardened",
+            "status": "passed",
+            "runtime_status": "hardened",
             "selection": "stable_first_fallback",
             "runtime_regions": 2,
             "runtime_providers": 2,
