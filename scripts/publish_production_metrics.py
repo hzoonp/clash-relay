@@ -70,7 +70,9 @@ def main(argv: list[str] | None = None) -> int:
         "ai": private_dir / "ai-qualification-summary.json",
     }
     if not all(path.is_file() for path in required.values()):
-        print(json.dumps({"status": "skipped", "reason": "aggregate_sources_missing"}, sort_keys=True))
+        print(
+            json.dumps({"status": "skipped", "reason": "aggregate_sources_missing"}, sort_keys=True)
+        )
         return 0
 
     publisher = CloudflareKVPublisher(
