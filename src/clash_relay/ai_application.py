@@ -229,7 +229,9 @@ def run_ai_qualification(
         diagnostics["tested_nodes"] = len(fingerprints)
 
     qualified_by_probe: dict[str, set[str]] = {}
-    expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
+    expected_candidate_nodes: int | None = (
+        len(fingerprints) if fingerprints is not None else None
+    )
     total_live = 0
     total_cache_pass = 0
     total_cache_fail = 0
@@ -320,11 +322,7 @@ def run_ai_qualification(
         total_cache_pass += len(cached_pass)
         total_cache_fail += len(cached_fail)
 
-        if (
-            next_cache_document is not None
-            and fingerprints is not None
-            and live_names_for_cache
-        ):
+        if next_cache_document is not None and fingerprints is not None and live_names_for_cache:
             next_cache_document = update_ai_cache_service(
                 next_cache_document,
                 fingerprints,
