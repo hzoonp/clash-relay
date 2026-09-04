@@ -9,10 +9,8 @@ import sys
 from pathlib import Path
 
 from clash_relay.config_loader import load_project
-from clash_relay.errors import ClashRelayError, ValidationError
-from clash_relay.mihomo import load_candidate
-from clash_relay.promotion_guard import assess_promotion, load_promotion_guard_policy
-from clash_relay.util import atomic_write
+from clash_relay.errors import ClashRelayError
+from clash_relay.production_application import run_promotion_guard
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,44 +26,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _markdown(report: dict) -> str:
-    candidate = report.get("candidate", {})
-    baseline = report.get("baseline", {})
-    ratios = report.get("ratios", {})
-    violations = report.get("violations", [])
-    lines = [
-        "## Production promotion guard",
-        "",
-        f"Decision: **{report.get('status', 'unknown')}**  ",
-        f"Reason: **{report.get('reason', 'unknown')}**",
-        "",
-    ]
-    if isinstance(candidate, dict):
-        lines.append(
-            f"Candidate inventory: **{int(candidate.get('nodes', 0))} nodes / {int(candidate.get('providers', 0))} providers**  "
-        )
-    if isinstance(baseline, dict):
-        lines.append(
-            f"Production baseline: **{int(baseline.get('nodes', 0))} nodes / {int(baseline.get('providers', 0))} providers**  "
-        )
-    if isinstance(ratios, dict) and ratios:
-        lines.append(
-            f"Candidate/baseline ratios: **nodes {ratios.get('total_nodes', 'n/a')} / providers {ratios.get('providers', 'n/a')}**"
-        )
-    if violations:
-        lines.extend(
-            ["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"]
-        )
-    lines.extend(
-        [
-            "",
-            "Only aggregate inventory counts are emitted; node names, servers, and credentials remain private.",
-            "",
-        ]
-    )
-    return "\n".join(lines)
-
-
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -74,24 +34,19 @@ def main(argv: list[str] | None = None) -> int:
             subscriptions_path=args.subscriptions,
             policies_path=args.policies,
         )
-        candidate = load_candidate(args.candidate)
-        baseline = load_candidate(args.baseline) if args.baseline.is_file() else None
-        policy = load_promotion_guard_policy(args.guard)
-        report = assess_promotion(project, candidate, baseline, policy)
-        text = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        if args.report is not None:
-            atomic_write(args.report, text)
-        if args.markdown is not None:
-            atomic_write(args.markdown, _markdown(report))
-        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
-        if report.get("status") == "blocked":
-            return 2
-        if report.get("status") != "passed":
-            raise ValidationError("promotion guard returned an invalid decision")
-        return 0
+        report = run_promotion_guard(
+            project=project,
+            candidate_path=args.candidate,
+            baseline_path=args.baseline,
+            guard_path=args.guard,
+            report_path=args.report,
+            markdown_path=args.markdown,
+        )
     except ClashRelayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":
