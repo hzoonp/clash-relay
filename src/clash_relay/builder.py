@@ -81,7 +81,6 @@ def build_candidate(
     *,
     config_path: Path,
     subscriptions_path: Path,
-    services_path: Path,
     policies_path: Path,
     secret_file: Path | None = None,
     env: Mapping[str, str] | None = None,
@@ -91,7 +90,6 @@ def build_candidate(
     project = load_project(
         config_path=config_path,
         subscriptions_path=subscriptions_path,
-        services_path=services_path,
         policies_path=policies_path,
     )
     enabled_specs = [spec for spec in project.subscriptions if spec.enabled]
@@ -178,7 +176,6 @@ def build_candidate(
     output, generator_report = generate_config(
         root=project.root,
         config=project.config,
-        services=project.services,
         policies=project.policies,
         nodes=deduplicated,
         external_rule_providers=external_rule_providers,
