@@ -14,7 +14,6 @@ def _paths(repo_root: Path) -> dict[str, Path]:
     return {
         "config_path": repo_root / "config.yaml",
         "subscriptions_path": repo_root / "subscriptions.yaml",
-        "services_path": repo_root / "services.yaml",
         "policies_path": repo_root / "policies.yaml",
         "mihomo_manifest": repo_root / "tools/mihomo-versions.json",
     }
@@ -40,6 +39,8 @@ def test_public_only_doctor_validates_tracked_contract(repo_root: Path) -> None:
     assert report["public"]["enabled_subscriptions"] == 4
     assert report["public"]["stable_mihomo_cores"] >= 1
     assert report["public"]["scheduler_policy_declared"] is True
+    assert report["public"]["policy_model_version"] == 2
+    assert report["public"]["policy_model_status"] == "current"
     assert report["subscriptions"]["status"] == "skipped"
     assert report["cloudflare"]["status"] == "skipped"
 
