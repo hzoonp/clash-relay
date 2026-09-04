@@ -209,7 +209,9 @@ def test_pipeline_does_not_retry_unexpected_internal_validation_error(
     assert calls == 1
 
 
-def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(tmp_path: Path, monkeypatch) -> None:
+def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(
+    tmp_path: Path, monkeypatch
+) -> None:
     candidate, policies, mihomo = _pipeline_inputs(tmp_path)
 
     def browsing(**_kwargs):
