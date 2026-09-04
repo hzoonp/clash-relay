@@ -5,8 +5,8 @@ on:
     paths:
       - "config.yaml"
       - "subscriptions.yaml"
-      - "services.yaml"
       - "policies.yaml"
+      - "policies/**"
       - "rules/**"
       - "schemas/**"
       - "src/**"
@@ -18,8 +18,8 @@ on:
     paths:
       - "config.yaml"
       - "subscriptions.yaml"
-      - "services.yaml"
       - "policies.yaml"
+      - "policies/**"
       - "rules/**"
       - "schemas/**"
       - "src/**"
@@ -53,7 +53,6 @@ jobs:
           python scripts/routing_shadow.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
-            --services services.yaml \
             --policies policies.yaml \
             | tee .routing-v2-drift.json
       - name: Append privacy-safe summary and reject drift
