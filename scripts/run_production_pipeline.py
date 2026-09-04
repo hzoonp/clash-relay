@@ -21,7 +21,6 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--subscriptions", type=Path, default=Path("subscriptions.yaml"))
-    parser.add_argument("--services", type=Path, default=Path("services.yaml"))
     parser.add_argument("--policies", type=Path, default=Path("policies.yaml"))
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--build-report", type=Path)
@@ -51,7 +50,6 @@ def main(argv: list[str] | None = None) -> int:
             project_paths=ProjectPaths(
                 config=args.config,
                 subscriptions=args.subscriptions,
-                services=args.services,
                 policies=args.policies,
             ),
             qualification_paths=QualificationPaths(
