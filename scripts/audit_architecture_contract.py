@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P27-P45 architecture boundaries regress."""
+"""Fail CI when the P27-P46 architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -145,7 +145,7 @@ def main() -> int:
     fragments = raw_manifest.get("fragments")
     if not isinstance(fragments, dict) or set(fragments) != expected_fragments:
         raise SystemExit("architecture audit: canonical Policy Model v2 fragment layout drifted")
-    if policy_document.model_version != 2 or policy_document.deprecated:
+    if policy_document.model_version != 2:
         raise SystemExit("architecture audit: canonical Policy Model v2 is not current")
     policy_loader = _text("src/clash_relay/policy_document.py")
     for section, owner in (
@@ -162,10 +162,31 @@ def main() -> int:
     if not (ROOT / "scripts/migrate_policy_v2.py").is_file():
         raise SystemExit("architecture audit: Policy Model v2 migration tool is missing")
 
-    # P36: generic Services are an explicit compatibility-only extension, not production truth.
-    services = load_yaml_file(ROOT / "services.yaml")
-    if services != {"version": 1, "services": []}:
-        raise SystemExit("architecture audit: canonical services.yaml gained production semantics")
+    # P46: runtime is clean-slate v2; migration is offline and generic Services are gone.
+    if "Policy Model v2 manifest is required" not in policy_loader:
+        raise SystemExit("architecture audit: runtime no longer rejects Policy Model v1")
+    if "deprecated=True" in policy_loader or "compatibility_status" in policy_loader:
+        raise SystemExit("architecture audit: Policy Model v1 runtime compatibility returned")
+    if "return policies, 1" in qualification or "historical v1 contract" in qualification:
+        raise SystemExit("architecture audit: qualification retained Policy Model v1 fallback")
+    for relative in (
+        "services.yaml",
+        "schemas/services.schema.json",
+        "tests/fixtures/project/services.yaml",
+    ):
+        if (ROOT / relative).exists():
+            raise SystemExit(f"architecture audit: removed Services artifact returned: {relative}")
+    for relative in (
+        "src/clash_relay/config_loader.py",
+        "src/clash_relay/builder.py",
+        "src/clash_relay/cli.py",
+        "src/clash_relay/doctor.py",
+        "src/clash_relay/production_lifecycle.py",
+        "src/clash_relay/production_pipeline.py",
+    ):
+        content = _text(relative)
+        if "services_path" in content or '"--services"' in content:
+            raise SystemExit(f"architecture audit: {relative} retained generic Services runtime API")
 
     # P31/P37: promotion policy and aggregate release proof remain explicit public contracts.
     if not (ROOT / "promotion-guard.yaml").is_file():
