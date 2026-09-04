@@ -16,7 +16,9 @@ def _paths(repo_root: Path) -> dict[str, Path]:
     }
 
 
-def test_public_doctor_explains_current_policy_model_and_first_publish_path(repo_root: Path) -> None:
+def test_public_doctor_explains_current_policy_model_and_first_publish_path(
+    repo_root: Path,
+) -> None:
     report = run_doctor(**_paths(repo_root), public_only=True, env={})
 
     assert report["public"]["policy_model_version"] == 2

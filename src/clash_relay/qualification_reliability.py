@@ -73,9 +73,7 @@ def _whole_browsing_probe_transient(diagnostics: dict[str, Any]) -> bool:
     if tested <= 0 or successful != 0 or failed <= 0 or not isinstance(outcomes, dict):
         return False
     nonzero = {
-        str(name)
-        for name, count in outcomes.items()
-        if _int(count) > 0 and str(name) != "success"
+        str(name) for name, count in outcomes.items() if _int(count) > 0 and str(name) != "success"
     }
     return bool(nonzero) and all(_is_transient_outcome(name) for name in nonzero)
 

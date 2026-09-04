@@ -68,7 +68,9 @@ class QualificationStageError(ValidationError):
         self.category = category
         self.retryable = retryable
         suffix = f"; aggregate diagnostics={context}" if context else ""
-        super().__init__(f"{name} qualification stage rejected the candidate [{category.value}]{suffix}")
+        super().__init__(
+            f"{name} qualification stage rejected the candidate [{category.value}]{suffix}"
+        )
 
 
 def _artifact(path: Path, stage: str) -> CandidateArtifact:

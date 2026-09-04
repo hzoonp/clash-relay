@@ -608,12 +608,16 @@ class ProductionPipeline:
             release_id = (
                 manifest.get("release_id")
                 if manifest is not None
-                else release.get("release_id") if release is not None else None
+                else release.get("release_id")
+                if release is not None
+                else None
             )
             config_sha256 = (
                 manifest.get("config_sha256")
                 if manifest is not None
-                else release.get("sha256") if release is not None else None
+                else release.get("sha256")
+                if release is not None
+                else None
             )
             return {
                 "status": "passed",

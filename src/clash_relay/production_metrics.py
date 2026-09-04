@@ -426,20 +426,14 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         latest.get("performance", {}) if isinstance(latest.get("performance"), dict) else {}
     )
     qualification = (
-        latest.get("qualification", {})
-        if isinstance(latest.get("qualification"), dict)
-        else {}
+        latest.get("qualification", {}) if isinstance(latest.get("qualification"), dict) else {}
     )
     promotion = (
-        latest.get("promotion_guard", {})
-        if isinstance(latest.get("promotion_guard"), dict)
-        else {}
+        latest.get("promotion_guard", {}) if isinstance(latest.get("promotion_guard"), dict) else {}
     )
     lifecycle = latest.get("lifecycle", {}) if isinstance(latest.get("lifecycle"), dict) else {}
     lifecycle_timings = (
-        lifecycle.get("timings_ms", {})
-        if isinstance(lifecycle.get("timings_ms"), dict)
-        else {}
+        lifecycle.get("timings_ms", {}) if isinstance(lifecycle.get("timings_ms"), dict) else {}
     )
     release_progress = (
         lifecycle.get("release_progress", {})

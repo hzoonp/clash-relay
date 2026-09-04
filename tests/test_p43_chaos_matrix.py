@@ -76,4 +76,6 @@ def test_post_commit_observability_is_not_a_publication_gate(repo_root: Path) ->
     assert 'self.warnings.append("render_production_proof")' in lifecycle
     assert 'self.warnings.append("render_release_manifest")' in lifecycle
     assert 'stage="persist_production_metrics"' in lifecycle
-    assert "best_effort=True" in lifecycle[lifecycle.index("def _persist_production_metrics"):proof]
+    assert (
+        "best_effort=True" in lifecycle[lifecycle.index("def _persist_production_metrics") : proof]
+    )
