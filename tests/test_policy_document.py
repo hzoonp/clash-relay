@@ -103,5 +103,5 @@ def test_policy_model_v1_is_rejected_with_offline_migration_guidance(tmp_path: P
     legacy = tmp_path / "policies.yaml"
     _write(legacy, load_policy_document(ROOT / "policies.yaml").document)
 
-    with pytest.raises(ConfigurationError, match="migrate_policy_v2.py"):
+    with pytest.raises(ConfigurationError, match=r"migrate_policy_v2\.py"):
         load_policy_document(legacy)
