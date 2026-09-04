@@ -8,13 +8,21 @@
     "version": {"const": 2},
     "fragments": {
       "type": "object",
-      "minProperties": 1,
-      "propertyNames": {"pattern": "^[a-z][a-z0-9_-]*$"},
-      "additionalProperties": {
-        "type": "string",
-        "minLength": 1,
-        "pattern": "^[^/].*\\.ya?ml$"
+      "additionalProperties": false,
+      "required": ["routing", "scheduling", "classification", "topology"],
+      "properties": {
+        "routing": {"$ref": "#/$defs/fragmentPath"},
+        "scheduling": {"$ref": "#/$defs/fragmentPath"},
+        "classification": {"$ref": "#/$defs/fragmentPath"},
+        "topology": {"$ref": "#/$defs/fragmentPath"}
       }
+    }
+  },
+  "$defs": {
+    "fragmentPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/].*\\.ya?ml$"
     }
   }
 }
