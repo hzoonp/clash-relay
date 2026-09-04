@@ -110,10 +110,7 @@ def compile_runtime_graph(
         final_target=final_target,
         final_excluded_sources=list(final_excluded_sources or []),
     )
-    manual_exposure = _expose_manual_provider_choices(
-        output,
-        excluded_groups=excluded_group_names,
-    )
+    manual_exposure = _expose_manual_provider_choices(output, excluded_groups=excluded_group_names)
     browsing_runtime = (
         harden_browsing_runtime(output, policies)
         if group_specs
@@ -131,7 +128,4 @@ def compile_runtime_graph(
     if browsing_runtime.get("status") != "not_applicable":
         report["browsing_runtime"] = browsing_runtime
 
-    return CompiledRuntime(
-        graph=RuntimeGraph.from_candidate(output),
-        report=report,
-    )
+    return CompiledRuntime(graph=RuntimeGraph.from_candidate(output), report=report)
