@@ -20,7 +20,7 @@ _SECTION_OWNERS = {
     "pools": "topology",
     "chains": "topology",
 }
-_REQUIRED_FRAGMENTS = frozenset({"routing", "scheduling", "classification", "topology"})
+_REQUIRED_FRAGMENTS = frozenset(("routing", "scheduling", "classification", "topology"))
 
 
 @dataclass(frozen=True, slots=True)
