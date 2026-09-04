@@ -33,10 +33,13 @@ jobs:
         run: clash-relay doctor --public-only
       - name: Audit authoritative documentation contract
         run: python scripts/audit_documentation_contract.py
-      - name: Audit P27-P47 architecture contract
+      - name: Audit P27-P48 architecture contract
         run: python scripts/audit_architecture_contract.py
       - run: ruff check .
-      - run: ruff format --check .
+      - name: Show formatter diff and enforce formatting
+        run: |
+          ruff format --diff .
+          ruff format --check .
       - name: Unit tests and coverage baseline
         run: |
           pytest -m "not integration" \
