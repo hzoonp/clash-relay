@@ -200,7 +200,9 @@ def download_pinned_mihomo(
             f"https://api.github.com/repos/{repository}/releases/tags/{pinned_tag}"
         )
         if channel == "stable" and release.get("prerelease"):
-            raise ValidationError(f"pinned stable tag {pinned_tag} is marked prerelease by GitHub")
+            raise ValidationError(
+                f"pinned stable tag {pinned_tag} is marked prerelease by GitHub"
+            )
         pattern = re.compile(patterns[resolved_arch])
         assets = [asset for asset in release.get("assets", []) if pattern.fullmatch(asset["name"])]
         if len(assets) != 1:
