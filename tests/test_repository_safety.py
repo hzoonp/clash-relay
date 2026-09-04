@@ -143,9 +143,10 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     release = lifecycle.index("release = self._publish_release()")
     persist = lifecycle.index("derived_state = self._persist_derived_state()")
     assert qualify < guard < matrix < release < persist
-    assert lifecycle.count("best_effort=True") == 2
+    assert lifecycle.count("best_effort=True") == 3
     assert "persist_ai_qualification_cache" in lifecycle
     assert "persist_scheduler_history" in lifecycle
+    assert "persist_production_metrics" in lifecycle
     assert "finally:" in lifecycle
     assert "shutil.rmtree(self.paths.private_dir" in lifecycle
 

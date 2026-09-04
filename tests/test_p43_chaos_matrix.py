@@ -12,7 +12,7 @@ from clash_relay.subscription_parser import parse_subscription
 
 
 def test_subscription_timeout_fails_without_echoing_secret_url(monkeypatch) -> None:
-    secret_url = "https://example.com/subscription?token=SUPER-SECRET-TOKEN"
+    secret_url = "https://example.com/subscription/SUPER-SECRET-TOKEN"
 
     monkeypatch.setattr(fetch, "_validate_resolved_destination", lambda url: None)
 

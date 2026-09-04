@@ -154,3 +154,7 @@ prepared -> qualified -> promoted -> published -> verified
 - AI cache fingerprint。
 
 私有 production metrics 保留最多 30 次、且只保存 aggregate-only 信息，可以包含安全计数、hash、stage duration、retry recovery 次数、Promotion Guard 状态和 release phase，但不能包含节点身份、server、凭据或订阅 URL。
+
+## 兼容性安全契约
+
+既有 browsing scheduler 契约保持不变：实时探测 **3/3** 成功进入 Stable，**2/3** 成功进入 Reserve。私有 scheduler history 继续使用 **HMAC-SHA256** fingerprint，不能把当前 live-failed 节点提升回 Stable。OpenAI、Claude、Gemini 继续独立 qualification。手动恢复仍通过 **Roll back production config**，必须设置 **confirm = true**，验证 **tools/mihomo-versions.json** 中全部 stable core，解析 **previous-release-v1**，并在激活前执行 **current-policy** audit。

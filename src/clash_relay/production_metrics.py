@@ -180,14 +180,28 @@ def _clean_qualification(value: Any) -> dict[str, Any] | None:
     if status != "qualified":
         return None
     stages = value.get("stages")
-    stage_count = len(stages) if isinstance(stages, list) else 0
+    stage_count = (
+        len(stages) if isinstance(stages, list) else _non_negative_int(value.get("stage_count"))
+    )
     clean: dict[str, Any] = {"status": "qualified", "stage_count": stage_count}
     browsing = value.get("browsing")
     if isinstance(browsing, dict):
         attempts = max(1, _non_negative_int(browsing.get("stage_attempts"), 1))
-        clean["browsing_attempts"] = attempts
-        clean["recovered_by_retry"] = browsing.get("recovered_by_retry") is True
+        recovered = browsing.get("recovered_by_retry") is True
         category = browsing.get("recovered_failure_category")
+        has_reliability = True
+    else:
+        attempts = max(1, _non_negative_int(value.get("browsing_attempts"), 1))
+        recovered = value.get("recovered_by_retry") is True
+        category = value.get("recovered_failure_category")
+        has_reliability = (
+            "browsing_attempts" in value
+            or "recovered_by_retry" in value
+            or "recovered_failure_category" in value
+        )
+    if has_reliability:
+        clean["browsing_attempts"] = attempts
+        clean["recovered_by_retry"] = recovered
         if isinstance(category, str) and category in _FAILURE_CATEGORIES:
             clean["recovered_failure_category"] = category
     return clean

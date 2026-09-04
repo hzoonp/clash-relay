@@ -148,3 +148,7 @@ Never publish any of the following to GitHub:
 - AI cache fingerprints.
 
 Private longitudinal metrics remain bounded to 30 runs and aggregate-only. They may contain safe counts, hashes, stage durations, retry-recovery counts, Promotion Guard status, and release phase; they do not contain node identities, servers, credentials, or subscription URLs.
+
+## Compatibility safety contract
+
+The established browsing scheduler contract remains explicit: **3/3** successful live samples is Stable and **2/3** is Reserve. Private scheduler history continues to use **HMAC-SHA256** fingerprints and cannot promote a current live-failed node. OpenAI, Claude, and Gemini remain independently qualified. Manual recovery still uses **Roll back production config** with **confirm = true**, validates every stable core in **tools/mihomo-versions.json**, resolves **previous-release-v1**, and applies the **current-policy** audit before activation.
