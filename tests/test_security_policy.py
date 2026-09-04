@@ -62,11 +62,20 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert "continue-on-error" not in workflow
     assert workflow.count("python scripts/run_production_release.py") == 1
 
-    publish = lifecycle.index("release = self._publish_release()")
-    ai = lifecycle.index('stage="persist_ai_qualification_cache"')
-    history = lifecycle.index('stage="persist_scheduler_history"')
-    proof = lifecycle.index("proof = self._render_existing_proof(release=release)")
-    assert publish < ai < history < proof
-    assert lifecycle.count("best_effort=True") == 2
-    assert "finally:" in lifecycle
-    assert "shutil.rmtree(self.paths.private_dir" in lifecycle
+    run_body = lifecycle[lifecycle.index("    def run(self)") :]
+    publish = run_body.index("release = self._publish_release()")
+    derived_state = run_body.index("derived_state = self._persist_derived_state()")
+    proof = run_body.index("proof = self._render_existing_proof(release=release)")
+    manifest = run_body.index("manifest = self._render_release_manifest(")
+    assert publish < derived_state < proof < manifest
+
+    persist_start = lifecycle.index("    def _persist_derived_state(self)")
+    persist_end = lifecycle.index("    def _render_existing_proof", persist_start)
+    persist_body = lifecycle[persist_start:persist_end]
+    ai = persist_body.index('stage="persist_ai_qualification_cache"')
+    history = persist_body.index('stage="persist_scheduler_history"')
+    assert ai < history
+    assert persist_body.count("best_effort=True") == 2
+
+    assert "finally:" in run_body
+    assert "shutil.rmtree(self.paths.private_dir" in run_body
