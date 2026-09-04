@@ -1,7 +1,7 @@
 """Typed reliability contract for live production qualification stages.
 
 Retry decisions must be based on structured, privacy-safe stage evidence rather
-than exception-message matching.  Only a narrow class of whole-probe transient
+than exception-message matching. Only a narrow class of whole-probe transient
 failures may be retried; policy, configuration, transport-admission, core, and
 protocol failures remain fail closed on the first occurrence.
 """
@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+from .errors import ValidationError
 
 
 class QualificationFailureCategory(StrEnum):
@@ -27,6 +29,41 @@ class QualificationFailure:
     stage: str
     category: QualificationFailureCategory
     retryable: bool
+
+
+class QualificationStageRejected(ValidationError):
+    """Structured in-process rejection for qualification orchestration."""
+
+    def __init__(
+        self,
+        *,
+        stage: str,
+        category: QualificationFailureCategory,
+        retryable: bool,
+        diagnostics: dict[str, Any] | None = None,
+        transport_diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        self.stage = stage
+        self.category = category
+        self.retryable = retryable and category is QualificationFailureCategory.TRANSIENT
+        self.diagnostics = dict(diagnostics or {})
+        self.transport_diagnostics = dict(transport_diagnostics or {})
+        super().__init__(f"qualification stage {stage!r} rejected candidate [{category.value}]")
+
+    def as_result(self) -> dict[str, Any]:
+        """Return the stable CLI-facing rejection contract without stderr parsing."""
+
+        result: dict[str, Any] = {
+            "status": "rejected",
+            "stage": self.stage,
+            "failure_category": self.category.value,
+            "retryable": self.retryable,
+        }
+        if self.diagnostics:
+            result["diagnostics"] = self.diagnostics
+        if self.transport_diagnostics:
+            result["transport_diagnostics"] = self.transport_diagnostics
+        return result
 
 
 _CORE_MARKERS = (
@@ -84,7 +121,7 @@ def classify_browsing_stage_failure(
     message: str,
     diagnostics: dict[str, Any] | None = None,
 ) -> QualificationFailure:
-    """Classify one qualify_browsing failure without exposing runtime identities."""
+    """Classify one browsing qualification failure without runtime identities."""
 
     normalized = f" {message.strip().lower()} "
     if any(marker in normalized for marker in _CORE_MARKERS):
