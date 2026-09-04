@@ -1,6 +1,0 @@
-# Canonical production intentionally declares no generic Service objects.
-# This file remains a compatibility-only extension point for existing forks;
-# routing/service qualification truth lives in Policy Model v2 and routing.contract.
-version: 1
-
-services: []
