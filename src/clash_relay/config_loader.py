@@ -10,6 +10,7 @@ from typing import Any
 
 from .errors import ConfigurationError
 from .models import SubscriptionSpec
+from .policy_document import load_policy_document
 from .schema import load_and_validate
 from .status import parse_expected_status
 
@@ -130,7 +131,8 @@ def load_project(
     config = load_and_validate(config_path, "config.schema.json")
     _sniffer_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
-    policies = load_and_validate(policies_path, "policies.schema.json")
+    policy_document = load_policy_document(policies_path)
+    policies = policy_document.document
     root = Path(
         os.path.commonpath(
             [
