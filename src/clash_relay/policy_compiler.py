@@ -112,9 +112,7 @@ def compile_runtime_graph(
     )
     manual_exposure = _expose_manual_provider_choices(output, excluded_groups=excluded_group_names)
     browsing_runtime = (
-        harden_browsing_runtime(output, policies)
-        if group_specs
-        else {"status": "not_applicable"}
+        harden_browsing_runtime(output, policies) if group_specs else {"status": "not_applicable"}
     )
     validate_browsing_public_surface(output)
 
