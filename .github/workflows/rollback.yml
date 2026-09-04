@@ -35,7 +35,6 @@ jobs:
           clash-relay publication-gate \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
-            --services services.yaml \
             --policies policies.yaml \
             --mode cloudflare_kv
 
@@ -49,7 +48,6 @@ jobs:
           python scripts/fetch_previous_config.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
-            --services services.yaml \
             --policies policies.yaml \
             --output .work/private/rollback.yaml \
             > .work/private/rollback-source.json
@@ -61,7 +59,6 @@ jobs:
           python scripts/audit_production.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
-            --services services.yaml \
             --policies policies.yaml \
             --candidate .work/private/rollback.yaml \
             --allow-legacy-openai-client-path \
@@ -91,7 +88,6 @@ jobs:
           python scripts/publish_release_bundle.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
-            --services services.yaml \
             --policies policies.yaml \
             --candidate .work/private/rollback.yaml \
             > .work/private/rollback-publication.json
