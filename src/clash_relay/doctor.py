@@ -11,6 +11,7 @@ from .config_loader import load_project
 from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
 from .mihomo_matrix import load_mihomo_tags
+from .policy_document import load_policy_document
 from .publishers.cloudflare_kv import CloudflareKVPublisher
 from .scheduler_policy import load_scheduler_policy
 from .secrets import resolve_subscription_urls
@@ -39,6 +40,41 @@ def _cloudflare_values(environment: Mapping[str, str]) -> tuple[str, str, str]:
     )
 
 
+def _guidance(
+    *,
+    enabled_secrets: list[str],
+    public_only: bool,
+    check_subscriptions: bool,
+    check_cloudflare: bool,
+) -> dict[str, Any]:
+    next_steps: list[str] = []
+    if public_only:
+        next_steps.extend(
+            [
+                "Configure CLASH_RELAY_SUBSCRIPTIONS with every enabled subscription Secret name listed here.",
+                "Run `clash-relay doctor` without `--public-only` to verify Secret resolution.",
+                "Run the GitHub Actions workflow manually with `publish=false` before first publication.",
+            ]
+        )
+    else:
+        if not check_subscriptions:
+            next_steps.append(
+                "Optionally run `clash-relay doctor --check-subscriptions` for bounded live source connectivity checks."
+            )
+        if not check_cloudflare:
+            next_steps.append(
+                "Optionally run `clash-relay doctor --check-cloudflare` for a read-only Cloudflare KV readiness check."
+            )
+        next_steps.append(
+            "Run the GitHub Actions workflow manually with `publish=false`; publish only after the dry run passes."
+        )
+    return {
+        "enabled_subscription_secrets": sorted(enabled_secrets),
+        "first_publish_default": False,
+        "next_steps": next_steps,
+    }
+
+
 def run_doctor(
     *,
     config_path: Path = Path("config.yaml"),
@@ -62,9 +98,11 @@ def run_doctor(
         services_path=services_path,
         policies_path=policies_path,
     )
+    policy_document = load_policy_document(policies_path)
     scheduler = load_scheduler_policy(policies_path)
     stable_tags = load_mihomo_tags(mihomo_manifest, "stable")
     enabled = _enabled(project)
+    enabled_secrets = [str(spec.secret_name) for spec in enabled]
 
     report: dict[str, Any] = {
         "status": "passed",
@@ -76,9 +114,17 @@ def run_doctor(
             "chains": len(project.policies["chains"]),
             "stable_mihomo_cores": len(stable_tags),
             "scheduler_policy_declared": scheduler.declared,
+            "policy_model_version": policy_document.model_version,
+            "policy_model_status": policy_document.compatibility_status,
         },
         "subscriptions": {"status": "skipped", "enabled": len(enabled)},
         "cloudflare": {"status": "skipped"},
+        "guidance": _guidance(
+            enabled_secrets=enabled_secrets,
+            public_only=public_only,
+            check_subscriptions=check_subscriptions,
+            check_cloudflare=check_cloudflare,
+        ),
     }
     if public_only:
         return report
