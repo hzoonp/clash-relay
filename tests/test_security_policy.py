@@ -65,17 +65,26 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     run_body = lifecycle[lifecycle.index("    def run(self)") :]
     publish = run_body.index("release = self._publish_release()")
     derived_state = run_body.index("derived_state = self._persist_derived_state()")
-    proof = run_body.index("proof = self._render_existing_proof(release=release)")
-    manifest = run_body.index("manifest = self._render_release_manifest(")
-    assert publish < derived_state < proof < manifest
+    proof = run_body.index("proof = self._post_commit_proof(release=release)")
+    manifest = run_body.index("manifest = self._post_commit_manifest(")
+    metrics = run_body.index("metrics = self._persist_production_metrics()")
+    assert publish < derived_state < proof < manifest < metrics
 
     persist_start = lifecycle.index("    def _persist_derived_state(self)")
-    persist_end = lifecycle.index("    def _render_existing_proof", persist_start)
+    persist_end = lifecycle.index("    def _persist_production_metrics", persist_start)
     persist_body = lifecycle[persist_start:persist_end]
     ai = persist_body.index('stage="persist_ai_qualification_cache"')
     history = persist_body.index('stage="persist_scheduler_history"')
     assert ai < history
     assert persist_body.count("best_effort=True") == 2
 
+    metrics_start = lifecycle.index("    def _persist_production_metrics(self)")
+    metrics_end = lifecycle.index("    def _render_existing_proof", metrics_start)
+    metrics_body = lifecycle[metrics_start:metrics_end]
+    assert 'stage="persist_production_metrics"' in metrics_body
+    assert metrics_body.count("best_effort=True") == 1
+
+    assert 'self.warnings.append("render_production_proof")' in lifecycle
+    assert 'self.warnings.append("render_release_manifest")' in lifecycle
     assert "finally:" in run_body
     assert "shutil.rmtree(self.paths.private_dir" in run_body

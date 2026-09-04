@@ -14,6 +14,7 @@ from typing import Any
 
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .qualification_reliability import QualificationFailureCategory, parse_failure_category
 from .runtime_graph import CandidateArtifact
 from .util import atomic_write, dump_yaml, load_yaml_file
 
@@ -53,6 +54,25 @@ class QualificationStage:
     fingerprint: str
 
 
+class QualificationStageError(ValidationError):
+    """Structured child-stage rejection used for retry policy decisions."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        category: QualificationFailureCategory,
+        retryable: bool,
+        context: str | None = None,
+    ) -> None:
+        self.category = category
+        self.retryable = retryable
+        suffix = f"; aggregate diagnostics={context}" if context else ""
+        super().__init__(
+            f"{name} qualification stage rejected the candidate [{category.value}]{suffix}"
+        )
+
+
 def _artifact(path: Path, stage: str) -> CandidateArtifact:
     document = load_yaml_file(path)
     if not isinstance(document, dict):
@@ -60,19 +80,35 @@ def _artifact(path: Path, stage: str) -> CandidateArtifact:
     return CandidateArtifact.from_document(stage, document)
 
 
-def _safe_rejection_context(stdout: str) -> str | None:
-    """Return child-provided aggregate diagnostics without runtime identities."""
+def _rejection_document(stdout: str) -> dict[str, Any] | None:
     try:
         document = json.loads(stdout)
     except json.JSONDecodeError:
         return None
     if not isinstance(document, dict) or document.get("status") != "rejected":
         return None
+    return document
+
+
+def _safe_rejection_context(document: dict[str, Any] | None) -> str | None:
+    """Return child-provided aggregate diagnostics without runtime identities."""
+    if document is None:
+        return None
 
     safe: dict[str, Any] = {}
     stage = document.get("stage")
-    if isinstance(stage, str) and stage in {"browsing", "transport"}:
+    if isinstance(stage, str) and stage in {
+        "setup",
+        "browsing",
+        "history",
+        "browsing_rewrite",
+        "transport",
+    }:
         safe["stage"] = stage
+    category = parse_failure_category(document.get("failure_category"))
+    if category is not None:
+        safe["failure_category"] = category.value
+        safe["retryable"] = document.get("retryable") is True
     for section_name in ("diagnostics", "transport_diagnostics"):
         section = document.get(section_name)
         if not isinstance(section, dict):
@@ -97,11 +133,25 @@ def _run_json_stage(name: str, command: Sequence[str]) -> dict[str, Any]:
     except OSError as exc:
         raise ValidationError(f"failed to start {name} qualification stage") from exc
     if result.returncode != 0:
-        # Child stderr may contain provider/runtime identities. Only surface the
-        # explicitly whitelisted aggregate JSON contract emitted on stdout.
-        context = _safe_rejection_context(result.stdout)
-        suffix = f"; aggregate diagnostics={context}" if context else ""
-        raise ValidationError(f"{name} qualification stage rejected the candidate{suffix}")
+        # Child stderr may contain provider/runtime identities. Retry policy and
+        # public diagnostics come only from the structured stdout contract.
+        document = _rejection_document(result.stdout)
+        category = (
+            parse_failure_category(document.get("failure_category"))
+            if document is not None
+            else None
+        )
+        if category is None:
+            category = QualificationFailureCategory.PROTOCOL_ERROR
+        retryable = document is not None and document.get("retryable") is True
+        if category is not QualificationFailureCategory.TRANSIENT:
+            retryable = False
+        raise QualificationStageError(
+            name,
+            category=category,
+            retryable=retryable,
+            context=_safe_rejection_context(document),
+        )
     try:
         document = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
@@ -218,6 +268,7 @@ def run_qualification_pipeline(
     browsing_started = time.perf_counter()
     browsing_summary: dict[str, Any] | None = None
     browsing_attempts_used = 0
+    recovered_failure_category: str | None = None
     for attempt in range(_BROWSING_STAGE_ATTEMPTS):
         browsing_attempts_used = attempt + 1
         if attempt:
@@ -229,10 +280,10 @@ def run_qualification_pipeline(
         try:
             browsing_summary = _run_json_stage("browsing/transport", browsing_command)
             break
-        except ValidationError as exc:
-            retryable = "qualification stage rejected the candidate" in str(exc)
-            if not retryable or browsing_attempts_used >= _BROWSING_STAGE_ATTEMPTS:
+        except QualificationStageError as exc:
+            if not exc.retryable or browsing_attempts_used >= _BROWSING_STAGE_ATTEMPTS:
                 raise
+            recovered_failure_category = exc.category.value
     if browsing_summary is None:  # pragma: no cover - defensive invariant
         raise ValidationError("browsing/transport qualification produced no result")
     atomic_write(browsing_report, _json_text(browsing_summary))
@@ -320,6 +371,8 @@ def run_qualification_pipeline(
             "status": browsing_summary.get("status"),
             "automatic_nodes": browsing_summary.get("automatic_nodes", 0),
             "stage_attempts": browsing_attempts_used,
+            "recovered_by_retry": recovered_failure_category is not None,
+            "recovered_failure_category": recovered_failure_category,
         },
         "ai": {
             "status": ai_summary.get("status"),

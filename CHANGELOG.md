@@ -4,6 +4,32 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-09-04
+
+### Added
+
+- P39 adds a typed qualification-failure contract (`transient`, `policy_rejection`, `core_rejection`, `configuration`, `process_error`, `protocol_error`) so the production retry decision no longer depends on exception-string matching. Only a whole browsing live-probe infrastructure failure with zero successful samples and bounded transient outcomes can retry once from the immutable generated candidate.
+- P40 adds an explicit application-layer release progress contract (`prepared -> qualified -> promoted -> published -> verified`) and expands the release fault matrix with HTTP 429/5xx/timeout pre-activation failures, ambiguous pointer writes, compensation checks, and an exact previous-release rollback rehearsal while preserving the existing Cloudflare release transaction implementation.
+- P41 makes aggregate production metrics an explicit canonical lifecycle stage instead of a scheduler-history side effect. The bounded 30-run ring now includes safe retry recovery counts, Promotion Guard state, release phase, and lifecycle timings without node identities or subscription data.
+- P43 adds executable chaos coverage for subscription timeouts, HTML/error payloads, empty sources, corrupt metrics, workflow concurrency, and post-commit observability failures.
+- P44 upgrades `clash-relay doctor` and both Fork quickstarts with Policy Model status, enabled Secret-name guidance, a `publish=false` first-run path, and safe actionable next steps.
+
+### Changed
+
+- P42 finalizes Policy Model v2 domain ownership: known policy sections are accepted only from their canonical routing, scheduling, classification, or topology fragment. Physical v1 policy documents remain readable for migration compatibility but are explicitly reported as `deprecated`.
+- Post-release proof, release-manifest, derived-state, or metrics failures no longer misrepresent an already committed client-visible release as a pre-publication failure. A committed release remains `published`; it reaches `verified` only when proof and manifest complete successfully. Dry runs remain strict because no committed release needs preservation.
+- Scheduler history persistence now owns only scheduler state; production metrics are persisted independently through `publish_production_metrics.py`.
+
+### Compatibility
+
+- The six public FlClash scenario names, `subscription_1` browsing/AI-only isolation, strict >2x filtering, ACL4SSR ordering, fixed client-facing Cloudflare KV key, immutable release-object format, current/previous pointers, and six-hour scheduled refresh cadence are unchanged from v1.8.0.
+- P39 does not loosen browsing/transport admission thresholds. A second typed transient rejection still fails closed, and policy/core/configuration/protocol failures remain non-retryable.
+
+### Security
+
+- Public failure context remains aggregate-only; child stderr, node names, servers, ports, credentials, subscription URLs, Cloudflare credentials, and generated configuration bytes are excluded from qualification diagnostics and metrics.
+- Overlapping publish-triggering Actions remain serialized with `cancel-in-progress: false`, so a newer refresh cannot cancel an older release transaction mid-commit.
+
 ## [1.8.0] - 2026-09-04
 
 ### Added
@@ -326,7 +352,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/hzoonp/clash-relay/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/hzoonp/clash-relay/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/hzoonp/clash-relay/compare/v1.6.3...v1.7.0
 [1.6.3]: https://github.com/hzoonp/clash-relay/compare/v1.6.2...v1.6.3

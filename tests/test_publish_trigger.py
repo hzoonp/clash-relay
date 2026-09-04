@@ -90,8 +90,9 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
         "matrix = self._validate_matrix(binary)",
         "release = self._publish_release()",
         "derived_state = self._persist_derived_state()",
-        "proof = self._render_existing_proof(release=release)",
-        "manifest = self._render_release_manifest(",
+        "proof = self._post_commit_proof(release=release)",
+        "manifest = self._post_commit_manifest(",
+        "metrics = self._persist_production_metrics()",
     ]
     positions = [text.index(stage) for stage in stages]
     assert positions == sorted(positions)
@@ -108,7 +109,7 @@ def test_derived_state_persistence_remains_post_commit_and_best_effort() -> None
     publish = text.index("release = self._publish_release()")
     persist = text.index("derived_state = self._persist_derived_state()")
     assert publish < persist
-    assert text.count("best_effort=True") == 2
+    assert text.count("best_effort=True") == 3
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
 
@@ -139,8 +140,8 @@ def test_release_manifest_is_rendered_after_existing_production_proof() -> None:
     text = LIFECYCLE.read_text()
     assert "release-manifest.json" in text
     assert "release-manifest.md" in text
-    assert text.index("proof = self._render_existing_proof") < text.index(
-        "manifest = self._render_release_manifest"
+    assert text.index("proof = self._post_commit_proof") < text.index(
+        "manifest = self._post_commit_manifest"
     )
 
 

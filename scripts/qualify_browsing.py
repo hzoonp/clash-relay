@@ -14,6 +14,10 @@ from clash_relay.browsing_runtime import (
     rewrite_hardened_browsing_qualified_candidate,
 )
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.qualification_reliability import (
+    QualificationFailureCategory,
+    classify_browsing_stage_failure,
+)
 from clash_relay.scheduler_history import (
     browsing_runtime_names,
     history_summary,
@@ -197,6 +201,8 @@ def _apply_history_counts(
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     diagnostics: dict[str, object] = {}
+    transport_diagnostics: dict[str, object] = {}
+    failure_stage = "setup"
     try:
         scheduler_policy = load_scheduler_policy(args.policies)
         attempts = (
@@ -213,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         all_names = browsing_runtime_names(candidate_before)
         names_by_region = _runtime_names_by_region(candidate_before)
         probe = load_browsing_probe_spec(args.policies)
+
+        failure_stage = "browsing"
         qualified, stable = probe_browsing_nodes(
             args.mihomo_bin,
             args.candidate,
@@ -223,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             diagnostics=diagnostics,
         )
 
+        failure_stage = "history"
         history_inputs = _history_inputs(args)
         scheduler_report: dict[str, object] = {
             "status": "disabled",
@@ -290,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
                 preferred=preferred,
             )
 
+        failure_stage = "browsing_rewrite"
         report = rewrite_hardened_browsing_qualified_candidate(
             args.candidate,
             qualified,
@@ -312,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
                     preferred=preferred,
                 )
 
-        transport_diagnostics: dict[str, object] = {}
+        failure_stage = "transport"
         tcp_qualified, udp_qualified, _ = probe_transport_nodes(
             args.mihomo_bin,
             args.candidate,
@@ -352,15 +362,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     except ClashRelayError as exc:
+        failure = classify_browsing_stage_failure(
+            stage=failure_stage,
+            message=str(exc),
+            diagnostics=diagnostics,
+        )
+        payload: dict[str, object] = {
+            "status": "rejected",
+            "stage": failure.stage,
+            "failure_category": failure.category.value,
+            "retryable": failure.retryable,
+        }
         if diagnostics:
-            print(
-                json.dumps(
-                    {"status": "rejected", "diagnostics": diagnostics},
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-        if "Mihomo rejected the browsing qualification configuration" in str(exc):
+            payload["diagnostics"] = diagnostics
+        if transport_diagnostics:
+            payload["transport_diagnostics"] = transport_diagnostics
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        if failure.category is QualificationFailureCategory.CORE_REJECTION:
             _emit_safe_core_diagnostic(args)
         print(f"error: {exc}", file=sys.stderr)
         return 2
