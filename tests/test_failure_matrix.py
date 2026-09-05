@@ -41,6 +41,9 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
         encoding="utf-8"
     )
+    release_stage = (
+        repo_root / "src" / "clash_relay" / "production_release_stage.py"
+    ).read_text(encoding="utf-8")
 
     assert workflow.count("python scripts/run_production_release.py") == 1
     assert "check_promotion_guard.py" not in workflow
@@ -48,20 +51,24 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     assert "publish_release_bundle.py" not in workflow
 
     qualify = lifecycle.index("pipeline = self._qualify(binary)")
-    guard = lifecycle.index("promotion = self._promotion_guard(project)")
-    matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
-    publish = lifecycle.index("release = self._publish_release(project)")
+    release_boundary = lifecycle.index(
+        "release_stage = self._release_candidate_stage(project, binary)"
+    )
     persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
-    assert qualify < guard < matrix < publish < persist
-    assert "run_production_pipeline(" in lifecycle[:publish]
-    assert "run_promotion_guard(" in lifecycle[:publish]
-    assert "validate_mihomo_matrix(" in lifecycle[:publish]
-    assert "publish_production_release(" in lifecycle
-    assert "check_promotion_guard.py" not in lifecycle
-    assert "validate_mihomo_matrix.py" not in lifecycle
-    assert "publish_release_bundle.py" not in lifecycle
-    assert "scripts/snapshot_previous_config.py" not in lifecycle
-    assert "clash-relay publish-cloudflare-kv" not in lifecycle
+    assert qualify < release_boundary < persist
+    assert "run_production_pipeline(" in lifecycle[:release_boundary]
+    assert "run_release_candidate_stage(" in lifecycle[qualify:persist]
+
+    guard = release_stage.index("run_promotion_guard(")
+    matrix = release_stage.index("validate_mihomo_matrix(")
+    publish = release_stage.index("publish_production_release(")
+    assert guard < matrix < publish
+    assert "qualification_path=paths.qualification" in release_stage[:matrix]
+    assert "check_promotion_guard.py" not in release_stage
+    assert "validate_mihomo_matrix.py" not in release_stage
+    assert "publish_release_bundle.py" not in release_stage
+    assert "scripts/snapshot_previous_config.py" not in release_stage
+    assert "clash-relay publish-cloudflare-kv" not in release_stage
 
 
 def test_rollback_is_confirmed_current_policy_matrix_validated_and_fail_closed(
