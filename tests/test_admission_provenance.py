@@ -44,13 +44,13 @@ def _selector(source_use: str) -> dict:
 
 def test_deny_name_patterns_remove_nodes_before_classification() -> None:
     proxies = [_proxy("HK EMBY 1x"), _proxy("HK normal 1x")]
-
     kept, rejected = filter_proxies_by_name_patterns(
         proxies,
         deny_patterns=["(?i)emby"],
     )
+    names = [item["name"] for item in kept]
 
-    assert [item["name"] for item in kept] == ["HK normal 1x"]
+    assert names == ["HK normal 1x"]
     assert rejected == 1
 
 
@@ -59,23 +59,22 @@ def test_dedup_preserves_later_source_general_eligibility() -> None:
         _node("subscription_1", {"browsing", "ai"}, "same", 100),
         _node("subscription_2", {"general", "browsing", "ai"}, "same", 200),
     ]
-
     deduplicated, duplicates = deduplicate_nodes(nodes, "keep_first")
+    source_ids = {item.source_id for item in deduplicated[0].occurrences}
+    general = select_nodes(deduplicated, _selector("general"), "ANY")
+    browsing = select_nodes(deduplicated, _selector("browsing"), "ANY")
 
     assert duplicates == 1
     assert len(deduplicated) == 1
-    assert {item.source_id for item in deduplicated[0].occurrences} == {
-        "subscription_1",
-        "subscription_2",
-    }
-    general = select_nodes(deduplicated, _selector("general"), "ANY")
-    browsing = select_nodes(deduplicated, _selector("browsing"), "ANY")
+    assert source_ids == {"subscription_1", "subscription_2"}
     assert [item.source_id for item in general] == ["subscription_2"]
     assert [item.source_id for item in browsing] == ["subscription_1"]
 
 
 def test_builder_reports_name_admission_rejections(
-    project_factory, fixture_env, yaml_editor
+    project_factory,
+    fixture_env,
+    yaml_editor,
 ) -> None:
     _root, paths = project_factory()
 
@@ -108,25 +107,24 @@ def test_builder_reports_name_admission_rejections(
         fetcher=lambda _url, **_kwargs: source,
     )
 
-    runtime_names = [
-        item["name"]
-        for item in result.config["proxy-providers"]["cr_general_any"]["payload"]
-    ]
-    assert all("EMBY" not in name for name in runtime_names)
-    assert any("Keep normal" in name for name in runtime_names)
+    provider = result.config["proxy-providers"]["cr_general_any"]
+    runtime_names = [item["name"] for item in provider["payload"]]
     primary_report = next(
         item for item in result.report["subscriptions"] if item["id"] == "primary"
     )
+
+    assert all("EMBY" not in name for name in runtime_names)
+    assert any("Keep normal" in name for name in runtime_names)
     assert primary_report["filtered_by_name"] == 1
     assert result.report["name_filtered_nodes"] == 1
 
 
 def test_canonical_subscription_1_uses_true_admission_filter(repo_root: Path) -> None:
-    document = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
+    path = repo_root / "subscriptions.yaml"
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
     first = next(item for item in document["subscriptions"] if item["id"] == "subscription_1")
+    name_rules = first.get("name_rules", [])
+    patterns = [str(rule.get("pattern", "")).casefold() for rule in name_rules]
 
     assert first["deny_name_patterns"] == ["(?i)emby"]
-    assert not any(
-        "emby" in str(rule.get("pattern", "")).casefold()
-        for rule in first.get("name_rules", [])
-    )
+    assert all("emby" not in pattern for pattern in patterns)
