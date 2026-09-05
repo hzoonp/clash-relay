@@ -5,8 +5,8 @@ import urllib.error
 
 import pytest
 
-from clash_relay.errors import ValidationError
 import clash_relay.transport_qualification as transport
+from clash_relay.errors import ValidationError
 
 
 class _RecvSocket:
@@ -30,12 +30,24 @@ def _provider_config() -> dict:
                 "type": "inline",
                 "health-check": {"enable": True},
                 "payload": [
-                    {"name": "node.a", "type": "ss", "server": "example.com", "port": 443}
+                    {
+                        "name": "node.a",
+                        "type": "ss",
+                        "server": "example.com",
+                        "port": 443,
+                    }
                 ],
             },
             "cr_ai_ignored": {
                 "type": "inline",
-                "payload": [{"name": "ai", "type": "ss", "server": "ai.example", "port": 443}],
+                "payload": [
+                    {
+                        "name": "ai",
+                        "type": "ss",
+                        "server": "ai.example",
+                        "port": 443,
+                    }
+                ],
             },
         },
         "dns": {"enable": True, "listen": "0.0.0.0:53"},
@@ -87,7 +99,9 @@ def test_temporary_probe_config_is_private_inline_and_rebinds_dns(monkeypatch) -
     assert probe["rules"] == ["MATCH,__CR_TRANSPORT_QUALIFICATION"]
 
 
-def test_delay_probe_filters_invalid_values_and_degrades_on_network_failure(monkeypatch) -> None:
+def test_delay_probe_filters_invalid_values_and_degrades_on_network_failure(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         transport,
         "_controller_get",
