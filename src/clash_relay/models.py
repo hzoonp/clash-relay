@@ -20,8 +20,24 @@ class SubscriptionSpec:
     default_capabilities: frozenset[str]
     default_cost_level: str
     max_node_multiplier: float | None = None
+    deny_name_patterns: tuple[str, ...] = ()
     node_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     name_rules: tuple[dict[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class NodeOccurrence:
+    """Source-specific classification retained for one physical proxy identity."""
+
+    source_id: str
+    source_display_name: str
+    source_priority: int
+    source_allowed_uses: frozenset[str]
+    source_allowed_countries: frozenset[str]
+    original_name: str
+    country: str
+    capabilities: frozenset[str]
+    cost_level: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +53,7 @@ class Node:
     capabilities: frozenset[str]
     cost_level: str
     fingerprint: str
+    occurrences: tuple[NodeOccurrence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

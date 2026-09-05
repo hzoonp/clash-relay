@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import replace
 from typing import Any
 
-from .models import Node, SubscriptionSpec
+from .models import Node, NodeOccurrence, SubscriptionSpec
 from .util import stable_json
 
 
@@ -17,6 +18,42 @@ def proxy_fingerprint(proxy: dict[str, Any]) -> str:
 
 def _name_rule_matches(pattern: str, name: str) -> bool:
     return re.search(pattern, name) is not None
+
+
+def _occurrence_from_node(node: Node) -> NodeOccurrence:
+    return NodeOccurrence(
+        source_id=node.source_id,
+        source_display_name=node.source_display_name,
+        source_priority=node.source_priority,
+        source_allowed_uses=node.source_allowed_uses,
+        source_allowed_countries=node.source_allowed_countries,
+        original_name=node.original_name,
+        country=node.country,
+        capabilities=node.capabilities,
+        cost_level=node.cost_level,
+    )
+
+
+def _occurrences(node: Node) -> tuple[NodeOccurrence, ...]:
+    return node.occurrences or (_occurrence_from_node(node),)
+
+
+def _occurrence_key(item: NodeOccurrence) -> tuple[object, ...]:
+    return (
+        item.source_priority,
+        item.source_id,
+        item.original_name.casefold(),
+        item.country,
+        tuple(sorted(item.capabilities)),
+        item.cost_level,
+        tuple(sorted(item.source_allowed_uses)),
+        tuple(sorted(item.source_allowed_countries)),
+    )
+
+
+def _merge_occurrences(left: Node, right: Node) -> tuple[NodeOccurrence, ...]:
+    merged = {_occurrence_key(item): item for item in (*_occurrences(left), *_occurrences(right))}
+    return tuple(merged[key] for key in sorted(merged))
 
 
 def classify_proxy(
@@ -54,18 +91,30 @@ def classify_proxy(
     if metadata.get("cost_level"):
         cost_level = metadata["cost_level"]
 
-    return Node(
+    occurrence = NodeOccurrence(
         source_id=spec.id,
         source_display_name=spec.display_name,
         source_priority=spec.priority,
         source_allowed_uses=spec.allowed_uses,
         source_allowed_countries=spec.allowed_countries,
         original_name=name,
-        proxy=dict(proxy),
         country=country,
         capabilities=frozenset(capabilities),
         cost_level=cost_level,
+    )
+    return Node(
+        source_id=occurrence.source_id,
+        source_display_name=occurrence.source_display_name,
+        source_priority=occurrence.source_priority,
+        source_allowed_uses=occurrence.source_allowed_uses,
+        source_allowed_countries=occurrence.source_allowed_countries,
+        original_name=occurrence.original_name,
+        proxy=dict(proxy),
+        country=occurrence.country,
+        capabilities=occurrence.capabilities,
+        cost_level=occurrence.cost_level,
         fingerprint=proxy_fingerprint(proxy),
+        occurrences=(occurrence,),
     )
 
 
@@ -80,6 +129,7 @@ def deduplicate_nodes(nodes: list[Node], policy: str) -> tuple[list[Node], int]:
         ),
     )
     seen: dict[str, Node] = {}
+    positions: dict[str, int] = {}
     result: list[Node] = []
     duplicates = 0
     for node in ordered:
@@ -93,7 +143,11 @@ def deduplicate_nodes(nodes: list[Node], policy: str) -> tuple[list[Node], int]:
                     f"duplicate node fingerprint in sources {previous.source_id!r} and "
                     f"{node.source_id!r}"
                 )
+            merged = replace(previous, occurrences=_merge_occurrences(previous, node))
+            seen[node.fingerprint] = merged
+            result[positions[node.fingerprint]] = merged
             continue
         seen[node.fingerprint] = node
+        positions[node.fingerprint] = len(result)
         result.append(node)
     return result, duplicates
