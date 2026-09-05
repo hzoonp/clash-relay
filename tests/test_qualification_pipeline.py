@@ -10,6 +10,7 @@ from clash_relay.qualification_reliability import (
     QualificationFailureCategory,
     QualificationStageRejected,
 )
+from clash_relay.service_qualification import service_qualifications
 
 
 def _pipeline_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -26,6 +27,25 @@ def _append(path: Path, marker: str) -> None:
         handle.write(f"\n{marker}: true\n")
 
 
+def _ai_summary() -> dict[str, object]:
+    return {
+        "status": "qualified",
+        "diagnostics": {
+            "qualification_mode": "per-service",
+            "probes": {
+                service.probe_name: {
+                    "live_tested_nodes": 1,
+                    "cache_pass_hits": 0,
+                    "cache_fail_hits": 0,
+                    "qualified_nodes": 1,
+                    "outcomes": {"passed": 1},
+                }
+                for service in service_qualifications()
+            },
+        },
+    }
+
+
 def _success_services(monkeypatch) -> None:
     def browsing(**kwargs):
         _append(kwargs["candidate"], "browsing_stage")
@@ -33,7 +53,7 @@ def _success_services(monkeypatch) -> None:
 
     def ai(**kwargs):
         _append(kwargs["candidate"], "ai_stage")
-        return {"status": "qualified", "diagnostics": {"qualification_mode": "per-service"}}
+        return _ai_summary()
 
     def service_paths(*, candidate, policies):
         assert policies.name == "policies.yaml"
@@ -82,6 +102,7 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatc
     assert result["ai"]["client_path_status"] == "passed"
     assert result["ai"]["client_path_hardened_services"] == 1
     assert result["ai"]["client_path_services"] == ["example"]
+    assert set(result["ai"]["services"]) == {service.label for service in service_qualifications()}
     assert browsing_report.exists()
     assert ai_report.exists()
 
@@ -139,7 +160,7 @@ def test_pipeline_retries_only_typed_transient_from_immutable_candidate(
 def _success_services_tail(monkeypatch) -> None:
     def ai(**kwargs):
         _append(kwargs["candidate"], "ai_stage")
-        return {"status": "qualified", "diagnostics": {"qualification_mode": "per-service"}}
+        return _ai_summary()
 
     def service_paths(*, candidate, policies):
         assert policies.name == "policies.yaml"
