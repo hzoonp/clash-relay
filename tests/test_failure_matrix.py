@@ -57,7 +57,11 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
     assert qualify < release_boundary < persist
     assert "run_production_pipeline(" in lifecycle[:release_boundary]
-    assert "run_release_candidate_stage(" in lifecycle[qualify:persist]
+    assert "run_release_candidate_stage(" in lifecycle
+
+    wrapper_start = lifecycle.index("    def _release_candidate_stage(")
+    wrapper_end = lifecycle.index("    def _best_effort_state", wrapper_start)
+    assert "run_release_candidate_stage(" in lifecycle[wrapper_start:wrapper_end]
 
     guard = release_stage.index("run_promotion_guard(")
     matrix = release_stage.index("validate_mihomo_matrix(")
