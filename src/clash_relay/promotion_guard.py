@@ -47,7 +47,9 @@ def _validate_service_thresholds(name: str, values: dict[str, int]) -> None:
     unknown = set(values) - supported
     if unknown:
         rendered = ", ".join(sorted(unknown))
-        raise ConfigurationError(f"promotion guard {name} references unknown services: {rendered}")
+        raise ConfigurationError(
+            f"promotion guard {name} references unknown services: {rendered}"
+        )
 
 
 def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
@@ -232,7 +234,9 @@ def assess_promotion(
         "thresholds": {
             "minimum_total_node_ratio": policy.minimum_total_node_ratio,
             "minimum_provider_ratio": policy.minimum_provider_ratio,
-            "minimum_source_ratio_by_use": dict(sorted(policy.minimum_source_ratio_by_use.items())),
+            "minimum_source_ratio_by_use": dict(
+                sorted(policy.minimum_source_ratio_by_use.items())
+            ),
             **_absolute_thresholds(policy),
         },
         "violations": violations,
