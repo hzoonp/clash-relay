@@ -14,7 +14,7 @@
 7. 查看 aggregate proof；确认通过后再 publish=true
 ```
 
-首次手动 Workflow 默认应保持 `publish=false`。把成功的 dry-run 作为第一次正式发布的前置条件。
+首次手动 Workflow 默认保持 `publish=false`。把成功的 dry-run 作为第一次正式发布的前置条件。
 
 ## 1. Fork 时不要加入任何凭据
 
@@ -97,9 +97,9 @@ clash-relay doctor --secret-file .secrets.yaml --check-cloudflare
 
 手动运行 `Generate, validate, and publish`，把 Workflow input 设为 `publish = false`。
 
-成功的 dry-run 会执行与生产相同的私有生成、source audit、browsing/transport qualification、AI qualification、qualification 后审计，以及 `tools/mihomo-versions.json` 中全部 stable Mihomo core 验证，但不会激活 Cloudflare KV 生产字节。
+成功的 dry-run 会执行与生产相同的私有生成、source audit、browsing/transport qualification、ServiceQualification registry、声明式 service client-path hardening、qualification 后审计，以及 `tools/mihomo-versions.json` 中全部 stable Mihomo core 验证，但不会激活 Cloudflare KV 生产字节。
 
-P39 的 retry 非常严格：只有结构化、整轮 browsing live probe 全部失败、且原因仅属于 probe/timeout/HTTP 429/5xx 一类基础设施瞬时问题时，才允许从 immutable generated candidate 完整重试一次。部分节点成功、policy/inventory rejection、UDP/TCP admission failure、Mihomo core failure、配置错误和 protocol error 都不会重试。
+Retry 非常严格：只有结构化的整轮 browsing live probe 瞬时基础设施失败才允许从 immutable generated candidate 完整重试一次。部分节点成功、policy/inventory rejection、UDP/TCP admission failure、Mihomo core failure、配置错误和 protocol error 都不会重试。
 
 只查看 GitHub Actions 中的 aggregate production proof。
 
@@ -117,13 +117,13 @@ prepared -> qualified -> promoted -> published -> verified
 
 如果 client-visible release transaction 已经成功提交，而后续 proof / manifest / metrics 出现异常，系统会把它报告为 post-release observability 降级，而不会错误宣称“发布没有发生”。发布前所有 mandatory gate 仍保持 fail-closed。
 
-首次成功发布后，P26 会每 6 小时自动运行同一条生产 Workflow（UTC `17 */6 * * *`）。定时刷新不是简化路径：订阅获取、生成、source isolation、browsing/transport 与 AI qualification、OpenAI client-path hardening、qualification 后审计、Promotion Guard，以及全部 stable Mihomo 验证都必须通过后才能发布。如果最终字节没有变化，则 release 保持 `status: unchanged`，并且不会旋转 `previous-release-v1`。
+首次成功发布后，定时 Workflow 每 6 小时运行同一条生产生命周期（UTC `17 */6 * * *`）。定时刷新不是简化路径：订阅获取、生成、source isolation、browsing/transport qualification、ServiceQualification、声明式 client-path hardening、qualification 后审计、Promotion Guard，以及全部 stable Mihomo 验证都必须通过后才能发布。如果最终字节没有变化，则 release 保持 `status: unchanged`，并且不会旋转 `previous-release-v1`。
 
 多个 publish-triggering Actions 同时到达时会通过 concurrency group 串行执行，且 `cancel-in-progress: false`；新运行不会在旧 release transaction 中途取消旧任务。
 
 ## 7. 配置 FlClash / Mihomo
 
-客户端继续使用固定 production key 对应的私有订阅入口。内部 release SHA 改变时，客户端 URL 不需要变化；P26 定时刷新也不要求在 FlClash 中更换订阅 URL。
+客户端继续使用固定 production key 对应的私有订阅入口。内部 release SHA 改变时，客户端 URL 不需要变化；定时刷新也不要求在 FlClash 中更换订阅 URL。
 
 顶层只显示：
 
@@ -138,9 +138,9 @@ prepared -> qualified -> promoted -> published -> verified
 
 ## 8. 安全回滚
 
-只有明确需要回滚时，才运行手动 `Roll back production config` Workflow，并设置 `confirm = true`。Workflow 优先解析 `previous-release-v1`；legacy slot 只用于迁移兼容。历史 candidate 必须重新通过 current-policy source/routing audit 和 `tools/mihomo-versions.json` 中全部当前 stable core 验证，再通过相同 versioned release transaction 激活。
+只有明确需要回滚时，才运行手动 `Roll back production config` Workflow，并设置 `confirm = true`。Workflow 只解析 versioned `previous-release-v1` pointer，校验 immutable release 字节和 manifest，再执行当前 source/Routing/OpenAI client-path 策略审计，并验证 `tools/mihomo-versions.json` 中全部当前 stable core，最后通过相同 versioned release transaction 激活。
 
-违反当前 source isolation 的历史配置不会被允许回滚。测试环境还会演练 exact previous-release round trip 和 current/previous pointer 反转，但不会触碰真实生产数据。
+v2 runtime 不存在 legacy previous-value 或历史 OpenAI shape 豁免。违反当前完整安全契约的历史配置不会被允许回滚。测试环境会演练 exact previous-release round trip 和 current/previous pointer 反转，但不会触碰真实生产数据。
 
 ## 始终保持私有的数据
 
@@ -153,8 +153,8 @@ prepared -> qualified -> promoted -> published -> verified
 - scheduler fingerprint key；
 - AI cache fingerprint。
 
-私有 production metrics 保留最多 30 次、且只保存 aggregate-only 信息，可以包含安全计数、hash、stage duration、retry recovery 次数、Promotion Guard 状态和 release phase，但不能包含节点身份、server、凭据或订阅 URL。
+私有 production metrics 与 operational SLO state 都保持 bounded、aggregate-only，可以包含安全计数、hash、stage duration、retry recovery 次数、Promotion Guard 状态和 release phase，但不能包含节点身份、server、凭据或订阅 URL。
 
-## 兼容性安全契约
+## 安全契约
 
-既有 browsing scheduler 契约保持不变：实时探测 **3/3** 成功进入 Stable，**2/3** 成功进入 Reserve。私有 scheduler history 继续使用 **HMAC-SHA256** fingerprint，不能把当前 live-failed 节点提升回 Stable。OpenAI、Claude、Gemini 继续独立 qualification。手动恢复仍通过 **Roll back production config**，必须设置 **confirm = true**，验证 **tools/mihomo-versions.json** 中全部 stable core，解析 **previous-release-v1**，并在激活前执行 **current-policy** audit。
+Browsing qualification 保持明确：实时探测 **3/3** 成功进入 Stable，**2/3** 成功进入 Reserve。私有 scheduler history 继续使用 **HMAC-SHA256** fingerprint，不能把当前 live-failed 节点提升回 Stable。OpenAI、Claude、Gemini 继续在 ServiceQualification registry 后独立 qualification。手动恢复仍通过 **Roll back production config**，必须设置 **confirm = true**，验证 **tools/mihomo-versions.json** 中全部 stable core，解析 **previous-release-v1**，并在激活前执行 **current-policy** audit。
