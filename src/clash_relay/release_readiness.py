@@ -28,13 +28,9 @@ class ReleaseReadinessPolicy:
 
     def __post_init__(self) -> None:
         if self.public_config_version < 1:
-            raise ValidationError(
-                "release readiness public config version must be positive"
-            )
+            raise ValidationError("release readiness public config version must be positive")
         if self.policy_model_version < 1:
-            raise ValidationError(
-                "release readiness policy model version must be positive"
-            )
+            raise ValidationError("release readiness policy model version must be positive")
         if self.minimum_mihomo_cores < 1:
             raise ValidationError("release readiness requires at least one Mihomo core")
 
@@ -99,9 +95,7 @@ def assess_release_readiness(
 
     previous = manifest.get("previous_release_id")
     if previous is not None and (
-        not isinstance(previous, str)
-        or not _SHA256.fullmatch(previous)
-        or previous == release_id
+        not isinstance(previous, str) or not _SHA256.fullmatch(previous) or previous == release_id
     ):
         violations.append("rollback_identity")
 
