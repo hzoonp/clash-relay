@@ -74,7 +74,9 @@ def test_dedup_preserves_later_source_general_eligibility() -> None:
     assert [item.source_id for item in browsing] == ["subscription_1"]
 
 
-def test_builder_reports_name_admission_rejections(project_factory, fixture_env, yaml_editor) -> None:
+def test_builder_reports_name_admission_rejections(
+    project_factory, fixture_env, yaml_editor
+) -> None:
     _root, paths = project_factory()
 
     def configure_subscriptions(document):
@@ -107,7 +109,8 @@ def test_builder_reports_name_admission_rejections(project_factory, fixture_env,
     )
 
     runtime_names = [
-        item["name"] for item in result.config["proxy-providers"]["cr_general_any"]["payload"]
+        item["name"]
+        for item in result.config["proxy-providers"]["cr_general_any"]["payload"]
     ]
     assert all("EMBY" not in name for name in runtime_names)
     assert any("Keep normal" in name for name in runtime_names)
