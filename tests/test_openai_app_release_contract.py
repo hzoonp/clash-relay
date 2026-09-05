@@ -28,7 +28,7 @@ def test_openai_client_path_release_contract(repo_root: Path) -> None:
     )
 
     assert "# clash-relay 2.0.0" in release_notes
-    assert "client-path" in release_notes
+    assert "ServiceQualification" in release_notes
     assert "client-path" in readme
     assert "normal TLS certificate and hostname verification" in docs
     assert "does not restore managed Fake-IP DNS" in docs
