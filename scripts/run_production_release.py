@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from clash_relay.errors import ClashRelayError
+from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_lifecycle import (
     ProductionLifecyclePaths,
     ProductionPipeline,
@@ -32,6 +32,15 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _enforce_validated_ci_sha(*, publish: bool) -> None:
+    if not publish or os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return
+    github_sha = os.environ.get("GITHUB_SHA", "").strip()
+    validated_sha = os.environ.get("CLASH_RELAY_VALIDATED_SHA", "").strip()
+    if not github_sha or not validated_sha or github_sha != validated_sha:
+        raise ValidationError("CI publication requires the exact validated commit SHA")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -44,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
                 else os.environ.get("CLASH_RELAY_MANUAL_PUBLISH")
             ),
         )
+        _enforce_validated_ci_sha(publish=publish)
         result = ProductionPipeline(
             ProductionLifecyclePaths.canonical(args.root),
             publish=publish,

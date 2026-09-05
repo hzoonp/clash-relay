@@ -44,6 +44,10 @@ Do not raise input limits merely to accommodate an unexpectedly huge or malforme
 
 GitHub Actions workflows use minimal job permissions: production generation is `contents: read`; the source-only release workflow is the narrow exception that needs `contents: write` to create tags/releases. Private production bytes are never a GitHub Release asset.
 
+Production publication and source release are bound to the exact commit SHA that completed the reusable validation workflow. The deployment job checks out that validated SHA explicitly and verifies both `GITHUB_SHA` and the local Git `HEAD` before any production mutation. The production entrypoint independently fails closed in GitHub Actions when the supplied validated SHA does not match the workflow SHA.
+
+External GitHub Actions are referenced by immutable 40-character commit SHAs rather than movable tags. Python runtime, build-bootstrap, test, lint, and type-check dependencies are version-pinned and SHA-256 locked. CI installs external packages with pip hash checking and binary-only resolution before installing the local package with dependency resolution disabled. The supply-chain audit rejects movable Action refs, unhashed dependencies, and loss of the validated-SHA publication boundary.
+
 Third-party/action version changes, Mihomo version changes, dependency-lock changes, publication changes, and any code that handles Secrets should be treated as security-sensitive review areas. Pinned Mihomo binaries are verified against GitHub-provided SHA-256 release digests before execution; same-run binary reuse verifies the cached executable hash before copying it.
 
 ## Source-permission boundary
