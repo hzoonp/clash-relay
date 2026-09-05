@@ -7,18 +7,19 @@ from clash_relay import __version__
 from clash_relay.scheduler_policy import load_scheduler_policy
 
 
-def test_v1_package_and_changelog_are_aligned(repo_root: Path) -> None:
+def test_v2_package_and_release_notes_are_aligned(repo_root: Path) -> None:
     with (repo_root / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)["project"]
-    changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
+    notes = repo_root / "docs" / "releases" / f"{project['version']}.md"
 
-    assert project["version"] == "1.8.1"
+    assert project["version"] == "2.0.0"
     assert __version__ == project["version"]
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
-    assert "## [1.8.1] - 2026-09-04" in changelog
+    assert notes.is_file()
+    assert "# clash-relay 2.0.0" in notes.read_text(encoding="utf-8")
 
 
-def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
+def test_v2_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
     policy = load_scheduler_policy(repo_root / "policies.yaml")
 
     assert policy.declared is True
@@ -36,27 +37,30 @@ def test_v1_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> 
     assert policy.ai_cache.openai_failure_ttl_seconds == 3600
 
 
-def test_v1_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) -> None:
+def test_v2_versioning_contract_names_nonnegotiable_boundaries(repo_root: Path) -> None:
     text = (repo_root / "docs" / "versioning.md").read_text(encoding="utf-8")
 
     for phrase in (
+        "clean-slate public contract",
         "allowed_uses: [browsing, ai]",
         "strictly greater than `2.0`",
+        "exactly `2.0` and unmarked nodes remain eligible",
+        "ingest_order",
         "ProxyLite.list",
         "ProxyGFWlist",
         "Final `MATCH`",
         "US -> SG -> JP -> TW -> KR -> HK -> OTHER",
-        "preferred-region Stable, then same-region Reserve, then the next available region",
-        "manual regional browsing choice never crosses regions",
         "3/3 is Stable",
         "2/3 is Reserve",
-        "historically demoted but currently qualified node moves to Reserve in the same region",
+        "Manual regional browsing choices never cross regions",
         "never promotes a current Reserve or live-failed node into Stable",
         "OpenAI, Claude, and Gemini",
-        "BanProgramAD.list",
+        "ServiceQualification",
         "every stable Mihomo core declared in `tools/mihomo-versions.json`",
-        "Manual rollback requires explicit confirmation",
+        "exact validated commit SHA",
+        "storage schema version 1",
+        "previous-v1` compatibility slot",
+        "current source/Routing V2 policy audit",
         "not attached to GitHub Releases",
-        "DNS resolutions containing private/special-use",
     ):
         assert phrase in text

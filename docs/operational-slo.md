@@ -1,8 +1,8 @@
 # Operational SLO
 
-P51 adds a privacy-safe longitudinal outcome stream for production attempts. It is deliberately separate from the successful-release production metrics ring because a store that only observes successful releases cannot truthfully measure rejection or block rates.
+The production lifecycle maintains a privacy-safe longitudinal outcome stream for production attempts. It is deliberately separate from the successful-release production metrics ring because a store that only observes successful releases cannot truthfully measure rejection or block rates.
 
-The state is stored privately in Cloudflare KV under `<production>.operational-slo-v1`. It is bounded to the latest 60 attempts and contains aggregate metadata only.
+The state is stored privately in Cloudflare KV under `<production>.operational-slo-v1`. The suffix is the SLO storage-schema version, not the clash-relay product version. The ring is bounded to the latest 60 attempts and contains aggregate metadata only.
 
 ## Measurements
 
@@ -40,7 +40,7 @@ Dry runs do not mutate the production SLO key.
 
 ## Tuning policy
 
-P51 does not widen qualification thresholds, retry counts, scheduler hysteresis, or Promotion Guard thresholds. Operational policy changes must be justified by longitudinal aggregate evidence rather than one-off failures. In particular:
+Operational SLO collection does not widen qualification thresholds, retry counts, scheduler hysteresis, or Promotion Guard thresholds. Operational policy changes must be justified by longitudinal aggregate evidence rather than one-off failures. In particular:
 
 - a retry adjustment requires sustained typed transient rejection evidence plus measured recovery benefit;
 - a Promotion Guard threshold adjustment requires sustained block evidence and separate inventory analysis;

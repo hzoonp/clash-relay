@@ -66,7 +66,6 @@ jobs:
             --subscriptions subscriptions.yaml \
             --policies policies.yaml \
             --candidate .work/private/rollback.yaml \
-            --allow-legacy-openai-client-path \
             > .work/private/rollback-current-policy-audit.json
 
       - name: Validate previous release with pinned stable Mihomo matrix
@@ -124,7 +123,7 @@ jobs:
               f"Validated cores: **{', '.join(cores)}**  ",
               f"OpenAI client-path audit: **{client_path.get('status', 'unknown')}**",
               "",
-              "The exact historical release passed current source/routing/OpenAI route-lock safety audits before core validation. A pre-P25 release may retain its historical server-qualified OpenAI runtime shape during emergency rollback; normal publication still requires the P25 client-path layer.",
+              "The exact previous release passed the current source isolation, Routing V2, OpenAI App route-lock, OpenAI client-path, and stable Mihomo validation contracts before activation.",
               "",
           ]
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:

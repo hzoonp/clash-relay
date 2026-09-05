@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "pyproject.toml"
-      - "CHANGELOG.md"
+      - "docs/releases/**"
       - "docs/versioning.md"
       - "rules/**"
       - "src/clash_relay/acl4ssr_reference.py"
@@ -76,20 +76,14 @@ jobs:
           tag="v${version}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Verify changelog release section
+      - name: Verify versioned release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          version = os.environ['VERSION']
-          text = Path('CHANGELOG.md').read_text(encoding='utf-8')
-          marker = f'## [{version}]'
-          if marker not in text:
-              raise SystemExit(f'CHANGELOG.md does not contain {marker}')
-          PY
+          set -euo pipefail
+          notes="docs/releases/${VERSION}.md"
+          test -f "$notes"
+          grep -Fq "# clash-relay ${VERSION}" "$notes"
       - id: existing
         name: Detect existing tag
         env:
@@ -107,17 +101,8 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          version = os.environ['VERSION']
-          lines = Path('CHANGELOG.md').read_text(encoding='utf-8').splitlines()
-          start = next(i for i, line in enumerate(lines) if line.startswith(f'## [{version}]'))
-          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('## [')), len(lines))
-          body = '\n'.join(lines[start + 1:end]).strip() + '\n'
-          Path('.release-notes.md').write_text(body, encoding='utf-8')
-          PY
+          set -euo pipefail
+          cp "docs/releases/${VERSION}.md" .release-notes.md
       - name: Create source-only GitHub Release
         if: steps.existing.outputs.exists != 'true'
         env:

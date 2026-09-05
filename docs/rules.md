@@ -112,7 +112,7 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 ## Browsing scheduling
 
-`ProxyLite -> 网页浏览` uses the browsing inventory and preserves P8 regional scheduling:
+`ProxyLite -> 网页浏览` uses the browsing inventory and preserves the canonical regional order:
 
 ```text
 网页自动
@@ -131,7 +131,7 @@ Media service capability checks may influence node scheduling inside `流媒体`
 
 ## AI live qualification
 
-AI remains a protected clash-relay extension. Candidate nodes are qualified independently for OpenAI, Claude, and Gemini. Hong Kong is excluded before qualification, and each service follows its own qualified set in the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference order.
+AI remains a protected clash-relay extension. Candidate nodes are qualified independently for OpenAI, Claude, and Gemini behind the `ServiceQualification` registry. Hong Kong is excluded before qualification, and each service follows its own qualified set in the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference order.
 
 A protected service with no qualified node fails closed to `REJECT`; if protected AI qualification cannot satisfy the production contract, publication aborts and the previous KV value remains untouched.
 
@@ -161,9 +161,9 @@ Canonical routing changes must pass:
 - subscription 1 EMBY and >2x admission tests;
 - six-group public-surface and provider-leakage tests;
 - browsing regional scheduling regression tests;
-- independent AI qualification tests;
-- Ruff and Python 3.11/3.12 unit tests;
+- independent service qualification tests;
+- Ruff and Python 3.11/3.12/3.13 quality gates;
 - deterministic fictional generation;
 - Routing V2 Drift Guard;
-- Mihomo v1.19.30 and v1.19.29 startup/integration validation;
+- every stable Mihomo core declared in `tools/mihomo-versions.json`, including startup/provider integration;
 - post-qualification production re-audit before Cloudflare KV publication.

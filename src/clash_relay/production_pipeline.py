@@ -86,17 +86,13 @@ def audit_candidate(
     candidate: dict[str, Any],
     *,
     build_report: dict[str, Any] | None = None,
-    allow_legacy_openai_client_path: bool = False,
 ) -> dict[str, Any]:
     """Run the complete production audit contract over one candidate stage."""
 
     summary = audit_production_candidate(project, candidate, build_report=build_report)
     summary["routing_v2"] = audit_routing_v2(project, candidate)
     summary["openai_app"] = audit_route_lock(candidate)
-    summary["openai_client_path"] = audit_openai_client_path(
-        candidate,
-        allow_legacy_server_qualified=allow_legacy_openai_client_path,
-    )
+    summary["openai_client_path"] = audit_openai_client_path(candidate)
     if project.acl4ssr is not None and project.acl4ssr.get("reference") is not None:
         reference_path = project.root / "rules/acl4ssr-online.reference.ini"
         try:

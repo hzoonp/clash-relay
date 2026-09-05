@@ -38,15 +38,16 @@ def test_rollback_runs_current_safety_audit_before_core_validation_and_activatio
     audit_block = text[audit:validate]
     assert "python scripts/audit_production.py" in audit_block
     assert "--candidate .work/private/rollback.yaml" in audit_block
-    assert "--allow-legacy-openai-client-path" in audit_block
 
 
-def test_rollback_legacy_compatibility_is_not_available_to_normal_publish_workflow() -> None:
+def test_rollback_has_no_historical_openai_shape_exemption() -> None:
     rollback = ROLLBACK.read_text(encoding="utf-8")
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
 
-    assert rollback.count("--allow-legacy-openai-client-path") == 1
-    assert "--allow-legacy-openai-client-path" not in publish
+    legacy_flag = "--allow-" + "legacy-openai-client-path"
+    assert legacy_flag not in rollback
+    assert legacy_flag not in publish
+    assert "OpenAI client-path audit" in rollback
 
 
 def test_rollback_uses_manifest_matrix_and_versioned_release_transaction() -> None:

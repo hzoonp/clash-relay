@@ -1,80 +1,50 @@
 # Publishing and promotion
 
-Publication is downstream of generation, runtime qualification, current-policy audit, and the pinned stable Mihomo matrix. A publisher receives already qualified and validated bytes and cannot influence node selection or routing policy.
+Publication is downstream of Public Config v2 validation, generation, runtime qualification, current-policy audit, Promotion Guard, and the manifest-driven stable Mihomo matrix. A publisher receives already qualified and validated bytes and cannot influence node selection or routing policy.
 
 ## Public-repository production path
 
-The production workflow is designed to run from a public repository without turning GitHub into credential storage. It permits real subscription Secrets on trusted `main` runs, but generated and qualified candidates remain only on the ephemeral GitHub-hosted runner until private publication to Cloudflare Workers KV.
+The production workflow is designed to run from a public repository without turning GitHub into credential storage. Real subscription URLs are supplied only through trusted Secrets on `main`; generated and qualified candidates remain on the ephemeral runner until private publication to Cloudflare Workers KV.
 
-Production deployment is restricted to `refs/heads/main`. Pull requests continue to use fictional sources and do not receive production subscription Secrets.
+Pull requests use fictional sources and do not receive production subscription Secrets. Push and scheduled events publish only through the release-authoritative exact-SHA validation chain. Manual `workflow_dispatch` remains a dry run unless `publish=true` is explicitly selected.
 
-### Scheduled automatic refresh
+The supported schedule is a full production refresh, not a lighter synchronization path. It re-fetches current private subscriptions and executes the same generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, Promotion Guard, stable Mihomo matrix, and versioned Cloudflare KV release transaction before client-visible bytes can change.
 
-P26 schedules the same production workflow every six hours with `17 */6 * * *` UTC. Scheduled runs are trusted default-branch production runs, not a lighter-weight synchronization path. They re-fetch the current private subscription Secrets and execute the complete generation, source audit, browsing/transport qualification, AI qualification, OpenAI client-path hardening, post-qualification audit, pinned stable Mihomo matrix, and versioned Cloudflare KV transaction before client-visible bytes can change.
+If the exact final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
 
-Push and scheduled events resolve `publish_requested=true`. Manual `workflow_dispatch` remains a dry run by default and resolves publication only when `publish=true` is explicitly selected. If the exact final candidate is already active, the release transaction returns `status: unchanged` with `production_changed: false`; the fixed production bytes and previous-release pointer remain unchanged. Existing FlClash/Mihomo clients continue using the same authenticated Worker subscription URL.
+## Secret masking and privacy
 
-## Secret masking before generation
+`CLASH_RELAY_SUBSCRIPTIONS` is one structured GitHub Secret that maps logical `secret_name` values to private URLs. The production adapter masks resolved URLs before fetch begins. No real URL is written to tracked YAML, generated candidate YAML, public summaries, or GitHub release assets.
 
-`CLASH_RELAY_SUBSCRIPTIONS` is intentionally one structured GitHub Secret so an arbitrary number of subscriptions can be declared without changing workflow YAML. The deployment job parses the mapping in memory and emits GitHub `::add-mask::` commands for every URL before subscription fetch begins.
+The credential-bearing candidate never crosses a GitHub Artifact boundary. Private stage files, reports, detailed Mihomo errors, scheduler state, AI cache, production metrics, and operational SLO state remain runner/KV-private and are removed from the runner lifecycle when no longer needed.
 
-No URL is written to tracked YAML, generated candidate YAML, public summaries, or GitHub artifacts. Application-level redaction remains in place as a second layer.
+## Canonical lifecycle
 
-## Single-runner lifecycle
-
-The credential-bearing candidate never crosses a GitHub Artifact boundary. One deployment job performs the complete sensitive lifecycle:
-
-1. validate the public publication declaration before any production Secret is read;
-2. register each subscription URL with `::add-mask::`;
-3. generate `.work/private/generated.yaml` and its private build report;
-4. run the production/source-isolation audit on the generated graph;
-5. restore private scheduler history and AI qualification cache from Cloudflare KV;
-6. download the primary pinned stable Mihomo core from `tools/mihomo-versions.json`;
-7. run `qualify_candidate.py`, which copies the candidate through generated, browsing/transport, AI, and final private stages;
-8. re-run the production and Routing V2 audits against the exact final candidate;
-9. validate those exact bytes with every pinned stable Mihomo core through `validate_mihomo_matrix.py`;
-10. for a dry run, emit only the privacy-safe production proof;
-11. for publication, stage and read-back verify an immutable versioned release;
-12. activate the exact validated bytes at the fixed client-facing KV key and commit release pointers;
-13. persist AI cache and scheduler history as best-effort derived state;
-14. render the publication proof and remove `.work/private`.
-
-Qualification uses the generated private candidate, not the original subscription Secret. Temporary Mihomo controller and mixed ports bind to loopback only. Node names, servers, credentials, and per-node service results stay runner-local; public summaries contain aggregate outcomes only.
-
-Mihomo failure output for a real candidate is redirected to runner-local files and deliberately not printed in the public Actions log. Those files are never uploaded.
-
-## Unified staged qualification
-
-P16 gives qualification one orchestration owner while retaining the existing browsing/transport and AI executors:
+The sensitive lifecycle is owned by in-process package application APIs:
 
 ```text
-.work/private/generated.yaml
-  -> .work/private/stages/01-generated.yaml
-  -> .work/private/stages/02-browsing-transport.yaml
-  -> .work/private/stages/03-ai.yaml
-  -> .work/private/config.yaml
+Public Config v2 + private Secrets
+  -> subscription fetch / sanitize / NodeInventory
+  -> PolicyCompiler -> RuntimeGraph -> MihomoSerializer
+  -> generated current-policy audit
+  -> browsing / transport qualification
+  -> ServiceQualification registry
+  -> declared service client-path hardening
+  -> qualified current-policy audit
+  -> fetch current production baseline
+  -> Promotion Guard
+  -> every stable core in tools/mihomo-versions.json
+  -> immutable versioned release staging + read-back verification
+  -> activate fixed client-facing production key
+  -> commit current/previous release pointers
+  -> production proof + best-effort derived state / metrics / SLO
 ```
 
-The generator output is never modified in place by workflow orchestration. Each live qualification stage receives a private copy and the workflow validates only the explicit final artifact.
-
-## Service-aware AI qualification
-
-The production qualification gate does not require one node to satisfy all protected AI services. Each service is evaluated independently against its configured endpoint and accepted HTTP status range.
-
-The country AI providers keep the union of nodes that qualify for at least one protected service. Hidden routing anchors then apply exact runtime-node filters:
-
-```text
-OpenAI rules -> OpenAI-qualified hidden route -> shared qualified country providers
-Claude rules -> Claude-qualified hidden route -> shared qualified country providers
-Gemini rules -> Gemini-qualified hidden route -> shared qualified country providers
-other AI rules -> 人工智能 -> visible qualified country selectors / DIRECT
-```
-
-A rejected result for one service only removes the node from that service route. If one protected service has no qualified nodes, that service fails closed to `REJECT`. Publication stops only when the qualification infrastructure fails or no protected AI service has a qualified route under the existing policy.
+Scripts are thin adapters. Python production stages do not launch sibling Python scripts or exchange business results through stdout/stderr JSON. Mihomo remains an explicit external-program boundary.
 
 ## Cloudflare Workers KV
 
-The default public-safe declaration is:
+The default public-safe declaration keeps GitHub credential-bearing publication disabled and Cloudflare KV enabled:
 
 ```yaml
 publishing:
@@ -90,80 +60,68 @@ publishing:
     key: production-config
 ```
 
-The Cloudflare publication gate refuses to run if Artifact, Release, or Gist is enabled at the same time.
-
 GitHub Actions expects:
 
-- Secret `CLOUDFLARE_API_TOKEN` with Workers KV edit/write permission;
+- Secret `CLOUDFLARE_API_TOKEN` with narrowly scoped Workers KV write permission;
 - Variable `CLOUDFLARE_ACCOUNT_ID`;
-- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`, for example `clash-relay-config`.
+- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`.
 
-Cloudflare's Worker remains responsible for authenticated delivery to FlClash. The complete Worker profile URL is a bearer credential and must not be copied into GitHub.
+The complete Worker profile URL is a bearer credential and must not be copied into GitHub.
 
 ## Versioned release transaction
 
-Existing clients continue reading the configured fixed key, for example `production-config`. P17 adds private operational keys without changing the subscription URL:
+Existing clients continue reading the configured fixed key such as `production-config`. Private storage uses a stable storage-schema-v1 layout:
 
 ```text
 production-config.release-v1.<sha256>.config
 production-config.release-v1.<sha256>.manifest
 production-config.current-release-v1
 production-config.previous-release-v1
-production-config.previous-v1              # migration fallback
 ```
 
-The release ID is the SHA-256 of the exact candidate bytes.
+The `v1` suffix is the private storage schema version, not the clash-relay product major version. The release ID is the SHA-256 of the exact candidate bytes.
 
-Publication performs these checks and writes:
+Publication:
 
-1. write/read-back verify the immutable new config and manifest;
-2. if an older production value exists, ensure those exact bytes also have an immutable release object;
-3. preserve the legacy previous slot during migration;
-4. update/read-back verify the fixed production key;
-5. update previous-release pointer;
-6. update current-release pointer as the commit marker.
+1. writes or verifies the immutable new config object;
+2. writes or verifies its exact immutable manifest;
+3. ensures the current production bytes have a versioned immutable object when a current value exists;
+4. updates and read-back verifies the fixed client-facing production key;
+5. commits the previous-release pointer;
+6. commits the current-release pointer.
 
-If a release-pointer commit fails after the fixed production value changed, the publisher restores the previous exact production bytes and the old pointer state when a previous value exists. An ambiguous remote PUT response is followed by a read-back check before it is treated as failure.
+There is no v2 `previous-v1` compatibility slot, write, or fallback.
 
-Workers KV does not expose a multi-key transaction, so this is intentionally described as a **compensating transaction**, not as cross-key atomicity.
+If a pointer commit fails after client-visible bytes changed, the release layer attempts compensating restoration of the previous exact bytes and pointer state. An ambiguous remote PUT is followed by exact read-back before it is treated as failed. Workers KV is therefore described as a **compensating transaction**, not a cross-key atomic database transaction.
 
 ## Rollback
 
-Manual rollback resolves `previous-release-v1` first and falls back to legacy `previous-v1` only for pre-P17 state.
+Manual rollback resolves only `previous-release-v1`. The pointer must reference exact immutable config bytes whose SHA-256 matches the release ID and whose manifest matches exactly.
 
-Before activation, the preserved candidate must pass:
+Before activation, the historical candidate must pass the current safety contract:
 
-1. the **current** production/source-isolation audit;
-2. the current Routing V2 contract audit;
-3. current ACL4SSR fidelity checks performed by the production audit path;
-4. every pinned stable Mihomo core from `tools/mihomo-versions.json`.
+1. current production/source-isolation audit;
+2. current Routing V2 contract;
+3. current ACL4SSR fidelity and OpenAI App route-lock requirements;
+4. current OpenAI client-path audit with no historical-shape exemption;
+5. every stable Mihomo core from `tools/mihomo-versions.json`.
 
-The rollback candidate is then activated through the same versioned release transaction. A historical config that parses successfully in Mihomo but violates today's source permissions cannot be restored.
+A historical config that still parses in Mihomo but violates today's source permissions, routing contract, service hardening, or real-core matrix is not eligible for rollback. Rollback activates only through the same versioned release transaction used for normal production.
 
-## Derived scheduler/qualification state
+## Derived state and operational SLO
 
-AI qualification cache and scheduler history are optimization state, not production configuration. They are persisted after the versioned production release commits.
+AI qualification cache and scheduler history are optimization state. Production metrics and operational SLO history are aggregate-only observability state. They persist after the production release commits and are best-effort.
 
-Their write steps are best effort. If a cache/history write fails, the workflow records a warning but keeps the successfully committed production release as successful. Later runs safely rebuild missing state through live qualification rather than confusing operators with a red deployment after production already changed.
+A derived-state/SLO write failure cannot convert an invalid candidate into a valid publication and cannot falsely undo a committed validated release. Later runs rebuild missing derived state through live qualification.
 
-## GitHub Artifact, Release, and Gist
+## GitHub source releases
 
-The codebase retains publication-gate support for explicit non-default development cases, but the supported public production workflow contains no credential-bearing upload path for Artifact, Release, or Gist.
+The source-only GitHub Release workflow is separate from production configuration publication. It reads the package version from `pyproject.toml`, requires matching `docs/releases/<version>.md`, checks out the exact reusable-workflow `Validated SHA`, and creates a source release only when that tag does not already exist.
 
-In Cloudflare KV mode:
-
-- Actions Artifact must remain disabled;
-- GitHub Release must remain disabled for generated production config;
-- Gist must remain disabled.
-
-The source-only GitHub release workflow remains separate from production configuration publication.
+Generated production configuration, subscription responses, Cloudflare KV data, scheduler/cache state, node-level results, metrics, and SLO state are never source-release assets.
 
 ## Failure semantics
 
-The fixed Cloudflare production key is updated only after generation, qualification, current-policy audit, and every pinned stable-core validation succeeds. Subscription errors, schema errors, graph errors, qualification infrastructure errors, current-policy failures, Mihomo rejection, missing namespace, invalid Cloudflare credentials, or release staging failures leave the previous production value in place.
+Any failure before production activation leaves the previous production value active. This includes subscription/schema errors, source isolation violations, qualification rejection, current-policy drift, Promotion Guard rejection, Mihomo rejection, missing Cloudflare configuration, and immutable release-staging failure.
 
-Scheduled refresh follows the same fail-closed semantics. An upstream subscription outage or a newly introduced node set that cannot pass the existing production gates does not replace the last known-good fixed production value.
-
-When the client-facing production write succeeds but a later pointer commit fails, P17 attempts compensating restoration of the exact prior production bytes. Release objects are immutable and may remain staged even when activation fails; an unreferenced staged release is not client-visible.
-
-Because Workers KV is eventually consistent, clients may briefly continue receiving an older successful value after a committed write. The workflow never intentionally publishes a candidate that has skipped qualification, current-policy audit, or the pinned stable-core matrix.
+If activation has committed and a later proof/derived-state/SLO operation fails, the release remains committed and the failure is reported as post-commit observability degradation rather than misrepresented as a pre-publication safety failure.

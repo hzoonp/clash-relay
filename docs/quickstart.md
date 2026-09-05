@@ -91,7 +91,7 @@ Both connectivity checks can be requested together. Doctor output is aggregate-o
 
 Run `Generate, validate, and publish` manually with the workflow input `publish = false`.
 
-A successful dry-run performs the same private generation, source audit, browsing/transport qualification, AI qualification, post-qualification audit, Promotion Guard semantics where applicable, and every stable Mihomo validation from `tools/mihomo-versions.json`, but does not activate Cloudflare KV production bytes.
+A successful dry run performs the same private generation, source audit, browsing/transport qualification, ServiceQualification registry pass, declared service client-path hardening, post-qualification audit, Promotion Guard semantics where applicable, and every stable Mihomo validation from `tools/mihomo-versions.json`, but does not activate Cloudflare KV production bytes.
 
 Browsing/transport retry is deliberately narrow: only a structured whole-probe transient infrastructure failure may retry once, and the retry starts from the immutable generated candidate. Policy rejection, partial live success, transport admission failure, core rejection, configuration failure, and unstructured protocol failure remain fail closed without retry.
 
@@ -111,7 +111,7 @@ prepared -> qualified -> promoted -> published -> verified
 
 A proof/manifest/metrics problem after the client-visible release transaction has committed is reported as post-release observability degradation; it does not falsely claim the release was never published. Before publication, every mandatory gate remains fail closed.
 
-After the first successful publication, P26 automatically runs the same production workflow every six hours (`17 */6 * * *` UTC). Scheduled refresh is not a shortcut: subscription fetch, generation, source isolation, browsing/transport and AI qualification, OpenAI client-path hardening, post-audit, Promotion Guard, and every stable Mihomo validation must all pass before publication. If the final bytes have not changed, the release remains active with `status: unchanged` and `previous-release-v1` is not rotated.
+After the first successful publication, the scheduled workflow runs the same production lifecycle every six hours (`17 */6 * * *` UTC). Scheduled refresh is not a shortcut: subscription fetch, generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-audit, Promotion Guard, and every stable Mihomo validation must all pass before publication. If the final bytes have not changed, the release remains active with `status: unchanged` and `previous-release-v1` is not rotated.
 
 Overlapping production Actions are serialized by the workflow concurrency group with `cancel-in-progress: false`; an older transaction is never cancelled mid-commit by a newer refresh.
 
@@ -132,9 +132,9 @@ Top-level FlClash decisions remain:
 
 ## 8. Roll back safely
 
-Run the manual `Roll back production config` workflow with `confirm = true` only when rollback is intentional. It resolves `previous-release-v1`, falls back to the legacy slot only for migration compatibility, applies the current-policy source/routing audits, validates every currently pinned stable Mihomo core, and activates through the same versioned release transaction.
+Run the manual `Roll back production config` workflow with `confirm = true` only when rollback is intentional. It resolves only the versioned `previous-release-v1` pointer, verifies the immutable release bytes and manifest, applies the current source/Routing/OpenAI client-path policy audits, validates every currently pinned stable Mihomo core, and activates through the same versioned release transaction.
 
-A historical config that violates current source isolation is intentionally not rollback-eligible. Automated tests also rehearse the exact previous-release round trip and pointer reversal without touching real production data.
+There is no legacy previous-value or historical OpenAI-shape fallback in the v2 runtime. A historical config that violates the current safety contract is intentionally not rollback-eligible. Automated tests rehearse the exact previous-release round trip and pointer reversal without touching real production data.
 
 ## What stays private
 
@@ -147,8 +147,8 @@ Never publish any of the following to GitHub:
 - scheduler fingerprint keys;
 - AI cache fingerprints.
 
-Private longitudinal metrics remain bounded to 30 runs and aggregate-only. They may contain safe counts, hashes, stage durations, retry-recovery counts, Promotion Guard status, and release phase; they do not contain node identities, servers, credentials, or subscription URLs.
+Private longitudinal metrics and operational SLO state are bounded and aggregate-only. They may contain safe counts, hashes, stage durations, retry-recovery counts, Promotion Guard status, and release phase; they do not contain node identities, servers, credentials, or subscription URLs.
 
-## Compatibility safety contract
+## Safety contract
 
-The established browsing scheduler contract remains explicit: **3/3** successful live samples is Stable and **2/3** is Reserve. Private scheduler history continues to use **HMAC-SHA256** fingerprints and cannot promote a current live-failed node. OpenAI, Claude, and Gemini remain independently qualified. Manual recovery still uses **Roll back production config** with **confirm = true**, validates every stable core in **tools/mihomo-versions.json**, resolves **previous-release-v1**, and applies the **current-policy** audit before activation.
+Browsing qualification remains explicit: **3/3** successful live samples is Stable and **2/3** is Reserve. Private scheduler history continues to use **HMAC-SHA256** fingerprints and cannot promote a current live-failed node. OpenAI, Claude, and Gemini remain independently qualified behind the ServiceQualification registry. Manual recovery still uses **Roll back production config** with **confirm = true**, validates every stable core in **tools/mihomo-versions.json**, resolves **previous-release-v1**, and applies the **current-policy** audit before activation.

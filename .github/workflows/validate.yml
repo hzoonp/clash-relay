@@ -39,6 +39,8 @@ jobs:
         run: python scripts/audit_operational_slo_contract.py
       - name: Audit service qualification contract
         run: python scripts/audit_service_qualification_contract.py
+      - name: Audit v2 release contract
+        run: python scripts/audit_v2_release_contract.py
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .

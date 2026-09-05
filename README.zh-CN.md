@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-`clash-relay` 是一个面向 Mihomo / FlClash 的确定性配置生成项目：把多个私有订阅合并为一个独立 `config.yaml`，同时严格保留“订阅源 → 使用场景”的权限边界。
+`clash-relay` 2.x 是面向 Mihomo / FlClash 的确定性、fail-closed 配置生成项目：把多个私有订阅合并为一个独立 `config.yaml`，同时严格保留“订阅源 → 使用场景”的权限边界。
 
 生成后的生产配置包含代理凭据，按最高敏感级别处理。生产环境只把经过完整验证的精确字节发布到私有 Cloudflare Workers KV；带凭据的配置不会进入 GitHub Artifact、Release、Gist、Pages 或 Git 历史。
 
@@ -18,17 +18,28 @@ Fork
   -> 手动 dry-run（publish=false）
   -> 查看聚合 production proof
   -> publish=true
-  -> 每 6 小时自动刷新生产订阅
-  -> 必要时执行经过验证的回滚（release-aware rollback）
+  -> 每 6 小时自动刷新
+  -> 必要时执行 validated 回滚
 ```
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
 
-首次成功发布后，P26 会每 6 小时重新获取私有上游订阅，并在固定 Cloudflare KV production key 发生变化前执行与正式发布完全相同的生产门禁。Push 和定时运行只会发布通过完整验证的字节；手动触发仍默认 dry-run，只有明确设置 `publish=true` 才发布。如果最终 candidate 与当前生产配置逐字节一致，则发布保持幂等，不会旋转 previous-release 指针。FlClash 继续使用原来的经过认证的 Worker 订阅 URL，无需更换地址。
+Push、定时刷新和手动运行都复用同一套 release-authoritative 门禁。手动触发默认仍是 dry-run，只有明确设置 `publish=true` 才发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
 
-## 六个公开场景
+## Public Config v2
 
-FlClash 顶层只暴露：
+受支持的跟踪配置面保持最小化：
+
+```text
+config.yaml          version: 2
+subscriptions.yaml   version: 2
+policies.yaml        version: 2 manifest
+policies/*           Policy Model v2 独立职责 fragments
+```
+
+删除的 v1 公共字段不提供 runtime alias。Policy Model v1 不是运行时输入；`scripts/migrate_policy_v2.py` 只是一项离线迁移工具。
+
+FlClash 顶层只暴露六个主要场景：
 
 ```text
 代理选择
@@ -43,14 +54,15 @@ ACL4SSR 兼容组、地区辅助组、自动调度组和 qualification 运行时
 
 ## 订阅源权限
 
-合并订阅并不代表所有订阅都能进入所有场景：
+合并订阅不代表所有订阅都能进入所有场景：
 
 ```text
 SUBSCRIPTION_1_URL
   ├─ 明确 >2x          -> 剔除
+  ├─ 恰好 2x           -> 保留
   ├─ EMBY 标记         -> 剔除
-  ├─ 网页浏览           -> 允许
-  ├─ 人工智能           -> 允许
+  ├─ browsing           -> 允许
+  ├─ ai                 -> 允许
   └─ general/media/...  -> 禁止
 
 SUBSCRIPTION_2+
@@ -58,6 +70,8 @@ SUBSCRIPTION_2+
   ├─ browsing
   └─ ai
 ```
+
+`ingest_order` 只控制确定性的订阅摄入/去重顺序，不表示路由优先级或节点质量。
 
 生产不变量：
 
@@ -67,16 +81,35 @@ SUBSCRIPTION_2+
 4. 流媒体、消息通讯、下载、ACL 兼容选择器以及最终 `MATCH` 都不能到达 `subscription_1`。
 5. qualification 前后都会执行 source reachability audit。
 
+## Compiler 与 RuntimeGraph
+
+v2 的生产数据流为：
+
+```text
+Declarations
+  -> Subscription I/O
+  -> NodeInventory
+  -> PolicyCompiler
+  -> RuntimeGraph
+  -> qualification
+  -> Qualified Graph
+  -> MihomoSerializer
+  -> config.yaml
+  -> audit / real Mihomo / promotion
+```
+
+Builder 在 compiler 输出后不再修改 topology。Python 内部阶段通过 typed in-process application API 直接调用；只有 Mihomo 这类真实外部程序保留 subprocess 边界。
+
 ## ACL4SSR 一致性
 
-`rules/acl4ssr.yaml` 固定 ACL4SSR Online 参考版本。ACL4SSR Online 负责分类语义；clash-relay 负责 source-safe inventory、qualification 与调度。
+`rules/acl4ssr.yaml` 固定 ACL4SSR Online 参考版本。ACL4SSR 负责基线分类语义；clash-relay 负责 source-safe inventory、声明式扩展、qualification 和调度。
 
 明确且受审计的偏差：
 
 - `BanProgramAD / 应用净化` 保持禁用，避免已确认的移动端图片/CDN 破坏。
-- AI/OpenAI 在宽泛的 `ProxyMedia` 之前处理。
+- AI/OpenAI 在宽泛 `ProxyMedia` 之前处理。
 - `Download.list` 在 `ProxyLite` 之前处理并指向 `下载流量`。
-- ACL4SSR 单订阅的裸节点通配逻辑改造成 source-aware 场景选择器。
+- ACL4SSR 单订阅裸节点通配逻辑改造成 source-aware 场景选择器。
 
 ## Qualification 与调度
 
@@ -86,32 +119,33 @@ SUBSCRIPTION_2+
 US -> SG -> JP -> TW -> KR -> HK -> OTHER
 ```
 
-手动选择地区绝不会静默跨国；自动模式只有当前优先地区整体不可用时才跨区。调度历史是私有匿名状态，只能在当前 live-qualified 集合中降级不稳定节点，不能扩大 source admission。
+手动地区选择绝不会静默跨国；自动模式只有优先地区整体不可用时才跨区。私有匿名 scheduler history 可以在当前 live-qualified 集合中降级不稳定节点，但不能扩大 source admission。
 
-AI 对 OpenAI、Claude、Gemini 分别独立验证。香港在 AI qualification 前排除，每个服务独立 fail-closed。OpenAI 另外执行经过审查的 ChatGPT App contract：只有所有 critical ChatGPT / Android / 认证 TLS endpoint 都通过正常证书与 hostname 校验的节点才允许进入 OpenAI qualified pool。最终 `cr_openai_app` route lock 会把这组经过审查的应用网络面固定到 `__CR_AI_SERVICE_OPENAI`；共享第三方 CDN/遥测 endpoint 只用于诊断，绝不会成为关闭 TLS 校验的理由。
+AI 服务通过通用 `ServiceQualification` registry 进行资格验证。OpenAI、Claude、Gemini 都只是注册实现，主 qualification pipeline 不包含厂商分支。服务特有的 critical/supporting probes、cache TTL、route post-processing 和可选 client-path hardening 都封装在对应实现中。
 
-v1.6.2 在服务器准入之后再增加一层 **客户端真实链路健康检查**：只把服务器端已合格的 OpenAI 节点复制进隔离的 runtime provider，随后由手机上的 FlClash/Mihomo 每 120 秒通过 `https://android.chat.openai.com/` 检查当前实际的“Wi-Fi/移动网络 → FlClash → 节点 → OpenAI”路径。地区内和地区间均使用 stable-first fallback，优先保持当前第一条健康路径，而不是为了几十毫秒延迟频繁换节点。
-
-静态 Mihomo 配置没有可持久化的“错误类型 + 冷却时间”状态，因此本项目不会宣称已经实现客户端 TLS 错误 12–24 小时 quarantine。v1.6.2 使用的是 Mihomo 官方支持的 provider health-check 和 fallback 语义；如果未来要做持久 TLS-specific quarantine，需要可信的本地 controller/companion，而不是伪造静态配置能力。
+OpenAI 继续保留经过审查的 ChatGPT App contract 和 route lock；client-path hardening 改为 Policy 声明后执行，并且只能发生在服务器端资格通过之后。TLS 证书和 hostname 校验始终开启。
 
 ## 生产发布模型
 
-生产只有一条统一的私有 qualification 流程：
+生产只有一条私有发布路径：
 
 ```text
-generated.yaml
+generated graph
   -> browsing + transport qualification
-  -> AI 服务器端 qualification
-  -> OpenAI client-path runtime hardening
+  -> ServiceQualification registry
+  -> 声明式 service client-path hardening
   -> qualification 后策略审计
+  -> Promotion Guard
   -> tools/mihomo-versions.json 中全部 stable core
   -> versioned Cloudflare KV release transaction
-  -> 固定客户端生产 key
+  -> 固定客户端 production key
 ```
 
-`tools/mihomo-versions.json` 是 stable/prerelease Mihomo 版本的唯一事实来源。Workflow 和文档不得再维护第二套固定 stable 版本列表。
+`tools/mihomo-versions.json` 是 stable/prerelease Mihomo 版本的唯一事实来源。Workflow 和文档不得维护第二套固定 stable 版本列表。
 
-每个生产候选都按精确字节 SHA-256 写入不可变 release 对象：
+每个 source/production release 都绑定到一个精确 validated commit SHA。质量门禁覆盖 Python 3.11/3.12/3.13、hash-verified 依赖、Ruff、application boundary 静态类型、测试与 coverage、架构/供应链/隐私审计、deterministic generation、Routing V2 drift，以及真实 Mihomo startup/provider 集成。
+
+私有生产 candidate 按精确字节 SHA-256 存成不可变 release 对象：
 
 ```text
 <production>.release-v1.<sha256>.config
@@ -120,15 +154,15 @@ generated.yaml
 <production>.previous-release-v1
 ```
 
-Cloudflare KV 不提供跨 key 数据库事务，因此这里采用补偿事务：先 stage 并 read-back 验证不可变字节，再激活固定 production key，随后提交 release pointers；如果 pointer commit 失败，则尝试恢复上一版本的精确生产字节。
+这里的 `v1` 表示稳定的**私有存储 schema 版本**，不是 clash-relay 产品大版本。v2 删除旧 `previous-v1` rollback slot/fallback。回滚必须通过 versioned previous pointer 解析，验证精确 SHA-256 字节和 immutable manifest，再通过当前策略审计和完整 stable Mihomo matrix 后才能激活。
 
-Rollback 会读取 previous release，并使用**当前仓库策略**和当前 `tools/mihomo-versions.json` 中全部 stable core 重新验证后再激活。
+Cloudflare KV 不是跨 key 事务数据库，因此 versioned Cloudflare KV release transaction 使用补偿语义：先 stage 并 read-back 验证不可变字节，再激活固定 production key，随后提交 pointers；如果 commit 失败，尝试恢复上一版本的精确生产字节。
 
-## 可观测性与隐私
+## Operational SLO 与隐私
 
-Production proof 和私有纵向 metrics 只保存聚合运维信息，例如 candidate SHA/大小、合格节点数量、地区 cohort 计数、AI 服务/App-ready 计数、client-path runtime 计数、release 状态、Mihomo 验证数量和有界阶段耗时。不会保存节点名、服务器、凭据、订阅 URL、探测 endpoint URL 或子进程详细诊断。
+Production proof、production metrics 和 operational SLO history 只保存聚合运维信息。SLO ring 可以统计 qualification rejection rate、retry recovery rate、Promotion Guard block rate、lifecycle duration 和 candidate churn，但不保存节点身份或订阅数据。SLO 持久化是 best-effort，绝不会放宽生产门禁。
 
-P18.1-P23 的长期生产契约见 [Production maturity](docs/production-maturity.md)；OpenAI App-ready 路由/TLS 与 client-path runtime 契约见 [OpenAI App reliability](docs/openai-app-reliability.md)。
+公共或持久化聚合数据都不会包含节点名、服务器、端口、凭据、订阅 URL、生成配置字节或子进程详细诊断。
 
 ## GitHub Secrets / Variables
 
@@ -164,12 +198,17 @@ Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements-dev.lock -e .
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --no-build-isolation --no-deps -e .
 clash-relay doctor --public-only
 ruff check .
 ruff format --check .
 pytest -m "not integration"
 python scripts/audit_documentation_contract.py
+python scripts/audit_architecture_contract.py
+python scripts/audit_operational_slo_contract.py
+python scripts/audit_service_qualification_contract.py
+python scripts/audit_supply_chain.py
 python scripts/audit_acl4ssr_fidelity.py
 python scripts/repository_audit.py
 ```
@@ -178,12 +217,15 @@ python scripts/repository_audit.py
 
 - [Fork 快速上手](docs/quickstart.zh-CN.md)
 - [Fork quickstart](docs/quickstart.md)
+- [架构](docs/architecture.md)
+- [配置模型](docs/configuration.md)
+- [Service Qualification API](docs/service-qualification.md)
+- [Operational SLO](docs/operational-slo.md)
 - [Production maturity](docs/production-maturity.md)
 - [OpenAI App reliability](docs/openai-app-reliability.md)
-- [配置模型](docs/configuration.md)
-- [架构](docs/architecture.md)
 - [ACL4SSR 路由模型](docs/rules.md)
 - [安全模型](docs/security.md)
 - [发布](docs/publishing.md)
 - [版本与兼容性](docs/versioning.md)
-- [发布检查清单](docs/release-checklist.md)
+- [v2 发布检查清单](docs/release-checklist.md)
+- [2.0.0 release notes](docs/releases/2.0.0.md)

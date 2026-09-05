@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P27-P52 architecture boundaries regress."""
+"""Fail CI when the current architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def main() -> int:
     policy_document = load_policy_document(ROOT / "policies.yaml")
     contract = load_policy_contract(policy_document.document)
 
-    # P27/P35: declaration truth is explicit. No Python routing-name/default fallback.
+    # Declaration truth is explicit. No Python routing-name/default fallback.
     for relative in (
         "src/clash_relay/routing_shadow.py",
         "src/clash_relay/routing_v2_audit.py",
@@ -42,7 +42,7 @@ def main() -> int:
     if "routing policy and routing.contract are required" not in policy_contract:
         raise SystemExit("architecture audit: PolicyContract no longer fails closed")
 
-    # P28/P47: RuntimeGraph is topology truth and builder crosses one compiler/serializer boundary.
+    # RuntimeGraph is topology truth and builder crosses one compiler/serializer boundary.
     production_audit = _text("src/clash_relay/production_audit.py")
     if "RuntimeGraph" not in production_audit or "def _reachable_sources(" in production_audit:
         raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
@@ -77,7 +77,7 @@ def main() -> int:
                 f"architecture audit: low-level runtime draft generator escaped PolicyCompiler: {path.name}"
             )
 
-    # P33: Actions invokes one application entrypoint and contains no business pipeline.
+    # Actions invokes one application entrypoint and contains no business pipeline.
     workflow = _text(".github/workflows/publish.yml")
     if workflow.count("python scripts/run_production_release.py") != 1:
         raise SystemExit(
@@ -124,7 +124,7 @@ def main() -> int:
     if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
         raise SystemExit("architecture audit: private production state is not always cleaned")
 
-    # P39/P48/P52: qualification retry is typed and package-to-package, never stdout JSON IPC.
+    # Qualification retry is typed and package-to-package, never stdout JSON IPC.
     qualification = _text("src/clash_relay/qualification_pipeline.py")
     reliability = _text("src/clash_relay/qualification_reliability.py")
     if "QualificationStageRejected" not in qualification:
@@ -159,7 +159,7 @@ def main() -> int:
             "architecture audit: qualification restored OpenAI-specific application API"
         )
 
-    # P48: lifecycle calls typed package services directly; scripts are adapters only.
+    # Lifecycle calls typed package services directly; scripts are adapters only.
     production_pipeline = _text("src/clash_relay/production_pipeline.py")
     for token in ("script_dir", "python_executable"):
         if token in production_pipeline:
@@ -222,7 +222,7 @@ def main() -> int:
                 f"architecture audit: thin adapter {relative} still launches subprocesses"
             )
 
-    # P40: release progress wraps the proven in-process release transaction.
+    # Release progress wraps the proven in-process release transaction.
     if "ReleaseProgress" not in lifecycle or "ReleasePhase.PUBLISHED" not in lifecycle:
         raise SystemExit("architecture audit: explicit release progress contract is missing")
     release_reliability = _text("src/clash_relay/release_reliability.py")
@@ -230,7 +230,7 @@ def main() -> int:
         if phase not in release_reliability:
             raise SystemExit(f"architecture audit: release progress lost {phase.lower()} phase")
 
-    # P41: metrics remain an explicit lifecycle-owned, aggregate-only best-effort stage.
+    # Metrics remain an explicit lifecycle-owned, aggregate-only best-effort stage.
     if '"persist_production_metrics"' not in lifecycle or "_best_effort_state(" not in lifecycle:
         raise SystemExit(
             "architecture audit: lifecycle does not own best-effort production metrics"
@@ -241,7 +241,7 @@ def main() -> int:
                 f"architecture audit: production application missing metrics token {token}"
             )
 
-    # P34/P42: canonical physical policy is current v2 with four owned domain fragments.
+    # Canonical physical policy is current v2 with four owned domain fragments.
     raw_manifest = load_yaml_file(ROOT / "policies.yaml")
     expected_fragments = {"routing", "scheduling", "classification", "topology"}
     if not isinstance(raw_manifest, dict) or raw_manifest.get("version") != 2:
@@ -266,7 +266,7 @@ def main() -> int:
     if not (ROOT / "scripts/migrate_policy_v2.py").is_file():
         raise SystemExit("architecture audit: Policy Model v2 migration tool is missing")
 
-    # P46: runtime is clean-slate v2; migration is offline and generic Services are gone.
+    # Runtime is clean-slate v2; migration is offline and generic Services are gone.
     if "Policy Model v2 manifest is required" not in policy_loader:
         raise SystemExit("architecture audit: runtime no longer rejects Policy Model v1")
     if "deprecated=True" in policy_loader or "compatibility_status" in policy_loader:
@@ -294,7 +294,7 @@ def main() -> int:
                 f"architecture audit: {relative} retained generic Services runtime API"
             )
 
-    # P31/P37: promotion policy and aggregate release proof remain explicit public contracts.
+    # Promotion policy and aggregate release proof remain explicit public contracts.
     if not (ROOT / "promotion-guard.yaml").is_file():
         raise SystemExit("architecture audit: promotion-guard.yaml is missing")
     if not (ROOT / "src/clash_relay/release_manifest.py").is_file():
@@ -303,19 +303,21 @@ def main() -> int:
         "release-manifest.json" not in lifecycle
         or "render_release_manifest_markdown" not in lifecycle
     ):
-        raise SystemExit("architecture audit: production lifecycle omits P37 release manifest")
+        raise SystemExit("architecture audit: production lifecycle omits release manifest")
 
-    # P43/P44/P45: chaos matrix, doctor-first UX, and stabilization version are explicit.
+    # Chaos, doctor-first Fork UX, and package version remain explicit release contracts.
     if not (ROOT / "tests/test_p43_chaos_matrix.py").is_file():
-        raise SystemExit("architecture audit: P43 chaos matrix is missing")
+        raise SystemExit("architecture audit: chaos matrix is missing")
     doctor = _text("src/clash_relay/doctor.py")
     for token in ("policy_model_version", "enabled_subscription_secrets", "first_publish_default"):
         if token not in doctor:
             raise SystemExit(f"architecture audit: doctor-first Fork UX missing {token}")
     pyproject = _text("pyproject.toml")
     package = _text("src/clash_relay/__init__.py")
-    if 'version = "1.8.1"' not in pyproject or '__version__ = "1.8.1"' not in package:
-        raise SystemExit("architecture audit: P45 v1.8.1 version boundary is incomplete")
+    if 'version = "2.0.0"' not in pyproject or '__version__ = "2.0.0"' not in package:
+        raise SystemExit("architecture audit: v2.0.0 package version boundary is incomplete")
+    if not (ROOT / "scripts/audit_v2_release_contract.py").is_file():
+        raise SystemExit("architecture audit: v2 release contract audit is missing")
 
     print("architecture contract audit: passed")
     return 0

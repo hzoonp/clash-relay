@@ -1,6 +1,6 @@
 # Service Qualification API
 
-P52 makes AI service qualification an extension boundary instead of a vendor branch in the production pipeline.
+AI service qualification is an extension boundary instead of a vendor branch in the production pipeline.
 
 The canonical flow is:
 
@@ -31,7 +31,7 @@ A `ServiceQualification` implementation declares:
 
 The default registry contains `OpenAIQualification`, `ClaudeQualification`, and `GeminiQualification`.
 
-OpenAI keeps its mature App contract, cache fingerprint, route lock, critical/supporting probes, and client-local runtime hardening inside the OpenAI implementation. Claude and Gemini use the default generic service behavior.
+OpenAI keeps its App contract, cache fingerprint, route lock, critical/supporting probes, and client-local runtime hardening inside the OpenAI implementation. Claude and Gemini use the generic service behavior unless they need an explicit provider extension.
 
 ## Declarative client-path hardening
 
@@ -50,22 +50,22 @@ probes:
     client_path_hardening: true
 ```
 
-The generic hardening stage reads Policy Model v2, resolves the service through the registry, and invokes the implementation only when the declaration is true. Declaring hardening for an unregistered service or for an implementation that does not support it fails closed.
+The generic hardening stage reads Policy Model v2, resolves the service through the registry, and invokes the implementation only when the declaration is true. Declaring hardening for an unregistered service or an implementation that does not support it fails closed.
 
 The production stage name is vendor-neutral: `service_client_path_hardened`.
 
 ## Adding a service
 
-A new service qualification should be implemented by adding one `ServiceQualification` implementation and registering it in the ordered registry. The main `qualification_pipeline.py` and `production_pipeline.py` must not require provider-specific edits.
+A new service qualification is implemented by adding one `ServiceQualification` implementation and registering it in the ordered registry. The main `qualification_pipeline.py` and `production_pipeline.py` must not require provider-specific edits.
 
-Routing/classification data may still require its own policy/rule declaration because routing semantics are separate from qualification semantics. The extension boundary specifically prevents service probe, cache, diagnostic, route-postprocess, and client-path behavior from leaking into the main orchestration path.
+Routing/classification data may still require its own policy/rule declaration because routing semantics are separate from qualification semantics. The extension boundary prevents service probe, cache, diagnostic, route-postprocess, and client-path behavior from leaking into the main orchestration path.
 
 ## Safety and validation
 
 - Service admission remains fail closed.
-- The browsing/transport retry policy is unchanged.
-- Existing OpenAI App qualification semantics are preserved behind the implementation.
+- Browsing/transport retry remains a separate typed transient policy and cannot be widened by a service implementation.
+- OpenAI App qualification semantics live behind `OpenAIQualification`.
 - Client-path hardening is policy-declared rather than implicitly hardcoded in the pipeline.
-- The service qualification contract audit rejects provider names/imports in the main qualification pipeline and rejects restoration of the old `if name == "ai_openai"` orchestration branch.
+- The service qualification contract audit rejects provider names/imports in the main qualification pipeline and rejects restoration of provider-specific orchestration branches.
 - Registry, AI application, and qualification pipeline are part of the static type gate.
-- Full deterministic generation, Routing V2 drift, and pinned real Mihomo matrix remain release gates.
+- Full deterministic generation, Routing V2 drift, Promotion Guard, and the manifest-driven real Mihomo matrix remain release gates.

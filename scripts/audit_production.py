@@ -22,14 +22,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--markdown", type=Path)
-    parser.add_argument(
-        "--allow-legacy-openai-client-path",
-        action="store_true",
-        help=(
-            "Allow the exact P24 server-qualified OpenAI runtime shape for an emergency "
-            "historical rollback. Normal production publication must not use this flag."
-        ),
-    )
     return parser
 
 
@@ -44,12 +36,7 @@ def main() -> int:
     build_report = None
     if args.report is not None:
         build_report = json.loads(args.report.read_text(encoding="utf-8"))
-    summary = audit_candidate(
-        project,
-        candidate,
-        build_report=build_report,
-        allow_legacy_openai_client_path=args.allow_legacy_openai_client_path,
-    )
+    summary = audit_candidate(project, candidate, build_report=build_report)
     if args.markdown is not None:
         atomic_write(args.markdown, render_production_summary_markdown(summary))
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
