@@ -10,6 +10,7 @@ from clash_relay.operational_slo import (
     parse_slo_bytes,
     qualification_failure_category,
     qualification_retry_attempted,
+    scheduler_tuning_evidence,
     slo_summary,
 )
 from clash_relay.qualification_reliability import (
@@ -81,6 +82,33 @@ def test_slo_summary_measures_rejections_retry_guard_duration_and_churn() -> Non
     assert summary["candidate_changes"] == 2
     assert summary["candidate_churn_rate"] == 0.6667
     assert summary["latest_candidate_bytes_delta"] == -200
+    assert summary["scheduler_tuning_evidence"]["status"] == "insufficient_evidence"
+    assert summary["scheduler_tuning_evidence"]["automatic_tuning_allowed"] is False
+
+
+def test_scheduler_tuning_review_requires_longitudinal_attempts_and_transitions() -> None:
+    insufficient = scheduler_tuning_evidence(
+        {
+            "attempts": 11,
+            "candidate_transitions": 10,
+            "lifecycle_duration_ms": {"p50": 10.0, "p95": 20.0, "max": 30.0},
+        }
+    )
+    assert insufficient["status"] == "insufficient_evidence"
+    assert insufficient["review_allowed"] is False
+    assert insufficient["missing_evidence"] == ["longitudinal_attempts"]
+
+    ready = scheduler_tuning_evidence(
+        {
+            "attempts": 12,
+            "candidate_transitions": 4,
+            "lifecycle_duration_ms": {"p50": 10.0, "p95": 20.0, "max": 30.0},
+        }
+    )
+    assert ready["status"] == "eligible_for_review"
+    assert ready["review_allowed"] is True
+    assert ready["automatic_tuning_allowed"] is False
+    assert ready["missing_evidence"] == []
 
 
 def test_slo_state_is_bounded_and_rejects_unstructured_payloads() -> None:
