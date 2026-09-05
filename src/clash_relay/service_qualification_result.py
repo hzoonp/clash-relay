@@ -35,6 +35,27 @@ def _safe_outcomes(value: Mapping[str, Any]) -> tuple[tuple[str, int], ...]:
     return tuple(outcomes)
 
 
+def _qualified_region_count(ai_summary: Mapping[str, Any], service_label: str) -> int:
+    """Count regions with at least one qualified node without exposing region identities."""
+
+    raw_services = ai_summary.get("service_country_groups")
+    if raw_services is None:
+        return 0
+    if not isinstance(raw_services, Mapping):
+        raise ValidationError("ServiceQualification regional diagnostics must be an aggregate mapping")
+    raw_regions = raw_services.get(service_label)
+    if raw_regions is None:
+        return 0
+    if not isinstance(raw_regions, Mapping):
+        raise ValidationError("ServiceQualification regional service result must be a mapping")
+
+    qualified_regions = 0
+    for raw_count in raw_regions.values():
+        if _safe_count(raw_count, "regional qualified candidates") > 0:
+            qualified_regions += 1
+    return qualified_regions
+
+
 @dataclass(frozen=True, slots=True)
 class ServiceQualificationResult:
     """One service's aggregate result with no node identities or raw responses."""
@@ -44,6 +65,7 @@ class ServiceQualificationResult:
     status: str
     tested_candidates: int
     qualified_candidates: int
+    qualified_regions: int
     rejected_candidates: int
     live_tested_candidates: int
     live_qualified_candidates: int
@@ -58,6 +80,7 @@ class ServiceQualificationResult:
             "status": self.status,
             "tested_candidates": self.tested_candidates,
             "qualified_candidates": self.qualified_candidates,
+            "qualified_regions": self.qualified_regions,
             "rejected_candidates": self.rejected_candidates,
             "live_tested_candidates": self.live_tested_candidates,
             "live_qualified_candidates": self.live_qualified_candidates,
@@ -75,6 +98,7 @@ def build_service_qualification_result(
     cache_pass_hits: int,
     cache_fail_hits: int,
     outcomes: Mapping[str, Any],
+    qualified_regions: int = 0,
 ) -> ServiceQualificationResult:
     """Build the common aggregate shape used by every registered provider."""
 
@@ -82,6 +106,7 @@ def build_service_qualification_result(
     live_qualified = _safe_count(live_qualified, "live_qualified")
     cache_pass_hits = _safe_count(cache_pass_hits, "cache_pass_hits")
     cache_fail_hits = _safe_count(cache_fail_hits, "cache_fail_hits")
+    qualified_regions = _safe_count(qualified_regions, "qualified_regions")
     if live_qualified > live_tested:
         raise ValidationError("ServiceQualification live qualified count exceeds live tested count")
 
@@ -94,6 +119,7 @@ def build_service_qualification_result(
         status="qualified" if qualified else "rejected",
         tested_candidates=tested,
         qualified_candidates=qualified,
+        qualified_regions=qualified_regions,
         rejected_candidates=rejected,
         live_tested_candidates=live_tested,
         live_qualified_candidates=live_qualified,
@@ -131,6 +157,7 @@ def service_qualification_results(ai_summary: Mapping[str, Any]) -> dict[str, di
             live_qualified=qualified - cache_pass_hits,
             cache_pass_hits=cache_pass_hits,
             cache_fail_hits=_safe_count(probe.get("cache_fail_hits", 0), "cache_fail_hits"),
+            qualified_regions=_qualified_region_count(ai_summary, service.label),
             outcomes=outcomes,
         ).as_dict()
     return results
