@@ -193,12 +193,12 @@ def test_lifecycle_owns_metrics_independently_after_release_commit() -> None:
     scheduler_publisher = PUBLISH_HISTORY.read_text(encoding="utf-8")
     metrics_publisher = PUBLISH_METRICS.read_text(encoding="utf-8")
 
-    release = lifecycle.index("release = self._publish_release(project)")
+    release_stage = lifecycle.index("release_stage = self._release_candidate_stage(project, binary)")
     persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
     proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
     metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
 
-    assert release < persist < proof < metrics
+    assert release_stage < persist < proof < metrics
     assert '"persist_scheduler_history",' in lifecycle
     assert '"persist_ai_qualification_cache",' in lifecycle
     assert '"persist_production_metrics",' in lifecycle
