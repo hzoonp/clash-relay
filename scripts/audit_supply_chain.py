@@ -77,7 +77,7 @@ def main() -> int:
         "--require-hashes",
         "--only-binary=:all:",
         "--no-build-isolation",
-        "--cov-fail-under=71",
+        "--cov-fail-under=72",
         "mypy --follow-imports=skip",
         "Validated SHA",
     ):
