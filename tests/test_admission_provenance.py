@@ -109,8 +109,7 @@ def test_builder_reports_name_admission_rejections(
     )
 
     runtime_names = [
-        item["name"]
-        for item in result.config["proxy-providers"]["cr_general_any"]["payload"]
+        item["name"] for item in result.config["proxy-providers"]["cr_general_any"]["payload"]
     ]
     assert all("EMBY" not in name for name in runtime_names)
     assert any("Keep normal" in name for name in runtime_names)
