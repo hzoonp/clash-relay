@@ -187,7 +187,20 @@ jobs:
       - name: Real startup and provider HEAD integration tests
         env:
           MIHOMO_BIN: ${{ github.workspace }}/.work/bin/mihomo
-        run: pytest -m integration tests/integration --junitxml=.work/integration-${{ matrix.tag }}.xml
+        run: |
+          pytest -m integration tests/integration \
+            --ignore=tests/integration/test_acl4ssr_upstream.py \
+            --junitxml=.work/integration-${{ matrix.tag }}.xml
+          for attempt in 1 2 3; do
+            if pytest -m integration tests/integration/test_acl4ssr_upstream.py \
+              --junitxml=.work/integration-acl4ssr-${{ matrix.tag }}.xml; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep "$attempt"
+          done
 
   validated:
     name: Validated SHA
