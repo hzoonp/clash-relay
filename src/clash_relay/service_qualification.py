@@ -65,9 +65,7 @@ class ServiceQualification:
 
     def harden_client_path(self, candidate: Path) -> dict[str, Any]:
         del candidate
-        raise ValidationError(
-            f"service {self.probe_name!r} does not support client-path hardening"
-        )
+        raise ValidationError(f"service {self.probe_name!r} does not support client-path hardening")
 
 
 def _network_failure_count(probes: dict[str, Any], outcome: str) -> int:
