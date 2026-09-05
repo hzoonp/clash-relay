@@ -69,11 +69,7 @@ def test_general_provider_payloads_are_normalized_and_fail_closed() -> None:
         )
     with pytest.raises(ValidationError, match="unnamed proxy"):
         transport._general_provider_payloads(
-            {
-                "proxy-providers": {
-                    "cr_general_bad": {"type": "inline", "payload": [{"type": "ss"}]}
-                }
-            }
+            {"proxy-providers": {"cr_general_bad": {"type": "inline", "payload": [{"type": "ss"}]}}}
         )
 
 
@@ -163,9 +159,7 @@ def test_group_rewrite_rejects_invalid_structure_and_custom_filter() -> None:
     with pytest.raises(ValidationError, match="requires url-test group"):
         transport._rewrite_group(config, "自动选择", {"node"})
 
-    config = {
-        "proxy-groups": [{"name": "自动选择", "type": "url-test", "filter": "custom"}]
-    }
+    config = {"proxy-groups": [{"name": "自动选择", "type": "url-test", "filter": "custom"}]}
     with pytest.raises(ValidationError, match="cannot compose custom filter"):
         transport._rewrite_group(config, "自动选择", {"node"})
 
