@@ -18,7 +18,7 @@ from .ai_qualification_cache import (
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
 from .errors import ValidationError
-from .policy_document import load_policy_document
+from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
 from .scheduler_policy import load_scheduler_policy
 from .service_qualification import (
@@ -160,7 +160,7 @@ def run_ai_qualification(
     scheduler_policy = load_scheduler_policy(policies)
     policies_document = load_policy_document(policies).document
     routing_policy = load_routing_policy_v2(policies_document)
-    probes = load_ai_probe_specs(policies)
+    probes = load_ai_probe_specs(policy_fragment_path(policies, "scheduling"))
     candidate_config = load_yaml_file(candidate)
     if not isinstance(candidate_config, dict):
         raise ValidationError("candidate is not a YAML mapping")
