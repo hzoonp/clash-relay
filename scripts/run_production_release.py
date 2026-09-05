@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.production_lifecycle import (
     ProductionLifecyclePaths,
     ProductionPipeline,
@@ -62,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        diagnostic = safe_failure_diagnostic(exc)
+        print(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 2
 
 
