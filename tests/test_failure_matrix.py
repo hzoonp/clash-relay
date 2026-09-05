@@ -41,9 +41,9 @@ def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
         encoding="utf-8"
     )
-    release_stage = (
-        repo_root / "src" / "clash_relay" / "production_release_stage.py"
-    ).read_text(encoding="utf-8")
+    release_stage = (repo_root / "src" / "clash_relay" / "production_release_stage.py").read_text(
+        encoding="utf-8"
+    )
 
     assert workflow.count("python scripts/run_production_release.py") == 1
     assert "check_promotion_guard.py" not in workflow
