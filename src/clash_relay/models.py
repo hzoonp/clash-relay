@@ -26,6 +26,21 @@ class SubscriptionSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class NodeOccurrence:
+    """Source-specific classification retained for one physical proxy identity."""
+
+    source_id: str
+    source_display_name: str
+    source_priority: int
+    source_allowed_uses: frozenset[str]
+    source_allowed_countries: frozenset[str]
+    original_name: str
+    country: str
+    capabilities: frozenset[str]
+    cost_level: str
+
+
+@dataclass(frozen=True, slots=True)
 class Node:
     source_id: str
     source_display_name: str
@@ -38,6 +53,7 @@ class Node:
     capabilities: frozenset[str]
     cost_level: str
     fingerprint: str
+    occurrences: tuple[NodeOccurrence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
