@@ -23,29 +23,27 @@ class PromotionGuardPolicy:
     minimum_regions_by_use: dict[str, int]
 
 
+def _float_map(value: dict[str, Any]) -> dict[str, float]:
+    return {str(name): float(raw) for name, raw in value.items()}
+
+
+def _int_map(value: dict[str, Any]) -> dict[str, int]:
+    return {str(name): int(raw) for name, raw in value.items()}
+
+
 def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
     document = load_and_validate(path, "promotion-guard.schema.json")
     if not isinstance(document, dict):
         raise ConfigurationError("promotion guard document must be a mapping")
+
     return PromotionGuardPolicy(
         enabled=bool(document["enabled"]),
         minimum_total_node_ratio=float(document["minimum_total_node_ratio"]),
         minimum_provider_ratio=float(document["minimum_provider_ratio"]),
-        minimum_source_ratio_by_use={
-            str(name): float(value)
-            for name, value in document["minimum_source_ratio_by_use"].items()
-        },
-        minimum_sources_by_use={
-            str(name): int(value) for name, value in document["minimum_sources_by_use"].items()
-        },
-        minimum_nodes_by_use={
-            str(name): int(value)
-            for name, value in document.get("minimum_nodes_by_use", {}).items()
-        },
-        minimum_regions_by_use={
-            str(name): int(value)
-            for name, value in document.get("minimum_regions_by_use", {}).items()
-        },
+        minimum_source_ratio_by_use=_float_map(document["minimum_source_ratio_by_use"]),
+        minimum_sources_by_use=_int_map(document["minimum_sources_by_use"]),
+        minimum_nodes_by_use=_int_map(document.get("minimum_nodes_by_use", {})),
+        minimum_regions_by_use=_int_map(document.get("minimum_regions_by_use", {})),
     )
 
 
@@ -58,7 +56,8 @@ def _absolute_thresholds(policy: PromotionGuardPolicy) -> dict[str, Any]:
 
 
 def _absolute_violations(
-    candidate_inventory: InventoryCount, policy: PromotionGuardPolicy
+    candidate_inventory: InventoryCount,
+    policy: PromotionGuardPolicy,
 ) -> list[str]:
     violations: list[str] = []
     required_uses = (
@@ -66,23 +65,44 @@ def _absolute_violations(
         | set(policy.minimum_nodes_by_use)
         | set(policy.minimum_regions_by_use)
     )
+
     for source_use in sorted(required_uses):
-        if (
-            candidate_inventory.sources_by_use.get(source_use, 0)
-            < policy.minimum_sources_by_use.get(source_use, 0)
-        ):
+        source_count = candidate_inventory.sources_by_use.get(source_use, 0)
+        node_count = candidate_inventory.nodes_by_use.get(source_use, 0)
+        region_count = candidate_inventory.regions_by_use.get(source_use, 0)
+        minimum_sources = policy.minimum_sources_by_use.get(source_use, 0)
+        minimum_nodes = policy.minimum_nodes_by_use.get(source_use, 0)
+        minimum_regions = policy.minimum_regions_by_use.get(source_use, 0)
+
+        if source_count < minimum_sources:
             violations.append(f"minimum_sources:{source_use}")
-        if (
-            candidate_inventory.nodes_by_use.get(source_use, 0)
-            < policy.minimum_nodes_by_use.get(source_use, 0)
-        ):
+        if node_count < minimum_nodes:
             violations.append(f"minimum_nodes:{source_use}")
-        if (
-            candidate_inventory.regions_by_use.get(source_use, 0)
-            < policy.minimum_regions_by_use.get(source_use, 0)
-        ):
+        if region_count < minimum_regions:
             violations.append(f"minimum_regions:{source_use}")
+
     return violations
+
+
+def _use_ratio_row(
+    source_use: str,
+    candidate_inventory: InventoryCount,
+    baseline_inventory: InventoryCount,
+) -> dict[str, float | int | bool]:
+    current_sources = candidate_inventory.sources_by_use.get(source_use, 0)
+    baseline_sources = baseline_inventory.sources_by_use.get(source_use, 0)
+    return {
+        "configured_in_baseline": source_use in baseline_inventory.sources_by_use,
+        "source_ratio": round(ratio(current_sources, baseline_sources), 4),
+        "candidate_sources": current_sources,
+        "baseline_sources": baseline_sources,
+        "candidate_providers": candidate_inventory.providers_by_use.get(source_use, 0),
+        "baseline_providers": baseline_inventory.providers_by_use.get(source_use, 0),
+        "candidate_nodes": candidate_inventory.nodes_by_use.get(source_use, 0),
+        "baseline_nodes": baseline_inventory.nodes_by_use.get(source_use, 0),
+        "candidate_regions": candidate_inventory.regions_by_use.get(source_use, 0),
+        "baseline_regions": baseline_inventory.regions_by_use.get(source_use, 0),
+    }
 
 
 def assess_promotion(
@@ -116,27 +136,14 @@ def assess_promotion(
         violations.append("provider_ratio")
 
     use_ratios: dict[str, dict[str, float | int | bool]] = {}
-    ratio_uses = set(policy.minimum_source_ratio_by_use)
-    for source_use in sorted(ratio_uses):
-        current_sources = candidate_inventory.sources_by_use.get(source_use, 0)
-        baseline_sources = baseline_inventory.sources_by_use.get(source_use, 0)
-        configured_in_baseline = source_use in baseline_inventory.sources_by_use
-        source_ratio = ratio(current_sources, baseline_sources)
-        minimum_ratio = policy.minimum_source_ratio_by_use.get(source_use, 0.0)
-        if configured_in_baseline and source_ratio < minimum_ratio:
+    for source_use in sorted(policy.minimum_source_ratio_by_use):
+        row = _use_ratio_row(source_use, candidate_inventory, baseline_inventory)
+        configured = bool(row["configured_in_baseline"])
+        source_ratio = float(row["source_ratio"])
+        minimum_ratio = policy.minimum_source_ratio_by_use[source_use]
+        if configured and source_ratio < minimum_ratio:
             violations.append(f"source_ratio:{source_use}")
-        use_ratios[source_use] = {
-            "configured_in_baseline": configured_in_baseline,
-            "source_ratio": round(source_ratio, 4),
-            "candidate_sources": current_sources,
-            "baseline_sources": baseline_sources,
-            "candidate_providers": candidate_inventory.providers_by_use.get(source_use, 0),
-            "baseline_providers": baseline_inventory.providers_by_use.get(source_use, 0),
-            "candidate_nodes": candidate_inventory.nodes_by_use.get(source_use, 0),
-            "baseline_nodes": baseline_inventory.nodes_by_use.get(source_use, 0),
-            "candidate_regions": candidate_inventory.regions_by_use.get(source_use, 0),
-            "baseline_regions": baseline_inventory.regions_by_use.get(source_use, 0),
-        }
+        use_ratios[source_use] = row
 
     return {
         "status": "blocked" if violations else "passed",
