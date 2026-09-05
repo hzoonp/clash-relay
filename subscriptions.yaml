@@ -1,8 +1,10 @@
-version: 1
+version: 2
 
 # No URL belongs in this tracked file. Real subscription URLs are resolved from
 # CLASH_RELAY_SUBSCRIPTIONS. Subscription declarations are hard source-policy
 # boundaries: a node may enter only the inventories named by allowed_uses.
+# ingest_order controls deterministic source ingestion/deduplication order only;
+# it is not a node quality, routing, or selection priority.
 #
 # subscription_1 is intentionally constrained to generic web browsing and AI.
 # It never enters the general inventory used by media, games, messaging, cloud
@@ -13,7 +15,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_1_URL
-    priority: 100
+    ingest_order: 100
     on_error: skip
     allowed_uses: [browsing, ai]
     allowed_countries: ['*']
@@ -33,7 +35,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_2_URL
-    priority: 200
+    ingest_order: 200
     on_error: skip
     allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
@@ -45,7 +47,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_3_URL
-    priority: 300
+    ingest_order: 300
     on_error: skip
     allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
@@ -57,7 +59,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_4_URL
-    priority: 400
+    ingest_order: 400
     on_error: skip
     allowed_uses: [general, browsing, ai]
     allowed_countries: ['*']
