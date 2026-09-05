@@ -10,3 +10,11 @@ minimum_sources_by_use:
   general: 1
   browsing: 1
   ai: 1
+minimum_nodes_by_use:
+  general: 1
+  browsing: 1
+  ai: 1
+minimum_regions_by_use:
+  general: 1
+  browsing: 1
+  ai: 1
