@@ -46,7 +46,10 @@ def test_fresh_fork_release_authority_is_composed_from_existing_gates(repo_root:
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     rollback = (repo_root / ".github" / "workflows" / "rollback.yml").read_text(encoding="utf-8")
 
-    assert 'python: ["3.11", "3.12", "3.13"]' in validate
+    assert "name: Python 3.12 quality" in validate
+    assert "name: Python ${{ matrix.python }} compatibility" in validate
+    assert 'python: ["3.11", "3.13"]' in validate
+    assert "needs: [quality, python-compat]" in validate
     assert "Deterministic fictional generation" in validate
     assert "Export pinned stable Mihomo matrix" in validate
     assert "Real startup and provider HEAD integration tests" in validate
