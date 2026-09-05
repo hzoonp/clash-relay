@@ -12,12 +12,19 @@ _MULTIPLIER_PATTERNS = (
         r"(?:倍率|倍数)\s*[:\uff1a=]?\s*(\d+(?:\.\d+)?)(?:\s*[xX\u00d7倍])?",
         re.IGNORECASE,
     ),
-    re.compile(r"(?<![A-Za-z0-9])[xX\u00d7]\s*(\d+(?:\.\d+)?)(?![0-9.])"),
+    re.compile(
+        r"(?<![A-Za-z0-9])[xX\u00d7]\s*(?!(?:32|64|86)(?:\b|_))(\d+(?:\.\d+)?)(?![0-9.])",
+    ),
 )
 
 
 def node_name_multiplier(name: str) -> float | None:
-    """Return the highest explicit multiplier marker found in a node name."""
+    """Return the highest explicit multiplier marker found in a node name.
+
+    Architecture tokens such as x64 and X86_64 are intentionally not treated as
+    billing multipliers. Ambiguous names without an explicit multiplier marker
+    remain admitted rather than being rejected by heuristic inference.
+    """
 
     values: list[float] = []
     for pattern in _MULTIPLIER_PATTERNS:
