@@ -31,9 +31,7 @@ def _project() -> Any:
     return cast(Any, object())
 
 
-def test_release_stage_orders_guard_matrix_then_publication(
-    monkeypatch, tmp_path
-) -> None:
+def test_release_stage_orders_guard_matrix_then_publication(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
     paths = _paths(tmp_path)
 
@@ -58,15 +56,9 @@ def test_release_stage_orders_guard_matrix_then_publication(
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.run_promotion_guard", guard
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.publish_production_release", publish
-    )
+    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr("clash_relay.production_release_stage.validate_mihomo_matrix", matrix)
+    monkeypatch.setattr("clash_relay.production_release_stage.publish_production_release", publish)
 
     result = run_release_candidate_stage(
         project=_project(),
@@ -101,12 +93,8 @@ def test_guard_failure_prevents_matrix_and_publication(monkeypatch, tmp_path) ->
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.run_promotion_guard", guard
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.validate_mihomo_matrix", unexpected
-    )
+    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr("clash_relay.production_release_stage.validate_mihomo_matrix", unexpected)
     monkeypatch.setattr(
         "clash_relay.production_release_stage.publish_production_release", unexpected
     )
@@ -145,15 +133,9 @@ def test_matrix_failure_prevents_publication(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.run_promotion_guard", guard
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.publish_production_release", publish
-    )
+    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr("clash_relay.production_release_stage.validate_mihomo_matrix", matrix)
+    monkeypatch.setattr("clash_relay.production_release_stage.publish_production_release", publish)
 
     with pytest.raises(ValidationError, match="core rejected"):
         run_release_candidate_stage(
@@ -167,9 +149,7 @@ def test_matrix_failure_prevents_publication(monkeypatch, tmp_path) -> None:
     assert calls == ["baseline", "guard", "matrix"]
 
 
-def test_dry_run_skips_production_state_but_keeps_real_core_matrix(
-    monkeypatch, tmp_path
-) -> None:
+def test_dry_run_skips_production_state_but_keeps_real_core_matrix(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
 
     def unexpected(**kwargs):
@@ -183,12 +163,8 @@ def test_dry_run_skips_production_state_but_keeps_real_core_matrix(
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", unexpected
     )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.run_promotion_guard", unexpected
-    )
-    monkeypatch.setattr(
-        "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
-    )
+    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", unexpected)
+    monkeypatch.setattr("clash_relay.production_release_stage.validate_mihomo_matrix", matrix)
     monkeypatch.setattr(
         "clash_relay.production_release_stage.publish_production_release", unexpected
     )
