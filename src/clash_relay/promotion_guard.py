@@ -39,7 +39,8 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
             str(name): int(value) for name, value in document["minimum_sources_by_use"].items()
         },
         minimum_nodes_by_use={
-            str(name): int(value) for name, value in document.get("minimum_nodes_by_use", {}).items()
+            str(name): int(value)
+            for name, value in document.get("minimum_nodes_by_use", {}).items()
         },
         minimum_regions_by_use={
             str(name): int(value)
@@ -64,17 +65,17 @@ def _absolute_violations(candidate_inventory, policy: PromotionGuardPolicy) -> l
         | set(policy.minimum_regions_by_use)
     )
     for source_use in sorted(required_uses):
-        if candidate_inventory.sources_by_use.get(source_use, 0) < policy.minimum_sources_by_use.get(
+        if candidate_inventory.sources_by_use.get(
             source_use, 0
-        ):
+        ) < policy.minimum_sources_by_use.get(source_use, 0):
             violations.append(f"minimum_sources:{source_use}")
         if candidate_inventory.nodes_by_use.get(source_use, 0) < policy.minimum_nodes_by_use.get(
             source_use, 0
         ):
             violations.append(f"minimum_nodes:{source_use}")
-        if candidate_inventory.regions_by_use.get(source_use, 0) < policy.minimum_regions_by_use.get(
+        if candidate_inventory.regions_by_use.get(
             source_use, 0
-        ):
+        ) < policy.minimum_regions_by_use.get(source_use, 0):
             violations.append(f"minimum_regions:{source_use}")
     return violations
 
