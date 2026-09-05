@@ -1,8 +1,8 @@
 # Configuration reference
 
-Canonical runtime declarations are `config.yaml`, `subscriptions.yaml`, and a Policy Model v2 `policies.yaml` manifest. The manifest owns exactly four fragments: `routing`, `scheduling`, `classification`, and `topology`. Unknown properties and cross-file reference errors fail closed.
+Canonical runtime declarations are **Public Config V2**: `config.yaml`, `subscriptions.yaml`, and a Policy Model v2 `policies.yaml` manifest all declare `version: 2`. Unknown properties, legacy v1 declarations, and cross-file reference errors fail closed. There is no runtime compatibility path for v1 public config.
 
-A physical monolithic Policy Model v1 file is no longer a runtime input. Convert it offline with `scripts/migrate_policy_v2.py` before invoking clash-relay.
+The policy manifest owns exactly four fragments: `routing`, `scheduling`, `classification`, and `topology`. A physical monolithic Policy Model v1 file is no longer a runtime input; the policy-only offline migration helper remains `scripts/migrate_policy_v2.py`.
 
 ## Canonical production profile
 
@@ -28,6 +28,8 @@ The canonical profile contains:
 The source-policy boundary is intentional: `subscription_1` may enter only `browsing` and `ai`; it may never enter `general`.
 
 ## `config.yaml`
+
+`config.yaml` begins with `version: 2`. The remaining fields describe the deliberately small runtime, generation, rule-source, and publication surface.
 
 ### `runtime`
 
@@ -66,7 +68,7 @@ Trusted generation fetches the pinned fragments and embeds them as inline classi
 
 ## `subscriptions.yaml`
 
-Tracked rows contain no URL. Secret names resolve from `CLASH_RELAY_SUBSCRIPTIONS`, same-named environment variables, or an ignored local secret file.
+`subscriptions.yaml` begins with `version: 2`. Tracked rows contain no URL. Secret names resolve from `CLASH_RELAY_SUBSCRIPTIONS`, same-named environment variables, or an ignored local secret file.
 
 Canonical `subscription_1`:
 
@@ -76,7 +78,7 @@ Canonical `subscription_1`:
   enabled: true
   required: false
   secret_name: SUBSCRIPTION_1_URL
-  priority: 100
+  ingest_order: 100
   on_error: skip
   allowed_uses: [browsing, ai]
   allowed_countries: ['*']
@@ -86,6 +88,10 @@ Canonical `subscription_1`:
 ```
 
 Subscriptions 2-4 allow `[general, browsing, ai]`.
+
+### `ingest_order`
+
+`ingest_order` is a deterministic source-ingestion and duplicate-resolution ordering key. Lower values are processed first. It **does not** rank node quality, override live qualification, influence scheduler latency scoring, or grant routing preference. The former public name `priority` is not accepted by Public Config V2 because it implied semantics that the field never had.
 
 ### `max_node_multiplier`
 
@@ -124,15 +130,7 @@ Owns capability definitions, cost levels, and country-name classification aliase
 
 ### `policies/topology.yaml`
 
-Owns all pools and chains. A regular pool declares:
-
-- `source_use`;
-- eligible regions and fallback order;
-- `capabilities_any` / `capabilities_all` / `excluded_capabilities`;
-- allowed cost levels;
-- `on_empty` behavior;
-- scheduling probe;
-- optional routing rules.
+Owns all pools and chains. A regular pool declares `source_use`, eligible regions and fallback order, capability filters, allowed cost levels, `on_empty`, a scheduling probe, and optional routing rules.
 
 Generic pool selection is applied in this order:
 
@@ -175,11 +173,12 @@ Inventory wrapper groups whose names begin with `__CR_` are hidden implementatio
 
 Canonical changes must pass:
 
+- Public Config V2 schema validation for `config.yaml` and `subscriptions.yaml`;
 - Policy Model v2 manifest/fragment schema and semantic validation;
 - source-use and strict `>2x` admission tests;
 - Routing V2 / ACL4SSR drift guards;
-- Python 3.11 / 3.12 / 3.13 Ruff, formatter, and unit tests;
+- Python 3.11 / 3.12 / 3.13 Ruff, formatter, static typing, and unit tests;
 - deterministic generation;
-- repository safety audits;
+- repository and supply-chain safety audits;
 - pinned ACL4SSR fidelity validation;
 - every pinned stable Mihomo core plus real startup/provider integration tests.
