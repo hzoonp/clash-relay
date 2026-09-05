@@ -28,7 +28,7 @@ class ReleaseReadinessPolicy:
 
     def __post_init__(self) -> None:
         if self.public_config_version < 1:
-            raise ValidationError("release readiness public config version must be positive")
+            raise ValidationError("release readiness Public Config version must be positive")
         if self.policy_model_version < 1:
             raise ValidationError("release readiness policy model version must be positive")
         if self.minimum_mihomo_cores < 1:
