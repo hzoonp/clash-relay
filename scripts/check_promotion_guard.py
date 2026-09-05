@@ -21,6 +21,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--guard", type=Path, default=Path("promotion-guard.yaml"))
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--baseline", type=Path, required=True)
+    parser.add_argument(
+        "--qualification",
+        type=Path,
+        help="aggregate qualification-pipeline summary; defaults beside the candidate",
+    )
     parser.add_argument("--report", type=Path)
     parser.add_argument("--markdown", type=Path)
     return parser
@@ -39,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
             candidate_path=args.candidate,
             baseline_path=args.baseline,
             guard_path=args.guard,
+            qualification_path=args.qualification,
             report_path=args.report,
             markdown_path=args.markdown,
         )
