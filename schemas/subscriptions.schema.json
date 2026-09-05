@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["version", "subscriptions"],
   "properties": {
-    "version": {"const": 1},
+    "version": {"const": 2},
     "subscriptions": {"type": "array", "items": {"$ref": "#/$defs/subscription"}}
   },
   "$defs": {
@@ -41,7 +41,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "display_name", "enabled", "required", "secret_name", "priority", "on_error",
+        "id", "display_name", "enabled", "required", "secret_name", "ingest_order", "on_error",
         "allowed_uses", "allowed_countries", "default_capabilities", "default_cost_level"
       ],
       "properties": {
@@ -50,7 +50,7 @@
         "enabled": {"type": "boolean"},
         "required": {"type": "boolean"},
         "secret_name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
-        "priority": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "ingest_order": {"type": "integer", "minimum": 0, "maximum": 1000000},
         "on_error": {"enum": ["fail", "skip"]},
         "allowed_uses": {
           "type": "array", "minItems": 1, "uniqueItems": true,
@@ -62,11 +62,7 @@
         },
         "default_capabilities": {"$ref": "#/$defs/capabilityList"},
         "default_cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
-        "max_node_multiplier": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "maximum": 1000
-        },
+        "max_node_multiplier": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000},
         "node_metadata": {
           "type": "object",
           "propertyNames": {"minLength": 1, "maxLength": 256},

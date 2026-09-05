@@ -1,11 +1,11 @@
-version: 1
+version: 2
 subscriptions:
   - id: primary
     display_name: Fictional Primary
     enabled: true
     required: true
     secret_name: SUB_PRIMARY
-    priority: 100
+    ingest_order: 100
     on_error: fail
     allowed_uses: [general, ai, bulk]
     allowed_countries: [US, JP, SG, OTHER]
@@ -30,7 +30,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUB_SECONDARY
-    priority: 200
+    ingest_order: 200
     on_error: skip
     allowed_uses: [general, ai, bulk]
     allowed_countries: [US, JP, SG, OTHER]
@@ -51,7 +51,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUB_SPECIAL
-    priority: 300
+    ingest_order: 300
     on_error: skip
     allowed_uses: [residential, emby, high_multiplier, chain]
     allowed_countries: [US, JP, SG, OTHER]

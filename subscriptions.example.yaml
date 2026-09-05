@@ -1,15 +1,16 @@
-version: 1
+version: 2
 
 # No URL belongs in this tracked file. secret_name is a logical key resolved
 # from CLASH_RELAY_SUBSCRIPTIONS, a same-named environment variable, or an
-# ignored local --secret-file.
+# ignored local --secret-file. ingest_order is deterministic source ingestion
+# order only; it does not rank node quality or routing preference.
 subscriptions:
   - id: subscription_1
     display_name: 示例订阅源 1
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_1_URL
-    priority: 100
+    ingest_order: 100
     on_error: skip
     # Source-level permission boundary: this source may only feed generic web
     # browsing and AI inventories. It cannot enter the general application pool.
@@ -27,7 +28,7 @@ subscriptions:
     enabled: true
     required: false
     secret_name: SUBSCRIPTION_2_URL
-    priority: 200
+    ingest_order: 200
     on_error: skip
     # Ordinary sources may participate in every production inventory.
     allowed_uses: [general, browsing, ai]

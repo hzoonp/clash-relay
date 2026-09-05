@@ -258,7 +258,12 @@ def test_adding_subscription_requires_no_python_change(
 
     def add(document):
         item = dict(document["subscriptions"][1])
-        item.update(id="new_source", secret_name="SUB_NEW", display_name="New Source", priority=250)
+        item.update(
+            id="new_source",
+            secret_name="SUB_NEW",
+            display_name="New Source",
+            ingest_order=250,
+        )
         item["node_metadata"] = {}
         document["subscriptions"].append(item)
 
