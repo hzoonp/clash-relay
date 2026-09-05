@@ -17,7 +17,9 @@ _ALLOWED_OUTCOME_CHARS = frozenset(
 
 def _safe_count(value: Any, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValidationError(f"ServiceQualification result {field} must be a non-negative integer")
+        raise ValidationError(
+            f"ServiceQualification result {field} must be a non-negative integer"
+        )
     return value
 
 
@@ -42,7 +44,9 @@ def _qualified_region_count(ai_summary: Mapping[str, Any], service_label: str) -
     if raw_services is None:
         return 0
     if not isinstance(raw_services, Mapping):
-        raise ValidationError("ServiceQualification regional diagnostics must be an aggregate mapping")
+        raise ValidationError(
+            "ServiceQualification regional diagnostics must be an aggregate mapping"
+        )
     raw_regions = raw_services.get(service_label)
     if raw_regions is None:
         return 0
@@ -129,7 +133,9 @@ def build_service_qualification_result(
     )
 
 
-def service_qualification_results(ai_summary: Mapping[str, Any]) -> dict[str, dict[str, object]]:
+def service_qualification_results(
+    ai_summary: Mapping[str, Any],
+) -> dict[str, dict[str, object]]:
     """Project the AI report into one safe result shape for every registered service."""
 
     diagnostics = ai_summary.get("diagnostics")
