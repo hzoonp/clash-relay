@@ -29,6 +29,15 @@ from .service_qualification import (
 from .util import dump_yaml, load_yaml_file
 
 
+def load_registered_ai_probe_specs(policies: Path) -> tuple[dict[str, Any], ...]:
+    """Resolve declared AI probes through the same v2 source used by production."""
+
+    probes = load_ai_probe_specs(policy_fragment_path(policies, "scheduling"))
+    for probe in probes:
+        service_qualification_by_probe(str(probe["name"]))
+    return probes
+
+
 def _service_diagnostics() -> dict[str, object]:
     diagnostics: dict[str, object] = {
         "qualification_mode": "per-service",
@@ -160,7 +169,7 @@ def run_ai_qualification(
     scheduler_policy = load_scheduler_policy(policies)
     policies_document = load_policy_document(policies).document
     routing_policy = load_routing_policy_v2(policies_document)
-    probes = load_ai_probe_specs(policy_fragment_path(policies, "scheduling"))
+    probes = load_registered_ai_probe_specs(policies)
     candidate_config = load_yaml_file(candidate)
     if not isinstance(candidate_config, dict):
         raise ValidationError("candidate is not a YAML mapping")

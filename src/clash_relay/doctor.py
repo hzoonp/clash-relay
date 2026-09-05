@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .ai_application import load_registered_ai_probe_specs
 from .config_loader import load_project
 from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
@@ -98,6 +99,7 @@ def run_doctor(
     )
     policy_document = load_policy_document(policies_path)
     scheduler = load_scheduler_policy(policies_path)
+    service_probes = load_registered_ai_probe_specs(policies_path)
     stable_tags = load_mihomo_tags(mihomo_manifest, "stable")
     enabled = _enabled(project)
     enabled_secrets = [str(spec.secret_name) for spec in enabled]
@@ -113,6 +115,8 @@ def run_doctor(
             "scheduler_policy_declared": scheduler.declared,
             "policy_model_version": policy_document.model_version,
             "policy_model_status": "current",
+            "service_qualification_status": "ready",
+            "service_qualification_probes": len(service_probes),
         },
         "subscriptions": {"status": "skipped", "enabled": len(enabled)},
         "cloudflare": {"status": "skipped"},
