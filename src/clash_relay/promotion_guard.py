@@ -6,10 +6,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .availability import InventoryCount, collect_inventory, ratio, safe_inventory
+from .availability import (
+    InventoryCount,
+    ServiceAvailabilityCount,
+    collect_inventory,
+    collect_service_availability,
+    ratio,
+    safe_inventory,
+    safe_service_availability,
+)
 from .config_loader import ProjectDefinition
 from .errors import ConfigurationError
 from .schema import load_and_validate
+from .service_qualification import service_qualifications
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +30,8 @@ class PromotionGuardPolicy:
     minimum_sources_by_use: dict[str, int]
     minimum_nodes_by_use: dict[str, int]
     minimum_regions_by_use: dict[str, int]
+    minimum_qualified_nodes_by_service: dict[str, int]
+    minimum_qualified_regions_by_service: dict[str, int]
 
 
 def _float_map(value: dict[str, Any]) -> dict[str, float]:
@@ -31,10 +42,31 @@ def _int_map(value: dict[str, Any]) -> dict[str, int]:
     return {str(name): int(raw) for name, raw in value.items()}
 
 
+def _validate_service_thresholds(name: str, values: dict[str, int]) -> None:
+    supported = {service.label for service in service_qualifications()}
+    unknown = set(values) - supported
+    if unknown:
+        rendered = ", ".join(sorted(unknown))
+        raise ConfigurationError(f"promotion guard {name} references unknown services: {rendered}")
+
+
 def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
     document = load_and_validate(path, "promotion-guard.schema.json")
     if not isinstance(document, dict):
         raise ConfigurationError("promotion guard document must be a mapping")
+
+    minimum_qualified_nodes_by_service = _int_map(
+        document.get("minimum_qualified_nodes_by_service", {})
+    )
+    minimum_qualified_regions_by_service = _int_map(
+        document.get("minimum_qualified_regions_by_service", {})
+    )
+    _validate_service_thresholds(
+        "minimum_qualified_nodes_by_service", minimum_qualified_nodes_by_service
+    )
+    _validate_service_thresholds(
+        "minimum_qualified_regions_by_service", minimum_qualified_regions_by_service
+    )
 
     return PromotionGuardPolicy(
         enabled=bool(document["enabled"]),
@@ -44,6 +76,8 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
         minimum_sources_by_use=_int_map(document["minimum_sources_by_use"]),
         minimum_nodes_by_use=_int_map(document.get("minimum_nodes_by_use", {})),
         minimum_regions_by_use=_int_map(document.get("minimum_regions_by_use", {})),
+        minimum_qualified_nodes_by_service=minimum_qualified_nodes_by_service,
+        minimum_qualified_regions_by_service=minimum_qualified_regions_by_service,
     )
 
 
@@ -52,6 +86,12 @@ def _absolute_thresholds(policy: PromotionGuardPolicy) -> dict[str, Any]:
         "minimum_sources_by_use": dict(sorted(policy.minimum_sources_by_use.items())),
         "minimum_nodes_by_use": dict(sorted(policy.minimum_nodes_by_use.items())),
         "minimum_regions_by_use": dict(sorted(policy.minimum_regions_by_use.items())),
+        "minimum_qualified_nodes_by_service": dict(
+            sorted(policy.minimum_qualified_nodes_by_service.items())
+        ),
+        "minimum_qualified_regions_by_service": dict(
+            sorted(policy.minimum_qualified_regions_by_service.items())
+        ),
     }
 
 
@@ -84,6 +124,26 @@ def _absolute_violations(
     return violations
 
 
+def _service_violations(
+    availability: ServiceAvailabilityCount,
+    policy: PromotionGuardPolicy,
+) -> list[str]:
+    violations: list[str] = []
+    required_services = set(policy.minimum_qualified_nodes_by_service) | set(
+        policy.minimum_qualified_regions_by_service
+    )
+    for service in sorted(required_services):
+        qualified_nodes = availability.qualified_nodes_by_service.get(service, 0)
+        qualified_regions = availability.qualified_regions_by_service.get(service, 0)
+        minimum_nodes = policy.minimum_qualified_nodes_by_service.get(service, 0)
+        minimum_regions = policy.minimum_qualified_regions_by_service.get(service, 0)
+        if qualified_nodes < minimum_nodes:
+            violations.append(f"minimum_qualified_nodes:{service}")
+        if qualified_regions < minimum_regions:
+            violations.append(f"minimum_qualified_regions:{service}")
+    return violations
+
+
 def _use_ratio_row(
     source_use: str,
     candidate_inventory: InventoryCount,
@@ -105,11 +165,22 @@ def _use_ratio_row(
     }
 
 
+def _candidate_inventory_summary(
+    inventory: InventoryCount,
+    service_availability: ServiceAvailabilityCount,
+) -> dict[str, Any]:
+    summary = safe_inventory(inventory)
+    summary["services"] = safe_service_availability(service_availability)
+    return summary
+
+
 def assess_promotion(
     project: ProjectDefinition,
     candidate: dict[str, Any],
     baseline: dict[str, Any] | None,
     policy: PromotionGuardPolicy,
+    *,
+    qualification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return an aggregate-only allow/block decision against availability requirements."""
 
@@ -117,12 +188,15 @@ def assess_promotion(
         return {"status": "passed", "reason": "disabled", "violations": []}
 
     candidate_inventory = collect_inventory(project, candidate)
+    service_availability = collect_service_availability(qualification)
     violations = _absolute_violations(candidate_inventory, policy)
+    violations.extend(_service_violations(service_availability, policy))
+    candidate_summary = _candidate_inventory_summary(candidate_inventory, service_availability)
     if baseline is None:
         return {
             "status": "blocked" if violations else "passed",
             "reason": "availability_contract" if violations else "first_release",
-            "candidate": safe_inventory(candidate_inventory),
+            "candidate": candidate_summary,
             "thresholds": _absolute_thresholds(policy),
             "violations": violations,
         }
@@ -148,7 +222,7 @@ def assess_promotion(
     return {
         "status": "blocked" if violations else "passed",
         "reason": "degraded" if violations else "within_thresholds",
-        "candidate": safe_inventory(candidate_inventory),
+        "candidate": candidate_summary,
         "baseline": safe_inventory(baseline_inventory),
         "ratios": {
             "total_nodes": round(total_node_ratio, 4),

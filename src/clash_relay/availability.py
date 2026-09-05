@@ -8,6 +8,7 @@ from typing import Any
 from .config_loader import ProjectDefinition
 from .production_audit import audit_production_candidate
 from .runtime_graph import RuntimeGraph
+from .service_qualification import service_qualifications
 from .util import safe_identifier
 
 
@@ -19,6 +20,12 @@ class InventoryCount:
     providers_by_use: dict[str, int]
     nodes_by_use: dict[str, int]
     regions_by_use: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceAvailabilityCount:
+    qualified_nodes_by_service: dict[str, int]
+    qualified_regions_by_service: dict[str, int]
 
 
 def _provider_name(pool_id: str, region: str) -> str:
@@ -73,6 +80,42 @@ def collect_inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> 
     )
 
 
+def _aggregate_count(value: Any) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0
+
+
+def collect_service_availability(
+    qualification: dict[str, Any] | None,
+) -> ServiceAvailabilityCount:
+    """Collect registered service availability from privacy-safe qualification results.
+
+    Missing or malformed aggregate results project to zero so release policy fails
+    closed when a service threshold is configured. Node identities and region names
+    are never copied into this inventory.
+    """
+
+    ai = qualification.get("ai") if isinstance(qualification, dict) else None
+    services = ai.get("services") if isinstance(ai, dict) else None
+    if not isinstance(services, dict):
+        services = {}
+
+    nodes: dict[str, int] = {}
+    regions: dict[str, int] = {}
+    for service in service_qualifications():
+        row = services.get(service.label)
+        if not isinstance(row, dict):
+            row = {}
+        nodes[service.label] = _aggregate_count(row.get("qualified_candidates"))
+        regions[service.label] = _aggregate_count(row.get("qualified_regions"))
+
+    return ServiceAvailabilityCount(
+        qualified_nodes_by_service=dict(sorted(nodes.items())),
+        qualified_regions_by_service=dict(sorted(regions.items())),
+    )
+
+
 def ratio(current: int, baseline: int) -> float:
     if baseline <= 0:
         return 1.0
@@ -100,4 +143,17 @@ def safe_inventory(value: InventoryCount) -> dict[str, Any]:
             }
             for use in uses
         },
+    }
+
+
+def safe_service_availability(value: ServiceAvailabilityCount) -> dict[str, dict[str, int]]:
+    services = sorted(
+        set(value.qualified_nodes_by_service) | set(value.qualified_regions_by_service)
+    )
+    return {
+        service: {
+            "qualified_nodes": value.qualified_nodes_by_service.get(service, 0),
+            "qualified_regions": value.qualified_regions_by_service.get(service, 0),
+        }
+        for service in services
     }

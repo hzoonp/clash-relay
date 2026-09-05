@@ -18,3 +18,11 @@ minimum_regions_by_use:
   general: 1
   browsing: 1
   ai: 1
+minimum_qualified_nodes_by_service:
+  openai: 1
+  claude: 1
+  gemini: 1
+minimum_qualified_regions_by_service:
+  openai: 1
+  claude: 1
+  gemini: 1

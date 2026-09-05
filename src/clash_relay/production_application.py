@@ -261,15 +261,26 @@ def run_promotion_guard(
     candidate_path: Path,
     baseline_path: Path,
     guard_path: Path,
+    qualification_path: Path | None = None,
     report_path: Path | None = None,
     markdown_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Assess promotion using the typed project/candidate inputs in process."""
+    """Assess promotion using typed candidate and aggregate qualification inputs."""
 
     candidate = load_candidate(candidate_path)
     baseline = load_candidate(baseline_path) if baseline_path.is_file() else None
     policy = load_promotion_guard_policy(guard_path)
-    report = assess_promotion(project, candidate, baseline, policy)
+    qualification_source = qualification_path or candidate_path.with_name(
+        "qualification-pipeline-summary.json"
+    )
+    qualification = _optional_json(qualification_source)
+    report = assess_promotion(
+        project,
+        candidate,
+        baseline,
+        policy,
+        qualification=qualification,
+    )
     if report_path is not None:
         atomic_write(
             report_path,
