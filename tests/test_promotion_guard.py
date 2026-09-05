@@ -123,7 +123,9 @@ def test_promotion_guard_blocks_service_without_qualified_nodes_or_regions(
     }
 
 
-def test_promotion_guard_allows_service_with_minimum_capacity(built_candidate, project_paths) -> None:
+def test_promotion_guard_allows_service_with_minimum_capacity(
+    built_candidate, project_paths
+) -> None:
     policy = replace(
         _fixture_policy(),
         minimum_qualified_nodes_by_service={"openai": 1},
@@ -145,7 +147,9 @@ def test_promotion_guard_allows_service_with_minimum_capacity(built_candidate, p
     }
 
 
-def test_promotion_guard_missing_service_summary_fails_closed(built_candidate, project_paths) -> None:
+def test_promotion_guard_missing_service_summary_fails_closed(
+    built_candidate, project_paths
+) -> None:
     policy = replace(
         _fixture_policy(),
         minimum_qualified_nodes_by_service={"openai": 1},
