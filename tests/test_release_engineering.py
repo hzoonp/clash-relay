@@ -21,8 +21,8 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert isinstance(workflow, dict)
     assert workflow["permissions"]["contents"] == "write"
     assert "needs.validate.outputs.validated_sha == github.sha" in text
-    assert 'ref: ${{ needs.validate.outputs.validated_sha }}' in text
-    assert 'docs/releases/${VERSION}.md' in text
+    assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
+    assert "docs/releases/${VERSION}.md" in text
     assert "gh release create" in text
     assert "--notes-file .release-notes.md" in text
     assert "actions/upload-artifact" not in text
