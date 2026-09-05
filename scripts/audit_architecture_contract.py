@@ -306,7 +306,7 @@ def main() -> int:
         raise SystemExit("architecture audit: production lifecycle omits release manifest")
 
     # Chaos, doctor-first Fork UX, and package version remain explicit release contracts.
-    if not (ROOT / "tests/test_p43_chaos_matrix.py").is_file():
+    if not (ROOT / "tests/test_chaos_matrix.py").is_file():
         raise SystemExit("architecture audit: chaos matrix is missing")
     doctor = _text("src/clash_relay/doctor.py")
     for token in ("policy_model_version", "enabled_subscription_secrets", "first_publish_default"):

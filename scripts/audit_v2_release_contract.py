@@ -103,6 +103,9 @@ def audit(root: Path = ROOT) -> list[str]:
         if (root / relative).exists():
             errors.append(f"stale phase document returned: {relative}")
 
+    for path in sorted((root / "tests").glob("test_p[0-9]*.py")):
+        errors.append(f"phase-era test filename returned: {path.relative_to(root)}")
+
     docs_root = root / "docs"
     for path in sorted(docs_root.glob("*.md")):
         text = path.read_text(encoding="utf-8")
