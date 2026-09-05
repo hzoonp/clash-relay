@@ -51,10 +51,15 @@ jobs:
             src/clash_relay/selector.py \
             src/clash_relay/policy_compiler.py \
             src/clash_relay/runtime_graph.py \
+            src/clash_relay/availability.py \
             src/clash_relay/service_qualification.py \
+            src/clash_relay/service_qualification_result.py \
             src/clash_relay/ai_application.py \
             src/clash_relay/qualification_pipeline.py \
             src/clash_relay/production_application.py \
+            src/clash_relay/production_pipeline.py \
+            src/clash_relay/promotion_guard.py \
+            src/clash_relay/production_release_stage.py \
             src/clash_relay/operational_slo.py \
             src/clash_relay/slo_application.py \
             src/clash_relay/production_lifecycle.py
