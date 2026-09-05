@@ -20,6 +20,7 @@ class SubscriptionSpec:
     default_capabilities: frozenset[str]
     default_cost_level: str
     max_node_multiplier: float | None = None
+    deny_name_patterns: tuple[str, ...] = ()
     node_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     name_rules: tuple[dict[str, Any], ...] = ()
 
