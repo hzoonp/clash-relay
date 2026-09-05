@@ -17,9 +17,7 @@ _ALLOWED_OUTCOME_CHARS = frozenset(
 
 def _safe_count(value: Any, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValidationError(
-            f"ServiceQualification result {field} must be a non-negative integer"
-        )
+        raise ValidationError(f"ServiceQualification result {field} must be a non-negative integer")
     return value
 
 
