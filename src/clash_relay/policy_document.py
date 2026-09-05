@@ -44,6 +44,21 @@ def _safe_fragment_path(manifest: Path, relative: str) -> Path:
     return target
 
 
+def policy_fragment_path(manifest: Path, fragment_name: str) -> Path:
+    """Resolve one declared v2 fragment without admitting a legacy policy shape."""
+
+    raw = load_yaml_file(manifest)
+    if not isinstance(raw, dict) or raw.get("version") != 2:
+        raise ConfigurationError("Policy Model v2 manifest is required")
+    fragments = raw.get("fragments")
+    if not isinstance(fragments, dict) or fragment_name not in _REQUIRED_FRAGMENTS:
+        raise ConfigurationError(f"Policy Model v2 fragment {fragment_name!r} is not declared")
+    relative = fragments.get(fragment_name)
+    if not isinstance(relative, str) or not relative:
+        raise ConfigurationError(f"Policy Model v2 fragment {fragment_name!r} has an invalid path")
+    return _safe_fragment_path(manifest, relative)
+
+
 def _validate_fragment_owner(fragment_name: str, section: str) -> None:
     expected = _SECTION_OWNERS.get(section)
     if expected is not None and fragment_name != expected:
