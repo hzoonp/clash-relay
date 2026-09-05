@@ -72,8 +72,9 @@ def _absolute_violations(
             < policy.minimum_sources_by_use.get(source_use, 0)
         ):
             violations.append(f"minimum_sources:{source_use}")
-        if candidate_inventory.nodes_by_use.get(source_use, 0) < policy.minimum_nodes_by_use.get(
-            source_use, 0
+        if (
+            candidate_inventory.nodes_by_use.get(source_use, 0)
+            < policy.minimum_nodes_by_use.get(source_use, 0)
         ):
             violations.append(f"minimum_nodes:{source_use}")
         if (
