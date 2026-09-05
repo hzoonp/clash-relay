@@ -35,6 +35,8 @@ jobs:
         run: python scripts/audit_documentation_contract.py
       - name: Audit architecture contract
         run: python scripts/audit_architecture_contract.py
+      - name: Audit operational SLO contract
+        run: python scripts/audit_operational_slo_contract.py
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
@@ -46,6 +48,8 @@ jobs:
             src/clash_relay/runtime_graph.py \
             src/clash_relay/qualification_pipeline.py \
             src/clash_relay/production_application.py \
+            src/clash_relay/operational_slo.py \
+            src/clash_relay/slo_application.py \
             src/clash_relay/production_lifecycle.py
       - name: Unit tests and coverage floor
         run: |
