@@ -47,7 +47,9 @@ def assess_release_readiness(
     violations: list[str] = []
 
     if not _GIT_SHA.fullmatch(expected_commit_sha):
-        raise ValidationError("release readiness expected commit SHA must be exact lowercase Git SHA")
+        raise ValidationError(
+            "release readiness expected commit SHA must be exact lowercase Git SHA"
+        )
     if manifest.get("publication_status") != "published":
         violations.append("publication_status")
     if manifest.get("release_status") != "published":
