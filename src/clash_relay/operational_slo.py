@@ -15,6 +15,8 @@ _STATE_VERSION = 1
 _MAX_ATTEMPTS = 60
 _MAX_DURATION_MS = 24 * 60 * 60 * 1000
 _SHA256_LENGTH = 64
+_MIN_TUNING_ATTEMPTS = 12
+_MIN_TUNING_TRANSITIONS = 4
 
 
 class ProductionOutcome(StrEnum):
@@ -201,10 +203,52 @@ def _percentile(values: list[float], percentile: float) -> float | None:
     return round(ordered[index], 3)
 
 
+def scheduler_tuning_evidence(summary: dict[str, Any]) -> dict[str, Any]:
+    """Decide whether longitudinal aggregates are sufficient for a tuning review.
+
+    This function never recommends or applies a parameter change. It only opens
+    the review gate after enough production attempts and candidate transitions
+    exist to avoid tuning from one-off failures.
+    """
+
+    attempts = _safe_non_negative_int(summary.get("attempts")) or 0
+    transitions = _safe_non_negative_int(summary.get("candidate_transitions")) or 0
+    duration = summary.get("lifecycle_duration_ms")
+    duration_ready = (
+        isinstance(duration, dict)
+        and _safe_duration(duration.get("p50")) is not None
+        and _safe_duration(duration.get("p95")) is not None
+        and _safe_duration(duration.get("max")) is not None
+    )
+    attempts_ready = attempts >= _MIN_TUNING_ATTEMPTS
+    transitions_ready = transitions >= _MIN_TUNING_TRANSITIONS
+    eligible = attempts_ready and transitions_ready and duration_ready
+    missing: list[str] = []
+    if not attempts_ready:
+        missing.append("longitudinal_attempts")
+    if not transitions_ready:
+        missing.append("candidate_transitions")
+    if not duration_ready:
+        missing.append("lifecycle_distribution")
+    return {
+        "status": "eligible_for_review" if eligible else "insufficient_evidence",
+        "review_allowed": eligible,
+        "automatic_tuning_allowed": False,
+        "attempts": attempts,
+        "minimum_attempts": _MIN_TUNING_ATTEMPTS,
+        "candidate_transitions": transitions,
+        "minimum_candidate_transitions": _MIN_TUNING_TRANSITIONS,
+        "lifecycle_distribution_ready": duration_ready,
+        "missing_evidence": missing,
+    }
+
+
 def slo_summary(state: dict[str, Any]) -> dict[str, Any]:
     attempts = state.get("attempts")
     if not isinstance(attempts, list) or not attempts:
-        return {"attempts": 0}
+        summary: dict[str, Any] = {"attempts": 0}
+        summary["scheduler_tuning_evidence"] = scheduler_tuning_evidence(summary)
+        return summary
 
     clean = [item for raw in attempts if (item := _clean_attempt(raw)) is not None]
     outcomes = {outcome.value: 0 for outcome in ProductionOutcome}
@@ -242,7 +286,7 @@ def slo_summary(state: dict[str, Any]) -> dict[str, Any]:
             latest_bytes_delta = current_bytes - previous_bytes
 
     qualification_rejections = outcomes[ProductionOutcome.QUALIFICATION_REJECTED.value]
-    summary: dict[str, Any] = {
+    summary = {
         "attempts": len(clean),
         "outcomes": outcomes,
         "qualification_rejections": qualification_rejections,
@@ -265,4 +309,5 @@ def slo_summary(state: dict[str, Any]) -> dict[str, Any]:
     }
     if latest_bytes_delta is not None:
         summary["latest_candidate_bytes_delta"] = latest_bytes_delta
+    summary["scheduler_tuning_evidence"] = scheduler_tuning_evidence(summary)
     return summary
