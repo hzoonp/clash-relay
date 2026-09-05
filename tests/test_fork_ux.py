@@ -22,6 +22,8 @@ def test_public_doctor_explains_current_policy_model_and_first_publish_path(
 
     assert report["public"]["policy_model_version"] == 2
     assert report["public"]["policy_model_status"] == "current"
+    assert report["public"]["service_qualification_status"] == "ready"
+    assert report["public"]["service_qualification_probes"] == 3
     assert report["guidance"]["first_publish_default"] is False
     assert report["guidance"]["enabled_subscription_secrets"] == [
         "SUBSCRIPTION_1_URL",
