@@ -8,7 +8,7 @@ import time
 from enum import StrEnum
 from typing import Any
 
-from .qualification_reliability import QualificationStageRejected
+from .qualification_reliability import QualificationFailureCategory, QualificationStageRejected
 
 _STATE_VERSION = 1
 _MAX_ATTEMPTS = 60
@@ -96,6 +96,11 @@ def _clean_attempt(value: Any) -> dict[str, Any] | None:
         "promotion_guard_checked": value.get("promotion_guard_checked") is True,
         "promotion_guard_blocked": value.get("promotion_guard_blocked") is True,
     }
+    if clean["retry_recovered"] and not clean["retry_attempted"]:
+        return None
+    if clean["promotion_guard_blocked"] and not clean["promotion_guard_checked"]:
+        return None
+
     sha = _safe_sha(value.get("candidate_sha256"))
     if sha is not None:
         clean["candidate_sha256"] = sha
@@ -103,8 +108,13 @@ def _clean_attempt(value: Any) -> dict[str, Any] | None:
     if candidate_bytes is not None:
         clean["candidate_bytes"] = candidate_bytes
     category = value.get("qualification_failure_category")
-    if isinstance(category, str) and 0 < len(category) <= 64:
-        clean["qualification_failure_category"] = category
+    if category is not None:
+        try:
+            clean["qualification_failure_category"] = QualificationFailureCategory(
+                str(category)
+            ).value
+        except ValueError:
+            return None
     return clean
 
 
@@ -139,10 +149,6 @@ def build_slo_attempt(
     clean = _clean_attempt(raw)
     if clean is None:
         raise ValueError("invalid operational SLO attempt")
-    if clean["retry_recovered"] and not clean["retry_attempted"]:
-        raise ValueError("retry recovery requires a retry attempt")
-    if clean["promotion_guard_blocked"] and not clean["promotion_guard_checked"]:
-        raise ValueError("promotion guard block requires a guard check")
     return clean
 
 
