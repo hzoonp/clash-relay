@@ -359,7 +359,9 @@ class ProductionPipeline:
         if not isinstance(browsing, dict):
             return False, False
         attempts = browsing.get("stage_attempts", 1)
-        retry_attempted = isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1
+        retry_attempted = (
+            isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1
+        )
         return retry_attempted, browsing.get("recovered_by_retry") is True
 
     def _promotion_slo_state(self) -> tuple[bool, bool]:
