@@ -10,15 +10,21 @@ import os
 import platform
 import re
 import tempfile
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .errors import ValidationError
 
 _API_VERSION = "2022-11-28"
 _CACHE_DIRECTORY = ".mihomo-cache"
+_NETWORK_ATTEMPTS = 3
+_NETWORK_BACKOFF_SECONDS = (1.0, 2.0)
+_RETRYABLE_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_T = TypeVar("_T")
 
 
 def _request_json(url: str) -> Any:
@@ -54,6 +60,23 @@ def _download(url: str, maximum: int = 128 * 1024 * 1024) -> bytes:
             if total > maximum:
                 raise ValidationError("Mihomo release asset exceeds safety limit")
     return b"".join(chunks)
+
+
+def _is_retryable_network_error(exc: OSError | urllib.error.URLError) -> bool:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in _RETRYABLE_HTTP_STATUS
+    return True
+
+
+def _retry_network_call(operation: Callable[[], _T]) -> _T:
+    for attempt in range(1, _NETWORK_ATTEMPTS + 1):
+        try:
+            return operation()
+        except (OSError, urllib.error.URLError) as exc:
+            if attempt >= _NETWORK_ATTEMPTS or not _is_retryable_network_error(exc):
+                raise
+            time.sleep(_NETWORK_BACKOFF_SECONDS[attempt - 1])
+    raise AssertionError("unreachable network retry state")
 
 
 def default_architecture() -> str:
@@ -194,9 +217,8 @@ def download_pinned_mihomo(
         return cached
 
     try:
-        release = _request_json(
-            f"https://api.github.com/repos/{repository}/releases/tags/{pinned_tag}"
-        )
+        release_url = f"https://api.github.com/repos/{repository}/releases/tags/{pinned_tag}"
+        release = _retry_network_call(lambda: _request_json(release_url))
         if channel == "stable" and release.get("prerelease"):
             raise ValidationError(f"pinned stable tag {pinned_tag} is marked prerelease by GitHub")
         pattern = re.compile(patterns[resolved_arch])
@@ -206,7 +228,7 @@ def download_pinned_mihomo(
                 f"expected one Mihomo asset matching {pattern.pattern!r}, found {len(assets)}"
             )
         asset = assets[0]
-        raw = _download(asset["browser_download_url"])
+        raw = _retry_network_call(lambda: _download(asset["browser_download_url"]))
     except (OSError, urllib.error.URLError) as exc:
         raise ValidationError("failed to download pinned Mihomo release asset") from exc
 
