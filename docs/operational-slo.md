@@ -38,6 +38,20 @@ SLO persistence is operational observability, not a release gate. A failed SLO r
 
 Dry runs do not mutate the production SLO key.
 
+## Scheduler tuning evidence gate
+
+`slo_summary()` includes `scheduler_tuning_evidence`. The gate exists to prevent one-off failures from turning into scheduler policy changes.
+
+A tuning review becomes eligible only when all of these aggregate conditions exist:
+
+- at least 12 longitudinal production attempts;
+- at least 4 candidate transitions;
+- a complete lifecycle p50/p95/max distribution.
+
+Before that point the status is `insufficient_evidence`. Reaching `eligible_for_review` does not recommend a change and never applies one automatically. `automatic_tuning_allowed` is always false.
+
+The public GitHub production workflow intentionally exposes only whether private SLO persistence succeeded; it does not publish the private KV ring values. A scheduler change therefore requires a separate review of the private aggregate evidence. Missing public evidence must not be replaced with guessed thresholds.
+
 ## Tuning policy
 
 Operational SLO collection does not widen qualification thresholds, retry counts, scheduler hysteresis, or Promotion Guard thresholds. Operational policy changes must be justified by longitudinal aggregate evidence rather than one-off failures. In particular:
