@@ -78,6 +78,7 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     assert manifest["release_id"] == digest
     assert manifest["config_sha256"] == digest
     assert manifest["config_bytes"] == len(candidate_bytes)
+    assert manifest["public_config_version"] == 2
     assert manifest["runtime"] == {"groups": 1, "providers": 1, "unique_nodes": 1}
     assert manifest["sources"]["configured"] == 1
     assert manifest["sources"]["by_use"]["general"]["distinct_sources"] == 1
@@ -114,6 +115,7 @@ def test_published_manifest_uses_release_transaction_identity() -> None:
     assert manifest["production_changed"] is True
     assert manifest["previous_release_id"] == "f" * 64
     markdown = render_release_manifest_markdown(manifest)
+    assert "Public Config: **v2**" in markdown
     assert "aggregate-only" in markdown
     assert digest in markdown
     assert "secret-node" not in markdown
