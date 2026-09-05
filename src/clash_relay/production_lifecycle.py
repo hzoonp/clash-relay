@@ -21,7 +21,6 @@ from .config_loader import ProjectDefinition
 from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate
 from .mihomo_download import download_pinned_mihomo
-from .mihomo_matrix_application import validate_mihomo_matrix
 from .operational_slo import (
     ProductionOutcome,
     build_slo_attempt,
@@ -30,21 +29,22 @@ from .operational_slo import (
 )
 from .policy_document import load_policy_document
 from .production_application import (
-    fetch_current_production_config,
     load_ai_qualification_cache_state,
     load_scheduler_history_state,
     persist_ai_qualification_cache,
     persist_production_metrics,
     persist_scheduler_history,
-    publish_production_release,
     render_production_proof_application,
-    run_promotion_guard,
 )
 from .production_pipeline import (
     ProductionPipelineOutputs,
     ProjectPaths,
     QualificationPaths,
     run_production_pipeline,
+)
+from .production_release_stage import (
+    ReleaseCandidateStagePaths,
+    run_release_candidate_stage,
 )
 from .publication import publication_gate
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
@@ -250,47 +250,29 @@ class ProductionPipeline:
         self._append_summary(self._private("production-summary.md"))
         return result
 
-    def _promotion_guard(self, project: ProjectDefinition) -> dict[str, Any]:
-        if not self.publish:
-            return {"status": "skipped", "reason": "dry_run"}
-        baseline = fetch_current_production_config(
+    def _release_candidate_stage(self, project: ProjectDefinition, binary: Path):
+        result = run_release_candidate_stage(
             project=project,
-            output=self._private("current-production.yaml"),
-            allow_missing=True,
+            publish=self.publish,
+            primary_binary=binary,
+            paths=ReleaseCandidateStagePaths(
+                candidate=self._private("config.yaml"),
+                qualification=self._private("qualification-pipeline-summary.json"),
+                baseline=self._private("current-production.yaml"),
+                baseline_report=self._private("current-production-fetch.json"),
+                guard_policy=self.paths.promotion_guard,
+                guard_report=self._private("promotion-guard.json"),
+                guard_markdown=self._private("promotion-guard.md"),
+                mihomo_manifest=self.paths.mihomo_manifest,
+                mihomo_work_dir=self.paths.bin_dir / "validation",
+                matrix_report=self._private("mihomo-validation-matrix.json"),
+                release_report=self._private("release-publication.json"),
+            ),
             env=os.environ,
         )
-        self._write_json(self._private("current-production-fetch.json"), baseline)
-        report = run_promotion_guard(
-            project=project,
-            candidate_path=self._private("config.yaml"),
-            baseline_path=self._private("current-production.yaml"),
-            guard_path=self.paths.promotion_guard,
-            report_path=self._private("promotion-guard.json"),
-            markdown_path=self._private("promotion-guard.md"),
-        )
-        self._append_summary(self._private("promotion-guard.md"))
-        return report
-
-    def _validate_matrix(self, binary: Path) -> dict[str, Any]:
-        result = validate_mihomo_matrix(
-            candidate=self._private("config.yaml"),
-            manifest=self.paths.mihomo_manifest,
-            channel="stable",
-            work_dir=self.paths.bin_dir / "validation",
-            reuse_primary_bin=binary,
-        )
-        self._write_json(self._private("mihomo-validation-matrix.json"), result)
-        return result
-
-    def _publish_release(self, project: ProjectDefinition) -> dict[str, Any] | None:
-        if not self.publish:
-            return None
-        result = publish_production_release(
-            project=project,
-            candidate_path=self._private("config.yaml"),
-            env=os.environ,
-        )
-        self._write_json(self._private("release-publication.json"), result)
+        self.timings_ms.update(result.timings_ms)
+        if self.publish:
+            self._append_summary(self._private("promotion-guard.md"))
         return result
 
     def _best_effort_state(self, stage: str, operation) -> dict[str, Any]:
@@ -536,18 +518,11 @@ class ProductionPipeline:
             self._record_timing("qualification", started)
             progress.advance(ReleasePhase.QUALIFIED)
 
-            started = time.perf_counter()
-            promotion = self._promotion_guard(project)
-            self._record_timing("promotion_guard", started)
-
-            started = time.perf_counter()
-            matrix = self._validate_matrix(binary)
-            self._record_timing("mihomo_matrix", started)
+            release_stage = self._release_candidate_stage(project, binary)
+            promotion = release_stage.promotion
+            matrix = release_stage.matrix
+            release = release_stage.release
             progress.advance(ReleasePhase.PROMOTED)
-
-            started = time.perf_counter()
-            release = self._publish_release(project)
-            self._record_timing("publication", started)
             if self.publish:
                 progress.advance(ReleasePhase.PUBLISHED)
 

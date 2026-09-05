@@ -13,6 +13,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 CONFIG_EXAMPLE = ROOT / "config.example.yaml"
 MASK_SCRIPT = ROOT / "scripts" / "mask_subscription_secrets.py"
 LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
+RELEASE_STAGE = ROOT / "src" / "clash_relay" / "production_release_stage.py"
 
 
 def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
@@ -80,38 +81,44 @@ def test_secrets_are_scoped_to_the_single_pipeline_step() -> None:
 
 
 def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
-    text = LIFECYCLE.read_text()
+    lifecycle = LIFECYCLE.read_text()
+    release_stage = RELEASE_STAGE.read_text()
     stages = [
         "generation = self._generate()",
         "self._load_derived_state(project)",
         "binary = self._download_primary_mihomo()",
         "pipeline = self._qualify(binary)",
-        "promotion = self._promotion_guard(project)",
-        "matrix = self._validate_matrix(binary)",
-        "release = self._publish_release(project)",
+        "release_stage = self._release_candidate_stage(project, binary)",
+        "promotion = release_stage.promotion",
+        "matrix = release_stage.matrix",
+        "release = release_stage.release",
         "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
         "metrics = self._persist_production_metrics(project)",
     ]
-    positions = [text.index(stage) for stage in stages]
+    positions = [lifecycle.index(stage) for stage in stages]
     assert positions == sorted(positions)
-    assert "run_production_pipeline(" in text
-    assert "run_promotion_guard(" in text
-    assert "validate_mihomo_matrix(" in text
-    assert "publish_production_release(" in text
-    assert "check_promotion_guard.py" not in text
-    assert "validate_mihomo_matrix.py" not in text
-    assert "publish_release_bundle.py" not in text
-    assert "finally:" in text
-    assert "shutil.rmtree(self.paths.private_dir" in text
+    assert "run_production_pipeline(" in lifecycle
+    assert "run_release_candidate_stage(" in lifecycle
+    assert "check_promotion_guard.py" not in lifecycle
+    assert "validate_mihomo_matrix.py" not in lifecycle
+    assert "publish_release_bundle.py" not in lifecycle
+    assert "finally:" in lifecycle
+    assert "shutil.rmtree(self.paths.private_dir" in lifecycle
+
+    guard = release_stage.index("run_promotion_guard(")
+    matrix = release_stage.index("validate_mihomo_matrix(")
+    publish = release_stage.index("publish_production_release(")
+    assert guard < matrix < publish
+    assert "qualification_path=paths.qualification" in release_stage[:matrix]
 
 
 def test_derived_state_persistence_remains_post_commit_and_best_effort() -> None:
     text = LIFECYCLE.read_text()
-    publish = text.index("release = self._publish_release(project)")
+    release = text.index("release = release_stage.release")
     persist = text.index("derived_state = self._persist_derived_state(project)")
-    assert publish < persist
+    assert release < persist
     assert text.count("self._best_effort_state(") == 3
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
@@ -131,13 +138,17 @@ def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> No
 def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:
     workflow = WORKFLOW.read_text()
     lifecycle = LIFECYCLE.read_text()
+    release_stage = RELEASE_STAGE.read_text()
     assert "tools/mihomo-versions.json" in lifecycle
-    assert "validate_mihomo_matrix(" in lifecycle
+    assert "validate_mihomo_matrix(" in release_stage
     assert "validate_mihomo_matrix.py" not in lifecycle
+    assert "validate_mihomo_matrix.py" not in release_stage
     assert "v1.19.30" not in workflow
     assert "v1.19.29" not in workflow
     assert "v1.19.30" not in lifecycle
     assert "v1.19.29" not in lifecycle
+    assert "v1.19.30" not in release_stage
+    assert "v1.19.29" not in release_stage
 
 
 def test_release_manifest_is_rendered_after_existing_production_proof() -> None:

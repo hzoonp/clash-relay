@@ -147,6 +147,9 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
         encoding="utf-8"
     )
+    release_stage = (repo_root / "src" / "clash_relay" / "production_release_stage.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "continue-on-error" not in publish
     assert "always()" not in publish
@@ -164,11 +167,18 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "v1.19.29" not in publish
 
     qualify = lifecycle.index("pipeline = self._qualify(binary)")
-    guard = lifecycle.index("promotion = self._promotion_guard(project)")
-    matrix = lifecycle.index("matrix = self._validate_matrix(binary)")
-    release = lifecycle.index("release = self._publish_release(project)")
+    release_boundary = lifecycle.index(
+        "release_stage = self._release_candidate_stage(project, binary)"
+    )
     persist = lifecycle.index("derived_state = self._persist_derived_state(project)")
-    assert qualify < guard < matrix < release < persist
+    assert qualify < release_boundary < persist
+
+    guard = release_stage.index("run_promotion_guard(")
+    matrix = release_stage.index("validate_mihomo_matrix(")
+    release = release_stage.index("publish_production_release(")
+    assert guard < matrix < release
+    assert "qualification_path=paths.qualification" in release_stage[:matrix]
+
     assert lifecycle.count("self._best_effort_state(") == 3
     assert "persist_ai_qualification_cache" in lifecycle
     assert "persist_scheduler_history" in lifecycle
@@ -176,6 +186,9 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "check_promotion_guard.py" not in lifecycle
     assert "validate_mihomo_matrix.py" not in lifecycle
     assert "publish_release_bundle.py" not in lifecycle
+    assert "check_promotion_guard.py" not in release_stage
+    assert "validate_mihomo_matrix.py" not in release_stage
+    assert "publish_release_bundle.py" not in release_stage
     assert "finally:" in lifecycle
     assert "shutil.rmtree(self.paths.private_dir" in lifecycle
 
