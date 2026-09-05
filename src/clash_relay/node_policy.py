@@ -31,6 +31,27 @@ def node_name_multiplier(name: str) -> float | None:
     return max(values) if values else None
 
 
+def filter_proxies_by_name_patterns(
+    proxies: Iterable[dict[str, Any]], *, deny_patterns: Iterable[str]
+) -> tuple[list[dict[str, Any]], int]:
+    """Drop proxies whose names match an explicit subscription admission deny-list."""
+
+    rows = list(proxies)
+    compiled = tuple(re.compile(pattern) for pattern in deny_patterns)
+    if not compiled:
+        return rows, 0
+
+    kept: list[dict[str, Any]] = []
+    rejected = 0
+    for proxy in rows:
+        name = str(proxy.get("name", ""))
+        if any(pattern.search(name) is not None for pattern in compiled):
+            rejected += 1
+            continue
+        kept.append(proxy)
+    return kept, rejected
+
+
 def filter_proxies_by_multiplier(
     proxies: Iterable[dict[str, Any]], *, max_multiplier: float | None
 ) -> tuple[list[dict[str, Any]], int]:

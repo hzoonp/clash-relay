@@ -201,9 +201,10 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
         "subscriptions"
     ]
     subscription_1 = next(item for item in subscriptions if item["id"] == "subscription_1")
-    assert subscription_1["name_rules"] == [
-        {"pattern": "(?i)emby", "remove_capabilities": ["general"]},
-    ]
+    name_rules = subscription_1.get("name_rules", [])
+    patterns = [str(rule.get("pattern", "")).casefold() for rule in name_rules]
+    assert subscription_1["deny_name_patterns"] == ["(?i)emby"]
+    assert all("emby" not in pattern for pattern in patterns)
 
     direct = yaml.safe_load((repo_root / "rules/direct.yaml").read_text(encoding="utf-8"))
     assert direct == {"version": 1, "rules": []}

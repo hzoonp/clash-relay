@@ -13,7 +13,7 @@ from .errors import FetchError, GenerationError, SubscriptionError
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
 from .models import BuildResult, Node, SubscriptionSpec
-from .node_policy import filter_proxies_by_multiplier
+from .node_policy import filter_proxies_by_multiplier, filter_proxies_by_name_patterns
 from .policy_compiler import compile_runtime_graph
 from .redact import redact_text
 from .secrets import resolve_subscription_urls
@@ -67,6 +67,7 @@ def build_candidate(
     nodes: list[Node] = []
     source_reports: list[dict[str, Any]] = []
     successful = 0
+    name_filtered_nodes = 0
     multiplier_filtered_nodes = 0
     for spec in sorted(enabled_specs, key=lambda item: (item.priority, item.id)):
         try:
@@ -85,13 +86,18 @@ def build_candidate(
             if not parsed.proxies:
                 raise SubscriptionError("subscription contains no usable proxies")
 
-            admitted, rejected_multiplier = filter_proxies_by_multiplier(
+            admitted_by_name, rejected_name = filter_proxies_by_name_patterns(
                 parsed.proxies,
+                deny_patterns=spec.deny_name_patterns,
+            )
+            admitted, rejected_multiplier = filter_proxies_by_multiplier(
+                admitted_by_name,
                 max_multiplier=spec.max_node_multiplier,
             )
             classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
             nodes.extend(classified)
             successful += 1
+            name_filtered_nodes += rejected_name
             multiplier_filtered_nodes += rejected_multiplier
 
             source_report: dict[str, Any] = {
@@ -100,6 +106,7 @@ def build_candidate(
                 "status": "ok",
                 "nodes": len(classified),
                 "skipped_invalid_nodes": parsed.skipped_items,
+                "filtered_by_name": rejected_name,
                 "filtered_over_multiplier": rejected_multiplier,
             }
             if spec.max_node_multiplier is not None:
@@ -175,6 +182,7 @@ def build_candidate(
         "parsed_nodes": len(nodes),
         "usable_nodes": len(deduplicated),
         "duplicates_removed": duplicate_count,
+        "name_filtered_nodes": name_filtered_nodes,
         "multiplier_filtered_nodes": multiplier_filtered_nodes,
         **compiled.report,
     }
