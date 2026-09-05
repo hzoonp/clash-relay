@@ -58,7 +58,9 @@ def test_release_stage_orders_guard_matrix_then_publication(
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.run_promotion_guard", guard
+    )
     monkeypatch.setattr(
         "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
     )
@@ -99,7 +101,9 @@ def test_guard_failure_prevents_matrix_and_publication(monkeypatch, tmp_path) ->
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.run_promotion_guard", guard
+    )
     monkeypatch.setattr(
         "clash_relay.production_release_stage.validate_mihomo_matrix", unexpected
     )
@@ -141,7 +145,9 @@ def test_matrix_failure_prevents_publication(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", fetch
     )
-    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.run_promotion_guard", guard
+    )
     monkeypatch.setattr(
         "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
     )
@@ -177,7 +183,9 @@ def test_dry_run_skips_production_state_but_keeps_real_core_matrix(
     monkeypatch.setattr(
         "clash_relay.production_release_stage.fetch_current_production_config", unexpected
     )
-    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", unexpected)
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.run_promotion_guard", unexpected
+    )
     monkeypatch.setattr(
         "clash_relay.production_release_stage.validate_mihomo_matrix", matrix
     )
