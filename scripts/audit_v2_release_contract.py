@@ -68,7 +68,11 @@ def audit(root: Path = ROOT) -> list[str]:
     subscriptions = yaml.safe_load((root / "subscriptions.yaml").read_text(encoding="utf-8"))
     entries = subscriptions.get("subscriptions", []) if isinstance(subscriptions, dict) else []
     first = next(
-        (entry for entry in entries if isinstance(entry, dict) and entry.get("id") == "subscription_1"),
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, dict) and entry.get("id") == "subscription_1"
+        ),
         None,
     )
     if not isinstance(first, dict):
@@ -117,8 +121,8 @@ def audit(root: Path = ROOT) -> list[str]:
     workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
     for required in (
         "needs.validate.outputs.validated_sha == github.sha",
-        'ref: ${{ needs.validate.outputs.validated_sha }}',
-        'docs/releases/${VERSION}.md',
+        "ref: ${{ needs.validate.outputs.validated_sha }}",
+        "docs/releases/${VERSION}.md",
         "gh release create",
     ):
         if required not in workflow:
