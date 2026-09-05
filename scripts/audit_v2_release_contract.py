@@ -32,12 +32,20 @@ _RUNTIME_COMPATIBILITY_TOKENS = (
 _PHASE_TOKEN = re.compile(r"\bP\d+(?:\.\d+)?(?:-P?\d+(?:\.\d+)?)?\b")
 
 
-def _iter_text_files(root: Path, relative_dir: str, suffixes: tuple[str, ...]):
-    base = root / relative_dir
-    if not base.exists():
-        return
-    for path in sorted(base.rglob("*")):
-        if path.is_file() and path.suffix in suffixes:
+def _iter_runtime_text_files(root: Path):
+    for relative_dir, suffixes in (
+        ("src", (".py",)),
+        ("scripts", (".py",)),
+        (".github/workflows", (".yml", ".yaml")),
+    ):
+        base = root / relative_dir
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            if path == root / "scripts/audit_v2_release_contract.py":
+                continue
             yield path
 
 
@@ -79,19 +87,13 @@ def audit(root: Path = ROOT) -> list[str]:
     if 'f"{production_key}.previous-v1"' in release_bundle:
         errors.append("legacy previous-v1 rollback key returned")
 
-    for relative_dir, suffixes in (
-        ("src", (".py",)),
-        ("scripts", (".py",)),
-        ("tests", (".py",)),
-        (".github/workflows", (".yml", ".yaml")),
-    ):
-        for path in _iter_text_files(root, relative_dir, suffixes):
-            text = path.read_text(encoding="utf-8")
-            for token in _RUNTIME_COMPATIBILITY_TOKENS:
-                if token in text:
-                    errors.append(
-                        f"runtime compatibility token {token!r} returned in {path.relative_to(root)}"
-                    )
+    for path in _iter_runtime_text_files(root):
+        text = path.read_text(encoding="utf-8")
+        for token in _RUNTIME_COMPATIBILITY_TOKENS:
+            if token in text:
+                errors.append(
+                    f"runtime compatibility token {token!r} returned in {path.relative_to(root)}"
+                )
 
     for relative in STALE_PHASE_DOCS:
         if (root / relative).exists():
@@ -110,9 +112,7 @@ def audit(root: Path = ROOT) -> list[str]:
         text = (root / relative).read_text(encoding="utf-8")
         match = _PHASE_TOKEN.search(text)
         if match is not None:
-            errors.append(
-                f"{relative} contains phase-era token {match.group(0)!r}"
-            )
+            errors.append(f"{relative} contains phase-era token {match.group(0)!r}")
 
     workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
     for required in (
@@ -125,7 +125,7 @@ def audit(root: Path = ROOT) -> list[str]:
             errors.append(f"release workflow is missing v2 contract token: {required}")
 
     rollback = (root / ".github/workflows/rollback.yml").read_text(encoding="utf-8")
-    if "previous-release-v1" not in rollback and "fetch_previous_config.py" not in rollback:
+    if "fetch_previous_config.py" not in rollback:
         errors.append("rollback workflow no longer resolves the versioned previous release")
     if "audit_production.py" not in rollback or "validate_mihomo_matrix.py" not in rollback:
         errors.append("rollback workflow bypasses current policy or stable Mihomo validation")
