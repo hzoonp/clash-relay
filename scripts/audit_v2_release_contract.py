@@ -54,8 +54,8 @@ def audit(root: Path = ROOT) -> list[str]:
 
     with (root / "pyproject.toml").open("rb") as handle:
         version = tomllib.load(handle)["project"]["version"]
-    if version != "2.0.0":
-        errors.append(f"package version is {version!r}, expected '2.0.0'")
+    if version != "2.0.1":
+        errors.append(f"package version is {version!r}, expected '2.0.1'")
     notes = root / "docs" / "releases" / f"{version}.md"
     if not notes.is_file():
         errors.append(f"missing versioned release notes: {notes.relative_to(root)}")
