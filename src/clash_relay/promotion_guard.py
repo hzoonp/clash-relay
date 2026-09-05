@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .availability import collect_inventory, ratio, safe_inventory
+from .availability import InventoryCount, collect_inventory, ratio, safe_inventory
 from .config_loader import ProjectDefinition
 from .errors import ConfigurationError
 from .schema import load_and_validate
@@ -57,7 +57,9 @@ def _absolute_thresholds(policy: PromotionGuardPolicy) -> dict[str, Any]:
     }
 
 
-def _absolute_violations(candidate_inventory, policy: PromotionGuardPolicy) -> list[str]:
+def _absolute_violations(
+    candidate_inventory: InventoryCount, policy: PromotionGuardPolicy
+) -> list[str]:
     violations: list[str] = []
     required_uses = (
         set(policy.minimum_sources_by_use)
@@ -65,17 +67,19 @@ def _absolute_violations(candidate_inventory, policy: PromotionGuardPolicy) -> l
         | set(policy.minimum_regions_by_use)
     )
     for source_use in sorted(required_uses):
-        if candidate_inventory.sources_by_use.get(
-            source_use, 0
-        ) < policy.minimum_sources_by_use.get(source_use, 0):
+        if (
+            candidate_inventory.sources_by_use.get(source_use, 0)
+            < policy.minimum_sources_by_use.get(source_use, 0)
+        ):
             violations.append(f"minimum_sources:{source_use}")
         if candidate_inventory.nodes_by_use.get(source_use, 0) < policy.minimum_nodes_by_use.get(
             source_use, 0
         ):
             violations.append(f"minimum_nodes:{source_use}")
-        if candidate_inventory.regions_by_use.get(
-            source_use, 0
-        ) < policy.minimum_regions_by_use.get(source_use, 0):
+        if (
+            candidate_inventory.regions_by_use.get(source_use, 0)
+            < policy.minimum_regions_by_use.get(source_use, 0)
+        ):
             violations.append(f"minimum_regions:{source_use}")
     return violations
 
