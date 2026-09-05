@@ -67,7 +67,7 @@ jobs:
         run: |
           pytest -m "not integration" \
             --cov=clash_relay \
-            --cov-fail-under=71 \
+            --cov-fail-under=72 \
             --cov-report=term-missing \
             --cov-report=xml:.work/coverage-3.12.xml \
             --junitxml=.work/unit-3.12.xml
