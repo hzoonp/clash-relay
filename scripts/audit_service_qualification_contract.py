@@ -43,13 +43,17 @@ def main() -> int:
             )
 
     if 'if name == "ai_openai"' in ai_application:
-        raise SystemExit("service qualification audit: AI orchestration restored provider branching")
+        raise SystemExit(
+            "service qualification audit: AI orchestration restored provider branching"
+        )
     for token in (
         "service_qualification_by_probe",
         "apply_service_route_postprocessing",
     ):
         if token not in ai_application:
-            raise SystemExit(f"service qualification audit: AI orchestration bypasses registry {token}")
+            raise SystemExit(
+                f"service qualification audit: AI orchestration bypasses registry {token}"
+            )
 
     if "client_path_hardening: true" not in scheduling:
         raise SystemExit("service qualification audit: client-path hardening is not declarative")
