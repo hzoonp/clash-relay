@@ -6,6 +6,7 @@ import json
 import math
 import time
 from enum import StrEnum
+from itertools import pairwise
 from typing import Any
 
 from .qualification_reliability import QualificationFailureCategory, QualificationStageRejected
@@ -231,8 +232,7 @@ def slo_summary(state: dict[str, Any]) -> dict[str, Any]:
 
     candidate_transitions = max(0, len(candidate_sequence) - 1)
     candidate_changes = sum(
-        previous[0] != current[0]
-        for previous, current in zip(candidate_sequence, candidate_sequence[1:], strict=False)
+        previous[0] != current[0] for previous, current in pairwise(candidate_sequence)
     )
     latest_bytes_delta: int | None = None
     if len(candidate_sequence) >= 2:
