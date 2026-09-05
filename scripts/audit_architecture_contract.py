@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P27-P48 architecture boundaries regress."""
+"""Fail CI when the P27-P52 architecture boundaries regress."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def main() -> int:
     if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
         raise SystemExit("architecture audit: private production state is not always cleaned")
 
-    # P39/P48: qualification retry is typed and package-to-package, never stdout JSON IPC.
+    # P39/P48/P52: qualification retry is typed and package-to-package, never stdout JSON IPC.
     qualification = _text("src/clash_relay/qualification_pipeline.py")
     reliability = _text("src/clash_relay/qualification_reliability.py")
     if "QualificationStageRejected" not in qualification:
@@ -150,10 +150,14 @@ def main() -> int:
     for token in (
         "run_browsing_qualification(",
         "run_ai_qualification(",
-        "harden_openai_client_path(",
+        "harden_declared_service_client_paths(",
     ):
         if token not in qualification:
             raise SystemExit(f"architecture audit: qualification bypasses application API {token}")
+    if "openai_application" in qualification or "harden_openai_client_path" in qualification:
+        raise SystemExit(
+            "architecture audit: qualification restored OpenAI-specific application API"
+        )
 
     # P48: lifecycle calls typed package services directly; scripts are adapters only.
     production_pipeline = _text("src/clash_relay/production_pipeline.py")

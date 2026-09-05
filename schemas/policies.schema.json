@@ -243,7 +243,8 @@
         "interval": {"type": "integer", "minimum": 10, "maximum": 86400},
         "timeout": {"type": "integer", "minimum": 100, "maximum": 60000},
         "lazy": {"type": "boolean"},
-        "tolerance": {"type": "integer", "minimum": 0, "maximum": 10000}
+        "tolerance": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "client_path_hardening": {"type": "boolean"}
       }
     },
     "selector": {

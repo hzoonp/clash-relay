@@ -40,6 +40,7 @@ probes:
     timeout: 5000
     lazy: false
     tolerance: 50
+    client_path_hardening: true
   ai_claude:
     url: https://claude.ai/
     method: HEAD

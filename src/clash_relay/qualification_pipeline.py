@@ -12,10 +12,10 @@ from typing import Any
 from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
 from .errors import ValidationError
-from .openai_application import harden_openai_client_path
 from .policy_document import load_policy_document
 from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
+from .service_qualification import harden_declared_service_client_paths
 from .util import atomic_write, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
@@ -119,7 +119,7 @@ def run_qualification_pipeline(
     cache_key: Path | None = None,
     next_cache: Path | None = None,
 ) -> dict[str, Any]:
-    """Run immutable browsing, AI admission, and client-path hardening stages."""
+    """Run immutable browsing, AI admission, and declared service hardening stages."""
 
     pipeline_started = time.perf_counter()
     if workers < 1:
@@ -142,7 +142,7 @@ def run_qualification_pipeline(
     generated = stage_dir / "01-generated.yaml"
     browsing = stage_dir / "02-browsing-transport.yaml"
     ai = stage_dir / "03-ai.yaml"
-    openai_runtime = stage_dir / "04-openai-client-path.yaml"
+    service_runtime = stage_dir / "04-service-client-path.yaml"
     try:
         shutil.copyfile(candidate, generated)
     except OSError as exc:
@@ -201,16 +201,19 @@ def run_qualification_pipeline(
     ai_elapsed_ms = _elapsed_ms(ai_started)
 
     try:
-        shutil.copyfile(ai, openai_runtime)
+        shutil.copyfile(ai, service_runtime)
     except OSError as exc:
-        raise ValidationError("failed to prepare OpenAI client-path hardening stage") from exc
+        raise ValidationError("failed to prepare service client-path hardening stage") from exc
     runtime_started = time.perf_counter()
-    runtime_summary = harden_openai_client_path(openai_runtime)
-    runtime_artifact = _artifact(openai_runtime, "openai_client_path_hardened")
+    runtime_summary = harden_declared_service_client_paths(
+        candidate=service_runtime,
+        policies=qualification_policies,
+    )
+    runtime_artifact = _artifact(service_runtime, "service_client_path_hardened")
     runtime_elapsed_ms = _elapsed_ms(runtime_started)
 
     try:
-        shutil.copyfile(openai_runtime, output)
+        shutil.copyfile(service_runtime, output)
     except OSError as exc:
         raise ValidationError("failed to emit final qualified candidate") from exc
     final_artifact = _artifact(output, "final_qualified")
@@ -220,12 +223,14 @@ def run_qualification_pipeline(
         QualificationStage("browsing_transport_qualified", browsing, browsing_artifact.fingerprint),
         QualificationStage("ai_qualified", ai, ai_artifact.fingerprint),
         QualificationStage(
-            "openai_client_path_hardened",
-            openai_runtime,
+            "service_client_path_hardened",
+            service_runtime,
             runtime_artifact.fingerprint,
         ),
         QualificationStage("final_qualified", output, final_artifact.fingerprint),
     )
+    services = runtime_summary.get("services")
+    hardened_service_names = sorted(services) if isinstance(services, dict) else []
     return {
         "status": "qualified",
         "policy_model_version": policy_model_version,
@@ -233,7 +238,7 @@ def run_qualification_pipeline(
         "timings_ms": {
             "browsing_transport": browsing_elapsed_ms,
             "ai": ai_elapsed_ms,
-            "openai_client_path": runtime_elapsed_ms,
+            "service_client_path": runtime_elapsed_ms,
             "total": _elapsed_ms(pipeline_started),
         },
         "browsing": {
@@ -251,7 +256,7 @@ def run_qualification_pipeline(
             if isinstance(ai_summary.get("diagnostics"), dict)
             else "unknown",
             "client_path_status": runtime_summary.get("status"),
-            "client_path_selection": runtime_summary.get("selection", "unknown"),
-            "client_path_regions": runtime_summary.get("runtime_regions", 0),
+            "client_path_hardened_services": runtime_summary.get("hardened_services", 0),
+            "client_path_services": hardened_service_names,
         },
     }

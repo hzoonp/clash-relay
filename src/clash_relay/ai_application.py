@@ -18,28 +18,29 @@ from .ai_qualification_cache import (
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
 from .errors import ValidationError
-from .openai_app_contract import cache_service_key, rewrite_route_locked_candidate
-from .openai_app_contract import contract_summary as openai_app_contract_summary
-from .openai_app_contract import critical_probes as openai_app_critical_probes
-from .openai_app_contract import supporting_probes as openai_app_supporting_probes
 from .policy_document import load_policy_document
 from .routing_policy_v2 import load_routing_policy_v2
-from .scheduler_policy import AICachePolicy, load_scheduler_policy
+from .scheduler_policy import load_scheduler_policy
+from .service_qualification import (
+    apply_service_route_postprocessing,
+    service_qualification_by_probe,
+    service_qualifications,
+)
 from .util import dump_yaml, load_yaml_file
 
 
 def _service_diagnostics() -> dict[str, object]:
-    return {
+    diagnostics: dict[str, object] = {
         "qualification_mode": "per-service",
         "tested_nodes": 0,
         "selector_failures": 0,
         "probes": {},
-        "openai_app": {
-            "contract": openai_app_contract_summary(),
-            "critical": {},
-            "supporting": {},
-        },
     }
+    for service in service_qualifications():
+        key = service.diagnostics_key()
+        if key is not None:
+            diagnostics[key] = {}
+    return diagnostics
 
 
 def _cache_inputs(
@@ -143,60 +144,6 @@ def _probe_names(
                 temporary.unlink()
 
 
-def _network_failure_count(probes: dict[str, Any], outcome: str) -> int:
-    total = 0
-    for summary in probes.values():
-        if not isinstance(summary, dict):
-            continue
-        outcomes = summary.get("outcomes")
-        if isinstance(outcomes, dict):
-            total += int(outcomes.get(outcome, 0))
-    return total
-
-
-def _openai_app_diagnostics(
-    *,
-    live_tested: int,
-    qualified: set[str],
-    critical_diagnostics: dict[str, Any],
-    supporting_diagnostics: dict[str, Any],
-    supporting_fully_reachable: int,
-) -> dict[str, Any]:
-    critical = critical_diagnostics.get("probes", {})
-    if not isinstance(critical, dict):
-        critical = {}
-    supporting = supporting_diagnostics.get("probes", {})
-    if not isinstance(supporting, dict):
-        supporting = {}
-    return {
-        "contract": openai_app_contract_summary(),
-        "critical": {
-            "live_tested_nodes": live_tested,
-            "app_ready_live_nodes": len(qualified),
-            "endpoint_count": len(critical),
-            "tls_errors": _network_failure_count(critical, "tls_error"),
-            "dns_errors": _network_failure_count(critical, "dns_error"),
-            "timeouts": _network_failure_count(critical, "timeout"),
-            "probes": critical,
-        },
-        "supporting": {
-            "live_tested_nodes": int(supporting_diagnostics.get("tested_nodes", 0)),
-            "fully_reachable_nodes": supporting_fully_reachable,
-            "endpoint_count": len(supporting),
-            "tls_errors": _network_failure_count(supporting, "tls_error"),
-            "dns_errors": _network_failure_count(supporting, "dns_error"),
-            "timeouts": _network_failure_count(supporting, "timeout"),
-            "probes": supporting,
-        },
-    }
-
-
-def _service_cache_ttls(policy: AICachePolicy, service: str) -> tuple[int, int]:
-    if service == "ai_openai":
-        return policy.openai_pass_ttl_seconds, policy.openai_failure_ttl_seconds
-    return policy.pass_ttl_seconds, policy.failure_ttl_seconds
-
-
 def run_ai_qualification(
     *,
     candidate: Path,
@@ -207,7 +154,7 @@ def run_ai_qualification(
     cache_key: Path | None = None,
     next_cache: Path | None = None,
 ) -> dict[str, Any]:
-    """Qualify AI services and rewrite one private candidate in place."""
+    """Qualify registered AI services and rewrite one private candidate in place."""
 
     diagnostics = _service_diagnostics()
     scheduler_policy = load_scheduler_policy(policies)
@@ -235,11 +182,9 @@ def run_ai_qualification(
     total_cache_fail = 0
     for probe in probes:
         name = str(probe["name"])
-        service_cache_key = cache_service_key(name)
-        pass_ttl_seconds, failure_ttl_seconds = _service_cache_ttls(
-            scheduler_policy.ai_cache,
-            name,
-        )
+        service = service_qualification_by_probe(name)
+        service_cache_key = service.cache_key()
+        pass_ttl_seconds, failure_ttl_seconds = service.cache_ttls(scheduler_policy.ai_cache)
         cached_pass: set[str] = set()
         cached_fail: set[str] = set()
         live_names: set[str] | None = None
@@ -252,9 +197,7 @@ def run_ai_qualification(
                 failure_ttl_seconds=failure_ttl_seconds,
             )
 
-        qualification_probes = (
-            openai_app_critical_probes(probe) if name == "ai_openai" else (probe,)
-        )
+        qualification_probes = service.qualification_probes(probe)
         live_qualified, probe_diagnostics = _probe_names(
             binary=mihomo_bin,
             candidate=candidate,
@@ -277,7 +220,10 @@ def run_ai_qualification(
         qualified = cached_pass | live_qualified
         qualified_by_probe[name] = qualified
 
-        diagnostics["selector_failures"] = int(diagnostics["selector_failures"]) + int(
+        selector_failures = diagnostics["selector_failures"]
+        if not isinstance(selector_failures, int) or isinstance(selector_failures, bool):
+            raise ValidationError("AI selector failure diagnostics must be an integer")
+        diagnostics["selector_failures"] = selector_failures + int(
             probe_diagnostics.get("selector_failures", 0)
         )
         raw_probe_summaries = probe_diagnostics.get("probes", {})
@@ -294,25 +240,31 @@ def run_ai_qualification(
         probe_summary["qualified_nodes"] = len(qualified)
         probe_summary["cache_pass_ttl_seconds"] = pass_ttl_seconds
         probe_summary["cache_failure_ttl_seconds"] = failure_ttl_seconds
-        if name == "ai_openai":
+        if len(qualification_probes) > 1:
             probe_summary["critical_endpoints"] = len(qualification_probes)
-            supporting_diagnostics: dict[str, Any] = {}
-            supporting_qualified: set[str] = set()
-            if live_qualified:
-                supporting_qualified, supporting_diagnostics = _probe_names(
-                    binary=mihomo_bin,
-                    candidate=candidate,
-                    names=live_qualified,
-                    probes=openai_app_supporting_probes(),
-                    workers=workers,
-                )
-            diagnostics["openai_app"] = _openai_app_diagnostics(
-                live_tested=live_tested,
-                qualified=live_qualified,
-                critical_diagnostics=probe_diagnostics,
-                supporting_diagnostics=supporting_diagnostics,
-                supporting_fully_reachable=len(supporting_qualified),
+
+        supporting_diagnostics: dict[str, Any] = {}
+        supporting_qualified: set[str] = set()
+        supporting_probes = service.supporting_probes()
+        if supporting_probes and live_qualified:
+            supporting_qualified, supporting_diagnostics = _probe_names(
+                binary=mihomo_bin,
+                candidate=candidate,
+                names=live_qualified,
+                probes=supporting_probes,
+                workers=workers,
             )
+        extended = service.build_extended_diagnostics(
+            live_tested=live_tested,
+            live_qualified=live_qualified,
+            qualification_diagnostics=probe_diagnostics,
+            supporting_diagnostics=supporting_diagnostics,
+            supporting_qualified=supporting_qualified,
+        )
+        diagnostics_key = service.diagnostics_key()
+        if diagnostics_key is not None and extended is not None:
+            diagnostics[diagnostics_key] = extended
+
         probes_diagnostics = diagnostics["probes"]
         assert isinstance(probes_diagnostics, dict)
         probes_diagnostics[name] = probe_summary
@@ -341,8 +293,9 @@ def run_ai_qualification(
         "cache_fail_hits": total_cache_fail,
         "records": 0,
         "service_records": 0,
-        "openai_contract_fingerprint": openai_app_contract_summary()["fingerprint"],
     }
+    for service in service_qualifications():
+        cache_report.update(service.cache_metadata())
     if next_cache_document is not None and next_cache is not None:
         next_cache.parent.mkdir(parents=True, exist_ok=True)
         next_cache.write_text(
@@ -362,11 +315,11 @@ def run_ai_qualification(
         qualified_by_probe,
         preferred_regions=routing_policy.ai.preferred_regions,
     )
-    route_lock = rewrite_route_locked_candidate(candidate)
+    service_postprocessing = apply_service_route_postprocessing(candidate)
     return {
         "status": "qualified",
         "diagnostics": diagnostics,
         "qualification_cache": cache_report,
-        "openai_app_route_lock": route_lock,
+        **service_postprocessing,
         **report,
     }

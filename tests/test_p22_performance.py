@@ -31,11 +31,11 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     )
     monkeypatch.setattr(
         pipeline,
-        "harden_openai_client_path",
-        lambda _candidate: {
+        "harden_declared_service_client_paths",
+        lambda **_kwargs: {
             "status": "passed",
-            "selection": "stable_first_fallback",
-            "runtime_regions": 2,
+            "hardened_services": 1,
+            "services": {"openai": {"status": "passed"}},
         },
     )
     result = pipeline.run_qualification_pipeline(
@@ -52,7 +52,7 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     assert set(result["timings_ms"]) == {
         "browsing_transport",
         "ai",
-        "openai_client_path",
+        "service_client_path",
         "total",
     }
     assert all(isinstance(value, float) and value >= 0 for value in result["timings_ms"].values())

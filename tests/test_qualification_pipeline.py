@@ -35,13 +35,14 @@ def _success_services(monkeypatch) -> None:
         _append(kwargs["candidate"], "ai_stage")
         return {"status": "qualified", "diagnostics": {"qualification_mode": "per-service"}}
 
-    def openai(candidate):
-        _append(candidate, "openai_runtime_stage")
-        return {"status": "passed", "selection": "stable_first_fallback", "runtime_regions": 2}
+    def service_paths(*, candidate, policies):
+        assert policies.name == "policies.yaml"
+        _append(candidate, "service_runtime_stage")
+        return {"status": "passed", "hardened_services": 1, "services": {"example": {}}}
 
     monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
     monkeypatch.setattr(pipeline, "run_ai_qualification", ai)
-    monkeypatch.setattr(pipeline, "harden_openai_client_path", openai)
+    monkeypatch.setattr(pipeline, "harden_declared_service_client_paths", service_paths)
 
 
 def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatch) -> None:
@@ -64,7 +65,7 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatc
     text = output.read_text(encoding="utf-8")
     assert "browsing_stage: true" in text
     assert "ai_stage: true" in text
-    assert "openai_runtime_stage: true" in text
+    assert "service_runtime_stage: true" in text
     assert "browsing_stage" not in candidate.read_text(encoding="utf-8")
     assert result["status"] == "qualified"
     assert result["policy_model_version"] == 2
@@ -75,12 +76,12 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatc
         "generated",
         "browsing_transport_qualified",
         "ai_qualified",
-        "openai_client_path_hardened",
+        "service_client_path_hardened",
         "final_qualified",
     ]
     assert result["ai"]["client_path_status"] == "passed"
-    assert result["ai"]["client_path_selection"] == "stable_first_fallback"
-    assert result["ai"]["client_path_regions"] == 2
+    assert result["ai"]["client_path_hardened_services"] == 1
+    assert result["ai"]["client_path_services"] == ["example"]
     assert browsing_report.exists()
     assert ai_report.exists()
 
@@ -140,12 +141,13 @@ def _success_services_tail(monkeypatch) -> None:
         _append(kwargs["candidate"], "ai_stage")
         return {"status": "qualified", "diagnostics": {"qualification_mode": "per-service"}}
 
-    def openai(candidate):
-        _append(candidate, "openai_runtime_stage")
-        return {"status": "passed", "selection": "stable_first_fallback", "runtime_regions": 2}
+    def service_paths(*, candidate, policies):
+        assert policies.name == "policies.yaml"
+        _append(candidate, "service_runtime_stage")
+        return {"status": "passed", "hardened_services": 1, "services": {"example": {}}}
 
     monkeypatch.setattr(pipeline, "run_ai_qualification", ai)
-    monkeypatch.setattr(pipeline, "harden_openai_client_path", openai)
+    monkeypatch.setattr(pipeline, "harden_declared_service_client_paths", service_paths)
 
 
 def test_pipeline_does_not_retry_policy_rejection(tmp_path: Path, monkeypatch) -> None:
