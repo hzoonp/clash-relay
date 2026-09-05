@@ -37,6 +37,8 @@ jobs:
         run: python scripts/audit_architecture_contract.py
       - name: Audit operational SLO contract
         run: python scripts/audit_operational_slo_contract.py
+      - name: Audit service qualification contract
+        run: python scripts/audit_service_qualification_contract.py
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
@@ -46,6 +48,8 @@ jobs:
           mypy --follow-imports=skip --ignore-missing-imports --check-untyped-defs \
             src/clash_relay/policy_compiler.py \
             src/clash_relay/runtime_graph.py \
+            src/clash_relay/service_qualification.py \
+            src/clash_relay/ai_application.py \
             src/clash_relay/qualification_pipeline.py \
             src/clash_relay/production_application.py \
             src/clash_relay/operational_slo.py \
