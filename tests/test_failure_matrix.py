@@ -33,7 +33,7 @@ def test_canonical_sources_are_optional_but_degradation_cannot_relax_permissions
     assert "max_node_multiplier: 2.0" in text
     matrix = (repo_root / "docs" / "failure-matrix.md").read_text(encoding="utf-8")
     assert "Degradation is not permission escalation" in matrix
-    assert "cannot be used to rescue `general`" in matrix
+    assert "cannot rescue `general`" in matrix
 
 
 def test_production_publish_remains_after_all_mandatory_gates(repo_root: Path) -> None:
@@ -84,18 +84,18 @@ def test_documented_failure_matrix_covers_every_public_failure_class(repo_root: 
     text = (repo_root / "docs" / "failure-matrix.md").read_text(encoding="utf-8")
     for phrase in (
         "One optional subscription",
-        "General inventory/pool",
-        "Browsing live qualification",
+        "General pool has no eligible nodes",
+        "Browsing or transport qualification leaves required automatic inventory empty",
         "OpenAI has zero qualified nodes",
         "Claude has zero qualified nodes",
         "Gemini has zero qualified nodes",
         "ACL4SSR/rule acquisition",
         "reachability audit",
-        "pinned stable Mihomo core",
-        "Cloudflare versioned release transaction",
+        "Any stable Mihomo core declared in `tools/mihomo-versions.json`",
+        "Immutable release PUT succeeds but response is lost",
         "Scheduler history",
         "AI qualification cache",
-        "Previous release metadata",
-        "Rollback candidate",
+        "Versioned previous-release pointer is absent",
+        "Historical rollback candidate",
     ):
         assert phrase in text
