@@ -192,6 +192,13 @@ def load_project(
             raise ConfigurationError(
                 f"subscription {row['id']!r} uses unknown countries: {sorted(unknown_countries)}"
             )
+        for pattern in row.get("deny_name_patterns", []):
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ConfigurationError(
+                    f"subscription {row['id']!r} has an invalid deny-name regex"
+                ) from exc
         for node_name, metadata in row.get("node_metadata", {}).items():
             node_caps = set(metadata.get("add_capabilities", [])) | set(
                 metadata.get("remove_capabilities", [])
@@ -241,6 +248,7 @@ def load_project(
                     if row.get("max_node_multiplier") is not None
                     else None
                 ),
+                deny_name_patterns=tuple(row.get("deny_name_patterns", [])),
                 node_metadata=dict(row.get("node_metadata", {})),
                 name_rules=tuple(row.get("name_rules", [])),
             )
