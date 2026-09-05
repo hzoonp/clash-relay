@@ -11,6 +11,8 @@ from . import __version__
 from .errors import ValidationError
 from .runtime_graph import RuntimeGraph
 
+PUBLIC_CONFIG_VERSION = 2
+
 
 def _source_inventory(audit: dict[str, Any]) -> dict[str, Any]:
     subscriptions = audit.get("subscriptions", [])
@@ -114,6 +116,7 @@ def build_release_manifest(
     document: dict[str, Any] = {
         "schema_version": 1,
         "project_version": __version__,
+        "public_config_version": PUBLIC_CONFIG_VERSION,
         "publication_status": publication_status,
         "release_id": release_id,
         "config_sha256": candidate_sha,
@@ -168,6 +171,7 @@ def render_release_manifest_markdown(manifest: dict[str, Any]) -> str:
         "## Release manifest",
         "",
         f"Project: **v{manifest.get('project_version', 'unknown')}**  ",
+        f"Public Config: **v{int(manifest.get('public_config_version', 0) or 0)}**  ",
         f"Publication: **{manifest.get('publication_status', 'unknown')}**  ",
         f"Release: `{manifest.get('release_id', 'unknown')}`  ",
         f"Config SHA-256: `{manifest.get('config_sha256', 'unknown')}`  ",
