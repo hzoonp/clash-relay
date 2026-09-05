@@ -17,9 +17,7 @@ def test_builtin_service_registry_is_ordered_and_metadata_driven() -> None:
         "ai_gemini",
     ]
     assert services.service_order() == tuple(service.probe_name for service in registry)
-    assert services.service_labels() == {
-        service.probe_name: service.label for service in registry
-    }
+    assert services.service_labels() == {service.probe_name: service.label for service in registry}
     assert services.service_targets() == {
         service.probe_name: service.target_group for service in registry
     }
