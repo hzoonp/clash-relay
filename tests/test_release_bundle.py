@@ -76,7 +76,6 @@ def test_release_publication_versions_exact_bytes_and_updates_pointers() -> None
     assert kv.values[keys.config(second_id)] == second
     assert kv.values[keys.current_pointer].decode().strip() == second_id
     assert kv.values[keys.previous_pointer].decode().strip() == first_id
-    assert kv.values[keys.legacy_previous] == first
 
     previous, metadata = read_previous_release(factory=kv.factory, production_key=key)
     assert previous == first
@@ -231,14 +230,12 @@ def test_rollback_rehearsal_round_trips_exact_versioned_bytes() -> None:
     assert kv.values[keys.manifest(release_id_for(second))] == manifest_bytes(second)
 
 
-def test_previous_reader_falls_back_to_legacy_slot() -> None:
+def test_previous_reader_requires_versioned_previous_pointer() -> None:
     kv = MemoryKV()
     key = "production-config"
-    legacy = b"legacy: true\n"
-    kv.values[release_keys(key).legacy_previous] = legacy
-    content, metadata = read_previous_release(factory=kv.factory, production_key=key)
-    assert content == legacy
-    assert metadata["source"] == "legacy-previous-v1"
+
+    with pytest.raises(PublicationError, match="no previous production release is available"):
+        read_previous_release(factory=kv.factory, production_key=key)
 
 
 def test_previous_reader_rejects_missing_versioned_manifest() -> None:
