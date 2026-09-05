@@ -1,4 +1,4 @@
-version: 1
+version: 2
 runtime:
   mixed_port: 17890
   allow_lan: false
