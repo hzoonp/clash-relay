@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -18,13 +19,26 @@ STALE_PHASE_DOCS = (
     "docs/p39-p45-production-stabilization.md",
     "docs/migration-v1.8.md",
 )
+_RUNTIME_COMPATIBILITY_TOKENS = (
+    "--allow-legacy-openai-client-path",
+    "allow_legacy_openai_client_path",
+    "allow_legacy_server_qualified",
+    "_legacy_server_qualified_shape",
+    "legacy_server_qualified",
+    "historical_exact_bytes",
+    "legacy_previous",
+    "legacy-previous-v1",
+)
+_PHASE_TOKEN = re.compile(r"\bP\d+(?:\.\d+)?(?:-P?\d+(?:\.\d+)?)?\b")
 
 
-def _mapping(path: str) -> dict[str, object]:
-    data = yaml.safe_load((ROOT / path).read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise SystemExit(f"v2 release audit: {path} is not a mapping")
-    return data
+def _iter_text_files(root: Path, relative_dir: str, suffixes: tuple[str, ...]):
+    base = root / relative_dir
+    if not base.exists():
+        return
+    for path in sorted(base.rglob("*")):
+        if path.is_file() and path.suffix in suffixes:
+            yield path
 
 
 def audit(root: Path = ROOT) -> list[str]:
@@ -62,19 +76,43 @@ def audit(root: Path = ROOT) -> list[str]:
             errors.append("removed subscription priority field returned")
 
     release_bundle = (root / "src/clash_relay/release_bundle.py").read_text(encoding="utf-8")
-    for forbidden in ("legacy_previous", "legacy-previous-v1", 'f"{production_key}.previous-v1"'):
-        if forbidden in release_bundle:
-            errors.append(f"legacy rollback compatibility returned: {forbidden}")
+    if 'f"{production_key}.previous-v1"' in release_bundle:
+        errors.append("legacy previous-v1 rollback key returned")
+
+    for relative_dir, suffixes in (
+        ("src", (".py",)),
+        ("scripts", (".py",)),
+        ("tests", (".py",)),
+        (".github/workflows", (".yml", ".yaml")),
+    ):
+        for path in _iter_text_files(root, relative_dir, suffixes):
+            text = path.read_text(encoding="utf-8")
+            for token in _RUNTIME_COMPATIBILITY_TOKENS:
+                if token in text:
+                    errors.append(
+                        f"runtime compatibility token {token!r} returned in {path.relative_to(root)}"
+                    )
 
     for relative in STALE_PHASE_DOCS:
         if (root / relative).exists():
             errors.append(f"stale phase document returned: {relative}")
 
+    docs_root = root / "docs"
+    for path in sorted(docs_root.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        match = _PHASE_TOKEN.search(text)
+        if match is not None:
+            errors.append(
+                f"durable documentation contains phase-era token {match.group(0)!r}: {path.relative_to(root)}"
+            )
+
     for relative in ("README.md", "README.zh-CN.md"):
         text = (root / relative).read_text(encoding="utf-8")
-        for token in ("P26", "P18.1-P23", "v1.6.2"):
-            if token in text:
-                errors.append(f"{relative} contains phase/version-era implementation narration: {token}")
+        match = _PHASE_TOKEN.search(text)
+        if match is not None:
+            errors.append(
+                f"{relative} contains phase-era token {match.group(0)!r}"
+            )
 
     workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
     for required in (
@@ -85,6 +123,12 @@ def audit(root: Path = ROOT) -> list[str]:
     ):
         if required not in workflow:
             errors.append(f"release workflow is missing v2 contract token: {required}")
+
+    rollback = (root / ".github/workflows/rollback.yml").read_text(encoding="utf-8")
+    if "previous-release-v1" not in rollback and "fetch_previous_config.py" not in rollback:
+        errors.append("rollback workflow no longer resolves the versioned previous release")
+    if "audit_production.py" not in rollback or "validate_mihomo_matrix.py" not in rollback:
+        errors.append("rollback workflow bypasses current policy or stable Mihomo validation")
 
     return errors
 
