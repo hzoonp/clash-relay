@@ -44,9 +44,7 @@ def test_fresh_fork_public_preflight_and_fictional_build(
 def test_fresh_fork_release_authority_is_composed_from_existing_gates(repo_root: Path) -> None:
     validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    rollback = (repo_root / ".github" / "workflows" / "rollback.yml").read_text(
-        encoding="utf-8"
-    )
+    rollback = (repo_root / ".github" / "workflows" / "rollback.yml").read_text(encoding="utf-8")
 
     assert 'python: ["3.11", "3.12", "3.13"]' in validate
     assert "Deterministic fictional generation" in validate
@@ -55,7 +53,7 @@ def test_fresh_fork_release_authority_is_composed_from_existing_gates(repo_root:
     assert "Validated SHA" in validate
 
     assert "needs.validate.outputs.validated_sha == github.sha" in publish
-    assert 'ref: ${{ needs.validate.outputs.validated_sha }}' in publish
+    assert "ref: ${{ needs.validate.outputs.validated_sha }}" in publish
     assert "CLASH_RELAY_VALIDATED_SHA" in publish
     assert "run_production_release.py" in publish
 
