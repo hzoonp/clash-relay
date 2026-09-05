@@ -2,6 +2,16 @@
 
 This is the shortest supported path from a fresh fork to a private production configuration. A normal first-time setup should require only repository settings plus one dry run; no tracked source file needs real subscription credentials.
 
+## Start with three things
+
+For a routine fork, you only need to own three surfaces:
+
+1. put real subscription URLs in `CLASH_RELAY_SUBSCRIPTIONS`;
+2. edit `subscriptions.yaml` only when subscription admission or allowed scenarios must change;
+3. configure private Cloudflare KV, dry-run with `publish=false`, then intentionally publish.
+
+You do **not** need to understand or edit RuntimeGraph internals, qualification implementations, scheduler history, release transactions, or Mihomo pins for a normal fork. See [Fork configuration surface](fork-configuration.md) for the goal-to-file decision table and the boundary between routine and advanced changes.
+
 ## 10-minute checklist
 
 ```text

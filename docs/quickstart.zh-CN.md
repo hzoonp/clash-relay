@@ -2,6 +2,16 @@
 
 这是从全新 Fork 到私有生产配置的最短受支持路径。正常首次部署只需要配置仓库 Secret / Variable，再完成一次 dry-run；不需要把任何真实订阅凭据写进受版本控制的文件。
 
+## 先只理解三件事
+
+普通 Fork 只需要负责三个配置面：
+
+1. 真实订阅 URL 只放进 `CLASH_RELAY_SUBSCRIPTIONS`；
+2. 只有订阅准入或允许场景需要变化时才修改 `subscriptions.yaml`；
+3. 配置私有 Cloudflare KV，先 `publish=false` dry-run，再有意正式发布。
+
+日常 Fork **不需要**先理解或修改 RuntimeGraph 内部实现、qualification 实现、scheduler history、release transaction 或 Mihomo 固定版本。需要判断“某个需求到底该改哪个文件”时，直接看 [Fork 配置边界](fork-configuration.zh-CN.md)。
+
 ## 10 分钟检查清单
 
 ```text
