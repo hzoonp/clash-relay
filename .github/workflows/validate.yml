@@ -35,6 +35,8 @@ jobs:
         run: python scripts/audit_documentation_contract.py
       - name: Audit architecture contract
         run: python scripts/audit_architecture_contract.py
+      - name: Audit operational SLO contract
+        run: python scripts/audit_operational_slo_contract.py
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
