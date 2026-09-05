@@ -69,7 +69,9 @@ def test_post_commit_observability_is_not_a_publication_gate(repo_root: Path) ->
         encoding="utf-8"
     )
 
-    release_stage = lifecycle.index("release_stage = self._release_candidate_stage(project, binary)")
+    release_stage = lifecycle.index(
+        "release_stage = self._release_candidate_stage(project, binary)"
+    )
     proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
     metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
     assert release_stage < proof < metrics
