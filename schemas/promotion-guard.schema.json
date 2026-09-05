@@ -35,6 +35,16 @@
       "type": "object",
       "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
       "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 100}
+    },
+    "minimum_qualified_nodes_by_service": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 1000000}
+    },
+    "minimum_qualified_regions_by_service": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 100}
     }
   }
 }
