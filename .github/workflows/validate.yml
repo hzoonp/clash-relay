@@ -40,12 +40,7 @@ jobs:
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
-      - name: Ruff format check with diagnostic diff
-        run: |
-          if ! ruff format --check .; then
-            ruff format --diff .
-            exit 1
-          fi
+      - run: ruff format --check .
       - name: Static type gate for core and application boundaries
         run: |
           mypy --follow-imports=skip --ignore-missing-imports --check-untyped-defs \
