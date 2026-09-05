@@ -11,6 +11,10 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     ai_application = (repo_root / "src" / "clash_relay" / "ai_application.py").read_text(
         encoding="utf-8"
     )
+    service_qualification = (
+        repo_root / "src" / "clash_relay" / "service_qualification.py"
+    ).read_text(encoding="utf-8")
+    scheduling = (repo_root / "policies" / "scheduling.yaml").read_text(encoding="utf-8")
     runtime = (repo_root / "src" / "clash_relay" / "ai_runtime_reliability.py").read_text(
         encoding="utf-8"
     )
@@ -29,10 +33,13 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     assert "does not restore managed Fake-IP DNS" in docs
     assert "exact bytes of a previously validated P24 release" in docs
     assert "run_ai_qualification" in qualifier
-    assert "openai_app_critical_probes" not in qualifier
-    assert "openai_app_critical_probes" in ai_application
-    assert "cache_service_key" in ai_application
-    assert "openai_pass_ttl_seconds" in ai_application
+    assert "openai_app_contract" not in ai_application
+    assert 'if name == "ai_openai"' not in ai_application
+    assert "OpenAIQualification" in service_qualification
+    assert "critical_probes" in service_qualification
+    assert "cache_service_key" in service_qualification
+    assert "openai_pass_ttl_seconds" in service_qualification
+    assert "client_path_hardening: true" in scheduling
     assert "android.chat.openai.com" in runtime
     assert "stable_first_fallback" in runtime
     assert "harden_openai_client_path" in hardener
