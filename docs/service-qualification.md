@@ -8,12 +8,13 @@ The canonical flow is:
 qualified browsing graph
   -> AI application orchestrator
   -> ordered ServiceQualification registry
+  -> provider-neutral aggregate result
   -> service-qualified graph
   -> declared service client-path hardening
   -> final qualified candidate
 ```
 
-`src/clash_relay/service_qualification.py` owns the built-in registry. The main qualification pipeline imports only the generic registry application and contains no OpenAI, Claude, or Gemini dependency.
+`src/clash_relay/service_qualification.py` owns the built-in registry. The main qualification pipeline imports only generic registry/application surfaces and contains no OpenAI, Claude, or Gemini branch.
 
 ## Service contract
 
@@ -32,6 +33,23 @@ A `ServiceQualification` implementation declares:
 The default registry contains `OpenAIQualification`, `ClaudeQualification`, and `GeminiQualification`.
 
 OpenAI keeps its App contract, cache fingerprint, route lock, critical/supporting probes, and client-local runtime hardening inside the OpenAI implementation. Claude and Gemini use the generic service behavior unless they need an explicit provider extension.
+
+## Provider-neutral aggregate result
+
+`src/clash_relay/service_qualification_result.py` projects every registered service into the same aggregate result shape. The qualification pipeline exposes these results under its AI stage without inspecting provider names.
+
+Each result contains only:
+
+- service label and probe identity;
+- qualified/rejected/tested candidate counts;
+- live tested/qualified counts;
+- cache pass/failure hit counts;
+- classifier-style aggregate outcome counts;
+- aggregate qualification status.
+
+It does not contain node identities, proxy payloads, server addresses, subscription URLs, credentials, raw response bodies, or endpoint response data. Outcome labels must be bounded classifier-style identifiers; unstructured labels fail closed.
+
+A future registered service therefore gets the common result shape through registry iteration rather than a new provider branch in the qualification pipeline.
 
 ## Declarative client-path hardening
 
@@ -66,6 +84,7 @@ Routing/classification data may still require its own policy/rule declaration be
 - Browsing/transport retry remains a separate typed transient policy and cannot be widened by a service implementation.
 - OpenAI App qualification semantics live behind `OpenAIQualification`.
 - Client-path hardening is policy-declared rather than implicitly hardcoded in the pipeline.
+- Provider-neutral result projection exposes aggregate counts only.
 - The service qualification contract audit rejects provider names/imports in the main qualification pipeline and rejects restoration of provider-specific orchestration branches.
-- Registry, AI application, and qualification pipeline are part of the static type gate.
+- Registry, aggregate result projection, AI application, and qualification pipeline are part of the static type gate.
 - Full deterministic generation, Routing V2 drift, Promotion Guard, and the manifest-driven real Mihomo matrix remain release gates.

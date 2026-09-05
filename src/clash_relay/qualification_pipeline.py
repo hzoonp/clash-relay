@@ -16,6 +16,7 @@ from .policy_document import load_policy_document
 from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
 from .service_qualification import harden_declared_service_client_paths
+from .service_qualification_result import service_qualification_results
 from .util import atomic_write, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
@@ -196,6 +197,7 @@ def run_qualification_pipeline(
         cache_key=cache_key,
         next_cache=next_cache,
     )
+    aggregate_service_results = service_qualification_results(ai_summary)
     atomic_write(ai_report, _json_text(ai_summary))
     ai_artifact = _artifact(ai, "ai_qualified")
     ai_elapsed_ms = _elapsed_ms(ai_started)
@@ -255,6 +257,7 @@ def run_qualification_pipeline(
             )
             if isinstance(ai_summary.get("diagnostics"), dict)
             else "unknown",
+            "services": aggregate_service_results,
             "client_path_status": runtime_summary.get("status"),
             "client_path_hardened_services": runtime_summary.get("hardened_services", 0),
             "client_path_services": hardened_service_names,

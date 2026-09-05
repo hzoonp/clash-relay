@@ -6,6 +6,26 @@ from types import SimpleNamespace
 
 import clash_relay.mihomo_matrix_application as matrix
 import clash_relay.qualification_pipeline as pipeline
+from clash_relay.service_qualification import service_qualifications
+
+
+def _ai_summary() -> dict[str, object]:
+    return {
+        "status": "qualified",
+        "diagnostics": {
+            "qualification_mode": "live",
+            "probes": {
+                service.probe_name: {
+                    "live_tested_nodes": 1,
+                    "cache_pass_hits": 0,
+                    "cache_fail_hits": 0,
+                    "qualified_nodes": 1,
+                    "outcomes": {"passed": 1},
+                }
+                for service in service_qualifications()
+            },
+        },
+    }
 
 
 def test_qualification_pipeline_reports_only_aggregate_phase_timings(
@@ -24,11 +44,7 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
         "run_browsing_qualification",
         lambda **_kwargs: {"status": "qualified", "automatic_nodes": 3},
     )
-    monkeypatch.setattr(
-        pipeline,
-        "run_ai_qualification",
-        lambda **_kwargs: {"status": "qualified", "diagnostics": {"qualification_mode": "live"}},
-    )
+    monkeypatch.setattr(pipeline, "run_ai_qualification", lambda **_kwargs: _ai_summary())
     monkeypatch.setattr(
         pipeline,
         "harden_declared_service_client_paths",
