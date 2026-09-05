@@ -105,14 +105,16 @@ def main() -> int:
         raise SystemExit("architecture audit: publish workflow is no longer a thin adapter")
 
     lifecycle = _text("src/clash_relay/production_lifecycle.py")
+    release_stage = _text("src/clash_relay/production_release_stage.py")
     ordered_stages = (
         "generation = self._generate()",
         "self._load_derived_state(project)",
         "binary = self._download_primary_mihomo()",
         "pipeline = self._qualify(binary)",
-        "promotion = self._promotion_guard(project)",
-        "matrix = self._validate_matrix(binary)",
-        "release = self._publish_release(project)",
+        "release_stage = self._release_candidate_stage(project, binary)",
+        "promotion = release_stage.promotion",
+        "matrix = release_stage.matrix",
+        "release = release_stage.release",
         "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
@@ -123,6 +125,20 @@ def main() -> int:
         raise SystemExit("architecture audit: production lifecycle stage order regressed")
     if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
         raise SystemExit("architecture audit: private production state is not always cleaned")
+
+    release_order = (
+        "fetch_current_production_config(",
+        "run_promotion_guard(",
+        "validate_mihomo_matrix(",
+        "publish_production_release(",
+    )
+    release_positions = [release_stage.find(stage) for stage in release_order]
+    if any(position < 0 for position in release_positions) or release_positions != sorted(
+        release_positions
+    ):
+        raise SystemExit("architecture audit: delegated release-candidate stage order regressed")
+    if "qualification_path=paths.qualification" not in release_stage:
+        raise SystemExit("architecture audit: Promotion Guard lost qualification sidecar input")
 
     # Qualification retry is typed and package-to-package, never stdout JSON IPC.
     qualification = _text("src/clash_relay/qualification_pipeline.py")
@@ -173,16 +189,13 @@ def main() -> int:
         "_run_command",
         "scripts_dir",
     ):
-        if token in lifecycle:
+        if token in lifecycle or token in release_stage:
             raise SystemExit(
-                f"architecture audit: production lifecycle retained Python IPC token {token}"
+                f"architecture audit: production release path retained Python IPC token {token}"
             )
     for token in (
         "download_pinned_mihomo(",
-        "validate_mihomo_matrix(",
-        "fetch_current_production_config(",
-        "run_promotion_guard(",
-        "publish_production_release(",
+        "run_release_candidate_stage(",
         "persist_ai_qualification_cache(",
         "persist_scheduler_history(",
         "persist_production_metrics(",
@@ -190,6 +203,16 @@ def main() -> int:
     ):
         if token not in lifecycle:
             raise SystemExit(f"architecture audit: lifecycle bypasses application service {token}")
+    for token in (
+        "fetch_current_production_config(",
+        "run_promotion_guard(",
+        "validate_mihomo_matrix(",
+        "publish_production_release(",
+    ):
+        if token not in release_stage:
+            raise SystemExit(
+                f"architecture audit: release-candidate stage bypasses application service {token}"
+            )
 
     production_application = _text("src/clash_relay/production_application.py")
     mihomo_matrix_application = _text("src/clash_relay/mihomo_matrix_application.py")
