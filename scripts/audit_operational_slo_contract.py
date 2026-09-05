@@ -31,14 +31,18 @@ def main() -> int:
             raise SystemExit(f"operational SLO audit: missing typed aggregate token {token}")
 
     if "str(error)" in slo or "error.args" in slo:
-        raise SystemExit("operational SLO audit: qualification classification parses exception text")
+        raise SystemExit(
+            "operational SLO audit: qualification classification parses exception text"
+        )
     if "_MAX_ATTEMPTS = 60" not in slo:
         raise SystemExit("operational SLO audit: bounded attempt ring changed unexpectedly")
 
     if 'key_name=f"{production_key}.operational-slo-v1"' not in application:
         raise SystemExit("operational SLO audit: SLO state is not isolated from production config")
     if "operational-slo-v1" in metrics:
-        raise SystemExit("operational SLO audit: failed-attempt SLOs leaked into success-only metrics")
+        raise SystemExit(
+            "operational SLO audit: failed-attempt SLOs leaked into success-only metrics"
+        )
 
     for token in (
         "persist_operational_slo(",
