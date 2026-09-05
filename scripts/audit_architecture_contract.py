@@ -155,7 +155,9 @@ def main() -> int:
         if token not in qualification:
             raise SystemExit(f"architecture audit: qualification bypasses application API {token}")
     if "openai_application" in qualification or "harden_openai_client_path" in qualification:
-        raise SystemExit("architecture audit: qualification restored OpenAI-specific application API")
+        raise SystemExit(
+            "architecture audit: qualification restored OpenAI-specific application API"
+        )
 
     # P48: lifecycle calls typed package services directly; scripts are adapters only.
     production_pipeline = _text("src/clash_relay/production_pipeline.py")
