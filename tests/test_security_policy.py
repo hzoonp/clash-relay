@@ -63,12 +63,14 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert workflow.count("python scripts/run_production_release.py") == 1
 
     run_body = lifecycle[lifecycle.index("    def run(self)") :]
-    publish = run_body.index("release = self._publish_release(project)")
+    release_boundary = run_body.index(
+        "release_stage = self._release_candidate_stage(project, binary)"
+    )
     derived_state = run_body.index("derived_state = self._persist_derived_state(project)")
     proof = run_body.index("proof = self._post_commit_proof(release=release)")
     manifest = run_body.index("manifest = self._post_commit_manifest(")
     metrics = run_body.index("metrics = self._persist_production_metrics(project)")
-    assert publish < derived_state < proof < manifest < metrics
+    assert release_boundary < derived_state < proof < manifest < metrics
 
     persist_start = lifecycle.index("    def _persist_derived_state(")
     persist_end = lifecycle.index("    def _persist_production_metrics", persist_start)
