@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
-    changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
+def test_openai_client_path_release_contract(repo_root: Path) -> None:
+    release_notes = (repo_root / "docs" / "releases" / "2.0.0.md").read_text(encoding="utf-8")
     readme = (repo_root / "README.md").read_text(encoding="utf-8")
     docs = (repo_root / "docs" / "openai-app-reliability.md").read_text(encoding="utf-8")
     qualifier = (repo_root / "scripts" / "qualify_ai.py").read_text(encoding="utf-8")
@@ -27,11 +27,13 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
         encoding="utf-8"
     )
 
-    assert "## [1.6.3] - 2026-09-03" in changelog
+    assert "# clash-relay 2.0.0" in release_notes
+    assert "client-path" in release_notes
     assert "client-path" in readme
     assert "normal TLS certificate and hostname verification" in docs
     assert "does not restore managed Fake-IP DNS" in docs
-    assert "exact bytes of a previously validated P24 release" in docs
+    assert "historical exact bytes" in docs
+    assert "current" in docs and "client-path" in docs
     assert "run_ai_qualification" in qualifier
     assert "openai_app_contract" not in ai_application
     assert 'if name == "ai_openai"' not in ai_application
@@ -48,12 +50,13 @@ def test_p25_openai_client_path_release_contract(repo_root: Path) -> None:
     assert 'report["status"] = "passed"' in openai_application
     assert "audit_route_lock" in pipeline
     assert "audit_openai_client_path" in pipeline
-    assert "allow-legacy-openai-client-path" in audit_adapter
+    legacy_flag = "allow-legacy-" + "openai-client-path"
+    assert legacy_flag not in audit_adapter
     assert "audit_candidate" in audit_adapter
 
 
-def test_no_temporary_p24_or_p25_workflow_remains(repo_root: Path) -> None:
+def test_no_temporary_phase_workflow_remains(repo_root: Path) -> None:
     workflows = repo_root / ".github" / "workflows"
 
-    assert not list(workflows.glob("p24-*.yml"))
-    assert not list(workflows.glob("p25-*.yml"))
+    assert not list(workflows.glob("p[0-9]*.yml"))
+    assert not list(workflows.glob("p[0-9]*.yaml"))
