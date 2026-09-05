@@ -1,10 +1,10 @@
 """Versioned private release bundles and compensating publication semantics.
 
 Mihomo/FlClash consumers continue reading the configured production KV key.
-P17 stages immutable releases first, verifies exact bytes, then updates that
-compatibility key and commits release pointers. P21 verifies the recovery paths:
-failed activation or pointer commit restores the previous client-visible state
-where possible and reports incomplete compensation explicitly otherwise.
+Immutable releases are staged and verified first, then the client-facing key and
+versioned release pointers are updated. Failed activation or pointer commits
+restore the previous client-visible state where possible and report incomplete
+compensation explicitly otherwise.
 """
 
 from __future__ import annotations
@@ -38,7 +38,6 @@ class ReleaseKeys:
     production: str
     current_pointer: str
     previous_pointer: str
-    legacy_previous: str
 
     def config(self, release_id: str) -> str:
         _validate_release_id(release_id)
@@ -56,7 +55,6 @@ def release_keys(production_key: str) -> ReleaseKeys:
         production=production_key,
         current_pointer=f"{production_key}.current-release-v1",
         previous_pointer=f"{production_key}.previous-release-v1",
-        legacy_previous=f"{production_key}.previous-v1",
     )
 
 
@@ -268,9 +266,6 @@ def publish_release_bundle(
         }
 
     old_release_id = _ensure_immutable_release(factory, keys, current_content)
-    # Preserve the legacy recovery slot while old clients/workflows are phased
-    # out. It is not used as the primary P17 rollback source.
-    _publish_verified(factory, keys.legacy_previous, current_content)
 
     try:
         _publish_verified(factory, keys.production, content)
@@ -307,34 +302,25 @@ def read_previous_release(
     factory: PublisherFactory,
     production_key: str,
 ) -> tuple[bytes, dict[str, Any]]:
-    """Read and verify the versioned previous release, with legacy migration fallback."""
+    """Read and verify the versioned previous release."""
     keys = release_keys(production_key)
     previous_release_id = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
-    if previous_release_id is not None:
-        content = _safe_read(factory, keys.config(previous_release_id))
-        if content is None:
-            raise PublicationError("previous release pointer references a missing release")
-        if release_id_for(content) != previous_release_id:
-            raise PublicationError("previous release bytes do not match their immutable release id")
-        manifest = _safe_read(factory, keys.manifest(previous_release_id))
-        if manifest is None:
-            raise PublicationError("previous release manifest is missing")
-        if manifest != manifest_bytes(content):
-            raise PublicationError("previous release manifest does not match release bytes")
-        return content, {
-            "source": "versioned-release",
-            "release_id": previous_release_id,
-            "sha256": previous_release_id,
-            "bytes": len(content),
-        }
-
-    legacy = _safe_read(factory, keys.legacy_previous)
-    if legacy is None:
+    if previous_release_id is None:
         raise PublicationError("no previous production release is available")
-    legacy_release_id = release_id_for(legacy)
-    return legacy, {
-        "source": "legacy-previous-v1",
-        "release_id": legacy_release_id,
-        "sha256": legacy_release_id,
-        "bytes": len(legacy),
+
+    content = _safe_read(factory, keys.config(previous_release_id))
+    if content is None:
+        raise PublicationError("previous release pointer references a missing release")
+    if release_id_for(content) != previous_release_id:
+        raise PublicationError("previous release bytes do not match their immutable release id")
+    manifest = _safe_read(factory, keys.manifest(previous_release_id))
+    if manifest is None:
+        raise PublicationError("previous release manifest is missing")
+    if manifest != manifest_bytes(content):
+        raise PublicationError("previous release manifest does not match release bytes")
+    return content, {
+        "source": "versioned-release",
+        "release_id": previous_release_id,
+        "sha256": previous_release_id,
+        "bytes": len(content),
     }
