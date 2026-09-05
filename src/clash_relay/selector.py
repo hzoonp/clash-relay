@@ -54,9 +54,7 @@ def _eligible_occurrence(
         return False
     if excluded & item.capabilities:
         return False
-    if costs and item.cost_level not in costs:
-        return False
-    return True
+    return not (costs and item.cost_level not in costs)
 
 
 def _project(node: Node, item: NodeOccurrence) -> Node:
