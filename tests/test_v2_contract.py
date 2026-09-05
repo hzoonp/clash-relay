@@ -12,11 +12,11 @@ def test_v2_package_and_release_notes_are_aligned(repo_root: Path) -> None:
         project = tomllib.load(handle)["project"]
     notes = repo_root / "docs" / "releases" / f"{project['version']}.md"
 
-    assert project["version"] == "2.0.1"
+    assert project["version"] == "2.1.0"
     assert __version__ == project["version"]
     assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
     assert notes.is_file()
-    assert "# clash-relay 2.0.1" in notes.read_text(encoding="utf-8")
+    assert "# clash-relay 2.1.0" in notes.read_text(encoding="utf-8")
 
 
 def test_v2_contract_preserves_canonical_scheduler_defaults(repo_root: Path) -> None:
