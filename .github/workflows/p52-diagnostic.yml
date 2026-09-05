@@ -14,42 +14,21 @@ permissions:
   contents: read
 
 jobs:
-  full-tests-no-coverage:
-    name: Full non-integration tests without coverage floor
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.lock
-      - name: Install hash-verified development dependencies
-        run: |
-          python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
-          python -m pip install --no-build-isolation --no-deps --editable .
-      - name: Run complete non-integration suite
-        run: pytest -q -m "not integration"
-
-  focused-test:
-    name: ${{ matrix.test_file }}
+  test-range:
+    name: Tests ${{ matrix.range }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        test_file:
-          - tests/test_service_qualification.py
-          - tests/test_qualification_pipeline.py
-          - tests/test_openai_app_release_contract.py
-          - tests/test_ai_qualification.py
-          - tests/test_ai_qualification_cache.py
-          - tests/test_ai_region_preference.py
-          - tests/test_ai_runtime_reliability.py
-          - tests/test_ai_service_qualification.py
-          - tests/test_config_loader.py
-          - tests/test_production_pipeline.py
-          - tests/test_repository_safety.py
-          - tests/test_security_policy.py
+        include:
+          - range: a-f
+            pattern: "test_[a-f]*.py"
+          - range: g-m
+            pattern: "test_[g-m]*.py"
+          - range: n-s
+            pattern: "test_[n-s]*.py"
+          - range: t-z
+            pattern: "test_[t-z]*.py"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -61,5 +40,9 @@ jobs:
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
           python -m pip install --no-build-isolation --no-deps --editable .
-      - name: Run focused test file
-        run: pytest -q "${{ matrix.test_file }}"
+      - name: Run test range
+        shell: bash
+        run: |
+          mapfile -t files < <(find tests -maxdepth 1 -type f -name '${{ matrix.pattern }}' -print | sort)
+          test "${#files[@]}" -gt 0
+          pytest -q "${files[@]}"
