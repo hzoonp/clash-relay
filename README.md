@@ -2,9 +2,9 @@
 
 [简体中文](README.zh-CN.md)
 
-`clash-relay` is a deterministic Mihomo / FlClash configuration builder for merging private subscriptions into one standalone `config.yaml` while preserving hard source-to-scenario permissions.
+`clash-relay` 2.x is a deterministic, fail-closed Mihomo / FlClash configuration builder for merging private subscriptions into one standalone `config.yaml` while preserving hard source-to-scenario permissions.
 
-The generated production configuration contains proxy credentials and is treated as highest-sensitivity data. Production publishes validated bytes only to private Cloudflare Workers KV. Credential-bearing configuration is never uploaded to GitHub Artifacts, Releases, Gists, Pages, or commits.
+Generated production configuration contains proxy credentials and is highest-sensitivity data. Production publishes validated bytes only to private Cloudflare Workers KV. Credential-bearing configuration is never uploaded to GitHub Artifacts, Releases, Gists, Pages, or commits.
 
 ## Start with a fork
 
@@ -22,13 +22,24 @@ Fork
   -> validated rollback when required
 ```
 
-`clash-relay doctor` validates public declarations, private subscription-secret readiness, the pinned Mihomo manifest, and optionally Cloudflare read connectivity without publishing configuration bytes.
+`clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes.
 
-After the first successful publication, P26 re-fetches the private upstream subscriptions every six hours and runs the same full production gates before the fixed Cloudflare KV production key can change. Push and scheduled runs publish only validated bytes; manual dispatch remains a dry run unless `publish=true` is explicitly selected. If the final candidate is byte-for-byte unchanged, publication is idempotent and the previous-release pointer is not rotated. Existing FlClash clients keep using the same authenticated Worker subscription URL.
+Scheduled and push production runs use the same release-authoritative gate as manual runs. Manual dispatch remains a dry run unless `publish=true` is explicitly selected. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
-## Public scenarios
+## Public Config v2
 
-FlClash exposes only six primary decisions:
+The supported tracked declaration surface is intentionally small:
+
+```text
+config.yaml          version: 2
+subscriptions.yaml   version: 2
+policies.yaml        version: 2 manifest
+policies/*           owned Policy Model v2 fragments
+```
+
+Removed v1 public fields do not have runtime compatibility aliases. Policy Model v1 is not a runtime input; `scripts/migrate_policy_v2.py` is an offline conversion helper only.
+
+FlClash exposes six primary decisions:
 
 ```text
 代理选择
@@ -48,6 +59,7 @@ Merging subscriptions never means every source can enter every scenario:
 ```text
 SUBSCRIPTION_1_URL
   ├─ explicit >2x       -> rejected
+  ├─ exactly 2x         -> retained
   ├─ EMBY-labelled      -> rejected
   ├─ browsing           -> allowed
   ├─ ai                 -> allowed
@@ -59,6 +71,8 @@ SUBSCRIPTION_2+
   └─ ai
 ```
 
+`ingest_order` controls deterministic source ingestion/deduplication order only; it is not a routing or node-quality priority.
+
 Production invariants:
 
 1. `subscription_1` can enter only browsing and AI inventories.
@@ -67,9 +81,28 @@ Production invariants:
 4. Media, messaging, download, ACL compatibility selectors, and final `MATCH` cannot reach `subscription_1`.
 5. Source reachability is audited before and after qualification.
 
+## Compiler and runtime graph
+
+The v2 production data path is:
+
+```text
+Declarations
+  -> Subscription I/O
+  -> NodeInventory
+  -> PolicyCompiler
+  -> RuntimeGraph
+  -> qualification
+  -> Qualified Graph
+  -> MihomoSerializer
+  -> config.yaml
+  -> audit / real Mihomo / promotion
+```
+
+The builder does not mutate topology after compilation. Python application stages call typed in-process APIs directly; only true external programs such as Mihomo remain subprocess boundaries.
+
 ## ACL4SSR fidelity
 
-`rules/acl4ssr.yaml` pins the ACL4SSR Online reference. ACL4SSR Online owns classification semantics; clash-relay owns source-safe inventories, qualification, and scheduling.
+`rules/acl4ssr.yaml` pins the ACL4SSR Online reference. ACL4SSR owns the baseline classification semantics; clash-relay owns source-safe inventories, declared extensions, qualification, and scheduling.
 
 Intentional deviations are explicit and audited:
 
@@ -86,30 +119,33 @@ Browsing qualification is region-aware. Automatic preference is:
 US -> SG -> JP -> TW -> KR -> HK -> OTHER
 ```
 
-Manual region selection never silently crosses to another country. Automatic mode crosses regions only when the preferred region is unavailable. Scheduler history is private and anonymous; it can demote unstable live-qualified nodes but never expand source admission.
+Manual region selection never silently crosses countries. Automatic mode crosses regions only when the preferred region is unavailable. Private anonymous scheduler history may demote unstable live-qualified nodes but never expands source admission.
 
-AI qualification is independent for OpenAI, Claude, and Gemini. Hong Kong is excluded before AI qualification and each service fails closed independently. OpenAI additionally uses a reviewed ChatGPT App contract: a node is admitted only after every critical ChatGPT/Android/authentication TLS endpoint passes normal certificate and hostname verification. The resulting `cr_openai_app` route lock sends the reviewed application surface only to `__CR_AI_SERVICE_OPENAI`; supporting third-party CDN/telemetry probes are diagnostic and never justify disabling TLS verification.
+AI services qualify through the generic `ServiceQualification` registry. OpenAI, Claude, and Gemini are registered implementations; the main qualification pipeline contains no provider-specific branch. Provider-specific critical/supporting probes, cache TTLs, route post-processing, and optional client-path hardening remain inside the implementation.
 
-For OpenAI, publication adds a second client-path layer after server admission. Only server-qualified OpenAI nodes are copied into isolated runtime providers. FlClash/Mihomo then health-checks those runtime providers locally against the Android ChatGPT HTTPS endpoint every 120 seconds and uses stable-first fallback inside and across preferred regions. This lets the user's real Wi-Fi/mobile path trigger failover instead of assuming the GitHub runner and Android device see identical network conditions. Static Mihomo configuration does not provide durable error-type history, so the project does not claim persistent client-side TLS quarantine.
+OpenAI keeps the reviewed ChatGPT App contract and route lock. Its client-path hardening is policy-declared and runs only after server-side admission. Normal certificate and hostname verification remain mandatory.
 
 ## Production release model
 
-Production uses one unified private qualification pipeline:
+The private production path is:
 
 ```text
-generated.yaml
+generated graph
   -> browsing + transport qualification
-  -> AI server-side qualification
-  -> OpenAI client-path runtime hardening
+  -> ServiceQualification registry
+  -> declared service client-path hardening
   -> post-qualification policy audit
+  -> Promotion Guard
   -> every stable core in tools/mihomo-versions.json
   -> versioned Cloudflare KV release transaction
   -> fixed client-facing production key
 ```
 
-`tools/mihomo-versions.json` is the only stable/prerelease Mihomo version source of truth. Documentation and workflows must not encode a second fixed stable-version matrix.
+`tools/mihomo-versions.json` is the only stable/prerelease Mihomo version source of truth. Documentation and workflows do not encode a second fixed stable-version matrix.
 
-Each production candidate is staged as immutable release objects keyed by the exact SHA-256 of its bytes:
+Every source or production release is bound to an exact validated commit SHA. The quality gate covers Python 3.11/3.12/3.13, hash-verified dependencies, Ruff, static typing for application boundaries, tests and coverage, architecture/supply-chain/privacy audits, deterministic generation, Routing V2 drift, and real Mihomo startup/provider integration.
+
+Private production candidates are staged as immutable SHA-256 release objects:
 
 ```text
 <production>.release-v1.<sha256>.config
@@ -118,15 +154,15 @@ Each production candidate is staged as immutable release objects keyed by the ex
 <production>.previous-release-v1
 ```
 
-Cloudflare KV is not a cross-key transactional database. Publication therefore uses a compensating transaction: immutable bytes are staged and read-back verified first, the fixed production key is activated, release pointers are committed, and a failed pointer commit attempts to restore the previous exact production bytes.
+The `v1` suffix here is the stable private storage-schema version, not the clash-relay product major version. v2 removes the legacy `previous-v1` rollback slot/fallback. Rollback requires the versioned previous pointer, exact bytes, a matching immutable manifest, the current policy audit, and the complete stable Mihomo matrix before activation.
 
-Rollback resolves the previous release and validates it against the current repository policy plus every currently pinned stable Mihomo core before activation.
+Cloudflare KV is not a cross-key transactional database. The versioned Cloudflare KV release transaction therefore uses compensating semantics: immutable bytes are staged and read-back verified first, the fixed production key is activated, pointers are committed, and a failed commit attempts to restore the previous exact production bytes.
 
-## Observability and privacy
+## Operational SLO and privacy
 
-Production proof and private longitudinal metrics contain aggregate operational metadata only: candidate SHA/size, qualified counts, regional cohort counts, AI service/App-ready counts, client-path runtime counts, release status, validation counts, and bounded stage timings. They intentionally exclude proxy names, servers, credentials, subscription URLs, endpoint URLs, and child-process diagnostics.
+Production proof, production metrics, and operational SLO history contain aggregate operational metadata only. The SLO ring can measure qualification rejection rate, retry recovery rate, Promotion Guard block rate, lifecycle duration, and candidate churn without node identity or subscription data. SLO persistence is best-effort and never weakens a publication gate.
 
-See [Production maturity](docs/production-maturity.md) for the P18.1-P23 operating contract and [OpenAI App reliability](docs/openai-app-reliability.md) for the App-ready routing/TLS and client-path runtime contract.
+Public or persisted aggregate data excludes proxy names, servers, ports, credentials, subscription URLs, generated config bytes, and child-process diagnostics.
 
 ## GitHub Secrets and variables
 
@@ -155,19 +191,24 @@ Variable: CLOUDFLARE_ACCOUNT_ID
 Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
-Never write real subscription URLs into tracked YAML, README files, workflow arguments, or logs.
+Never write real subscription URLs into tracked YAML, documentation, workflow arguments, or logs.
 
 ## Local development
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements-dev.lock -e .
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --no-build-isolation --no-deps -e .
 clash-relay doctor --public-only
 ruff check .
 ruff format --check .
 pytest -m "not integration"
 python scripts/audit_documentation_contract.py
+python scripts/audit_architecture_contract.py
+python scripts/audit_operational_slo_contract.py
+python scripts/audit_service_qualification_contract.py
+python scripts/audit_supply_chain.py
 python scripts/audit_acl4ssr_fidelity.py
 python scripts/repository_audit.py
 ```
@@ -176,12 +217,15 @@ python scripts/repository_audit.py
 
 - [Fork quickstart](docs/quickstart.md)
 - [配置快速上手](docs/quickstart.zh-CN.md)
+- [Architecture](docs/architecture.md)
+- [Configuration model](docs/configuration.md)
+- [Service Qualification API](docs/service-qualification.md)
+- [Operational SLO](docs/operational-slo.md)
 - [Production maturity](docs/production-maturity.md)
 - [OpenAI App reliability](docs/openai-app-reliability.md)
-- [Configuration model](docs/configuration.md)
-- [Architecture](docs/architecture.md)
 - [ACL4SSR routing model](docs/rules.md)
 - [Security model](docs/security.md)
 - [Publishing](docs/publishing.md)
 - [Versioning and compatibility](docs/versioning.md)
-- [Release checklist](docs/release-checklist.md)
+- [v2 release checklist](docs/release-checklist.md)
+- [2.0.0 release notes](docs/releases/2.0.0.md)
