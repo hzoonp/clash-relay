@@ -28,23 +28,19 @@ def test_audit_candidate_is_the_single_composite_audit_boundary(monkeypatch) -> 
     monkeypatch.setattr(
         production_pipeline,
         "audit_openai_client_path",
-        lambda candidate, allow_legacy_server_qualified=False: {
-            "status": "passed",
-            "legacy": allow_legacy_server_qualified,
-        },
+        lambda candidate: {"status": "passed"},
     )
 
     result = audit_candidate(
         project,  # type: ignore[arg-type]
         candidate,
         build_report={"subscriptions": []},
-        allow_legacy_openai_client_path=True,
     )
 
     assert result["status"] == "passed"
     assert result["routing_v2"]["status"] == "passed"
     assert result["openai_app"]["status"] == "passed"
-    assert result["openai_client_path"] == {"status": "passed", "legacy": True}
+    assert result["openai_client_path"] == {"status": "passed"}
 
 
 def test_qualification_summary_is_aggregate_only() -> None:
