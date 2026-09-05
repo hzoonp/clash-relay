@@ -34,7 +34,9 @@ def test_canonical_public_declarations_are_v2_only(repo_root: Path) -> None:
     assert subscription_1["max_node_multiplier"] == 2.0
 
 
-def test_v1_config_is_rejected_without_runtime_compatibility(repo_root: Path, tmp_path: Path) -> None:
+def test_v1_config_is_rejected_without_runtime_compatibility(
+    repo_root: Path, tmp_path: Path
+) -> None:
     document = _document(repo_root / "config.yaml")
     document["version"] = 1
     path = tmp_path / "config.yaml"
