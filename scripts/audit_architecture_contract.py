@@ -314,8 +314,8 @@ def main() -> int:
             raise SystemExit(f"architecture audit: doctor-first Fork UX missing {token}")
     pyproject = _text("pyproject.toml")
     package = _text("src/clash_relay/__init__.py")
-    if 'version = "2.0.0"' not in pyproject or '__version__ = "2.0.0"' not in package:
-        raise SystemExit("architecture audit: v2.0.0 package version boundary is incomplete")
+    if 'version = "2.0.1"' not in pyproject or '__version__ = "2.0.1"' not in package:
+        raise SystemExit("architecture audit: v2.0.1 package version boundary is incomplete")
     if not (ROOT / "scripts/audit_v2_release_contract.py").is_file():
         raise SystemExit("architecture audit: v2 release contract audit is missing")
 
