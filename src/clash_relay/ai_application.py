@@ -220,7 +220,10 @@ def run_ai_qualification(
         qualified = cached_pass | live_qualified
         qualified_by_probe[name] = qualified
 
-        diagnostics["selector_failures"] = int(diagnostics["selector_failures"]) + int(
+        selector_failures = diagnostics["selector_failures"]
+        if not isinstance(selector_failures, int) or isinstance(selector_failures, bool):
+            raise ValidationError("AI selector failure diagnostics must be an integer")
+        diagnostics["selector_failures"] = selector_failures + int(
             probe_diagnostics.get("selector_failures", 0)
         )
         raw_probe_summaries = probe_diagnostics.get("probes", {})
