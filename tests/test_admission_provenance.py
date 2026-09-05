@@ -74,9 +74,7 @@ def test_dedup_preserves_later_source_general_eligibility() -> None:
     assert [item.source_id for item in browsing] == ["subscription_1"]
 
 
-def test_builder_reports_name_admission_rejections(
-    project_factory, fixture_env, yaml_editor
-) -> None:
+def test_builder_reports_name_admission_rejections(project_factory, fixture_env, yaml_editor) -> None:
     _root, paths = project_factory()
 
     def configure_subscriptions(document):
