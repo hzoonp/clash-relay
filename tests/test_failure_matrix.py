@@ -90,7 +90,7 @@ def test_documented_failure_matrix_covers_every_public_failure_class(repo_root: 
         "Claude has zero qualified nodes",
         "Gemini has zero qualified nodes",
         "ACL4SSR/rule acquisition",
-        "reachability audit",
+        "Source-to-scenario or Routing V2 audit",
         "Any stable Mihomo core declared in `tools/mihomo-versions.json`",
         "Immutable release PUT succeeds but response is lost",
         "Scheduler history",
