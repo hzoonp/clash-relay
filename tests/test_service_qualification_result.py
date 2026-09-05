@@ -4,7 +4,10 @@ import pytest
 
 from clash_relay.errors import ValidationError
 from clash_relay.service_qualification import service_qualifications
-from clash_relay.service_qualification_result import build_service_qualification_result
+from clash_relay.service_qualification_result import (
+    build_service_qualification_result,
+    service_qualification_results,
+)
 
 
 def test_registered_services_share_one_aggregate_result_shape() -> None:
@@ -28,6 +31,39 @@ def test_registered_services_share_one_aggregate_result_shape() -> None:
         assert result["outcomes"] == {"passed": 2, "timeout": 2}
 
     assert shapes and all(shape == shapes[0] for shape in shapes)
+
+
+def test_ai_probe_diagnostics_project_without_provider_branches() -> None:
+    probes = {
+        service.probe_name: {
+            "live_tested_nodes": 3,
+            "cache_pass_hits": 1,
+            "cache_fail_hits": 1,
+            "qualified_nodes": 2,
+            "outcomes": {"passed": 1, "timeout": 2},
+        }
+        for service in service_qualifications()
+    }
+    results = service_qualification_results({"diagnostics": {"probes": probes}})
+
+    assert set(results) == {service.label for service in service_qualifications()}
+    assert {tuple(row) for row in results.values()} == {
+        (
+            "service",
+            "probe_name",
+            "status",
+            "tested_candidates",
+            "qualified_candidates",
+            "rejected_candidates",
+            "live_tested_candidates",
+            "live_qualified_candidates",
+            "cache_pass_hits",
+            "cache_fail_hits",
+            "outcomes",
+        )
+    }
+    assert all(row["tested_candidates"] == 5 for row in results.values())
+    assert all(row["qualified_candidates"] == 2 for row in results.values())
 
 
 def test_result_shape_contains_only_aggregate_counts() -> None:
