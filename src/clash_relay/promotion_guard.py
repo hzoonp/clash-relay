@@ -158,9 +158,7 @@ def assess_promotion(
         "thresholds": {
             "minimum_total_node_ratio": policy.minimum_total_node_ratio,
             "minimum_provider_ratio": policy.minimum_provider_ratio,
-            "minimum_source_ratio_by_use": dict(
-                sorted(policy.minimum_source_ratio_by_use.items())
-            ),
+            "minimum_source_ratio_by_use": dict(sorted(policy.minimum_source_ratio_by_use.items())),
             **_absolute_thresholds(policy),
         },
         "violations": violations,
