@@ -42,14 +42,36 @@ Each result contains only:
 
 - service label and probe identity;
 - qualified/rejected/tested candidate counts;
+- the count of regions with at least one qualified candidate;
 - live tested/qualified counts;
 - cache pass/failure hit counts;
 - classifier-style aggregate outcome counts;
 - aggregate qualification status.
 
-It does not contain node identities, proxy payloads, server addresses, subscription URLs, credentials, raw response bodies, or endpoint response data. Outcome labels must be bounded classifier-style identifiers; unstructured labels fail closed.
+It does not contain node identities, proxy payloads, server addresses, subscription URLs, credentials, raw response bodies, region identities, or endpoint response data. Outcome labels must be bounded classifier-style identifiers; unstructured labels fail closed.
 
 A future registered service therefore gets the common result shape through registry iteration rather than a new provider branch in the qualification pipeline.
+
+## Service-level availability contract
+
+Promotion Guard consumes the aggregate result produced by the qualification pipeline. It does not re-probe providers and does not infer service eligibility from Mihomo filter expressions.
+
+`promotion-guard.yaml` may require independent capacity for registered services:
+
+```yaml
+minimum_qualified_nodes_by_service:
+  openai: 1
+  claude: 1
+  gemini: 1
+minimum_qualified_regions_by_service:
+  openai: 1
+  claude: 1
+  gemini: 1
+```
+
+The canonical policy requires at least one qualified candidate and one qualified region for every built-in service. Missing or malformed aggregate qualification data projects to zero and therefore fails closed. Unknown service labels in the Promotion Guard policy are rejected during policy loading.
+
+This contract is intentionally absolute rather than baseline-relative: a candidate cannot be promoted merely because a previous release was equally unusable for a service. Existing scenario/source ratios remain separate degradation checks.
 
 ## Declarative client-path hardening
 
@@ -85,6 +107,7 @@ Routing/classification data may still require its own policy/rule declaration be
 - OpenAI App qualification semantics live behind `OpenAIQualification`.
 - Client-path hardening is policy-declared rather than implicitly hardcoded in the pipeline.
 - Provider-neutral result projection exposes aggregate counts only.
+- Promotion Guard consumes the same aggregate ServiceQualification results rather than inventing a second eligibility model.
 - The service qualification contract audit rejects provider names/imports in the main qualification pipeline and rejects restoration of provider-specific orchestration branches.
 - Registry, aggregate result projection, AI application, and qualification pipeline are part of the static type gate.
 - Full deterministic generation, Routing V2 drift, Promotion Guard, and the manifest-driven real Mihomo matrix remain release gates.
