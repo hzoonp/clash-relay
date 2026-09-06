@@ -111,9 +111,9 @@ def compile_runtime_graph(
         final_excluded_sources=list(final_excluded_sources or []),
     )
     manual_exposure = _expose_manual_provider_choices(output, excluded_groups=excluded_group_names)
-    browsing_runtime = (
-        harden_browsing_runtime(output, policies) if group_specs else {"status": "not_applicable"}
-    )
+    # Browsing hardening is a core runtime policy, not an ACL4SSR feature.  It
+    # must therefore run for forks that disable external ACL groups as well.
+    browsing_runtime = harden_browsing_runtime(output, policies)
     validate_browsing_public_surface(output)
 
     report: dict[str, Any] = dict(base_report)
