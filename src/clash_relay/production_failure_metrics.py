@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_loader import load_project
-from .errors import ClashRelayError, PublicationError
+from .errors import ClashRelayError
 from .production_metrics import append_failure_metric, metrics_summary, parse_metrics_bytes
 from .publishers.cloudflare_kv import CloudflareKVPublisher
 
@@ -56,11 +56,10 @@ def persist_failure_diagnostic(
         state, load_status = parse_metrics_bytes(existing)
         next_state = append_failure_metric(state, diagnostic)
         content = (
-            json.dumps(next_state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            + "\n"
+            json.dumps(next_state, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
         ).encode("utf-8")
         published = publisher.publish(content=content)
-    except (OSError, ValueError, ClashRelayError, PublicationError):
+    except (OSError, ValueError, ClashRelayError):
         return {"status": "unavailable"}
 
     summary = metrics_summary(next_state)
