@@ -1,6 +1,6 @@
 # Production cutover runbook
 
-Use this runbook only after the complete P11 change set is on the final candidate base and the exact candidate SHA has passed the authoritative CI gates.
+Use this runbook only after the complete architecture change set is on the final candidate base and the exact candidate SHA has passed the authoritative CI gates.
 
 ## 1. Preconditions
 
