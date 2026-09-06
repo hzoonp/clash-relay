@@ -15,9 +15,7 @@ from clash_relay.errors import ValidationError
 
 
 def test_history_inputs_require_complete_path_triple(tmp_path: Path) -> None:
-    with pytest.raises(
-        ValidationError, match="requires history, history_key, and next_history"
-    ):
+    with pytest.raises(ValidationError, match="requires history, history_key, and next_history"):
         _history_inputs(
             history=tmp_path / "history.json",
             history_key=None,
@@ -110,9 +108,7 @@ def test_runtime_names_by_region_fails_closed_on_invalid_inventory() -> None:
         _runtime_names_by_region({})
 
     with pytest.raises(ValidationError, match="invalid provider"):
-        _runtime_names_by_region(
-            {"proxy-providers": {"cr_browsing_us": {"payload": "not-a-list"}}}
-        )
+        _runtime_names_by_region({"proxy-providers": {"cr_browsing_us": {"payload": "not-a-list"}}})
 
     with pytest.raises(ValidationError, match="no regional inventory"):
         _runtime_names_by_region(
