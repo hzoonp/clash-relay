@@ -6,7 +6,7 @@ import pytest
 
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ConfigurationError
-from clash_relay.generator import _runtime_config
+from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
 
 
 def _sniffer() -> dict[str, object]:
@@ -65,7 +65,9 @@ def _expected_sniffer() -> dict[str, object]:
 
 
 def test_client_owned_dns_can_enable_sniffer_without_fake_ip() -> None:
-    output = _runtime_config(_runtime(dns={"mode": "client"}, sniffer=_sniffer()))
+    output = RuntimeConfigRenderer().render(
+        _runtime(dns={"mode": "client"}, sniffer=_sniffer())
+    )
 
     assert output["sniffer"] == _expected_sniffer()
     assert "dns" not in output
@@ -73,7 +75,7 @@ def test_client_owned_dns_can_enable_sniffer_without_fake_ip() -> None:
 
 
 def test_managed_dns_and_sniffer_are_independent() -> None:
-    output = _runtime_config(_runtime(dns=_managed_dns(), sniffer=_sniffer()))
+    output = RuntimeConfigRenderer().render(_runtime(dns=_managed_dns(), sniffer=_sniffer()))
 
     assert output["sniffer"] == _expected_sniffer()
     assert "dns" in output
@@ -81,7 +83,7 @@ def test_managed_dns_and_sniffer_are_independent() -> None:
 
 
 def test_legacy_runtime_without_sniffer_preserves_previous_output() -> None:
-    output = _runtime_config(_runtime(dns={"mode": "client"}, sniffer=None))
+    output = RuntimeConfigRenderer().render(_runtime(dns={"mode": "client"}, sniffer=None))
 
     assert "sniffer" not in output
     assert "dns" not in output
