@@ -9,8 +9,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .production_diagnostics import ProductionFailureCategory
+
 _STATE_VERSION = 1
 _MAX_RUNS = 30
+_MAX_FAILURES = 60
+_FAILURE_TREND_WINDOW = 10
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 _MAX_TIMING_MS = 24 * 60 * 60 * 1000
 _FAILURE_CATEGORIES = frozenset(
@@ -23,11 +27,12 @@ _FAILURE_CATEGORIES = frozenset(
         "protocol_error",
     }
 )
+_PRODUCTION_FAILURE_CATEGORIES = frozenset(item.value for item in ProductionFailureCategory)
 _RELEASE_PHASES = frozenset({"prepared", "qualified", "promoted", "published", "verified"})
 
 
 def empty_metrics() -> dict[str, Any]:
-    return {"version": _STATE_VERSION, "runs": []}
+    return {"version": _STATE_VERSION, "runs": [], "failures": []}
 
 
 def _number(value: Any) -> int | float | None:
@@ -48,6 +53,29 @@ def _non_negative_int(value: Any, default: int = 0) -> int:
 
 def _safe_sha(value: Any) -> str | None:
     return value if isinstance(value, str) and _RELEASE_ID.fullmatch(value) else None
+
+
+def _clean_failure(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    epoch = value.get("epoch")
+    category = value.get("category")
+    if (
+        not isinstance(epoch, int)
+        or isinstance(epoch, bool)
+        or epoch < 0
+        or not isinstance(category, str)
+        or category not in _PRODUCTION_FAILURE_CATEGORIES
+    ):
+        return None
+    clean: dict[str, Any] = {"epoch": epoch, "category": category}
+    retryable = value.get("retryable")
+    if isinstance(retryable, bool):
+        clean["retryable"] = retryable
+    qualification = value.get("qualification_failure_category")
+    if isinstance(qualification, str) and qualification in _FAILURE_CATEGORIES:
+        clean["qualification_failure_category"] = qualification
+    return clean
 
 
 def _clean_browsing(value: Any) -> dict[str, Any] | None:
@@ -283,6 +311,30 @@ def _clean_run(run: Any) -> dict[str, Any] | None:
     return clean
 
 
+def _clean_runs(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list):
+        return None
+    clean: list[dict[str, Any]] = []
+    for run in value:
+        item = _clean_run(run)
+        if item is None:
+            return None
+        clean.append(item)
+    return clean[-_MAX_RUNS:]
+
+
+def _clean_failures(value: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list):
+        return None
+    clean: list[dict[str, Any]] = []
+    for failure in value:
+        item = _clean_failure(failure)
+        if item is None:
+            return None
+        clean.append(item)
+    return clean[-_MAX_FAILURES:]
+
+
 def parse_metrics_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
     if not content:
         return empty_metrics(), "missing"
@@ -292,16 +344,11 @@ def parse_metrics_bytes(content: bytes | None) -> tuple[dict[str, Any], str]:
         return empty_metrics(), "invalid"
     if not isinstance(document, dict) or document.get("version") != _STATE_VERSION:
         return empty_metrics(), "invalid"
-    runs = document.get("runs")
-    if not isinstance(runs, list):
+    runs = _clean_runs(document.get("runs"))
+    failures = _clean_failures(document.get("failures", []))
+    if runs is None or failures is None:
         return empty_metrics(), "invalid"
-    clean: list[dict[str, Any]] = []
-    for run in runs:
-        item = _clean_run(run)
-        if item is None:
-            return empty_metrics(), "invalid"
-        clean.append(item)
-    return {"version": _STATE_VERSION, "runs": clean[-_MAX_RUNS:]}, "loaded"
+    return {"version": _STATE_VERSION, "runs": runs, "failures": failures}, "loaded"
 
 
 def build_metrics_run(
@@ -414,24 +461,86 @@ def append_metrics_run(state: dict[str, Any], run: dict[str, Any]) -> dict[str, 
     clean_run = _clean_run(run)
     if clean_run is None:
         raise ValueError("invalid aggregate production metrics run")
-    existing = state.get("runs", [])
-    runs: list[dict[str, Any]] = []
-    if isinstance(existing, list):
-        for item in existing:
-            clean = _clean_run(item)
-            if clean is not None:
-                runs.append(clean)
+    runs = _clean_runs(state.get("runs", [])) or []
+    failures = _clean_failures(state.get("failures", [])) or []
     if not runs or runs[-1].get("candidate_sha256") != clean_run["candidate_sha256"]:
         runs.append(clean_run)
     else:
         runs[-1] = clean_run
-    return {"version": _STATE_VERSION, "runs": runs[-_MAX_RUNS:]}
+    return {
+        "version": _STATE_VERSION,
+        "runs": runs[-_MAX_RUNS:],
+        "failures": failures[-_MAX_FAILURES:],
+    }
+
+
+def append_failure_metric(
+    state: dict[str, Any],
+    diagnostic: dict[str, Any],
+    *,
+    epoch: int | None = None,
+) -> dict[str, Any]:
+    if diagnostic.get("status") != "failed":
+        raise ValueError("production failure metric requires failed diagnostic status")
+    event: dict[str, Any] = {
+        "epoch": int(time.time()) if epoch is None else int(epoch),
+        "category": diagnostic.get("category"),
+    }
+    if isinstance(diagnostic.get("retryable"), bool):
+        event["retryable"] = diagnostic["retryable"]
+    if isinstance(diagnostic.get("qualification_failure_category"), str):
+        event["qualification_failure_category"] = diagnostic["qualification_failure_category"]
+    clean_event = _clean_failure(event)
+    if clean_event is None:
+        raise ValueError("invalid aggregate production failure metric")
+    runs = _clean_runs(state.get("runs", [])) or []
+    failures = _clean_failures(state.get("failures", [])) or []
+    failures.append(clean_event)
+    return {
+        "version": _STATE_VERSION,
+        "runs": runs[-_MAX_RUNS:],
+        "failures": failures[-_MAX_FAILURES:],
+    }
+
+
+def _failure_summary(state: dict[str, Any]) -> dict[str, Any]:
+    failures = _clean_failures(state.get("failures", [])) or []
+    counts: dict[str, int] = {}
+    retryable = 0
+    for failure in failures:
+        category = str(failure["category"])
+        counts[category] = counts.get(category, 0) + 1
+        if failure.get("retryable") is True:
+            retryable += 1
+
+    events: list[tuple[int, bool]] = []
+    runs = _clean_runs(state.get("runs", [])) or []
+    events.extend((int(run["epoch"]), False) for run in runs)
+    events.extend((int(failure["epoch"]), True) for failure in failures)
+    events.sort(key=lambda item: (item[0], item[1]))
+    recent = events[-_FAILURE_TREND_WINDOW:]
+    recent_failures = sum(1 for _, failed in recent if failed)
+    streak = 0
+    for _, failed in reversed(events):
+        if not failed:
+            break
+        streak += 1
+
+    return {
+        "failure_runs": len(failures),
+        "failure_categories": dict(sorted(counts.items())),
+        "latest_failure_category": failures[-1]["category"] if failures else "none",
+        "retryable_failures": retryable,
+        "recent_failure_rate": round(recent_failures / len(recent), 3) if recent else 0.0,
+        "recent_failure_streak": streak,
+    }
 
 
 def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
-    runs = state.get("runs", [])
-    if not isinstance(runs, list) or not runs:
-        return {"runs": 0}
+    runs = _clean_runs(state.get("runs", [])) or []
+    failure_summary = _failure_summary(state)
+    if not runs:
+        return {"runs": 0, **failure_summary}
     latest = runs[-1]
     previous = runs[-2] if len(runs) > 1 else None
     release = latest.get("release", {}) if isinstance(latest.get("release"), dict) else {}
@@ -457,8 +566,6 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
     retry_runs = 0
     retry_recoveries = 0
     for run in runs:
-        if not isinstance(run, dict):
-            continue
         row = run.get("qualification")
         if not isinstance(row, dict):
             continue
@@ -482,6 +589,7 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_release_phase": release_progress.get("phase", "unknown"),
         "retry_runs": retry_runs,
         "retry_recoveries": retry_recoveries,
+        **failure_summary,
     }
     if isinstance(previous, dict):
         summary["previous_candidate_sha256"] = previous.get("candidate_sha256")
