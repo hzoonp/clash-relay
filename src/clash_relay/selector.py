@@ -15,7 +15,7 @@ def _occurrences(node: Node) -> tuple[NodeOccurrence, ...]:
         NodeOccurrence(
             source_id=node.source_id,
             source_display_name=node.source_display_name,
-            source_priority=node.source_priority,
+            source_ingest_order=node.source_ingest_order,
             source_allowed_uses=node.source_allowed_uses,
             source_allowed_countries=node.source_allowed_countries,
             original_name=node.original_name,
@@ -62,7 +62,7 @@ def _project(node: Node, item: NodeOccurrence) -> Node:
         node,
         source_id=item.source_id,
         source_display_name=item.source_display_name,
-        source_priority=item.source_priority,
+        source_ingest_order=item.source_ingest_order,
         source_allowed_uses=item.source_allowed_uses,
         source_allowed_countries=item.source_allowed_countries,
         original_name=item.original_name,
@@ -98,18 +98,18 @@ def select_nodes(nodes: list[Node], selector: dict[str, Any], region: str) -> li
         chosen = min(
             eligible,
             key=lambda item: (
-                item.source_priority,
+                item.source_ingest_order,
                 item.source_id,
                 item.country,
                 item.original_name.casefold(),
             ),
         )
         selected.append(_project(node, chosen))
-    # This order is deterministic only; source priority is never used as a quality score.
+    # This order is deterministic only; ingest order is never used as a quality score.
     return sorted(
         selected,
         key=lambda node: (
-            node.source_priority,
+            node.source_ingest_order,
             node.source_id,
             node.country,
             node.original_name.casefold(),
