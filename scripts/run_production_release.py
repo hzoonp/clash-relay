@@ -8,7 +8,9 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
+from clash_relay.config_loader import load_project
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
@@ -17,6 +19,7 @@ from clash_relay.production_lifecycle import (
     ProductionPipeline,
     resolve_publication_mode,
 )
+from clash_relay.scheduler_observation import publish_scheduler_observation
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -43,6 +46,28 @@ def _enforce_validated_ci_sha(*, publish: bool) -> None:
         raise ValidationError("CI publication requires the exact validated commit SHA")
 
 
+def _publish_scheduler_observation(
+    *, root: Path, publish: bool, lifecycle_result: dict[str, Any]
+) -> dict[str, Any]:
+    """Publish scheduler evidence only after a successful persistent release.
+
+    This keeps every persistent production write behind the canonical production
+    entrypoint and, critically, makes a manual dry-run side-effect free.
+    """
+
+    if not publish or lifecycle_result.get("publication_status") != "published":
+        return {"status": "skipped", "reason": "dry_run"}
+    if lifecycle_result.get("status") != "passed":
+        return {"status": "skipped", "reason": "release_not_passed"}
+
+    project = load_project(
+        config_path=root / "config.yaml",
+        subscriptions_path=root / "subscriptions.yaml",
+        policies_path=root / "policies.yaml",
+    )
+    return publish_scheduler_observation(project=project, env=os.environ)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     publish = False
@@ -62,6 +87,17 @@ def main(argv: list[str] | None = None) -> int:
             publish=publish,
             workers=args.workers,
         ).run()
+        observation = _publish_scheduler_observation(
+            root=args.root.resolve(),
+            publish=publish,
+            lifecycle_result=result,
+        )
+        result["scheduler_observation"] = observation.get("status", "unknown")
+        if publish and observation.get("status") == "unavailable":
+            print(
+                "::warning title=Scheduler observation::Production release is valid, "
+                "but the aggregate scheduler observation could not be published."
+            )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:
