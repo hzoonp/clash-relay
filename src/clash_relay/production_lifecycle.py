@@ -574,9 +574,7 @@ class ProductionPipeline:
             metrics = self._persist_production_metrics(project)
             self._record_timing("production_metrics", started)
             started = time.perf_counter()
-            scheduler_observation = self._publish_scheduler_observation(
-                project, metrics=metrics
-            )
+            scheduler_observation = self._publish_scheduler_observation(project, metrics=metrics)
             self._record_timing("scheduler_observation", started)
             slo = self._record_operational_slo(
                 project=project,
