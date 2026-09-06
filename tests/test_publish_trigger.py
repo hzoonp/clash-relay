@@ -130,8 +130,7 @@ def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
     dry_run_guard = (
-        'if not self.publish:\n'
-        '            return {"status": "skipped", "reason": "dry_run"}'
+        'if not self.publish:\n            return {"status": "skipped", "reason": "dry_run"}'
     )
     assert dry_run_guard in text
     assert 'metrics.get("status") != "published"' in text
