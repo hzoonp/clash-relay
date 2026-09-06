@@ -46,6 +46,8 @@ def test_runtime_graph_owns_provider_order_and_source_reachability() -> None:
     graph = RuntimeGraph.from_candidate(_candidate())
     assert graph.provider_order("public") == ("provider-a", "provider-b")
     assert graph.reachable_providers("public") == frozenset({"provider-a", "provider-b"})
+    assert graph.reachable_groups({"public"}) == frozenset({"public", "nested", "reserve"})
+    assert graph.group_cycles() == ()
     assert graph.reachable_sources(
         "public",
         proxy_sources={"node-a": "primary", "node-b": "secondary"},
@@ -71,8 +73,27 @@ def test_runtime_graph_reports_unresolved_references_and_cycles() -> None:
             {"name": "b", "type": "select", "proxies": ["a"]},
         ],
     }
+    cyclic_graph = RuntimeGraph.from_candidate(cyclic)
+    assert cyclic_graph.group_cycles() == (("a", "b", "a"),)
     with pytest.raises(ValidationError, match="cycle"):
-        RuntimeGraph.from_candidate(cyclic).walk("a")
+        cyclic_graph.walk("a")
+
+
+def test_runtime_graph_is_detached_from_source_and_returned_snapshots() -> None:
+    candidate = _candidate()
+    graph = RuntimeGraph.from_candidate(candidate)
+
+    candidate["proxy-groups"][3]["proxies"].append("REJECT")
+    candidate["proxy-providers"]["provider-a"]["payload"][0]["name"] = "mutated-source"
+
+    detached_candidate = graph.candidate
+    detached_groups = graph.groups
+    detached_candidate["proxy-groups"][3]["proxies"].append("PASS")
+    detached_groups["public"]["proxies"].append("COMPATIBLE")
+
+    assert graph.group_members("public") == ("nested", "reserve", "direct-proxy")
+    assert graph.provider_proxies["provider-a"] == frozenset({"node-a"})
+    assert graph.walk("public").proxies == frozenset({"node-a", "node-b", "direct-proxy"})
 
 
 def test_candidate_artifact_transitions_do_not_mutate_previous_stage() -> None:
