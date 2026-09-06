@@ -14,6 +14,7 @@ from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
 from .models import BuildResult, Node, SubscriptionSpec
 from .node_policy import filter_proxies_by_multiplier, filter_proxies_by_name_patterns
+from .pinned_fetch import fetch_pinned_text
 from .policy_compiler import compile_runtime_graph
 from .redact import redact_text
 from .secrets import resolve_subscription_urls
@@ -54,7 +55,7 @@ def build_candidate(
     secret_file: Path | None = None,
     env: Mapping[str, str] | None = None,
     fetcher: Fetcher = fetch_subscription,
-    rule_fetcher: Fetcher = fetch_subscription,
+    rule_fetcher: Fetcher = fetch_pinned_text,
 ) -> BuildResult:
     project = load_project(
         config_path=config_path,

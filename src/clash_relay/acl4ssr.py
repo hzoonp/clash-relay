@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .errors import FetchError, GenerationError
-from .fetch import fetch_subscription
+from .pinned_fetch import fetch_pinned_text
 from .util import unique
 
 RuleFetcher = Callable[..., str]
@@ -175,7 +175,7 @@ def load_acl4ssr_rules(
     manifest: dict[str, Any] | None,
     *,
     modules: Mapping[str, bool],
-    fetcher: RuleFetcher = fetch_subscription,
+    fetcher: RuleFetcher = fetch_pinned_text,
     timeout: int,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
     """Fetch enabled sources and package them as inline Mihomo rule providers."""
