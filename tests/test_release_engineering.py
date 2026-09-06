@@ -20,8 +20,10 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     workflow = yaml.load(text, Loader=yaml.BaseLoader)
     assert isinstance(workflow, dict)
     assert workflow["permissions"]["contents"] == "write"
+    assert "uses: ./.github/workflows/validate.yml" in text
     assert "needs.validate.outputs.validated_sha == github.sha" in text
     assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
+    assert "persist-credentials: false" in text
     assert "docs/releases/${VERSION}.md" in text
     assert "gh release create" in text
     assert "--notes-file .release-notes.md" in text
@@ -30,6 +32,20 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert "scheduler-history" not in text
     assert "CLOUDFLARE_API_TOKEN" not in text
     assert "CLASH_RELAY_SUBSCRIPTIONS" not in text
+
+
+def test_release_workflow_does_not_duplicate_the_authoritative_quality_gate(repo_root: Path) -> None:
+    text = (repo_root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert "ruff check" not in text
+    assert "ruff format" not in text
+    assert "pytest" not in text
+    assert "--cov-fail-under" not in text
+    assert "repository_audit.py" not in text
+    assert "audit_supply_chain.py" not in text
+    assert "audit_acl4ssr_fidelity.py" not in text
+    assert "pip install" not in text
+    assert "Quality authority: reusable validate.yml" in text
 
 
 def test_versioning_document_freezes_canonical_v2_boundaries(repo_root: Path) -> None:
