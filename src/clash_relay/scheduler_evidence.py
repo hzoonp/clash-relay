@@ -127,9 +127,7 @@ def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
         "browsing": {
             "qualified_nodes": _non_negative_int(browsing.get("qualified")),
             "stable_nodes": _non_negative_int(browsing.get("stable")),
-            "historically_demoted_nodes": _non_negative_int(
-                browsing.get("historically_demoted")
-            ),
+            "historically_demoted_nodes": _non_negative_int(browsing.get("historically_demoted")),
             "stable_region_count": len(regions),
             "stable_regions": regions,
         },
