@@ -97,7 +97,9 @@ class RuleCompiler:
             "Proxy" if modules.get("general", False) else "DIRECT"
         )
         if resolved_final_target not in available_targets:
-            raise GenerationError(f"final routing target is unavailable: {resolved_final_target!r}")
+            raise GenerationError(
+                f"final routing target is unavailable: {resolved_final_target!r}"
+            )
         rendered_rules.append(f"MATCH,{resolved_final_target}")
 
         return RuleCompilation(
