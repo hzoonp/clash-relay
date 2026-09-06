@@ -70,7 +70,7 @@ def build_candidate(
     successful = 0
     name_filtered_nodes = 0
     multiplier_filtered_nodes = 0
-    for spec in sorted(enabled_specs, key=lambda item: (item.priority, item.id)):
+    for spec in sorted(enabled_specs, key=lambda item: (item.ingest_order, item.id)):
         try:
             text = fetcher(
                 urls[spec.id],
