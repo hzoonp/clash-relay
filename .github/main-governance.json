@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "branch": "main",
   "desired_enforcement": "active",
   "pull_request": {
@@ -15,11 +15,13 @@
   "required_status_checks": [
     {
       "workflow": "CI",
-      "job": "Validated SHA"
+      "job": "Validated SHA",
+      "check_context": "Validate exact commit / Validated SHA"
     },
     {
       "workflow": "Routing V2 Drift Guard",
-      "job": "Verify finalized Routing V2 graph"
+      "job": "Verify finalized Routing V2 graph",
+      "check_context": "Verify finalized Routing V2 graph"
     }
   ]
 }
