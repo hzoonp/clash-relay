@@ -197,12 +197,8 @@ class RuntimeGraph:
         if group is None:
             raise ValidationError(f"runtime graph group {name!r} is missing")
         members = group.get("proxies", [])
-        if not isinstance(members, list) or not all(
-            isinstance(item, str) for item in members
-        ):
-            raise ValidationError(
-                f"runtime graph group {name!r} has invalid proxy references"
-            )
+        if not isinstance(members, list) or not all(isinstance(item, str) for item in members):
+            raise ValidationError(f"runtime graph group {name!r} has invalid proxy references")
         return tuple(str(item) for item in members)
 
     def group_uses(self, name: str) -> tuple[str, ...]:
@@ -213,9 +209,7 @@ class RuntimeGraph:
         if uses is None:
             return ()
         if not isinstance(uses, list) or not all(isinstance(item, str) for item in uses):
-            raise ValidationError(
-                f"runtime graph group {name!r} has invalid provider references"
-            )
+            raise ValidationError(f"runtime graph group {name!r} has invalid provider references")
         return tuple(str(item) for item in uses)
 
     def reachable_groups(self, starts: Iterable[str]) -> frozenset[str]:
@@ -256,9 +250,7 @@ class RuntimeGraph:
             visiting.add(name)
             stack.append(name)
             children = sorted(
-                member
-                for member in self.group_members(name)
-                if member in self._groups
+                member for member in self.group_members(name) if member in self._groups
             )
             for child in children:
                 visit(child)
@@ -331,9 +323,7 @@ class RuntimeGraph:
             )
         return result
 
-    def reachable_providers(
-        self, target: str, *, require_resolved: bool = False
-    ) -> frozenset[str]:
+    def reachable_providers(self, target: str, *, require_resolved: bool = False) -> frozenset[str]:
         reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
         return reachability.providers
 
@@ -358,9 +348,7 @@ class RuntimeGraph:
             for provider_name in self.group_uses(name):
                 if provider_name in self._providers and provider_name not in providers:
                     providers.append(provider_name)
-            pending.extend(
-                member for member in self.group_members(name) if member in self._groups
-            )
+            pending.extend(member for member in self.group_members(name) if member in self._groups)
         return tuple(providers)
 
     def reachable_sources(
@@ -371,14 +359,8 @@ class RuntimeGraph:
         provider_sources: Mapping[str, set[str] | frozenset[str]] | None = None,
         require_resolved: bool = False,
     ) -> frozenset[str]:
-        reachability = (
-            self.walk_resolved(target) if require_resolved else self.walk(target)
-        )
-        found = {
-            str(proxy_sources[name])
-            for name in reachability.proxies
-            if name in proxy_sources
-        }
+        reachability = self.walk_resolved(target) if require_resolved else self.walk(target)
+        found = {str(proxy_sources[name]) for name in reachability.proxies if name in proxy_sources}
         if provider_sources is not None:
             for provider in reachability.providers:
                 found.update(str(item) for item in provider_sources.get(provider, ()))
