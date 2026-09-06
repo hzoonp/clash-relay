@@ -28,10 +28,7 @@ def test_unreleased_compare_starts_from_current_project_version(repo_root: Path)
     version = _project_version(repo_root)
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    expected = (
-        "[Unreleased]: https://github.com/hzoonp/clash-relay/compare/"
-        f"v{version}...HEAD"
-    )
+    expected = f"[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v{version}...HEAD"
     assert expected in changelog
 
 
