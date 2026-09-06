@@ -33,6 +33,7 @@ def test_workflow_is_a_thin_adapter_to_one_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
     assert len(text.splitlines()) < 100
     assert text.count("python scripts/run_production_release.py") == 1
+    assert text.count("python scripts/publish_scheduler_observation.py") == 1
     assert "Resolve publication mode" not in text
     assert "push|schedule)" not in text
     assert "python - <<" not in text
@@ -70,14 +71,16 @@ def test_individual_subscription_urls_are_masked_before_pipeline() -> None:
     )
 
 
-def test_secrets_are_scoped_to_the_single_pipeline_step() -> None:
+def test_secrets_are_scoped_to_private_production_and_observation_steps() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
-    assert text.count("CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}") == 1
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 2
+    assert text.count("CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}") == 2
     assert (
-        text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 1
+        text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 2
     )
+    assert text.count("Run production pipeline") == 1
+    assert text.count("Publish aggregate scheduler observation") == 1
 
 
 def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
