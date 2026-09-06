@@ -489,9 +489,7 @@ def append_failure_metric(
     if isinstance(diagnostic.get("retryable"), bool):
         event["retryable"] = diagnostic["retryable"]
     if isinstance(diagnostic.get("qualification_failure_category"), str):
-        event["qualification_failure_category"] = diagnostic[
-            "qualification_failure_category"
-        ]
+        event["qualification_failure_category"] = diagnostic["qualification_failure_category"]
     clean_event = _clean_failure(event)
     if clean_event is None:
         raise ValueError("invalid aggregate production failure metric")
