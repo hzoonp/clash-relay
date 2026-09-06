@@ -326,7 +326,7 @@ def audit_production_candidate(
         }
 
     subscription_rows: list[dict[str, Any]] = []
-    for spec in sorted(subscriptions.values(), key=lambda item: (item.priority, item.id)):
+    for spec in sorted(subscriptions.values(), key=lambda item: (item.ingest_order, item.id)):
         source_report = source_reports.get(spec.id, {})
         row: dict[str, Any] = {
             "id": spec.id,
