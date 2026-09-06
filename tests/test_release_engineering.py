@@ -43,9 +43,9 @@ def test_release_workflow_does_not_duplicate_the_authoritative_quality_gate(
     assert "ruff format" not in text
     assert "pytest" not in text
     assert "--cov-fail-under" not in text
-    assert "repository_audit.py" not in text
-    assert "audit_supply_chain.py" not in text
-    assert "audit_acl4ssr_fidelity.py" not in text
+    assert "run: python scripts/repository_audit.py" not in text
+    assert "run: python scripts/audit_supply_chain.py" not in text
+    assert "run: python scripts/audit_acl4ssr_fidelity.py" not in text
     assert "pip install" not in text
     assert "Quality authority: reusable validate.yml" in text
 
