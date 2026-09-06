@@ -140,7 +140,7 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error" not in ci
     assert "uses: ./.github/workflows/validate.yml" in ci
     assert "--require-hashes" in validate
-    assert "--cov-fail-under=74" in validate
+    assert "--cov-fail-under=75" in validate
     assert "mypy --follow-imports=skip" in validate
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
