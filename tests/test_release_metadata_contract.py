@@ -17,7 +17,11 @@ def test_current_version_has_release_notes_and_changelog_entry(repo_root: Path) 
 
     assert notes.is_file()
     assert notes.read_text(encoding="utf-8").startswith(f"# clash-relay {version}\n")
-    assert re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.M)
+    assert re.search(
+        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
+        changelog,
+        re.M,
+    )
 
 
 def test_unreleased_compare_starts_from_current_project_version(repo_root: Path) -> None:
