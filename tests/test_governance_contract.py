@@ -31,9 +31,7 @@ def test_main_governance_contract_matches_authoritative_workflows(repo_root: Pat
     ]
 
     ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(
-        encoding="utf-8"
-    )
+    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     routing = (repo_root / ".github" / "workflows" / "routing-shadow.yml").read_text(
         encoding="utf-8"
     )
