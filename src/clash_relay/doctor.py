@@ -11,6 +11,7 @@ from .ai_application import load_registered_ai_probe_specs
 from .config_loader import load_project
 from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
+from .fork_lint import build_fork_lint
 from .mihomo_matrix import load_mihomo_tags
 from .policy_document import load_policy_document
 from .publishers.cloudflare_kv import CloudflareKVPublisher
@@ -103,6 +104,7 @@ def run_doctor(
     stable_tags = load_mihomo_tags(mihomo_manifest, "stable")
     enabled = _enabled(project)
     enabled_secrets = [str(spec.secret_name) for spec in enabled]
+    fork_lint = build_fork_lint(project)
 
     report: dict[str, Any] = {
         "status": "passed",
@@ -120,6 +122,7 @@ def run_doctor(
         },
         "subscriptions": {"status": "skipped", "enabled": len(enabled)},
         "cloudflare": {"status": "skipped"},
+        "fork_lint": fork_lint,
         "guidance": _guidance(
             enabled_secrets=enabled_secrets,
             public_only=public_only,
@@ -136,6 +139,15 @@ def run_doctor(
         secret_file=secret_file,
         env=environment,
     )
+    report["fork_lint"] = {
+        **fork_lint,
+        "secrets": {
+            "status": "ready",
+            "expected_names": sorted(enabled_secrets),
+            "resolved": len(resolved),
+            "missing": [],
+        },
+    }
     subscription_report: dict[str, Any] = {
         "status": "ready",
         "enabled": len(enabled),
