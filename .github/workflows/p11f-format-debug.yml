@@ -1,10 +1,9 @@
 name: P11F formatter diff
 
 on:
-  pull_request:
-    paths:
-      - "src/clash_relay/rule_compiler.py"
-      - ".github/workflows/p11f-format-debug.yml"
+  push:
+    branches:
+      - agent/p11f-generator-decomposition
 
 permissions:
   contents: read
