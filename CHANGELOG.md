@@ -4,6 +4,41 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-05
+
+### Added
+
+- Production-parity doctor preflight now consumes the same Policy Model v2 scheduling and service-qualification declarations used by production.
+- Service qualification exposes a provider-neutral aggregate result contract while preserving provider-owned probe and cache policy behavior.
+- Scheduler tuning is gated by explicit longitudinal evidence requirements before automatic parameter changes are permitted.
+
+### Changed
+
+- Scheduler, cache, and guard thresholds remain evidence-driven; v2.1.0 does not tune production behavior without sufficient observations.
+- Release validation remains bound to the exact validated SHA and production configuration remains private rather than becoming a GitHub Release asset.
+
+### Security
+
+- The v2-only public contract, `subscription_1` browsing/AI-only isolation, strict >2x admission filter, explicit `ingest_order`, RuntimeGraph topology authority, fail-closed Promotion Guard, and versioned rollback boundaries remain unchanged.
+
+## [2.0.0] - 2026-09-05
+
+### Added
+
+- A clean-slate v2 public contract for configuration, subscriptions, and Policy Model declarations.
+- Explicit `ingest_order` replaces public priority semantics so subscription ordering is deterministic rather than a routing quality score.
+- The compiler -> RuntimeGraph -> qualification -> serializer boundary makes the generated runtime graph the topology fact source for downstream validation and auditing.
+- Exact-SHA validation, hashed dependency installation, pinned Mihomo validation, and provider-owned service qualification are part of the release contract.
+
+### Changed
+
+- V2 rollback requires versioned previous-release state and exact bytes/manifest verification rather than a legacy previous-v1 compatibility slot.
+- GitHub Releases remain source-only; private production configuration and scheduler/qualification state stay outside repository artifacts.
+
+### Security
+
+- `subscription_1` remains restricted to browsing and AI, explicit multipliers strictly greater than 2x are rejected before classification, and production publication remains fail closed behind source, routing, qualification, Promotion Guard, and Mihomo gates.
+
 ## [1.8.1] - 2026-09-04
 
 ### Added
@@ -352,7 +387,9 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/hzoonp/clash-relay/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/hzoonp/clash-relay/compare/v1.8.1...v2.0.0
 [1.8.1]: https://github.com/hzoonp/clash-relay/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/hzoonp/clash-relay/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/hzoonp/clash-relay/compare/v1.6.3...v1.7.0
