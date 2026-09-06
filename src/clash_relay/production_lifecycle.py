@@ -49,6 +49,7 @@ from .production_release_stage import (
 from .publication import publication_gate
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
 from .release_reliability import ReleasePhase, ReleaseProgress
+from .scheduler_observation import publish_scheduler_observation
 from .slo_application import persist_operational_slo
 from .util import atomic_write
 
@@ -316,7 +317,36 @@ class ProductionPipeline:
                 env=os.environ,
             ),
         )
+        if (
+            result.get("status") == "unavailable"
+            and "persist_production_metrics" not in self.warnings
+        ):
+            self.warnings.append("persist_production_metrics")
         self._write_json(self._private("production-metrics-publish.json"), result)
+        return result
+
+    def _publish_scheduler_observation(
+        self,
+        project: ProjectDefinition,
+        *,
+        metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Publish scheduler evidence only from this lifecycle and fresh metrics."""
+
+        if not self.publish:
+            return {"status": "skipped", "reason": "dry_run"}
+        if metrics.get("status") != "published":
+            return {"status": "skipped", "reason": "production_metrics_not_published"}
+        result = self._best_effort_state(
+            "publish_scheduler_observation",
+            lambda: publish_scheduler_observation(project=project, env=os.environ),
+        )
+        if (
+            result.get("status") == "unavailable"
+            and "publish_scheduler_observation" not in self.warnings
+        ):
+            self.warnings.append("publish_scheduler_observation")
+        self._write_json(self._private("scheduler-observation-publish.json"), result)
         return result
 
     def _candidate_slo_identity(self) -> tuple[str | None, int | None]:
@@ -543,6 +573,9 @@ class ProductionPipeline:
             started = time.perf_counter()
             metrics = self._persist_production_metrics(project)
             self._record_timing("production_metrics", started)
+            started = time.perf_counter()
+            scheduler_observation = self._publish_scheduler_observation(project, metrics=metrics)
+            self._record_timing("scheduler_observation", started)
             slo = self._record_operational_slo(
                 project=project,
                 outcome=ProductionOutcome.PASSED,
@@ -585,6 +618,7 @@ class ProductionPipeline:
                 "manifest_status": "passed" if manifest is not None else "unavailable",
                 "derived_state": derived_state.get("status"),
                 "production_metrics": metrics.get("status"),
+                "scheduler_observation": scheduler_observation.get("status"),
                 "operational_slo": slo.get("status"),
                 "warnings": sorted(self.warnings),
             }
