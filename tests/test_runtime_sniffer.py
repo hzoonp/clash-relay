@@ -75,7 +75,9 @@ def test_client_owned_dns_can_enable_sniffer_without_fake_ip() -> None:
 
 
 def test_managed_dns_and_sniffer_are_independent() -> None:
-    output = RuntimeConfigRenderer().render(_runtime(dns=_managed_dns(), sniffer=_sniffer()))
+    output = RuntimeConfigRenderer().render(
+        _runtime(dns=_managed_dns(), sniffer=_sniffer())
+    )
 
     assert output["sniffer"] == _expected_sniffer()
     assert "dns" in output
@@ -83,7 +85,9 @@ def test_managed_dns_and_sniffer_are_independent() -> None:
 
 
 def test_legacy_runtime_without_sniffer_preserves_previous_output() -> None:
-    output = RuntimeConfigRenderer().render(_runtime(dns={"mode": "client"}, sniffer=None))
+    output = RuntimeConfigRenderer().render(
+        _runtime(dns={"mode": "client"}, sniffer=None)
+    )
 
     assert "sniffer" not in output
     assert "dns" not in output
