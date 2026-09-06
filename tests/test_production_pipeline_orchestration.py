@@ -112,7 +112,4 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     assert json.loads(outputs.pre_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.post_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
-    assert (
-        outputs.summary_markdown.read_text(encoding="utf-8")
-        == "PRODUCTION\n\nQUALIFICATION\n"
-    )
+    assert outputs.summary_markdown.read_text(encoding="utf-8") == "PRODUCTION\n\nQUALIFICATION\n"
