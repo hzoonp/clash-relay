@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from clash_relay.generator import _runtime_config
+from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
 
 
 def _runtime(dns: dict[str, object]) -> dict[str, object]:
@@ -37,14 +37,14 @@ def _managed_dns() -> dict[str, object]:
 
 
 def test_client_dns_mode_leaves_dns_to_the_client() -> None:
-    output = _runtime_config(_runtime({"mode": "client"}))
+    output = RuntimeConfigRenderer().render(_runtime({"mode": "client"}))
 
     assert "dns" not in output
     assert output["profile"] == {"store-selected": True}
 
 
 def test_managed_dns_mode_preserves_explicit_dns_runtime() -> None:
-    output = _runtime_config(_runtime(_managed_dns()))
+    output = RuntimeConfigRenderer().render(_runtime(_managed_dns()))
 
     assert output["profile"] == {"store-selected": True, "store-fake-ip": True}
     assert output["dns"] == {
@@ -59,7 +59,7 @@ def test_managed_dns_mode_preserves_explicit_dns_runtime() -> None:
 def test_legacy_dns_without_mode_defaults_to_managed() -> None:
     dns = _managed_dns()
     dns.pop("mode")
-    output = _runtime_config(_runtime(dns))
+    output = RuntimeConfigRenderer().render(_runtime(dns))
 
     assert "dns" in output
     assert output["profile"]["store-fake-ip"] is True

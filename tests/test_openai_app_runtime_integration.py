@@ -4,18 +4,18 @@ from pathlib import Path
 
 import yaml
 
-from clash_relay.generator import _runtime_config
 from clash_relay.openai_app_contract import (
     OPENAI_SERVICE_TARGET,
     RULE_PROVIDER,
     apply_route_lock,
     audit_route_lock,
 )
+from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
 
 
 def test_canonical_client_dns_sniffer_and_openai_route_lock_coexist(repo_root: Path) -> None:
     canonical = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
-    runtime = _runtime_config(canonical)
+    runtime = RuntimeConfigRenderer().render(canonical)
 
     assert canonical["runtime"]["dns"] == {"mode": "client"}
     assert "dns" not in runtime

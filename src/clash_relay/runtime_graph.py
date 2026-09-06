@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -73,7 +73,12 @@ class CandidateArtifact:
 
 
 class RuntimeGraph:
-    """Normalized graph indexes for one generated Mihomo document."""
+    """Normalized, snapshot-based graph indexes for one Mihomo document.
+
+    Construction detaches the graph from the mutable compiler/qualification
+    document.  Public mapping properties also return detached snapshots, so
+    topology can only change by constructing a new RuntimeGraph.
+    """
 
     def __init__(
         self,
@@ -85,19 +90,48 @@ class RuntimeGraph:
         provider_proxies: dict[str, frozenset[str]],
         provider_dialers: dict[str, frozenset[str]],
     ) -> None:
-        self.candidate = candidate
-        self.groups = groups
-        self.providers = providers
-        self.proxies = proxies
-        self.provider_proxies = provider_proxies
-        self.provider_dialers = provider_dialers
+        self._candidate = copy.deepcopy(dict(candidate))
+        self._groups = copy.deepcopy(groups)
+        self._providers = copy.deepcopy(providers)
+        self._proxies = copy.deepcopy(proxies)
+        self._provider_proxies = dict(provider_proxies)
+        self._provider_dialers = dict(provider_dialers)
+
+    @property
+    def candidate(self) -> dict[str, Any]:
+        """Return a detached candidate snapshot."""
+
+        return copy.deepcopy(self._candidate)
+
+    @property
+    def groups(self) -> dict[str, dict[str, Any]]:
+        """Return detached group rows for read-only consumers."""
+
+        return copy.deepcopy(self._groups)
+
+    @property
+    def providers(self) -> dict[str, dict[str, Any]]:
+        return copy.deepcopy(self._providers)
+
+    @property
+    def proxies(self) -> dict[str, dict[str, Any]]:
+        return copy.deepcopy(self._proxies)
+
+    @property
+    def provider_proxies(self) -> dict[str, frozenset[str]]:
+        return dict(self._provider_proxies)
+
+    @property
+    def provider_dialers(self) -> dict[str, frozenset[str]]:
+        return dict(self._provider_dialers)
 
     @classmethod
     def from_candidate(cls, candidate: Mapping[str, Any]) -> RuntimeGraph:
         if not isinstance(candidate, Mapping):
             raise ValidationError("runtime graph requires a candidate mapping")
 
-        raw_groups = candidate.get("proxy-groups", [])
+        snapshot = copy.deepcopy(dict(candidate))
+        raw_groups = snapshot.get("proxy-groups", [])
         if not isinstance(raw_groups, list):
             raise ValidationError("runtime graph requires proxy-groups to be a list")
         groups: dict[str, dict[str, Any]] = {}
@@ -109,7 +143,7 @@ class RuntimeGraph:
                 raise ValidationError(f"runtime graph found duplicate group {name!r}")
             groups[name] = row
 
-        raw_proxies = candidate.get("proxies", [])
+        raw_proxies = snapshot.get("proxies", [])
         if not isinstance(raw_proxies, list):
             raise ValidationError("runtime graph requires proxies to be a list")
         proxies: dict[str, dict[str, Any]] = {}
@@ -118,7 +152,7 @@ class RuntimeGraph:
                 raise ValidationError("runtime graph found a malformed top-level proxy")
             proxies[str(proxy["name"])] = proxy
 
-        raw_providers = candidate.get("proxy-providers", {})
+        raw_providers = snapshot.get("proxy-providers", {})
         if not isinstance(raw_providers, dict):
             raise ValidationError("runtime graph requires proxy-providers to be a mapping")
         providers: dict[str, dict[str, Any]] = {}
@@ -150,7 +184,7 @@ class RuntimeGraph:
             provider_dialers[provider_name] = frozenset(dialers)
 
         return cls(
-            candidate=candidate,
+            candidate=snapshot,
             groups=groups,
             providers=providers,
             proxies=proxies,
@@ -159,7 +193,7 @@ class RuntimeGraph:
         )
 
     def group_members(self, name: str) -> tuple[str, ...]:
-        group = self.groups.get(name)
+        group = self._groups.get(name)
         if group is None:
             raise ValidationError(f"runtime graph group {name!r} is missing")
         members = group.get("proxies", [])
@@ -168,7 +202,7 @@ class RuntimeGraph:
         return tuple(str(item) for item in members)
 
     def group_uses(self, name: str) -> tuple[str, ...]:
-        group = self.groups.get(name)
+        group = self._groups.get(name)
         if group is None:
             raise ValidationError(f"runtime graph group {name!r} is missing")
         uses = group.get("use", [])
@@ -177,6 +211,56 @@ class RuntimeGraph:
         if not isinstance(uses, list) or not all(isinstance(item, str) for item in uses):
             raise ValidationError(f"runtime graph group {name!r} has invalid provider references")
         return tuple(str(item) for item in uses)
+
+    def reachable_groups(self, starts: Iterable[str]) -> frozenset[str]:
+        """Return group-only reachability for UI/rule presentation audits."""
+
+        found: set[str] = set()
+        pending = [str(item) for item in starts if str(item) in self._groups]
+        while pending:
+            name = pending.pop()
+            if name in found:
+                continue
+            found.add(name)
+            pending.extend(
+                member
+                for member in self.group_members(name)
+                if member in self._groups and member not in found
+            )
+        return frozenset(found)
+
+    def group_cycles(self) -> tuple[tuple[str, ...], ...]:
+        """Return deterministic proxy-group reference cycles."""
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        stack: list[str] = []
+        found: list[tuple[str, ...]] = []
+
+        def visit(name: str) -> None:
+            if name in visiting:
+                try:
+                    start = stack.index(name)
+                except ValueError:  # pragma: no cover - defensive invariant
+                    start = 0
+                found.append((*stack[start:], name))
+                return
+            if name in visited:
+                return
+            visiting.add(name)
+            stack.append(name)
+            children = sorted(
+                member for member in self.group_members(name) if member in self._groups
+            )
+            for child in children:
+                visit(child)
+            stack.pop()
+            visiting.remove(name)
+            visited.add(name)
+
+        for name in sorted(self._groups):
+            visit(name)
+        return tuple(found)
 
     def walk(self, target: str) -> GraphReachability:
         groups: set[str] = set()
@@ -190,13 +274,13 @@ class RuntimeGraph:
             if reference in BUILTIN_TARGETS:
                 builtins.add(reference)
                 return
-            if reference in self.proxies:
+            if reference in self._proxies:
                 proxies.add(reference)
-                dialer = self.proxies[reference].get("dialer-proxy")
+                dialer = self._proxies[reference].get("dialer-proxy")
                 if isinstance(dialer, str) and dialer:
                     visit(dialer)
                 return
-            group = self.groups.get(reference)
+            group = self._groups.get(reference)
             if group is None:
                 unresolved.add(reference)
                 return
@@ -208,12 +292,12 @@ class RuntimeGraph:
             groups.add(reference)
             for provider_name in self.group_uses(reference):
                 providers.add(provider_name)
-                if provider_name not in self.providers:
+                if provider_name not in self._providers:
                     unresolved.add(provider_name)
                     continue
-                for proxy_name in self.provider_proxies.get(provider_name, frozenset()):
+                for proxy_name in self._provider_proxies.get(provider_name, frozenset()):
                     visit(proxy_name)
-                for dialer in self.provider_dialers.get(provider_name, frozenset()):
+                for dialer in self._provider_dialers.get(provider_name, frozenset()):
                     visit(dialer)
             for member in self.group_members(reference):
                 visit(member)
@@ -259,12 +343,12 @@ class RuntimeGraph:
             if name in visited:
                 continue
             visited.add(name)
-            if name not in self.groups:
+            if name not in self._groups:
                 continue
             for provider_name in self.group_uses(name):
-                if provider_name in self.providers and provider_name not in providers:
+                if provider_name in self._providers and provider_name not in providers:
                     providers.append(provider_name)
-            pending.extend(member for member in self.group_members(name) if member in self.groups)
+            pending.extend(member for member in self.group_members(name) if member in self._groups)
         return tuple(providers)
 
     def reachable_sources(

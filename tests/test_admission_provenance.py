@@ -15,12 +15,12 @@ def _proxy(name: str, *, server: str = "shared.invalid") -> dict:
     return {"name": name, "type": "http", "server": server, "port": 443}
 
 
-def _node(source_id: str, allowed_uses: set[str], fingerprint: str, priority: int) -> Node:
+def _node(source_id: str, allowed_uses: set[str], fingerprint: str, ingest_order: int) -> Node:
     name = f"{source_id} HK"
     return Node(
         source_id=source_id,
         source_display_name=source_id,
-        source_priority=priority,
+        source_ingest_order=ingest_order,
         source_allowed_uses=frozenset(allowed_uses),
         source_allowed_countries=frozenset({"*"}),
         original_name=name,
