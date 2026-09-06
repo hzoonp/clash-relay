@@ -14,7 +14,11 @@ _RECENT_EVENT_WINDOW = 10
 
 
 def _non_negative_int(value: Any) -> int:
-    return int(value) if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+    return (
+        int(value)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else 0
+    )
 
 
 def _runs(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -60,11 +64,19 @@ def _failure_trend(state: dict[str, Any]) -> tuple[float, int]:
     events: list[tuple[int, bool]] = []
     for run in _runs(state):
         epoch = run.get("epoch")
-        if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0:
+        if (
+            isinstance(epoch, int)
+            and not isinstance(epoch, bool)
+            and epoch >= 0
+        ):
             events.append((epoch, False))
     for failure in _failures(state):
         epoch = failure.get("epoch")
-        if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0:
+        if (
+            isinstance(epoch, int)
+            and not isinstance(epoch, bool)
+            and epoch >= 0
+        ):
             events.append((epoch, True))
     events.sort(key=lambda item: (item[0], item[1]))
     recent = events[-_RECENT_EVENT_WINDOW:]
@@ -103,7 +115,11 @@ def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
 
     runs = _runs(state)
     latest = runs[-1] if runs else {}
-    browsing = latest.get("browsing") if isinstance(latest.get("browsing"), dict) else {}
+    browsing = (
+        latest.get("browsing")
+        if isinstance(latest.get("browsing"), dict)
+        else {}
+    )
     ai = latest.get("ai") if isinstance(latest.get("ai"), dict) else {}
     services = _service_coverage(ai)
     regions = _stable_regions(browsing)
@@ -116,7 +132,9 @@ def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     return {
-        "status": "ready" if len(runs) >= _MIN_EVIDENCE_RUNS else "insufficient_history",
+        "status": (
+            "ready" if len(runs) >= _MIN_EVIDENCE_RUNS else "insufficient_history"
+        ),
         "mode": "observe_only",
         "privacy": "aggregate_only",
         "sample_runs": len(runs),
@@ -132,7 +150,9 @@ def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
         },
         "services": {
             "qualified_by_service": services,
-            "covered_service_count": sum(1 for count in services.values() if count > 0),
+            "covered_service_count": sum(
+                1 for count in services.values() if count > 0
+            ),
             "service_count": len(services),
             "minimum_qualified_nodes": min(services.values()) if services else 0,
         },
