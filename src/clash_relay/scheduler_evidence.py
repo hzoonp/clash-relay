@@ -1,6 +1,6 @@
 """Aggregate-only evidence compiler for future scheduler policy experiments.
 
-This module intentionally does not rank nodes or mutate runtime topology.  It
+This module intentionally does not rank nodes or mutate runtime topology. It
 consumes the privacy-safe production metrics state and emits only bounded,
 aggregate signals that can be reviewed before any scheduler behavior changes.
 """
@@ -14,75 +14,68 @@ _RECENT_EVENT_WINDOW = 10
 
 
 def _non_negative_int(value: Any) -> int:
-    return (
-        int(value)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
-        else 0
-    )
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return 0
+    return value
 
 
-def _runs(state: dict[str, Any]) -> list[dict[str, Any]]:
-    value = state.get("runs")
+def _rows(state: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = state.get(key)
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
 
 
-def _failures(state: dict[str, Any]) -> list[dict[str, Any]]:
-    value = state.get("failures")
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
+def _event_epoch(row: dict[str, Any]) -> int | None:
+    value = row.get("epoch")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    return value
 
 
 def _stable_regions(browsing: dict[str, Any]) -> list[str]:
     regions = browsing.get("regions")
     if not isinstance(regions, dict):
         return []
-    return sorted(
-        str(region)
-        for region, summary in regions.items()
-        if isinstance(region, str)
-        and region
-        and isinstance(summary, dict)
-        and _non_negative_int(summary.get("stable")) > 0
-    )
+    stable: list[str] = []
+    for region, summary in regions.items():
+        if not isinstance(region, str) or not region:
+            continue
+        if not isinstance(summary, dict):
+            continue
+        if _non_negative_int(summary.get("stable")) > 0:
+            stable.append(region)
+    return sorted(stable)
 
 
 def _service_coverage(ai: dict[str, Any]) -> dict[str, int]:
     value = ai.get("qualified_by_service")
     if not isinstance(value, dict):
         return {}
-    return {
-        str(name): _non_negative_int(count)
-        for name, count in sorted(value.items())
-        if isinstance(name, str) and name
-    }
+    result: dict[str, int] = {}
+    for name, count in sorted(value.items()):
+        if isinstance(name, str) and name:
+            result[name] = _non_negative_int(count)
+    return result
 
 
 def _failure_trend(state: dict[str, Any]) -> tuple[float, int]:
     events: list[tuple[int, bool]] = []
-    for run in _runs(state):
-        epoch = run.get("epoch")
-        if (
-            isinstance(epoch, int)
-            and not isinstance(epoch, bool)
-            and epoch >= 0
-        ):
+    for run in _rows(state, "runs"):
+        epoch = _event_epoch(run)
+        if epoch is not None:
             events.append((epoch, False))
-    for failure in _failures(state):
-        epoch = failure.get("epoch")
-        if (
-            isinstance(epoch, int)
-            and not isinstance(epoch, bool)
-            and epoch >= 0
-        ):
+    for failure in _rows(state, "failures"):
+        epoch = _event_epoch(failure)
+        if epoch is not None:
             events.append((epoch, True))
     events.sort(key=lambda item: (item[0], item[1]))
     recent = events[-_RECENT_EVENT_WINDOW:]
-    failure_rate = (
-        round(sum(1 for _, failed in recent if failed) / len(recent), 3) if recent else 0.0
-    )
+    if recent:
+        failures = sum(1 for _, failed in recent if failed)
+        failure_rate = round(failures / len(recent), 3)
+    else:
+        failure_rate = 0.0
     streak = 0
     for _, failed in reversed(events):
         if not failed:
@@ -106,35 +99,27 @@ def _retry_summary(runs: list[dict[str, Any]]) -> tuple[int, int]:
     return retry_runs, recoveries
 
 
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
-    """Compile reviewable scheduler evidence without exposing node identity.
+    """Compile reviewable scheduler evidence without exposing node identity."""
 
-    The returned document is deliberately observation-only.  No field is a
-    selector score, weight, or routing decision.
-    """
-
-    runs = _runs(state)
+    runs = _rows(state, "runs")
     latest = runs[-1] if runs else {}
-    browsing = (
-        latest.get("browsing")
-        if isinstance(latest.get("browsing"), dict)
-        else {}
-    )
-    ai = latest.get("ai") if isinstance(latest.get("ai"), dict) else {}
+    browsing = _mapping(latest.get("browsing"))
+    ai = _mapping(latest.get("ai"))
+    promotion = _mapping(latest.get("promotion_guard"))
     services = _service_coverage(ai)
     regions = _stable_regions(browsing)
     failure_rate, failure_streak = _failure_trend(state)
     retry_runs, retry_recoveries = _retry_summary(runs)
-    promotion = (
-        latest.get("promotion_guard")
-        if isinstance(latest.get("promotion_guard"), dict)
-        else {}
-    )
+    status = "ready" if len(runs) >= _MIN_EVIDENCE_RUNS else "insufficient_history"
+    covered_services = sum(1 for count in services.values() if count > 0)
 
     return {
-        "status": (
-            "ready" if len(runs) >= _MIN_EVIDENCE_RUNS else "insufficient_history"
-        ),
+        "status": status,
         "mode": "observe_only",
         "privacy": "aggregate_only",
         "sample_runs": len(runs),
@@ -150,9 +135,7 @@ def compile_scheduler_evidence(state: dict[str, Any]) -> dict[str, Any]:
         },
         "services": {
             "qualified_by_service": services,
-            "covered_service_count": sum(
-                1 for count in services.values() if count > 0
-            ),
+            "covered_service_count": covered_services,
             "service_count": len(services),
             "minimum_qualified_nodes": min(services.values()) if services else 0,
         },
