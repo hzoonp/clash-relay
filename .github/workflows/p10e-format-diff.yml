@@ -1,6 +1,8 @@
 name: P10E Format Diff
 
 on:
+  push:
+    branches: [agent/p10e-coverage-75]
   pull_request:
     branches: [main]
 
@@ -9,7 +11,7 @@ permissions:
 
 jobs:
   format-diff:
-    if: github.head_ref == 'agent/p10e-coverage-75'
+    if: github.event_name == 'push' || github.head_ref == 'agent/p10e-coverage-75'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
