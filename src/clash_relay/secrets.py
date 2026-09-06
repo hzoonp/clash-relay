@@ -55,6 +55,36 @@ def load_secret_mapping(
     return result
 
 
+def inspect_subscription_secret_names(
+    specs: list[SubscriptionSpec],
+    *,
+    secret_file: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return only secret names/counts needed for fork diagnostics; never return URL values."""
+
+    environment = os.environ if env is None else env
+    mapping = load_secret_mapping(secret_file, environment)
+    expected = sorted({spec.secret_name for spec in specs if spec.enabled})
+    resolved: list[str] = []
+    missing: list[str] = []
+    for name in expected:
+        value = mapping.get(name) or environment.get(name)
+        if isinstance(value, str) and value.strip():
+            resolved.append(name)
+        else:
+            missing.append(name)
+    return {
+        "status": "ready" if not missing else "missing",
+        "category": None if not missing else "missing_subscription_secrets",
+        "expected_names": expected,
+        "resolved_names": resolved,
+        "missing": missing,
+        "resolved": len(resolved),
+        "expected": len(expected),
+    }
+
+
 def resolve_subscription_urls(
     specs: list[SubscriptionSpec],
     *,
@@ -66,9 +96,8 @@ def resolve_subscription_urls(
     resolved: dict[str, str] = {}
     missing: list[str] = []
     secret_values: list[str] = list(mapping.values())
-    for spec in specs:
-        if not spec.enabled:
-            continue
+    enabled = [spec for spec in specs if spec.enabled]
+    for spec in enabled:
         value = mapping.get(spec.secret_name) or environment.get(spec.secret_name)
         if not value or not value.strip():
             missing.append(spec.secret_name)
@@ -77,5 +106,8 @@ def resolve_subscription_urls(
         secret_values.append(value.strip())
     if missing:
         names = ", ".join(sorted(set(missing)))
-        raise SecretError(f"missing subscription URL secret(s): {names}")
+        raise SecretError(
+            "missing subscription URL secret(s): "
+            f"{names}; category=missing_subscription_secrets; resolved={len(resolved)}/{len(enabled)}"
+        )
     return resolved, tuple(dict.fromkeys(secret_values))
