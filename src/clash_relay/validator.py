@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any
 
 from .errors import ValidationError
+from .runtime_graph import RuntimeGraph
 from .schema import validate_schema
 from .status import parse_expected_status
 from .util import stable_json
@@ -22,35 +22,6 @@ _FORBIDDEN_TOP_LEVEL = {
 _SAFE_SHARED_ANCHOR_PREFIXES = ("__CR_AUTO_", "__CR_FALLBACK_", "__CR_FAIL_CLOSED_")
 
 
-def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
-    visiting: set[str] = set()
-    visited: set[str] = set()
-    stack: list[str] = []
-    found: list[list[str]] = []
-
-    def visit(node: str) -> None:
-        if node in visiting:
-            try:
-                start = stack.index(node)
-            except ValueError:
-                start = 0
-            found.append([*stack[start:], node])
-            return
-        if node in visited:
-            return
-        visiting.add(node)
-        stack.append(node)
-        for child in sorted(graph.get(node, set())):
-            visit(child)
-        stack.pop()
-        visiting.remove(node)
-        visited.add(node)
-
-    for node in sorted(graph):
-        visit(node)
-    return found
-
-
 def _rule_target(rule: str) -> str:
     parts = rule.split(",")
     if len(parts) < 2:
@@ -62,39 +33,6 @@ def _rule_target(rule: str) -> str:
     if len(parts) < 3:
         raise ValidationError(f"generated rule has no target: {rule!r}")
     return parts[2]
-
-
-def _reachable_providers(anchor: str, groups: dict[str, dict[str, Any]]) -> set[str]:
-    found: set[str] = set()
-    pending = [anchor]
-    visited: set[str] = set()
-    while pending:
-        name = pending.pop()
-        if name in visited:
-            continue
-        visited.add(name)
-        group = groups.get(name)
-        if not isinstance(group, dict):
-            continue
-        uses = group.get("use", [])
-        if isinstance(uses, list):
-            found.update(item for item in uses if isinstance(item, str))
-        references = group.get("proxies", [])
-        if isinstance(references, list):
-            pending.extend(item for item in references if isinstance(item, str) and item in groups)
-    return found
-
-
-def _reachable_groups(starts: set[str], graph: dict[str, set[str]]) -> set[str]:
-    found: set[str] = set()
-    pending = list(starts)
-    while pending:
-        name = pending.pop()
-        if name in found:
-            continue
-        found.add(name)
-        pending.extend(graph.get(name, set()) - found)
-    return found
 
 
 def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()) -> None:
@@ -209,9 +147,14 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
         group_names.add(name)
         group_rows[name] = group
 
+    runtime_graph: RuntimeGraph | None = None
+    try:
+        runtime_graph = RuntimeGraph.from_candidate(config)
+    except ValidationError as exc:
+        errors.append(f"runtime graph normalization failed: {exc}")
+
     hidden_names = {name for name, group in group_rows.items() if bool(group.get("hidden", False))}
     presentation_hidden_names = {name for name in hidden_names if not name.startswith("__CR_")}
-    graph: dict[str, set[str]] = defaultdict(set)
     visible_names: set[str] = set()
     for name, group in group_rows.items():
         references = group.get("proxies", [])
@@ -219,9 +162,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             errors.append(f"group {name!r} proxies must be a list")
             references = []
         for reference in references or []:
-            if reference in group_names:
-                graph[name].add(reference)
-            elif reference not in _BUILTINS:
+            if reference not in group_names and reference not in _BUILTINS:
                 errors.append(f"group {name!r} references unknown proxy/group {reference!r}")
         uses = group.get("use", [])
         if uses is not None and not isinstance(uses, list):
@@ -270,9 +211,10 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                             f"internal groups: {unsafe_hidden_refs}"
                         )
                     reachable: set[str] = set()
-                    for reference in public_refs:
-                        if isinstance(reference, str) and reference in group_rows:
-                            reachable.update(_reachable_providers(reference, group_rows))
+                    if runtime_graph is not None:
+                        for reference in public_refs:
+                            if isinstance(reference, str) and reference in group_rows:
+                                reachable.update(runtime_graph.provider_order(reference))
                     if reachable and set(uses) != reachable:
                         errors.append(
                             f"filtered provider-backed public group {name!r} exposes providers "
@@ -283,8 +225,8 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                         f"provider-backed public group {name!r} must point only to one hidden "
                         "routing anchor"
                     )
-                else:
-                    reachable = _reachable_providers(str(public_refs[0]), group_rows)
+                elif runtime_graph is not None:
+                    reachable = set(runtime_graph.provider_order(str(public_refs[0])))
                     if set(uses) != reachable:
                         errors.append(
                             f"provider-backed public group {name!r} exposes providers outside "
@@ -317,12 +259,13 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             if group_type == "select" and uses:
                 nested_refs = group.get("proxies", [])
                 if (
-                    isinstance(nested_refs, list)
+                    runtime_graph is not None
+                    and isinstance(nested_refs, list)
                     and len(nested_refs) == 1
                     and nested_refs[0] in hidden_names
                     and str(nested_refs[0]).startswith(_SAFE_SHARED_ANCHOR_PREFIXES)
                 ):
-                    reachable = _reachable_providers(str(nested_refs[0]), group_rows)
+                    reachable = set(runtime_graph.provider_order(str(nested_refs[0])))
                     if set(uses) != reachable:
                         errors.append(
                             f"nested hidden group {name!r} exposes providers outside its routing anchor"
@@ -341,9 +284,14 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                     f"provider {provider_name!r} dialer-proxy references an unknown group"
                 )
 
-    cycle_list = _cycles(dict(graph))
-    if cycle_list:
-        errors.append(f"proxy group reference cycle detected: {cycle_list[0]}")
+    if runtime_graph is not None:
+        try:
+            cycle_list = runtime_graph.group_cycles()
+        except ValidationError as exc:
+            errors.append(str(exc))
+        else:
+            if cycle_list:
+                errors.append(f"proxy group reference cycle detected: {list(cycle_list[0])}")
 
     rule_targets: set[str] = set()
     rules = config.get("rules", [])
@@ -372,15 +320,16 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             elif target in group_names:
                 rule_targets.add(target)
 
-    reachable_from_ui = _reachable_groups(visible_names, dict(graph))
-    reachable_from_rules = _reachable_groups(rule_targets, dict(graph))
-    reachable_presentation = reachable_from_ui | reachable_from_rules
-    for name in sorted(presentation_hidden_names):
-        if name not in reachable_presentation:
-            errors.append(
-                f"hidden presentation group {name!r} must be reachable from a public group "
-                "or an active rule target"
-            )
+    if runtime_graph is not None:
+        reachable_from_ui = set(runtime_graph.reachable_groups(visible_names))
+        reachable_from_rules = set(runtime_graph.reachable_groups(rule_targets))
+        reachable_presentation = reachable_from_ui | reachable_from_rules
+        for name in sorted(presentation_hidden_names):
+            if name not in reachable_presentation:
+                errors.append(
+                    f"hidden presentation group {name!r} must be reachable from a public group "
+                    "or an active rule target"
+                )
 
     serialized = stable_json(config)
     for value in secret_urls:
