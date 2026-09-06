@@ -1,6 +1,6 @@
 # Repository governance
 
-`main` is the production source branch. Repository settings must enforce the desired state in `.github/main-governance.json` before the P11 production merge train starts.
+`main` is the production source branch. Repository settings must enforce the desired state in `.github/main-governance.json` before a production merge train starts.
 
 ## Required main-branch policy
 
