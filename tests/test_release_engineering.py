@@ -34,8 +34,12 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert "CLASH_RELAY_SUBSCRIPTIONS" not in text
 
 
-def test_release_workflow_does_not_duplicate_the_authoritative_quality_gate(repo_root: Path) -> None:
-    text = (repo_root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+def test_release_workflow_does_not_duplicate_the_authoritative_quality_gate(
+    repo_root: Path,
+) -> None:
+    text = (repo_root / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "ruff check" not in text
     assert "ruff format" not in text
