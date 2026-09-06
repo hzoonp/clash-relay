@@ -11,6 +11,7 @@ from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
+from clash_relay.production_failure_metrics import persist_failure_diagnostic
 from clash_relay.production_lifecycle import (
     ProductionLifecyclePaths,
     ProductionPipeline,
@@ -44,6 +45,7 @@ def _enforce_validated_ci_sha(*, publish: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    publish = False
     try:
         publish = resolve_publication_mode(
             explicit_publish=args.publish,
@@ -64,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (OSError, ClashRelayError) as exc:
         diagnostic = safe_failure_diagnostic(exc)
+        if publish:
+            persist_failure_diagnostic(root=args.root, diagnostic=diagnostic, env=os.environ)
         print(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 2
 
