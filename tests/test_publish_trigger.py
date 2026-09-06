@@ -99,7 +99,7 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
         "metrics = self._persist_production_metrics(project)",
-        "scheduler_observation = self._publish_scheduler_observation(project, metrics=metrics)",
+        "scheduler_observation = self._publish_scheduler_observation(",
     ]
     positions = [lifecycle.index(stage) for stage in stages]
     assert positions == sorted(positions)
@@ -119,19 +119,21 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
     assert "qualification_path=paths.qualification" in release_stage[:matrix]
 
 
-def test_derived_state_and_observation_persistence_remain_post_commit_and_best_effort() -> None:
+def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     text = LIFECYCLE.read_text()
     release = text.index("release = release_stage.release")
     persist = text.index("derived_state = self._persist_derived_state(project)")
     metrics = text.index("metrics = self._persist_production_metrics(project)")
-    observation = text.index(
-        "scheduler_observation = self._publish_scheduler_observation(project, metrics=metrics)"
-    )
+    observation = text.index("scheduler_observation = self._publish_scheduler_observation(")
     assert release < persist < metrics < observation
     assert text.count("self._best_effort_state(") == 4
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
-    assert 'if not self.publish:\n            return {"status": "skipped", "reason": "dry_run"}' in text
+    dry_run_guard = (
+        'if not self.publish:\n'
+        '            return {"status": "skipped", "reason": "dry_run"}'
+    )
+    assert dry_run_guard in text
     assert 'metrics.get("status") != "published"' in text
 
 
