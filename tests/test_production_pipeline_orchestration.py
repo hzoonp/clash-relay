@@ -35,7 +35,9 @@ def test_pipeline_json_helpers_fail_closed_and_write_deterministically(tmp_path)
     assert output.read_text(encoding="utf-8") == '{\n  "a": 1,\n  "b": 2\n}\n'
 
 
-def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(monkeypatch, tmp_path) -> None:
+def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
+    monkeypatch, tmp_path
+) -> None:
     events: list[str] = []
     project = SimpleNamespace(acl4ssr=None)
     project_paths = ProjectPaths(
@@ -80,7 +82,11 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(monkeypa
 
     monkeypatch.setattr(pipeline, "audit_candidate", fake_audit)
     monkeypatch.setattr(pipeline, "run_qualification_pipeline", fake_qualification)
-    monkeypatch.setattr(pipeline, "render_production_summary_markdown", lambda _report: "PRODUCTION\n")
+    monkeypatch.setattr(
+        pipeline,
+        "render_production_summary_markdown",
+        lambda _report: "PRODUCTION\n",
+    )
     monkeypatch.setattr(
         pipeline,
         "render_qualification_summary_markdown",
@@ -105,5 +111,7 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(monkeypa
     }
     assert json.loads(outputs.pre_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.post_audit.read_text(encoding="utf-8"))["status"] == "passed"
-    assert json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
+    assert (
+        json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
+    )
     assert outputs.summary_markdown.read_text(encoding="utf-8") == "PRODUCTION\n\nQUALIFICATION\n"
