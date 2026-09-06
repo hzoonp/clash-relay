@@ -15,7 +15,9 @@ from clash_relay.errors import ValidationError
 
 
 def test_history_inputs_require_complete_path_triple(tmp_path: Path) -> None:
-    with pytest.raises(ValidationError, match="requires history, history_key, and next_history"):
+    with pytest.raises(
+        ValidationError, match="requires history, history_key, and next_history"
+    ):
         _history_inputs(
             history=tmp_path / "history.json",
             history_key=None,
