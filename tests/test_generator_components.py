@@ -21,16 +21,30 @@ def test_runtime_config_renderer_preserves_client_owned_dns(repo_root: Path) -> 
     assert rendered["sniffer"]["enable"] is True
 
 
-def test_rule_compiler_owns_direct_and_final_rules(repo_root: Path) -> None:
-    result = RuleCompiler(repo_root).compile(
+def test_rule_compiler_owns_direct_and_final_rules(tmp_path: Path) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / "direct.yaml").write_text(
+        """version: 1
+rules:
+  - type: IP-CIDR
+    value: 10.0.0.0/8
+    options: [no-resolve]
+""",
+        encoding="utf-8",
+    )
+
+    result = RuleCompiler(tmp_path).compile(
         modules={"general": True},
         policies={"pools": []},
         groups=[{"name": "Proxy"}],
         final_target="Proxy",
     )
 
-    assert result.rules[-1] == "MATCH,Proxy"
-    assert any(rule.endswith(",DIRECT") for rule in result.rules[:-1])
+    assert result.rules == [
+        "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
+        "MATCH,Proxy",
+    ]
     assert result.rule_providers == {}
 
 
