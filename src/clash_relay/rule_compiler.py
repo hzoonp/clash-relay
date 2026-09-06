@@ -87,8 +87,7 @@ class RuleCompiler:
             )
 
         rendered_rules = [
-            self._render_rule(rule, "DIRECT")
-            for rule in self._load_rules("rules/direct.yaml")
+            self._render_rule(rule, "DIRECT") for rule in self._load_rules("rules/direct.yaml")
         ]
         rendered_rules.extend(
             value for _, _, _, value in sorted(rule_rows, key=lambda item: item[:3])
@@ -97,9 +96,7 @@ class RuleCompiler:
             "Proxy" if modules.get("general", False) else "DIRECT"
         )
         if resolved_final_target not in available_targets:
-            raise GenerationError(
-                f"final routing target is unavailable: {resolved_final_target!r}"
-            )
+            raise GenerationError(f"final routing target is unavailable: {resolved_final_target!r}")
         rendered_rules.append(f"MATCH,{resolved_final_target}")
 
         return RuleCompilation(
