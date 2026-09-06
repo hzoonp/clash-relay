@@ -21,11 +21,20 @@ def _env() -> dict[str, str]:
     }
 
 
-def test_scheduler_observation_publishes_only_compiled_aggregate_evidence(monkeypatch) -> None:
+def test_scheduler_observation_publishes_only_compiled_aggregate_evidence(
+    monkeypatch,
+) -> None:
     writes: list[tuple[str, bytes]] = []
 
     class FakePublisher:
-        def __init__(self, *, token: str, account_id: str, namespace_title: str, key_name: str):
+        def __init__(
+            self,
+            *,
+            token: str,
+            account_id: str,
+            namespace_title: str,
+            key_name: str,
+        ):
             assert token == "PRIVATE-TOKEN"
             assert account_id == "PRIVATE-ACCOUNT"
             assert namespace_title == "PRIVATE-NAMESPACE"
@@ -59,7 +68,11 @@ def test_scheduler_observation_publishes_only_compiled_aggregate_evidence(monkey
         "failures": [],
     }
     monkeypatch.setattr(observation, "CloudflareKVPublisher", FakePublisher)
-    monkeypatch.setattr(observation, "parse_metrics_bytes", lambda _content: (state, "loaded"))
+    monkeypatch.setattr(
+        observation,
+        "parse_metrics_bytes",
+        lambda _content: (state, "loaded"),
+    )
 
     result = observation.publish_scheduler_observation(project=_project(), env=_env())
 
@@ -85,7 +98,9 @@ def test_scheduler_observation_skips_without_cloudflare_credentials() -> None:
     }
 
 
-def test_scheduler_observation_is_best_effort_on_metrics_transport_failure(monkeypatch) -> None:
+def test_scheduler_observation_is_best_effort_on_metrics_transport_failure(
+    monkeypatch,
+) -> None:
     class FailingPublisher:
         def __init__(self, **_kwargs):
             pass
