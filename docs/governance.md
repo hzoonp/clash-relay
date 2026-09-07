@@ -20,6 +20,48 @@ GitHub branch protection and rulesets operate on the check-run context shown by 
 
 Do not configure `Validated SHA` by itself as the CI required status check. The required GitHub context is `Validate exact commit / Validated SHA`.
 
+## Live activation procedure
+
+A repository administrator must activate the policy in GitHub repository settings before the production merge train starts.
+
+Use a branch ruleset or equivalent branch-protection rule that targets `main`, set enforcement to active, and configure all of the following:
+
+1. Require changes to enter through a pull request.
+2. Keep required approvals at `0`.
+3. Require these exact status-check contexts:
+   - `Validate exact commit / Validated SHA`
+   - `Verify finalized Routing V2 graph`
+4. Block force pushes.
+5. Block deletion of `main`.
+
+Do not select the inner job name `Validated SHA` as a substitute for the full CI check context.
+
+## Post-activation acceptance check
+
+Treat activation as complete only after all of the following are true at the same time:
+
+- the live rule targets `main`;
+- its enforcement state is active;
+- pull requests are required;
+- required approvals are `0`;
+- `Validate exact commit / Validated SHA` is required;
+- `Verify finalized Routing V2 graph` is required;
+- force pushes are disallowed;
+- deletion is disallowed; and
+- a fresh pull request against `main` shows both required checks and cannot bypass them.
+
+After activation, re-read the repository ruleset/branch state and compare the live settings with `.github/main-governance.json`. If any item differs, keep the production merge train blocked.
+
+## Merge-train gate
+
+Live governance activation is necessary but not sufficient for merging. After every successful merge to `main`, the next pull request must first be updated or merge-forwarded to the new `main` and must obtain fresh validation for its new exact head SHA. Do not reuse a green result from before `main` moved.
+
+The intended P11 order is:
+
+`P11C -> P11B -> P11D -> P11E -> P11F -> P11G -> P11A`
+
+P11A remains the production-sensitive final step. A real production-parity `publish=false` dry run is still required after P11A has been refreshed onto the final main and before any controlled `publish=true` cutover.
+
 ## Enforcement boundary
 
 The JSON file is a desired-state contract, not a substitute for GitHub repository settings. A repository administrator must create or update a GitHub ruleset/branch-protection rule that applies these controls to `main`.
