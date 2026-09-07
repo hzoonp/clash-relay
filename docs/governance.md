@@ -56,11 +56,9 @@ After activation, re-read the repository ruleset/branch state and compare the li
 
 Live governance activation is necessary but not sufficient for merging. After every successful merge to `main`, the next pull request must first be updated or merge-forwarded to the new `main` and must obtain fresh validation for its new exact head SHA. Do not reuse a green result from before `main` moved.
 
-The intended P11 order is:
+Production-sensitive lifecycle changes remain the final merge-train step. A real production-parity `publish=false` dry run is still required after that final change has been refreshed onto the final `main` and before any controlled `publish=true` cutover.
 
-`P11C -> P11B -> P11D -> P11E -> P11F -> P11G -> P11A`
-
-P11A remains the production-sensitive final step. A real production-parity `publish=false` dry run is still required after P11A has been refreshed onto the final main and before any controlled `publish=true` cutover.
+The exact current rollout order belongs in the operational tracking issue rather than in this durable governance document.
 
 ## Enforcement boundary
 
