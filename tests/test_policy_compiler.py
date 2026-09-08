@@ -81,6 +81,61 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
     assert compiled.report["browsing_runtime"]["status"] == "regional_hardened"
 
 
+def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    def fake_generate_config(**_kwargs):
+        return (
+            {
+                "proxy-providers": {},
+                "proxy-groups": [{"name": "base", "type": "select", "proxies": ["DIRECT"]}],
+                "rules": ["MATCH,DIRECT"],
+            },
+            {},
+        )
+
+    def source_exclusions(output, **_kwargs):
+        calls.append("source_exclusions")
+        return {}
+
+    def manual_exposure(output, **_kwargs):
+        calls.append("manual_exposure")
+        return {"groups": []}
+
+    def browsing_runtime(output, _policies):
+        calls.append("browsing_runtime")
+        output["browsing-hardened"] = True
+        return {"status": "regional_hardened"}
+
+    def validate_surface(output):
+        calls.append("validate_surface")
+        assert output["browsing-hardened"] is True
+
+    monkeypatch.setattr(compiler, "generate_config", fake_generate_config)
+    monkeypatch.setattr(compiler, "apply_acl4ssr_source_exclusions", source_exclusions)
+    monkeypatch.setattr(compiler, "_expose_manual_provider_choices", manual_exposure)
+    monkeypatch.setattr(compiler, "harden_browsing_runtime", browsing_runtime)
+    monkeypatch.setattr(compiler, "validate_browsing_public_surface", validate_surface)
+
+    compiled = compiler.compile_runtime_graph(
+        root=tmp_path,
+        config={},
+        policies={"pools": []},
+        nodes=[],
+        known_source_ids=set(),
+        acl_groups=None,
+    )
+
+    assert calls == [
+        "source_exclusions",
+        "manual_exposure",
+        "browsing_runtime",
+        "validate_surface",
+    ]
+    assert compiled.graph.candidate["browsing-hardened"] is True
+    assert compiled.report["browsing_runtime"]["status"] == "regional_hardened"
+
+
 def test_mihomo_serializer_detaches_compiled_runtime_graph() -> None:
     graph = compiler.RuntimeGraph.from_candidate(
         {
