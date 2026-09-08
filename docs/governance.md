@@ -20,6 +20,8 @@ GitHub branch protection and rulesets operate on the check-run context shown by 
 
 Do not configure `Validated SHA` by itself as the CI required status check. The required GitHub context is `Validate exact commit / Validated SHA`.
 
+Every required context must also have a pull-request producer that is not suppressed by path filters or other trigger conditions for valid `main` pull requests. A required context that some pull requests can never emit creates a governance deadlock even when the context name itself is correct.
+
 ## Live activation procedure
 
 A repository administrator must activate the policy in GitHub repository settings before the production merge train starts.
@@ -48,7 +50,9 @@ Treat activation as complete only after all of the following are true at the sam
 - `Verify finalized Routing V2 graph` is required;
 - force pushes are disallowed;
 - deletion is disallowed; and
-- a fresh pull request against `main` shows both required checks and cannot bypass them.
+- a fresh pull request against `main` that changes no routing-sensitive paths, such as a documentation-only pull request, shows both required checks and cannot bypass them.
+
+Using a non-routing pull request for this acceptance test is intentional: it proves that required contexts are unconditional governance gates rather than checks that disappear when a path filter does not match.
 
 After activation, re-read the repository ruleset/branch state and compare the live settings with `.github/main-governance.json`. If any item differs, keep the production merge train blocked.
 
@@ -64,9 +68,10 @@ The exact current rollout order belongs in the operational tracking issue rather
 
 The JSON file is a desired-state contract, not a substitute for GitHub repository settings. A repository administrator must create or update a GitHub ruleset/branch-protection rule that applies these controls to `main`.
 
-Before a production merge, verify both of these externally:
+Before a production merge, verify all of these externally:
 
-1. the applicable `main` ruleset/branch protection is active; and
-2. every `check_context` from `.github/main-governance.json` is configured as a required status check.
+1. the applicable `main` ruleset/branch protection is active;
+2. every `check_context` from `.github/main-governance.json` is configured as a required status check; and
+3. every required context is emitted for a valid pull request that does not touch routing-sensitive paths.
 
 If repository settings and `.github/main-governance.json` disagree, production merging is blocked until the live settings are corrected. Do not weaken CI or rename checks merely to satisfy a stale protection rule; update the governance contract and live settings together in a reviewed change.
