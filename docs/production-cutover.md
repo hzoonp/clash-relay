@@ -8,11 +8,14 @@ Use this runbook only after the complete architecture-convergence change set is 
 - The configured CI required-check context is green for the exact candidate.
 - `Verify finalized Routing V2 graph` is required and green for the exact candidate.
 - `publish.yml` still has one production mutation entrypoint: `scripts/run_production_release.py`.
+- The canonical entrypoint keeps automatic `push` and `schedule` events in dry-run mode.
 - The current production value and rollback pointers are known-good before cutover.
 
 ## 2. Dry-run first
 
-Dispatch the production workflow with `publish=false` against the exact validated candidate. A dry run may read private operational state needed for production-parity qualification, but it must not persist external state.
+Automatic `push` and `schedule` executions are fail-closed to `publish=false`. After the final production-lifecycle change is merged to `main`, its push-triggered production workflow is therefore the preferred first production-parity dry run. An operator may also dispatch the production workflow manually with `publish=false`.
+
+A dry run may read private operational state needed for production-parity qualification, but it must not persist external state.
 
 Expected zero-write outcomes:
 
@@ -28,7 +31,9 @@ The lifecycle result must report `publication_status: dry-run`. Any evidence of 
 
 ## 3. Controlled publication
 
-Only after the dry run is clean, dispatch or allow the canonical main-branch production path with publication enabled. Publication remains bound to the exact validated SHA.
+Only after the dry run is clean and publication is explicitly authorized may an operator dispatch the canonical workflow with `publish=true`. Automatic `push` and `schedule` events remain dry-run even if a publication-like input is present, so a merge or scheduled execution cannot become an implicit cutover.
+
+Publication remains bound to the exact validated SHA.
 
 Verify after commit:
 
@@ -38,6 +43,8 @@ Verify after commit:
 - scheduler observation is emitted only from those fresh metrics;
 - current/previous release pointers are coherent;
 - the client-facing production key resolves to the expected release bytes.
+
+Do not re-enable unattended scheduled publication as part of this merge train. If unattended publication is desired after a stable cutover, activate it in a separate reviewed change with fresh exact-SHA validation and an explicit rollback plan.
 
 ## 4. Stop and rollback conditions
 
