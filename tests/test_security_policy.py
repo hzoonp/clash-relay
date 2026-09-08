@@ -70,7 +70,8 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     proof = run_body.index("proof = self._post_commit_proof(release=release)")
     manifest = run_body.index("manifest = self._post_commit_manifest(")
     metrics = run_body.index("metrics = self._persist_production_metrics(project)")
-    assert release_boundary < derived_state < proof < manifest < metrics
+    observation = run_body.index("scheduler_observation = self._publish_scheduler_observation(")
+    assert release_boundary < derived_state < proof < manifest < metrics < observation
 
     persist_start = lifecycle.index("    def _persist_derived_state(")
     persist_end = lifecycle.index("    def _persist_production_metrics", persist_start)
@@ -81,10 +82,18 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert persist_body.count("self._best_effort_state(") == 2
 
     metrics_start = lifecycle.index("    def _persist_production_metrics(")
-    metrics_end = lifecycle.index("    def _render_existing_proof", metrics_start)
+    metrics_end = lifecycle.index("    def _publish_scheduler_observation", metrics_start)
     metrics_body = lifecycle[metrics_start:metrics_end]
     assert '"persist_production_metrics",' in metrics_body
     assert metrics_body.count("self._best_effort_state(") == 1
+
+    observation_start = lifecycle.index("    def _publish_scheduler_observation(")
+    observation_end = lifecycle.index("    def _candidate_slo_identity", observation_start)
+    observation_body = lifecycle[observation_start:observation_end]
+    assert '"publish_scheduler_observation",' in observation_body
+    assert observation_body.count("self._best_effort_state(") == 1
+    assert "if not self.publish:" in observation_body
+    assert 'metrics.get("status") != "published"' in observation_body
 
     assert 'self.warnings.append("render_production_proof")' in lifecycle
     assert 'self.warnings.append("render_release_manifest")' in lifecycle

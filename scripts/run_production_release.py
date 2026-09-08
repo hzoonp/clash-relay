@@ -10,13 +10,10 @@ import sys
 from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
+from clash_relay.production_cutover import resolve_cutover_publication_mode
 from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
-from clash_relay.production_lifecycle import (
-    ProductionLifecyclePaths,
-    ProductionPipeline,
-    resolve_publication_mode,
-)
+from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -47,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     publish = False
     try:
-        publish = resolve_publication_mode(
+        publish = resolve_cutover_publication_mode(
             explicit_publish=args.publish,
             event_name=args.event_name or os.environ.get("GITHUB_EVENT_NAME"),
             manual_publish=(

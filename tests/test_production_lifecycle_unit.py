@@ -145,6 +145,72 @@ def test_dry_run_operational_slo_does_not_touch_external_state(tmp_path: Path) -
     assert result == {"status": "skipped", "reason": "dry_run"}
 
 
+def test_dry_run_scheduler_observation_does_not_touch_external_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = _pipeline(tmp_path, publish=False)
+
+    def forbidden_publish(*_args, **_kwargs):
+        raise AssertionError("dry-run must not call scheduler observation publication")
+
+    monkeypatch.setattr(
+        "clash_relay.production_lifecycle.publish_scheduler_observation",
+        forbidden_publish,
+    )
+
+    result = pipeline._publish_scheduler_observation(
+        cast(Any, None),
+        metrics={"status": "published"},
+    )
+
+    assert result == {"status": "skipped", "reason": "dry_run"}
+    assert pipeline.warnings == []
+
+
+def test_scheduler_observation_requires_freshly_published_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = _pipeline(tmp_path, publish=True)
+
+    def forbidden_publish(*_args, **_kwargs):
+        raise AssertionError("stale metrics must not produce scheduler evidence")
+
+    monkeypatch.setattr(
+        "clash_relay.production_lifecycle.publish_scheduler_observation",
+        forbidden_publish,
+    )
+
+    result = pipeline._publish_scheduler_observation(
+        cast(Any, None),
+        metrics={"status": "unavailable"},
+    )
+
+    assert result == {"status": "skipped", "reason": "production_metrics_not_published"}
+
+
+def test_scheduler_observation_is_lifecycle_owned_and_best_effort(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = _pipeline(tmp_path, publish=True)
+    pipeline.paths.private_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "clash_relay.production_lifecycle.publish_scheduler_observation",
+        lambda **_kwargs: {"status": "published", "sample_runs": 3},
+    )
+
+    result = pipeline._publish_scheduler_observation(
+        cast(Any, None),
+        metrics={"status": "published"},
+    )
+
+    assert result == {"status": "published", "sample_runs": 3}
+    assert pipeline._load_json(pipeline._private("scheduler-observation-publish.json")) == result
+
+
 def test_post_commit_observability_is_best_effort_only_after_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -33,7 +33,7 @@ def test_workflow_is_a_thin_adapter_to_one_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
     assert len(text.splitlines()) < 100
     assert text.count("python scripts/run_production_release.py") == 1
-    assert text.count("python scripts/publish_scheduler_observation.py") == 1
+    assert "python scripts/publish_scheduler_observation.py" not in text
     assert "Resolve publication mode" not in text
     assert "push|schedule)" not in text
     assert "python - <<" not in text
@@ -71,16 +71,16 @@ def test_individual_subscription_urls_are_masked_before_pipeline() -> None:
     )
 
 
-def test_secrets_are_scoped_to_private_production_and_observation_steps() -> None:
+def test_secrets_are_scoped_to_the_single_private_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}") == 2
-    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 2
-    assert text.count("CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}") == 2
+    assert text.count("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}") == 1
+    assert text.count("CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}") == 1
     assert (
-        text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 2
+        text.count("CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}") == 1
     )
     assert text.count("Run production pipeline") == 1
-    assert text.count("Publish aggregate scheduler observation") == 1
+    assert "Publish aggregate scheduler observation" not in text
 
 
 def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
@@ -99,11 +99,13 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
         "metrics = self._persist_production_metrics(project)",
+        "scheduler_observation = self._publish_scheduler_observation(",
     ]
     positions = [lifecycle.index(stage) for stage in stages]
     assert positions == sorted(positions)
     assert "run_production_pipeline(" in lifecycle
     assert "run_release_candidate_stage(" in lifecycle
+    assert "publish_scheduler_observation(" in lifecycle
     assert "check_promotion_guard.py" not in lifecycle
     assert "validate_mihomo_matrix.py" not in lifecycle
     assert "publish_release_bundle.py" not in lifecycle
@@ -117,14 +119,21 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
     assert "qualification_path=paths.qualification" in release_stage[:matrix]
 
 
-def test_derived_state_persistence_remains_post_commit_and_best_effort() -> None:
+def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     text = LIFECYCLE.read_text()
     release = text.index("release = release_stage.release")
     persist = text.index("derived_state = self._persist_derived_state(project)")
-    assert release < persist
-    assert text.count("self._best_effort_state(") == 3
+    metrics = text.index("metrics = self._persist_production_metrics(project)")
+    observation = text.index("scheduler_observation = self._publish_scheduler_observation(")
+    assert release < persist < metrics < observation
+    assert text.count("self._best_effort_state(") == 4
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
+    dry_run_guard = (
+        'if not self.publish:\n            return {"status": "skipped", "reason": "dry_run"}'
+    )
+    assert dry_run_guard in text
+    assert 'metrics.get("status") != "published"' in text
 
 
 def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> None:
