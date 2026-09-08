@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "branch": "main",
+  "desired_enforcement": "active",
+  "pull_request": {
+    "required": true,
+    "required_approvals": 0,
+    "require_code_owner_review": false,
+    "require_last_push_approval": false
+  },
+  "history": {
+    "allow_force_push": false,
+    "allow_deletion": false
+  },
+  "required_status_checks": [
+    {
+      "workflow": "CI",
+      "job": "Validated SHA",
+      "check_context": "Validate exact commit / Validated SHA"
+    },
+    {
+      "workflow": "Routing V2 Drift Guard",
+      "job": "Verify finalized Routing V2 graph",
+      "check_context": "Verify finalized Routing V2 graph"
+    }
+  ]
+}
