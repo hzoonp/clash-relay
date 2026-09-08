@@ -13,7 +13,7 @@ class SubscriptionSpec:
     enabled: bool
     required: bool
     secret_name: str
-    priority: int
+    ingest_order: int
     on_error: str
     allowed_uses: frozenset[str]
     allowed_countries: frozenset[str]
@@ -31,7 +31,7 @@ class NodeOccurrence:
 
     source_id: str
     source_display_name: str
-    source_priority: int
+    source_ingest_order: int
     source_allowed_uses: frozenset[str]
     source_allowed_countries: frozenset[str]
     original_name: str
@@ -44,7 +44,7 @@ class NodeOccurrence:
 class Node:
     source_id: str
     source_display_name: str
-    source_priority: int
+    source_ingest_order: int
     source_allowed_uses: frozenset[str]
     source_allowed_countries: frozenset[str]
     original_name: str

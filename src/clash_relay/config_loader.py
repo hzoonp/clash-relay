@@ -237,7 +237,7 @@ def load_project(
                 enabled=row["enabled"],
                 required=row["required"],
                 secret_name=row["secret_name"],
-                priority=row["ingest_order"],
+                ingest_order=row["ingest_order"],
                 on_error=row["on_error"],
                 allowed_uses=frozenset(row["allowed_uses"]),
                 allowed_countries=frozenset(row["allowed_countries"]),
