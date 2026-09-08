@@ -2,17 +2,6 @@ name: Routing V2 Drift Guard
 
 on:
   pull_request:
-    paths:
-      - "config.yaml"
-      - "subscriptions.yaml"
-      - "policies.yaml"
-      - "policies/**"
-      - "rules/**"
-      - "schemas/**"
-      - "src/**"
-      - "scripts/**"
-      - "requirements.lock"
-      - ".github/workflows/routing-shadow.yml"
   push:
     branches:
       - main
