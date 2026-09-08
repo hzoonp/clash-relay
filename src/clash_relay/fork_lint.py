@@ -25,7 +25,7 @@ def build_fork_lint(project: Any) -> dict[str, Any]:
             "id": spec.id,
             "required": bool(spec.required),
             "secret_name": spec.secret_name,
-            "ingest_order": int(spec.priority),
+            "ingest_order": int(spec.ingest_order),
             "on_error": spec.on_error,
             "allowed_uses": sorted(spec.allowed_uses),
             "allowed_country_count": len(spec.allowed_countries),

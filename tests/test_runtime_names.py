@@ -15,7 +15,7 @@ def _node(source_id: str) -> Node:
     return Node(
         source_id=source_id,
         source_display_name=source_id,
-        source_priority=100,
+        source_ingest_order=100,
         source_allowed_uses=frozenset({"general"}),
         source_allowed_countries=frozenset({"*"}),
         original_name="Example Node",

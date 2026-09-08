@@ -23,7 +23,7 @@ def _node(source_id: str, allowed_uses: set[str], fingerprint: str) -> Node:
     return Node(
         source_id=source_id,
         source_display_name=source_id,
-        source_priority=100 if source_id == "subscription_1" else 200,
+        source_ingest_order=100 if source_id == "subscription_1" else 200,
         source_allowed_uses=frozenset(allowed_uses),
         source_allowed_countries=frozenset({"*"}),
         original_name=f"{source_id} HK 1x",
