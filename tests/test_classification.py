@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
 
 from clash_relay.classify import classify_proxy, deduplicate_nodes
 from clash_relay.errors import GenerationError
-from clash_relay.models import SubscriptionSpec
+from clash_relay.models import Node, NodeOccurrence, SubscriptionSpec
 from clash_relay.policy_document import load_policy_document
 from clash_relay.selector import select_nodes
 
@@ -19,7 +19,7 @@ def _spec(**overrides) -> SubscriptionSpec:
         "enabled": True,
         "required": True,
         "secret_name": "SUB_SOURCE",
-        "priority": 100,
+        "ingest_order": 100,
         "on_error": "fail",
         "allowed_uses": frozenset({"general", "ai", "bulk", "residential"}),
         "allowed_countries": frozenset({"US", "JP", "SG", "OTHER"}),
@@ -45,6 +45,19 @@ def _proxy(name: str = "Node") -> dict:
 def policies(repo_root: Path) -> dict:
     path = repo_root / "tests/fixtures/project/policies.yaml"
     return load_policy_document(path).document
+
+
+def test_domain_models_name_ingestion_order_explicitly() -> None:
+    subscription_fields = {item.name for item in fields(SubscriptionSpec)}
+    occurrence_fields = {item.name for item in fields(NodeOccurrence)}
+    node_fields = {item.name for item in fields(Node)}
+
+    assert "ingest_order" in subscription_fields
+    assert "priority" not in subscription_fields
+    assert "source_ingest_order" in occurrence_fields
+    assert "source_priority" not in occurrence_fields
+    assert "source_ingest_order" in node_fields
+    assert "source_priority" not in node_fields
 
 
 def test_country_name_classifier_is_auxiliary(policies: dict) -> None:
@@ -174,9 +187,9 @@ def test_region_filter(policies: dict) -> None:
     assert select_nodes([jp, us], selector, "US") == [us]
 
 
-def test_priority_only_controls_deterministic_order_not_filtering(policies: dict) -> None:
-    first = classify_proxy(_proxy("First"), _spec(id="a", priority=999), policies)
-    second = classify_proxy(_proxy("Second"), _spec(id="b", priority=1), policies)
+def test_ingest_order_only_controls_deterministic_order_not_filtering(policies: dict) -> None:
+    first = classify_proxy(_proxy("First"), _spec(id="a", ingest_order=999), policies)
+    second = classify_proxy(_proxy("Second"), _spec(id="b", ingest_order=1), policies)
     selector = {
         "source_use": "general",
         "capabilities_any": ["general"],
@@ -189,13 +202,13 @@ def test_priority_only_controls_deterministic_order_not_filtering(policies: dict
     assert selected[0].source_id == "b"
 
 
-def test_deduplication_keeps_lowest_priority_number(policies: dict) -> None:
+def test_deduplication_keeps_lowest_ingest_order(policies: dict) -> None:
     proxy = _proxy("Same")
-    slow = classify_proxy(proxy, _spec(id="slow", priority=200), policies)
-    preferred = classify_proxy(proxy, _spec(id="preferred", priority=100), policies)
-    nodes, removed = deduplicate_nodes([slow, preferred], "keep_first")
+    later = classify_proxy(proxy, _spec(id="later", ingest_order=200), policies)
+    earlier = classify_proxy(proxy, _spec(id="earlier", ingest_order=100), policies)
+    nodes, removed = deduplicate_nodes([later, earlier], "keep_first")
     assert removed == 1
-    assert nodes[0].source_id == "preferred"
+    assert nodes[0].source_id == "earlier"
 
 
 def test_deduplication_error_policy(policies: dict) -> None:

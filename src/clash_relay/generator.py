@@ -8,12 +8,11 @@ from typing import Any
 
 from .errors import GenerationError
 from .models import Node
+from .rule_compiler import RuleCompiler
+from .runtime_config_renderer import RuntimeConfigRenderer
 from .runtime_names import runtime_source_label, validate_runtime_source_labels
-from .schema import load_and_validate
 from .selector import select_nodes
 from .util import normalize_expected_status, safe_identifier, unique
-
-_BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 
 
 def _scope_token(value: str) -> str:
@@ -272,17 +271,6 @@ def _add_chain(
     }
 
 
-def _render_rule(rule: dict[str, Any], target: str) -> str:
-    parts = [str(rule["type"]), str(rule["value"]), target]
-    parts.extend(str(option) for option in rule.get("options", []))
-    return ",".join(parts)
-
-
-def _load_rules(root: Path, relative: str) -> list[dict[str, Any]]:
-    document = load_and_validate(root / relative, "rules.schema.json")
-    return list(document["rules"])
-
-
 def _resolve_external_group_member(
     member: dict[str, Any],
     *,
@@ -350,57 +338,6 @@ def _add_external_groups(
         pending = unresolved
 
 
-def _runtime_config(config: dict[str, Any]) -> dict[str, Any]:
-    runtime = config["runtime"]
-    dns = runtime["dns"]
-    dns_mode = str(dns.get("mode", "managed"))
-
-    profile: dict[str, Any] = {
-        "store-selected": runtime["profile"]["store_selected"],
-    }
-    output: dict[str, Any] = {
-        "mixed-port": runtime["mixed_port"],
-        "allow-lan": runtime["allow_lan"],
-        "bind-address": runtime["bind_address"],
-        "mode": runtime["mode"],
-        "log-level": runtime["log_level"],
-        "ipv6": runtime["ipv6"],
-        "unified-delay": runtime["unified_delay"],
-        "tcp-concurrent": runtime["tcp_concurrent"],
-        "profile": profile,
-    }
-
-    sniffer = runtime.get("sniffer")
-    if sniffer is not None:
-        sniff = sniffer["sniff"]
-        output["sniffer"] = {
-            "enable": sniffer["enabled"],
-            "force-dns-mapping": sniffer["force_dns_mapping"],
-            "parse-pure-ip": sniffer["parse_pure_ip"],
-            "sniff": {
-                "HTTP": {
-                    "ports": list(sniff["http"]["ports"]),
-                    "override-destination": sniff["http"]["override_destination"],
-                },
-                "TLS": {"ports": list(sniff["tls"]["ports"])},
-                "QUIC": {"ports": list(sniff["quic"]["ports"])},
-            },
-        }
-
-    if dns_mode == "client":
-        return output
-
-    profile["store-fake-ip"] = runtime["profile"]["store_fake_ip"]
-    output["dns"] = {
-        "enable": dns["enabled"],
-        "enhanced-mode": dns["enhanced_mode"],
-        "listen": dns["listen"],
-        "nameserver": list(dns["nameservers"]),
-        "fallback": list(dns["fallback_nameservers"]),
-    }
-    return output
-
-
 def generate_config(
     *,
     root: Path,
@@ -465,68 +402,28 @@ def generate_config(
         auto_pools=pool_anchors,
     )
 
-    available_targets = _BUILTINS | {str(group["name"]) for group in groups}
-    rule_rows: list[tuple[int, str, int, str]] = []
-    for pool in policies["pools"]:
-        if modules.get(pool["module"], False) and pool["rules"]:
-            for order, rule in enumerate(_load_rules(root, pool["rules"])):
-                rule_rows.append(
-                    (
-                        pool["rule_priority"],
-                        f"pool:{pool['id']}",
-                        order,
-                        _render_rule(rule, pool["display_name"]),
-                    )
-                )
+    rule_compilation = RuleCompiler(root).compile(
+        modules=modules,
+        policies=policies,
+        groups=groups,
+        external_rule_providers=external_rule_providers,
+        external_rules=external_rules,
+        final_target=final_target,
+    )
 
-    rule_providers = dict(external_rule_providers or {})
-    for item in external_rules or []:
-        target = str(item["target"])
-        if target not in available_targets:
-            raise GenerationError(
-                f"external rule source {item['source_id']!r} targets unavailable group {target!r}"
-            )
-        if "provider" in item:
-            provider_name = str(item["provider"])
-            if provider_name not in rule_providers:
-                raise GenerationError(
-                    f"external rule source {item['source_id']!r} references missing rule provider"
-                )
-            rendered = f"RULE-SET,{provider_name},{target}"
-        else:
-            rendered = _render_rule(item["rule"], target)
-        rule_rows.append(
-            (
-                int(item["priority"]),
-                f"acl4ssr:{item['source_id']}",
-                int(item["order"]),
-                rendered,
-            )
-        )
-
-    rendered_rules = [
-        _render_rule(rule, "DIRECT") for rule in _load_rules(root, "rules/direct.yaml")
-    ]
-    rendered_rules.extend(value for _, _, _, value in sorted(rule_rows, key=lambda item: item[:3]))
-    resolved_final_target = final_target or ("Proxy" if modules.get("general", False) else "DIRECT")
-    if resolved_final_target not in available_targets:
-        raise GenerationError(f"final routing target is unavailable: {resolved_final_target!r}")
-    rendered_rules.append(f"MATCH,{resolved_final_target}")
-    rendered_rules = unique(rendered_rules)
-
-    output = _runtime_config(config)
+    output = RuntimeConfigRenderer().render(config)
     output["proxy-providers"] = providers
-    if rule_providers:
-        output["rule-providers"] = rule_providers
+    if rule_compilation.rule_providers:
+        output["rule-providers"] = rule_compilation.rule_providers
     output["proxy-groups"] = groups
-    output["rules"] = rendered_rules
+    output["rules"] = rule_compilation.rules
     report = {
         "input_nodes": len(nodes),
         "providers": len(providers),
-        "rule_providers": len(rule_providers),
+        "rule_providers": len(rule_compilation.rule_providers),
         "proxy_groups": len(groups),
         "public_groups": [group["name"] for group in groups if not group.get("hidden", False)],
-        "routing_rules": len(rendered_rules),
+        "routing_rules": len(rule_compilation.rules),
         "pools": pool_report,
     }
     return output, report
