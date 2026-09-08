@@ -1,12 +1,4 @@
-from __future__ import annotations
-
-from pathlib import Path
-
 from clash_relay.production_cutover import resolve_cutover_publication_mode
-
-
-ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "scripts" / "run_production_release.py"
 
 
 def test_automatic_github_events_are_always_dry_run() -> None:
@@ -59,7 +51,8 @@ def test_local_explicit_publication_remains_available_outside_automatic_events()
 
 
 def test_canonical_runner_uses_cutover_latch() -> None:
-    runner = RUNNER.read_text(encoding="utf-8")
+    with open("scripts/run_production_release.py", encoding="utf-8") as handle:
+        runner = handle.read()
     assert "from clash_relay.production_cutover import resolve_cutover_publication_mode" in runner
     assert "publish = resolve_cutover_publication_mode(" in runner
     assert "publish = resolve_publication_mode(" not in runner
