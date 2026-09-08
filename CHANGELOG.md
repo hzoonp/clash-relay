@@ -4,6 +4,26 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-08
+
+### Added
+
+- Live `main` governance now requires pull requests plus strict successful `Validate exact commit / Validated SHA` and `Verify finalized Routing V2 graph` contexts, with no bypass actors.
+- Production cutover now has an explicit fail-closed manual publication latch: automatic push/schedule runs are dry-run only, while an operator must explicitly select `workflow_dispatch` with `publish=true` for production mutation.
+- Full-lifecycle production-parity coverage proves dry runs cannot persist private lifecycle state, and the verified controlled cutover records release proof, manifest, derived-state, metrics, scheduler observation, and Operational SLO completion through one canonical lifecycle.
+
+### Changed
+
+- RuntimeGraph is the downstream topology authority for traversal, reachability, cycle detection, validation, and auditing rather than parallel graph implementations.
+- Runtime rendering and rule compilation are separated behind dedicated boundaries while browsing hardening remains independent from optional ACL group generation.
+- Reusable validation is the release quality authority, and release creation consumes the exact validated SHA instead of duplicating weaker release-only quality gates.
+- Release metadata now keeps package/runtime version, release notes, changelog indexing, and the `[Unreleased]` comparison baseline synchronized.
+
+### Security
+
+- The controlled production cutover completed on the exact governed SHA with Promotion Guard, the full pinned stable Mihomo matrix, exact-byte release verification, production proof, and release manifest passing with no warnings.
+- `subscription_1` remains browsing/AI-only, explicit multipliers strictly greater than 2x remain rejected, AI routing continues to exclude CN/HK, and GitHub Releases remain source-only with all production configuration and private operational state excluded.
+
 ## [2.1.0] - 2026-09-05
 
 ### Added
@@ -118,7 +138,6 @@ All notable user-visible changes are documented here. This project follows Seman
 ### Security
 
 - This hotfix does not change OpenAI route locking, normal TLS certificate and hostname verification, source isolation, client-owned DNS, stable-first client fallback, or any of the six public routing scenarios.
-
 
 ## [1.6.2] - 2026-09-02
 
@@ -387,7 +406,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/hzoonp/clash-relay/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/hzoonp/clash-relay/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/hzoonp/clash-relay/compare/v1.8.1...v2.0.0
 [1.8.1]: https://github.com/hzoonp/clash-relay/compare/v1.8.0...v1.8.1
