@@ -35,6 +35,6 @@ def test_unreleased_compare_starts_from_current_project_version(repo_root: Path)
 def test_recent_v2_release_notes_are_indexed_in_changelog(repo_root: Path) -> None:
     changelog = (repo_root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    for version in ("2.0.0", "2.1.0"):
+    for version in ("2.0.0", "2.1.0", "2.2.0"):
         assert f"## [{version}]" in changelog
         assert f"[{version}]: https://github.com/hzoonp/clash-relay/" in changelog
