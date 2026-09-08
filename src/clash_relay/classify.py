@@ -24,7 +24,7 @@ def _occurrence_from_node(node: Node) -> NodeOccurrence:
     return NodeOccurrence(
         source_id=node.source_id,
         source_display_name=node.source_display_name,
-        source_priority=node.source_priority,
+        source_ingest_order=node.source_ingest_order,
         source_allowed_uses=node.source_allowed_uses,
         source_allowed_countries=node.source_allowed_countries,
         original_name=node.original_name,
@@ -40,7 +40,7 @@ def _occurrences(node: Node) -> tuple[NodeOccurrence, ...]:
 
 def _occurrence_key(item: NodeOccurrence) -> tuple[object, ...]:
     return (
-        item.source_priority,
+        item.source_ingest_order,
         item.source_id,
         item.original_name.casefold(),
         item.country,
@@ -94,7 +94,7 @@ def classify_proxy(
     occurrence = NodeOccurrence(
         source_id=spec.id,
         source_display_name=spec.display_name,
-        source_priority=spec.priority,
+        source_ingest_order=spec.ingest_order,
         source_allowed_uses=spec.allowed_uses,
         source_allowed_countries=spec.allowed_countries,
         original_name=name,
@@ -105,7 +105,7 @@ def classify_proxy(
     return Node(
         source_id=occurrence.source_id,
         source_display_name=occurrence.source_display_name,
-        source_priority=occurrence.source_priority,
+        source_ingest_order=occurrence.source_ingest_order,
         source_allowed_uses=occurrence.source_allowed_uses,
         source_allowed_countries=occurrence.source_allowed_countries,
         original_name=occurrence.original_name,
@@ -122,7 +122,7 @@ def deduplicate_nodes(nodes: list[Node], policy: str) -> tuple[list[Node], int]:
     ordered = sorted(
         nodes,
         key=lambda node: (
-            node.source_priority,
+            node.source_ingest_order,
             node.source_id,
             node.original_name.casefold(),
             node.fingerprint,
