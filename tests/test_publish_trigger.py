@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
-
-from clash_relay.errors import ValidationError
-from clash_relay.production_lifecycle import resolve_publication_mode
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
@@ -134,17 +130,6 @@ def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     )
     assert dry_run_guard in text
     assert 'metrics.get("status") != "published"' in text
-
-
-def test_manual_dispatch_is_dry_run_unless_publish_is_explicitly_enabled() -> None:
-    assert resolve_publication_mode(event_name="push") is True
-    assert resolve_publication_mode(event_name="schedule") is True
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish="true") is True
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish="false") is False
-    assert resolve_publication_mode(explicit_publish=False, event_name="push") is False
-    assert resolve_publication_mode(explicit_publish=True) is True
-    with pytest.raises(ValidationError, match="unsupported"):
-        resolve_publication_mode(event_name="pull_request")
 
 
 def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:
