@@ -10,15 +10,15 @@ import sys
 from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
-from clash_relay.production_cutover import resolve_cutover_publication_mode
 from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
+from clash_relay.publication_decision import resolve_publication_decision
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the canonical clash-relay production lifecycle."
+        description="Run the one canonical clash-relay production lifecycle."
     )
     parser.add_argument("--root", type=Path, default=Path("."))
     mode = parser.add_mutually_exclusive_group()
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     publish = False
     try:
-        publish = resolve_cutover_publication_mode(
+        decision = resolve_publication_decision(
             explicit_publish=args.publish,
             event_name=args.event_name or os.environ.get("GITHUB_EVENT_NAME"),
             manual_publish=(
@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
                 else os.environ.get("CLASH_RELAY_MANUAL_PUBLISH")
             ),
         )
+        publish = decision.should_publish
         _enforce_validated_ci_sha(publish=publish)
         result = ProductionPipeline(
             ProductionLifecyclePaths.canonical(args.root),
