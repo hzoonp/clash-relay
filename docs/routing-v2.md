@@ -17,15 +17,18 @@ The dimensions are intersected. A later dimension can narrow an inventory but ca
 
 ## User surface
 
-The default FlClash surface is intentionally fixed to three user decisions:
+The canonical FlClash surface exposes six primary scenario decisions:
 
 - `代理选择` — general scenario control;
 - `网页浏览` — browsing scenario control;
-- `人工智能` — generic AI scenario control.
+- `人工智能` — generic AI scenario control;
+- `流媒体` — media scenario control;
+- `消息通讯` — messaging scenario control;
+- `下载流量` — download scenario control.
 
-Subscription IDs are sources, not groups. Countries are dimensions, not top-level groups. AI products are services, not top-level groups. Media and download schedulers are internal and do not add top-level controls.
+Subscription IDs are sources, not groups. Countries are dimensions, not top-level groups. AI products are services, not top-level groups. Regional helpers, automatic schedulers, qualification anchors, and ACL compatibility helpers remain hidden.
 
-The three visible groups are presentation controls, not the classification tree. YouTube, Netflix, downloads, OpenAI, Claude, Gemini, domestic media, and other application routes can all be active concurrently because every connection is classified independently in Mihomo `rule` mode.
+The six visible groups are presentation controls, not the classification tree. YouTube, Netflix, downloads, OpenAI, Claude, Gemini, domestic media, and other application routes can all be active concurrently because every connection is classified independently in Mihomo `rule` mode.
 
 ## Declarative scenario contract
 
@@ -69,18 +72,18 @@ Expanding foreign-web classification requires evidence and a reviewable rule sou
 
 ## Media
 
-Media is an internal scenario with service-specific classification. It does not add a top-level UI group.
+Media is a first-class scenario with service-specific classification and a visible user control.
 
 - YouTube and generic foreign media route through hidden `媒体自动`, backed only by the `general` permission domain.
 - Netflix uses only the `general` permission domain and applies a Netflix-capable preference before the normal media scheduler.
 - Bilibili and domestic media resolve directly under the canonical rules.
 - `subscription_1` cannot enter media because it has no `general` permission.
 
-The scheduler profile is declared separately from classification, so later latency/stability/capability improvements do not require new user-facing groups.
+The scheduler profile is declared separately from classification, so later latency/stability/capability improvements do not require changing source permissions or exposing regional helper groups.
 
 ## Download
 
-Download is a first-class internal scenario. The canonical production mode is `general_auto`:
+Download is a first-class scenario. The canonical production mode is `general_auto`:
 
 ```text
 known domestic classification -> DIRECT
@@ -131,9 +134,9 @@ Production audit checks both source reachability and Routing V2 declarations bef
 - media and download remain in the general permission domain;
 - AI pools do not materialize excluded regions;
 - post-qualification OpenAI/Claude/Gemini targets reference only their own service anchors;
-- the final qualified canonical UI exposes only `代理选择`, `网页浏览`, and `人工智能`.
+- the final qualified canonical UI exposes only `代理选择`, `网页浏览`, `人工智能`, `流媒体`, `消息通讯`, and `下载流量`.
 
-AI qualification has two audit stages. Before qualification, temporary AI country wrappers may exist so the service resolver can construct service-specific anchors. After qualification, those wrappers are hidden and only the three canonical user controls remain visible.
+AI qualification has two audit stages. Before qualification, temporary AI country wrappers may exist so the service resolver can construct service-specific anchors. After qualification, those wrappers are hidden and only the six canonical user controls remain visible.
 
 ## Complex concurrent scenarios
 
@@ -158,4 +161,4 @@ A drift-guard failure cannot publish or replace production configuration. Produc
 - `ProxyGFWlist -> 网页浏览` remains canonical.
 - final `MATCH -> 漏网之鱼` remains canonical.
 - no process-name rule is used as a source-permission or security boundary.
-- production publication remains fail-closed after source reachability audit and dual-Mihomo validation.
+- production publication remains fail-closed after source reachability audit and stable-Mihomo validation.
