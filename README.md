@@ -18,13 +18,13 @@ Fork
   -> manual dry-run (publish=false)
   -> inspect aggregate production proof
   -> publish=true
-  -> automatic six-hour production refresh
+  -> six-hour production-parity dry-run
   -> validated rollback when required
 ```
 
 `clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes.
 
-Scheduled and push production runs use the same release-authoritative gate as manual runs. Manual dispatch remains a dry run unless `publish=true` is explicitly selected. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
+Automatic `push` and `schedule` production runs are hard-latched to dry-run mode. Only an explicit manual `workflow_dispatch` with `publish=true` may change production state. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
 ## Public Config v2
 
