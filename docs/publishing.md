@@ -6,11 +6,13 @@ Publication is downstream of Public Config v2 validation, generation, runtime qu
 
 The production workflow is designed to run from a public repository without turning GitHub into credential storage. Real subscription URLs are supplied only through trusted Secrets on `main`; generated and qualified candidates remain on the ephemeral runner until private publication to Cloudflare Workers KV.
 
-Pull requests use fictional sources and do not receive production subscription Secrets. Push and scheduled events publish only through the release-authoritative exact-SHA validation chain. Manual `workflow_dispatch` remains a dry run unless `publish=true` is explicitly selected.
+Pull requests use fictional sources and do not receive production subscription Secrets. Automatic `push` and `schedule` events are hard-latched to dry-run mode. Manual `workflow_dispatch` also remains a dry run unless `publish=true` is explicitly selected; only that explicit manual publication path may change production state.
 
-The supported schedule is a full production refresh, not a lighter synchronization path. It re-fetches current private subscriptions and executes the same generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, Promotion Guard, stable Mihomo matrix, and versioned Cloudflare KV release transaction before client-visible bytes can change.
+The supported schedule is a production-parity monitoring run, not an unattended publication path. It re-fetches current private subscriptions and executes generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, and the complete stable Mihomo matrix. Because the run is dry-run, Promotion Guard, release activation, derived-state persistence, metrics persistence, and other production writes remain skipped.
 
-If the exact final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
+Re-enabling unattended scheduled publication is intentionally a separate reviewed change. It requires fresh exact-SHA validation, an explicit rollback plan, and a contract update that makes scheduled publication an intentional reachable state rather than an implicit side effect.
+
+If an explicitly published final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
 
 ## Secret masking and privacy
 
@@ -41,6 +43,8 @@ Public Config v2 + private Secrets
 ```
 
 Scripts are thin adapters. Python production stages do not launch sibling Python scripts or exchange business results through stdout/stderr JSON. Mihomo remains an explicit external-program boundary.
+
+Dry-run execution intentionally omits the production-only baseline/Promotion Guard and write stages while preserving the candidate-generation, qualification, current-policy audit, and real-core validation path.
 
 ## Cloudflare Workers KV
 

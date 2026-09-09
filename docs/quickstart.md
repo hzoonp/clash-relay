@@ -101,7 +101,7 @@ Both connectivity checks can be requested together. Doctor output is aggregate-o
 
 Run `Generate, validate, and publish` manually with the workflow input `publish = false`.
 
-A successful dry run performs the same private generation, source audit, browsing/transport qualification, ServiceQualification registry pass, declared service client-path hardening, post-qualification audit, Promotion Guard semantics where applicable, and every stable Mihomo validation from `tools/mihomo-versions.json`, but does not activate Cloudflare KV production bytes.
+A successful dry run performs the same private generation, source audit, browsing/transport qualification, ServiceQualification registry pass, declared service client-path hardening, post-qualification audit, and every stable Mihomo validation from `tools/mihomo-versions.json`, but does not activate Cloudflare KV production bytes. Promotion Guard, release activation, derived-state persistence, metrics persistence, and other production writes are skipped in dry-run mode.
 
 Browsing/transport retry is deliberately narrow: only a structured whole-probe transient infrastructure failure may retry once, and the retry starts from the immutable generated candidate. Policy rejection, partial live success, transport admission failure, core rejection, configuration failure, and unstructured protocol failure remain fail closed without retry.
 
@@ -109,7 +109,7 @@ Inspect the GitHub Actions summary. It intentionally exposes only aggregate prod
 
 ## 6. Publish
 
-Run the workflow with `publish = true`, or merge a validated change to `main` when the repository is intentionally configured for push publication.
+Only an explicit manual `workflow_dispatch` with `publish = true` may publish production state. Automatic `push` and `schedule` events remain hard-latched to dry-run mode.
 
 Publication stages immutable release objects first, verifies exact read-back bytes, activates the fixed client-facing production key, then commits release pointers. Cloudflare KV does not provide cross-key transactions, so pointer-commit failures use compensating restoration of the previous exact production bytes.
 
@@ -121,13 +121,13 @@ prepared -> qualified -> promoted -> published -> verified
 
 A proof/manifest/metrics problem after the client-visible release transaction has committed is reported as post-release observability degradation; it does not falsely claim the release was never published. Before publication, every mandatory gate remains fail closed.
 
-After the first successful publication, the scheduled workflow runs the same production lifecycle every six hours (`17 */6 * * *` UTC). Scheduled refresh is not a shortcut: subscription fetch, generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-audit, Promotion Guard, and every stable Mihomo validation must all pass before publication. If the final bytes have not changed, the release remains active with `status: unchanged` and `previous-release-v1` is not rotated.
+The scheduled workflow still runs every six hours (`17 */6 * * *` UTC), but it is a production-parity monitoring dry run. It re-fetches current private subscriptions and reruns generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-qualification audit, and the complete stable Mihomo matrix without changing production or persisted derived state. Re-enabling unattended scheduled publication is intentionally a separate reviewed change with fresh exact-SHA validation and an explicit rollback plan.
 
-Overlapping production Actions are serialized by the workflow concurrency group with `cancel-in-progress: false`; an older transaction is never cancelled mid-commit by a newer refresh.
+Overlapping production Actions are serialized by the workflow concurrency group with `cancel-in-progress: false`; an older production run is never cancelled mid-lifecycle by a newer refresh.
 
 ## 7. Configure FlClash / Mihomo
 
-Use the existing private endpoint that serves the fixed production KV key. The client-facing key does not change when the internal release SHA changes, and scheduled refresh does not require replacing the subscription URL in FlClash.
+Use the existing private endpoint that serves the fixed production KV key. The client-facing key does not change when the internal release SHA changes.
 
 Top-level FlClash decisions remain:
 

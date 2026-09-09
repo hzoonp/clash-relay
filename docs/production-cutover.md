@@ -15,7 +15,7 @@ Use this runbook only after the complete architecture-convergence change set is 
 
 Automatic `push` and `schedule` executions are fail-closed to `publish=false`. After the final production-lifecycle change is merged to `main`, its push-triggered production workflow is therefore the preferred first production-parity dry run. An operator may also dispatch the production workflow manually with `publish=false`.
 
-A dry run may read private operational state needed for production-parity qualification, but it must not persist external state.
+A dry run may read private operational state needed for production-parity qualification, but it must not persist external state. Promotion Guard is publication-only because it compares against the current production baseline before an actual promotion; dry-run skips that gate while still executing the complete stable Mihomo matrix.
 
 Expected zero-write outcomes:
 
