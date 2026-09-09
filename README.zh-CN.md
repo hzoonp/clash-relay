@@ -18,13 +18,13 @@ Fork
   -> 手动 dry-run（publish=false）
   -> 查看聚合 production proof
   -> publish=true
-  -> 每 6 小时自动刷新
+  -> 每 6 小时执行 production-parity dry-run
   -> 必要时执行 validated 回滚
 ```
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
 
-Push、定时刷新和手动运行都复用同一套 release-authoritative 门禁。手动触发默认仍是 dry-run，只有明确设置 `publish=true` 才发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
+自动 `push` 和 `schedule` 生产运行都被硬锁为 dry-run；只有显式手动 `workflow_dispatch` 并设置 `publish=true` 才允许修改生产状态。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
 
 ## Public Config v2
 
