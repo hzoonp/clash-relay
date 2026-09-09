@@ -39,6 +39,20 @@ class ProductionFailureCategory(StrEnum):
     UNKNOWN = "unknown"
 
 
+_SAFE_QUALIFICATION_STAGES = frozenset(
+    {
+        "setup",
+        "browsing",
+        "history",
+        "browsing_rewrite",
+        "transport",
+        "ai",
+        "ai_service",
+        "service",
+    }
+)
+
+
 def _chain(error: BaseException) -> tuple[BaseException, ...]:
     current: BaseException | None = error
     seen: set[int] = set()
@@ -59,6 +73,11 @@ def _qualification_category(error: QualificationStageRejected) -> ProductionFail
     return ProductionFailureCategory.QUALIFICATION
 
 
+def _safe_qualification_stage(stage: str) -> str:
+    normalized = stage.strip().casefold()
+    return normalized if normalized in _SAFE_QUALIFICATION_STAGES else "other"
+
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
@@ -71,6 +90,7 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
         return {
             "status": "failed",
             "category": _qualification_category(qualification).value,
+            "qualification_stage": _safe_qualification_stage(qualification.stage),
             "qualification_failure_category": qualification.category.value,
             "retryable": qualification.retryable,
         }
