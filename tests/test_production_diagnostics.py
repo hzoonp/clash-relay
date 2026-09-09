@@ -50,11 +50,25 @@ def test_qualification_failure_uses_typed_stage_and_category_only() -> None:
     assert result == {
         "status": "failed",
         "category": "browsing_qualification",
+        "qualification_stage": "browsing",
         "qualification_failure_category": "transient",
         "retryable": True,
     }
     assert "secret.example" not in repr(result)
     assert "do-not-leak" not in repr(result)
+
+
+def test_unknown_qualification_stage_is_not_reflected_verbatim() -> None:
+    rejection = QualificationStageRejected(
+        stage="private-node-name.example",
+        category=QualificationFailureCategory.CONFIGURATION,
+        retryable=False,
+    )
+
+    result = safe_failure_diagnostic(rejection)
+
+    assert result["qualification_stage"] == "other"
+    assert "private-node-name.example" not in repr(result)
 
 
 def test_ai_and_unknown_qualification_stages_are_coarsened() -> None:
@@ -70,7 +84,9 @@ def test_ai_and_unknown_qualification_stages_are_coarsened() -> None:
     )
 
     assert safe_failure_diagnostic(ai)["category"] == "ai_qualification"
+    assert safe_failure_diagnostic(ai)["qualification_stage"] == "ai_service"
     assert safe_failure_diagnostic(other)["category"] == "qualification"
+    assert safe_failure_diagnostic(other)["qualification_stage"] == "other"
 
 
 def test_unknown_exception_never_serializes_exception_text() -> None:
