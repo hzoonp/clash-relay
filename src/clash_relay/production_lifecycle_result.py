@@ -45,14 +45,10 @@ class ProductionLifecycleResult:
         try:
             status = ProductionLifecycleStatus(value.get("status"))
         except (TypeError, ValueError) as exc:
-            raise ValidationError(
-                "production lifecycle result has an invalid status"
-            ) from exc
+            raise ValidationError("production lifecycle result has an invalid status") from exc
 
         try:
-            publication_status = ProductionPublicationStatus(
-                value.get("publication_status")
-            )
+            publication_status = ProductionPublicationStatus(value.get("publication_status"))
         except (TypeError, ValueError) as exc:
             raise ValidationError(
                 "production lifecycle result has an invalid publication status"
@@ -77,29 +73,19 @@ class ProductionLifecycleResult:
         if not isinstance(warnings_value, list) or any(
             not isinstance(item, str) for item in warnings_value
         ):
-            raise ValidationError(
-                "production lifecycle result warnings must be a string list"
-            )
+            raise ValidationError("production lifecycle result warnings must be a string list")
         warnings = tuple(warnings_value)
 
         if status is ProductionLifecycleStatus.PASSED:
             if publication_status is ProductionPublicationStatus.NOT_APPLICABLE:
-                raise ValidationError(
-                    "passed production lifecycle result cannot be not_applicable"
-                )
+                raise ValidationError("passed production lifecycle result cannot be not_applicable")
             if release_phase is None:
-                raise ValidationError(
-                    "passed production lifecycle result requires a release phase"
-                )
+                raise ValidationError("passed production lifecycle result requires a release phase")
         else:
             if publication_status is not ProductionPublicationStatus.NOT_APPLICABLE:
-                raise ValidationError(
-                    "skipped production lifecycle result must be not_applicable"
-                )
+                raise ValidationError("skipped production lifecycle result must be not_applicable")
             if not reason:
-                raise ValidationError(
-                    "skipped production lifecycle result requires a reason"
-                )
+                raise ValidationError("skipped production lifecycle result requires a reason")
 
         return cls(
             status=status,
