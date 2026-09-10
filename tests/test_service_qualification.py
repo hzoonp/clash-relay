@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import clash_relay.ai_service_qualification as service_routing
 import clash_relay.service_qualification as services
 from clash_relay.errors import ValidationError
 
@@ -22,6 +23,12 @@ def test_builtin_service_registry_is_ordered_and_metadata_driven() -> None:
         service.probe_name: service.target_group for service in registry
     }
     assert services.service_qualification_by_probe("ai_claude").label == "claude"
+
+
+def test_ai_service_routing_metadata_is_derived_from_registry() -> None:
+    assert services.service_order() == service_routing._SERVICE_ORDER
+    assert services.service_labels() == service_routing._SERVICE_LABELS
+    assert services.service_targets() == service_routing._SERVICE_TARGETS
 
 
 def test_client_path_hardening_is_declarative_and_registry_driven(
