@@ -1,7 +1,9 @@
 name: Temporary Ruff Format Diff
 
 on:
-  pull_request:
+  push:
+    branches:
+      - work/lifecycle-result-contract
 
 permissions:
   contents: read
@@ -14,9 +16,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.lock
-      - name: Install hash-verified development dependencies
-        run: python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
+      - name: Install Ruff
+        run: python -m pip install ruff==0.14.10
       - name: Show formatter diff without changing files
         run: ruff format --diff . || true
