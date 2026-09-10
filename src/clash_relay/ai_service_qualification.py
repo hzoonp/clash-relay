@@ -8,20 +8,13 @@ from typing import Any
 
 from .ai_qualification import AI_POLICY_GROUP, AI_PROVIDER_PREFIX, apply_ai_qualification
 from .errors import ValidationError
+from .service_qualification import service_labels, service_order, service_targets
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
-_SERVICE_ORDER = ("ai_openai", "ai_claude", "ai_gemini")
-_SERVICE_LABELS = {
-    "ai_openai": "openai",
-    "ai_claude": "claude",
-    "ai_gemini": "gemini",
-}
-_SERVICE_TARGETS = {
-    "ai_openai": "__CR_AI_SERVICE_OPENAI",
-    "ai_claude": "__CR_AI_SERVICE_CLAUDE",
-    "ai_gemini": "__CR_AI_SERVICE_GEMINI",
-}
+_SERVICE_ORDER = service_order()
+_SERVICE_LABELS = service_labels()
+_SERVICE_TARGETS = service_targets()
 _REGION_PUBLIC_NAMES = {
     "US": "AI · 美国",
     "SG": "AI · 新加坡",
