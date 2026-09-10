@@ -13,6 +13,7 @@ from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .qualification_pipeline_result import QualificationPipelineResult
 from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
 from .service_qualification import harden_declared_service_client_paths
@@ -233,7 +234,7 @@ def run_qualification_pipeline(
     )
     services = runtime_summary.get("services")
     hardened_service_names = sorted(services) if isinstance(services, dict) else []
-    return {
+    result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,
         "stages": [{"name": row.name, "fingerprint": row.fingerprint} for row in stages],
@@ -263,3 +264,4 @@ def run_qualification_pipeline(
             "client_path_services": hardened_service_names,
         },
     }
+    return QualificationPipelineResult.from_mapping(result).as_dict()
