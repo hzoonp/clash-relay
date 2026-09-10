@@ -55,7 +55,14 @@ jobs:
             src/clash_relay/service_qualification.py \
             src/clash_relay/service_qualification_result.py \
             src/clash_relay/ai_application.py \
+            src/clash_relay/ai_runtime_reliability.py \
+            src/clash_relay/ai_service_qualification.py \
+            src/clash_relay/browsing_application.py \
+            src/clash_relay/browsing_runtime.py \
+            src/clash_relay/scheduler_history.py \
+            src/clash_relay/scheduler_policy.py \
             src/clash_relay/qualification_pipeline.py \
+            src/clash_relay/qualification_pipeline_result.py \
             src/clash_relay/qualification_reliability.py \
             src/clash_relay/production_application.py \
             src/clash_relay/production_pipeline.py \
