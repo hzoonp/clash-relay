@@ -89,6 +89,18 @@ class ProductionLifecycleResult:
                 raise ValidationError("passed production lifecycle result cannot be not_applicable")
             if release_phase is None:
                 raise ValidationError("passed production lifecycle result requires a release phase")
+            if (
+                publication_status is ProductionPublicationStatus.DRY_RUN
+                and release_phase is not ReleasePhase.VERIFIED
+            ):
+                raise ValidationError("passed dry-run lifecycle result must be verified")
+            if (
+                publication_status is ProductionPublicationStatus.PUBLISHED
+                and release_phase not in {ReleasePhase.PUBLISHED, ReleasePhase.VERIFIED}
+            ):
+                raise ValidationError(
+                    "passed published lifecycle result must be published or verified"
+                )
         else:
             if publication_status is not ProductionPublicationStatus.NOT_APPLICABLE:
                 raise ValidationError("skipped production lifecycle result must be not_applicable")
