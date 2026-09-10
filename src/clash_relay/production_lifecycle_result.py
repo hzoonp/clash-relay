@@ -42,14 +42,20 @@ class ProductionLifecycleResult:
     def from_mapping(cls, value: Mapping[str, Any]) -> ProductionLifecycleResult:
         """Validate the stable top-level lifecycle result contract fail closed."""
 
+        status_value = value.get("status")
+        if not isinstance(status_value, str):
+            raise ValidationError("production lifecycle result has an invalid status")
         try:
-            status = ProductionLifecycleStatus(value.get("status"))
-        except (TypeError, ValueError) as exc:
+            status = ProductionLifecycleStatus(status_value)
+        except ValueError as exc:
             raise ValidationError("production lifecycle result has an invalid status") from exc
 
+        publication_value = value.get("publication_status")
+        if not isinstance(publication_value, str):
+            raise ValidationError("production lifecycle result has an invalid publication status")
         try:
-            publication_status = ProductionPublicationStatus(value.get("publication_status"))
-        except (TypeError, ValueError) as exc:
+            publication_status = ProductionPublicationStatus(publication_value)
+        except ValueError as exc:
             raise ValidationError(
                 "production lifecycle result has an invalid publication status"
             ) from exc
@@ -57,9 +63,11 @@ class ProductionLifecycleResult:
         phase_value = value.get("release_phase")
         release_phase: ReleasePhase | None = None
         if phase_value is not None:
+            if not isinstance(phase_value, str):
+                raise ValidationError("production lifecycle result has an invalid release phase")
             try:
                 release_phase = ReleasePhase(phase_value)
-            except (TypeError, ValueError) as exc:
+            except ValueError as exc:
                 raise ValidationError(
                     "production lifecycle result has an invalid release phase"
                 ) from exc

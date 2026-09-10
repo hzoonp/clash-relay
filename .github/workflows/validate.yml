@@ -56,13 +56,19 @@ jobs:
             src/clash_relay/service_qualification_result.py \
             src/clash_relay/ai_application.py \
             src/clash_relay/qualification_pipeline.py \
+            src/clash_relay/qualification_reliability.py \
             src/clash_relay/production_application.py \
             src/clash_relay/production_pipeline.py \
+            src/clash_relay/production_diagnostics.py \
+            src/clash_relay/production_failure_metrics.py \
             src/clash_relay/promotion_guard.py \
             src/clash_relay/production_release_stage.py \
+            src/clash_relay/release_bundle.py \
+            src/clash_relay/publishers/cloudflare_kv.py \
             src/clash_relay/operational_slo.py \
             src/clash_relay/slo_application.py \
             src/clash_relay/production_lifecycle.py \
+            src/clash_relay/production_lifecycle_result.py \
             src/clash_relay/publication_decision.py
       - name: Unit tests and coverage floor
         run: |
