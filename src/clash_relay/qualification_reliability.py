@@ -84,6 +84,7 @@ _CONFIGURATION_MARKERS = (
     "found no ",
     "disappeared",
 )
+_TRANSIENT_BROWSING_STAGES = frozenset({"browsing", "browsing_rewrite"})
 
 
 def _int(value: Any) -> int:
@@ -131,7 +132,9 @@ def classify_browsing_stage_failure(
             retryable=False,
         )
 
-    if stage == "browsing" and _whole_browsing_probe_transient(diagnostics or {}):
+    if stage in _TRANSIENT_BROWSING_STAGES and _whole_browsing_probe_transient(
+        diagnostics or {}
+    ):
         return QualificationFailure(
             stage=stage,
             category=QualificationFailureCategory.TRANSIENT,
