@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,7 +38,9 @@ def test_qualification_pipeline_reports_only_aggregate_phase_timings(
     monkeypatch.setattr(
         pipeline,
         "_artifact",
-        lambda path, stage: SimpleNamespace(fingerprint=f"fingerprint-{stage}"),
+        lambda path, stage: SimpleNamespace(
+            fingerprint=hashlib.sha256(stage.encode("utf-8")).hexdigest()
+        ),
     )
     monkeypatch.setattr(
         pipeline,
