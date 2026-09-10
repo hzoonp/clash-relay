@@ -403,14 +403,14 @@ def apply_ai_service_qualification(
         child_names: list[str] = []
         template: dict[str, Any] | None = None
         for public_name in country_order:
-            provider_name = provider_by_public.get(public_name)
-            if provider_name is None:
+            route_provider_name = provider_by_public.get(public_name)
+            if route_provider_name is None:
                 continue
-            names = service_names_by_provider[service].get(provider_name, set())
+            names = service_names_by_provider[service].get(route_provider_name, set())
             if not names:
                 continue
-            source_anchor, _ = routes[provider_name]
-            clone_name = _service_country_anchor_name(service, provider_name)
+            source_anchor, _ = routes[route_provider_name]
+            clone_name = _service_country_anchor_name(service, route_provider_name)
             clone = _clone_country_anchor(
                 groups,
                 source_name=source_anchor,
