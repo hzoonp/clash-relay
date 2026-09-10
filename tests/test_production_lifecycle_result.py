@@ -53,6 +53,7 @@ def test_skipped_lifecycle_result_requires_not_applicable_and_reason() -> None:
     ("raw", "message"),
     [
         ({"status": "unknown", "publication_status": "dry-run"}, "invalid status"),
+        ({"status": 1, "publication_status": "dry-run"}, "invalid status"),
         (
             {"status": "passed", "publication_status": "unknown"},
             "invalid publication status",
@@ -60,8 +61,24 @@ def test_skipped_lifecycle_result_requires_not_applicable_and_reason() -> None:
         (
             {
                 "status": "passed",
+                "publication_status": False,
+                "release_phase": "verified",
+            },
+            "invalid publication status",
+        ),
+        (
+            {
+                "status": "passed",
                 "publication_status": "dry-run",
                 "release_phase": "unknown",
+            },
+            "invalid release phase",
+        ),
+        (
+            {
+                "status": "passed",
+                "publication_status": "dry-run",
+                "release_phase": [],
             },
             "invalid release phase",
         ),
