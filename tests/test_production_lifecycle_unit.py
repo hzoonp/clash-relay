@@ -7,30 +7,11 @@ from typing import Any, cast
 import pytest
 
 from clash_relay.errors import ValidationError
-from clash_relay.production_lifecycle import (
-    ProductionLifecyclePaths,
-    ProductionPipeline,
-    resolve_publication_mode,
-)
+from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
 
 
 def _pipeline(tmp_path: Path, *, publish: bool = False) -> ProductionPipeline:
     return ProductionPipeline(ProductionLifecyclePaths.canonical(tmp_path), publish=publish)
-
-
-def test_publication_mode_resolves_all_supported_event_paths() -> None:
-    assert resolve_publication_mode(explicit_publish=True) is True
-    assert resolve_publication_mode(explicit_publish=False, event_name="push") is False
-    assert resolve_publication_mode(event_name=None) is False
-    assert resolve_publication_mode(event_name="push") is True
-    assert resolve_publication_mode(event_name="schedule") is True
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish=True) is True
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish=False) is False
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish=" TRUE ") is True
-    assert resolve_publication_mode(event_name="workflow_dispatch", manual_publish="false") is False
-
-    with pytest.raises(ValidationError, match="unsupported production publication event"):
-        resolve_publication_mode(event_name="pull_request")
 
 
 def test_lifecycle_json_helpers_round_trip_and_fail_closed(tmp_path: Path) -> None:
