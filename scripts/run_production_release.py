@@ -13,6 +13,7 @@ from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
+from clash_relay.production_lifecycle_result import ProductionLifecycleResult
 from clash_relay.publication_decision import resolve_publication_decision
 
 
@@ -55,12 +56,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         publish = decision.should_publish
         _enforce_validated_ci_sha(publish=publish)
-        result = ProductionPipeline(
+        raw_result = ProductionPipeline(
             ProductionLifecyclePaths.canonical(args.root),
             publish=publish,
             workers=args.workers,
         ).run()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        result = ProductionLifecycleResult.from_mapping(raw_result)
+        print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:
         diagnostic = safe_failure_diagnostic(exc)
