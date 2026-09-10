@@ -22,6 +22,22 @@ def test_whole_probe_infrastructure_failure_is_retryable_transient() -> None:
     assert failure.retryable is True
 
 
+def test_whole_probe_transient_exposed_during_rewrite_is_retryable() -> None:
+    failure = classify_browsing_stage_failure(
+        stage="browsing_rewrite",
+        message="browsing qualification contains no automatic nodes",
+        diagnostics={
+            "tested_nodes": 6,
+            "successful_samples": 0,
+            "failed_samples": 18,
+            "outcomes": {"missing_delay": 6, "controller_http_429": 12},
+        },
+    )
+
+    assert failure.category is QualificationFailureCategory.TRANSIENT
+    assert failure.retryable is True
+
+
 def test_partial_live_success_is_not_retryable() -> None:
     failure = classify_browsing_stage_failure(
         stage="browsing_rewrite",
@@ -38,11 +54,32 @@ def test_partial_live_success_is_not_retryable() -> None:
     assert failure.retryable is False
 
 
+def test_non_transient_whole_probe_failure_is_not_retryable() -> None:
+    failure = classify_browsing_stage_failure(
+        stage="browsing_rewrite",
+        message="browsing qualification contains no automatic nodes",
+        diagnostics={
+            "tested_nodes": 6,
+            "successful_samples": 0,
+            "failed_samples": 18,
+            "outcomes": {"tls_error": 18},
+        },
+    )
+
+    assert failure.category is QualificationFailureCategory.CONFIGURATION
+    assert failure.retryable is False
+
+
 def test_core_rejection_is_never_retryable() -> None:
     failure = classify_browsing_stage_failure(
-        stage="browsing",
+        stage="browsing_rewrite",
         message="Mihomo rejected the browsing qualification configuration",
-        diagnostics={},
+        diagnostics={
+            "tested_nodes": 6,
+            "successful_samples": 0,
+            "failed_samples": 18,
+            "outcomes": {"probe_error": 18},
+        },
     )
 
     assert failure.category is QualificationFailureCategory.CORE_REJECTION
