@@ -50,7 +50,9 @@ class ProductionLifecycleResult:
             ) from exc
 
         try:
-            publication_status = ProductionPublicationStatus(value.get("publication_status"))
+            publication_status = ProductionPublicationStatus(
+                value.get("publication_status")
+            )
         except (TypeError, ValueError) as exc:
             raise ValidationError(
                 "production lifecycle result has an invalid publication status"
