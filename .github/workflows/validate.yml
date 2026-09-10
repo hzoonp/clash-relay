@@ -85,6 +85,8 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:.work/coverage-3.12.xml \
             --junitxml=.work/unit-3.12.xml
+      - name: Enforce risk-based coverage ratchet
+        run: python scripts/audit_risk_coverage.py .work/coverage-3.12.xml
       - run: python scripts/repository_audit.py
 
   python-compat:
