@@ -85,27 +85,6 @@ class ProductionLifecyclePaths:
         )
 
 
-def resolve_publication_mode(
-    *,
-    explicit_publish: bool | None = None,
-    event_name: str | None = None,
-    manual_publish: str | bool | None = None,
-) -> bool:
-    """Resolve push/schedule/manual publication semantics without workflow shell logic."""
-
-    if explicit_publish is not None:
-        return explicit_publish
-    if not event_name:
-        return False
-    if event_name in {"push", "schedule"}:
-        return True
-    if event_name == "workflow_dispatch":
-        if isinstance(manual_publish, bool):
-            return manual_publish
-        return str(manual_publish or "").strip().lower() == "true"
-    raise ValidationError(f"unsupported production publication event {event_name!r}")
-
-
 class ProductionPipeline:
     """Own the complete fail-closed production lifecycle."""
 
