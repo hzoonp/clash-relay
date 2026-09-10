@@ -84,13 +84,8 @@ def test_canonical_runner_uses_typed_publication_decision() -> None:
     assert "resolve_cutover_publication_mode" not in runner
 
 
-def test_legacy_publication_resolver_cannot_escape_lifecycle_module() -> None:
+def test_legacy_publication_resolver_is_absent_from_runtime_code() -> None:
     legacy_token = "resolve_publication_mode"
-    lifecycle = ROOT / "src/clash_relay/production_lifecycle.py"
-    assert legacy_token in lifecycle.read_text(encoding="utf-8")
-
     for base in (ROOT / "src/clash_relay", ROOT / "scripts"):
         for path in sorted(base.glob("*.py")):
-            if path == lifecycle:
-                continue
             assert legacy_token not in path.read_text(encoding="utf-8"), path
