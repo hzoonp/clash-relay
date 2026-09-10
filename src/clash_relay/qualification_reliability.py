@@ -132,9 +132,7 @@ def classify_browsing_stage_failure(
             retryable=False,
         )
 
-    if stage in _TRANSIENT_BROWSING_STAGES and _whole_browsing_probe_transient(
-        diagnostics or {}
-    ):
+    if stage in _TRANSIENT_BROWSING_STAGES and _whole_browsing_probe_transient(diagnostics or {}):
         return QualificationFailure(
             stage=stage,
             category=QualificationFailureCategory.TRANSIENT,
