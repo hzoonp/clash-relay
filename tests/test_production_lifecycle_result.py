@@ -32,6 +32,20 @@ def test_passed_lifecycle_result_round_trips_without_dropping_safe_fields() -> N
     assert result.as_dict() == raw
 
 
+@pytest.mark.parametrize("phase", ["published", "verified"])
+def test_published_lifecycle_result_accepts_only_post_commit_phases(phase: str) -> None:
+    result = ProductionLifecycleResult.from_mapping(
+        {
+            "status": "passed",
+            "publication_status": "published",
+            "release_phase": phase,
+        }
+    )
+
+    assert result.publication_status is ProductionPublicationStatus.PUBLISHED
+    assert result.release_phase is ReleasePhase(phase)
+
+
 def test_skipped_lifecycle_result_requires_not_applicable_and_reason() -> None:
     raw = {
         "status": "skipped",
@@ -102,6 +116,22 @@ def test_skipped_lifecycle_result_requires_not_applicable_and_reason() -> None:
         (
             {"status": "passed", "publication_status": "dry-run"},
             "requires a release phase",
+        ),
+        (
+            {
+                "status": "passed",
+                "publication_status": "dry-run",
+                "release_phase": "promoted",
+            },
+            "dry-run lifecycle result must be verified",
+        ),
+        (
+            {
+                "status": "passed",
+                "publication_status": "published",
+                "release_phase": "promoted",
+            },
+            "published lifecycle result must be published or verified",
         ),
         (
             {
