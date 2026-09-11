@@ -52,6 +52,20 @@ def test_enabled_schedule_published_result_passes_event_audit() -> None:
     audit_production_event_result(result, decision)
 
 
+def test_enabled_schedule_unchanged_result_passes_event_audit() -> None:
+    decision = resolve_publication_decision(
+        event_name="schedule",
+        scheduled_publish="true",
+    )
+    result = _passed_result(
+        publication_status="published",
+        release_status="unchanged",
+        promotion_guard="passed",
+    )
+
+    audit_production_event_result(result, decision)
+
+
 def test_dry_run_skip_remains_valid_for_missing_canonical_declarations() -> None:
     decision = resolve_publication_decision(
         event_name="schedule",
@@ -130,6 +144,7 @@ def test_publish_decision_rejects_dry_run_result() -> None:
     [
         ("dry-run", "passed", "release_status"),
         ("published", "skipped", "promotion_guard"),
+        ("invalid", "passed", "invalid release status"),
     ],
 )
 def test_publish_decision_requires_commit_and_promotion_evidence(
@@ -167,6 +182,7 @@ def test_dry_run_decision_rejects_published_result() -> None:
     ("release_status", "promotion_guard", "message"),
     [
         ("published", "skipped", "release_status"),
+        ("unchanged", "skipped", "release_status"),
         ("dry-run", "passed", "promotion_guard"),
     ],
 )

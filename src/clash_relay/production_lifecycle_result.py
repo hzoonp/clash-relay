@@ -35,6 +35,14 @@ class ProductionPublicationStatus(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class ProductionReleaseStatus(StrEnum):
+    """Typed outcome emitted by the versioned release transaction."""
+
+    PUBLISHED = "published"
+    UNCHANGED = "unchanged"
+    DRY_RUN = "dry-run"
+
+
 @dataclass(frozen=True, slots=True)
 class ProductionLifecycleResult:
     status: ProductionLifecycleStatus
@@ -127,6 +135,22 @@ class ProductionLifecycleResult:
             warnings=warnings,
             _document=dict(value),
         )
+
+    @property
+    def release_status(self) -> ProductionReleaseStatus | None:
+        """Return typed versioned-release evidence when the lifecycle emitted it."""
+
+        value = self._document.get("release_status")
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValidationError("production lifecycle result has an invalid release status")
+        try:
+            return ProductionReleaseStatus(value)
+        except ValueError as exc:
+            raise ValidationError(
+                "production lifecycle result has an invalid release status"
+            ) from exc
 
     def as_dict(self) -> dict[str, Any]:
         """Return the original aggregate result without dropping future safe fields."""

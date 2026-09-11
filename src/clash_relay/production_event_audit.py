@@ -10,6 +10,7 @@ from .production_lifecycle_result import (
     ProductionLifecycleResult,
     ProductionLifecycleStatus,
     ProductionPublicationStatus,
+    ProductionReleaseStatus,
 )
 from .publication_decision import PublicationDecision
 from .release_reliability import ReleasePhase
@@ -28,9 +29,10 @@ def audit_production_event_result(
 
     A dry-run may legitimately skip when canonical declarations are absent, which
     keeps public forks fail-closed. A publish decision, however, must finish as a
-    verified published release. Optional post-release observability fields remain
-    outside this gate because they may warn without invalidating an already valid
-    release.
+    verified published release. An idempotent release transaction may report
+    ``unchanged`` after proving that the exact candidate bytes are already live.
+    Optional post-release observability fields remain outside this gate because
+    they may warn without invalidating an already valid release.
     """
 
     if result.status is ProductionLifecycleStatus.SKIPPED:
@@ -55,11 +57,18 @@ def audit_production_event_result(
     if decision.should_publish:
         if result.publication_status is not ProductionPublicationStatus.PUBLISHED:
             raise ValidationError("production publish decision requires published lifecycle status")
-        _require_status(document, "release_status", "published")
+        if result.release_status not in {
+            ProductionReleaseStatus.PUBLISHED,
+            ProductionReleaseStatus.UNCHANGED,
+        }:
+            raise ValidationError(
+                "production publish decision requires release_status='published' or 'unchanged'"
+            )
         _require_status(document, "promotion_guard", "passed")
         return
 
     if result.publication_status is not ProductionPublicationStatus.DRY_RUN:
         raise ValidationError("production dry-run decision requires dry-run lifecycle status")
-    _require_status(document, "release_status", "dry-run")
+    if result.release_status is not ProductionReleaseStatus.DRY_RUN:
+        raise ValidationError("production dry-run decision requires release_status='dry-run'")
     _require_status(document, "promotion_guard", "skipped")
