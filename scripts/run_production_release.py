@@ -62,12 +62,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         publish = decision.should_publish
         _enforce_validated_ci_sha(publish=publish)
-        raw_result = ProductionPipeline(
-            ProductionLifecyclePaths.canonical(args.root),
-            publish=publish,
-            workers=args.workers,
-        ).run()
-        result = ProductionLifecycleResult.from_mapping(raw_result)
+        result = ProductionLifecycleResult.from_pipeline(
+            ProductionPipeline(
+                ProductionLifecyclePaths.canonical(args.root),
+                publish=publish,
+                workers=args.workers,
+            )
+        )
         print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:
