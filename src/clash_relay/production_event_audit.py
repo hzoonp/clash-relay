@@ -17,9 +17,7 @@ from .release_reliability import ReleasePhase
 
 def _require_status(document: Mapping[str, Any], key: str, expected: str) -> None:
     if document.get(key) != expected:
-        raise ValidationError(
-            f"production event result requires {key}={expected!r}"
-        )
+        raise ValidationError(f"production event result requires {key}={expected!r}")
 
 
 def audit_production_event_result(
