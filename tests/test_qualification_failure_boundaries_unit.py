@@ -35,7 +35,7 @@ class _JsonListResponse:
     ["", "099", "600", "500-400", "abc", "200-"],
 )
 def test_ai_expected_status_parser_fails_closed(value: str) -> None:
-    with pytest.raises(ValidationError, match="expected status|invalid AI qualification"):
+    with pytest.raises(ValidationError, match=r"expected status|invalid AI qualification"):
         ai._expected_status_ranges(value)
 
 
