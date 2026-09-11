@@ -32,21 +32,43 @@ def _decision(*, publish: bool, reason: str, event_name: str | None) -> Publicat
     )
 
 
+def _scheduled_publication_enabled(value: str | bool | None) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "false"}:
+        return False
+    if normalized == "true":
+        return True
+    raise ValidationError("scheduled publication enablement must be 'true' or 'false'")
+
+
 def resolve_publication_decision(
     *,
     explicit_publish: bool | None = None,
     event_name: str | None = None,
     manual_publish: str | bool | None = None,
+    scheduled_publish: str | bool | None = None,
 ) -> PublicationDecision:
     """Resolve the canonical publication decision without workflow shell logic.
 
-    Automatic GitHub events are always dry-run. Explicit local publication and
-    manual workflow dispatch remain available. Unsupported events fail closed
-    unless an explicit local publish/dry-run flag already selected the mode.
+    Push events are always dry-run. Scheduled publication is reachable only when
+    the schedule-specific enablement signal is explicitly true. Manual workflow
+    dispatch and explicit local publication remain available. Unsupported events
+    fail closed unless an explicit local publish/dry-run flag already selected
+    the mode.
     """
 
-    if event_name in {"push", "schedule"}:
+    if event_name == "push":
         return _decision(publish=False, reason="automatic_event", event_name=event_name)
+
+    if event_name == "schedule":
+        publish = _scheduled_publication_enabled(scheduled_publish)
+        return _decision(
+            publish=publish,
+            reason="scheduled_publication" if publish else "automatic_event",
+            event_name=event_name,
+        )
 
     if explicit_publish is not None:
         return _decision(
