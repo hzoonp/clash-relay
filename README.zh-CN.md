@@ -17,14 +17,14 @@ Fork
   -> clash-relay doctor
   -> 手动 dry-run（publish=false）
   -> 查看聚合 production proof
-  -> publish=true
-  -> 每 6 小时执行 production-parity dry-run
+  -> 手动 bootstrap publish=true
+  -> 显式启用受保护的每 6 小时定时发布
   -> 必要时执行 validated 回滚
 ```
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
 
-自动 `push` 和 `schedule` 生产运行都被硬锁为 dry-run；只有显式手动 `workflow_dispatch` 并设置 `publish=true` 才允许修改生产状态。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
+自动 `push` 生产运行继续被硬锁为 dry-run；手动 `workflow_dispatch` 只有 `publish=true` 才发布。定时 `schedule` 只能通过专用 `CLASH_RELAY_SCHEDULE_PUBLISH` 门禁进入发布：已明确授权的上游 `hzoonp/clash-relay` 在该变量未设置时启用自动发布；公开 Fork 默认仍为 dry-run，只有显式把仓库变量设为精确小写 `true` 才启用。把变量设为 `false` 可立即暂停无人值守发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
 
 ## Public Config v2
 
@@ -190,6 +190,14 @@ Secret:   CLOUDFLARE_API_TOKEN
 Variable: CLOUDFLARE_ACCOUNT_ID
 Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
+
+定时发布控制变量：
+
+```text
+Variable: CLASH_RELAY_SCHEDULE_PUBLISH
+```
+
+公开 Fork 必须先完成成功的手动 dry-run 和 bootstrap 发布，再把它显式设为精确小写 `true`；设为 `false` 会让定时路径保持或恢复为 dry-run。已授权的上游仓库在变量未设置时默认启用，也可以通过设为 `false` 暂停。
 
 真实订阅 URL 绝不能写入受跟踪 YAML、README、Workflow 参数或日志。
 

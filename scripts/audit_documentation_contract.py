@@ -51,8 +51,10 @@ FORBIDDEN = (
     "Policy Model v1 仍可",
     "current/deprecated",
     "current` 还是 `deprecated",
-    "automatic six-hour production refresh",
-    "每 6 小时自动刷新",
+    "Automatic `push` and `schedule` production runs are hard-latched to dry-run mode.",
+    "Automatic `push` and `schedule` events are hard-latched to dry-run mode.",
+    "自动 `push` 和 `schedule` 生产运行都被硬锁为 dry-run",
+    "自动 `push` 与 `schedule` 事件始终被硬锁为 dry-run",
     "AI routing continues to exclude CN/HK",
 )
 
@@ -63,7 +65,6 @@ PUBLICATION_CONTRACT_DOCS = (
     "docs/quickstart.zh-CN.md",
     "docs/publishing.md",
     "docs/production-cutover.md",
-    "docs/releases/2.2.0.md",
 )
 
 PUBLIC_SURFACE_DOCS = (
@@ -130,7 +131,13 @@ def audit(root: Path = ROOT) -> list[str]:
 
     for relative in PUBLICATION_CONTRACT_DOCS:
         text = texts.get(relative, "")
-        for token in ("push", "schedule", "dry-run", "publish=true"):
+        for token in (
+            "push",
+            "schedule",
+            "dry-run",
+            "publish=true",
+            "CLASH_RELAY_SCHEDULE_PUBLISH",
+        ):
             if token not in text:
                 errors.append(
                     f"{relative} does not explicitly describe the current publication trigger contract: {token}"
