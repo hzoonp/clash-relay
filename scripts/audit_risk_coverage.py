@@ -13,6 +13,7 @@ from pathlib import Path
 # make CI green. The global pytest-cov floor remains a separate broad signal.
 RISK_COVERAGE_FLOORS: dict[str, float] = {
     "src/clash_relay/publication_decision.py": 95.0,
+    "src/clash_relay/production_event_audit.py": 95.0,
     "src/clash_relay/production_lifecycle_result.py": 95.0,
     "src/clash_relay/production_release_stage.py": 95.0,
     "src/clash_relay/production_diagnostics.py": 95.0,
