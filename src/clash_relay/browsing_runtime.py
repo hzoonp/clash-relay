@@ -426,7 +426,7 @@ def _region_provider_payloads(
     return result
 
 
-def _remove_region_runtime(config: dict[str, Any], region: str) -> None:
+def _remove_region_runtime(config: dict[str, Any], region: str, provider_name: str) -> None:
     groups = config.get("proxy-groups")
     if not isinstance(groups, list):
         raise ValidationError("browsing qualification requires proxy-groups")
@@ -434,6 +434,7 @@ def _remove_region_runtime(config: dict[str, Any], region: str) -> None:
         region_display_name(region),
         region_stable_group(region),
         region_reserve_group(region),
+        f"__CR_AUTO_BROWSING_{region}",
     }
     groups[:] = [
         group
@@ -444,6 +445,20 @@ def _remove_region_runtime(config: dict[str, Any], region: str) -> None:
             and group["name"] in remove_names
         )
     ]
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        uses = group.get("use")
+        if isinstance(uses, list) and provider_name in uses:
+            raise ValidationError(
+                f"browsing provider {provider_name!r} remains referenced by "
+                f"group {group.get('name')!r} after region removal"
+            )
+        references = group.get("proxies")
+        if isinstance(references, list):
+            group["proxies"] = [
+                reference for reference in references if str(reference) not in remove_names
+            ]
 
 
 def _refresh_regional_routes(config: dict[str, Any], available_regions: list[str]) -> None:
@@ -512,7 +527,7 @@ def rewrite_hardened_browsing_qualified_candidate(
         ]
         if not kept:
             providers.pop(provider_name, None)
-            _remove_region_runtime(config, region)
+            _remove_region_runtime(config, region, provider_name)
             removed_regions.append(region)
             region_report[region] = {
                 "tested": len(payload),
