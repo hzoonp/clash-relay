@@ -25,6 +25,16 @@ def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
     assert "github.ref == 'refs/heads/main'" in text
 
 
+def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
+    text = WORKFLOW.read_text()
+    assert text.count("CLASH_RELAY_SCHEDULE_PUBLISH:") == 1
+    assert "github.event_name == 'schedule'" in text
+    assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true'" in text
+    assert "github.repository == 'hzoonp/clash-relay'" in text
+    assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == ''" in text
+    assert "CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}" in text
+
+
 def test_workflow_is_a_thin_adapter_to_one_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
     assert len(text.splitlines()) < 100
