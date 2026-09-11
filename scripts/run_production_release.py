@@ -28,6 +28,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.set_defaults(publish=None)
     parser.add_argument("--event-name")
     parser.add_argument("--manual-publish")
+    parser.add_argument("--schedule-publish")
     parser.add_argument("--workers", type=int, default=12)
     return parser
 
@@ -52,6 +53,11 @@ def main(argv: list[str] | None = None) -> int:
                 args.manual_publish
                 if args.manual_publish is not None
                 else os.environ.get("CLASH_RELAY_MANUAL_PUBLISH")
+            ),
+            scheduled_publish=(
+                args.schedule_publish
+                if args.schedule_publish is not None
+                else os.environ.get("CLASH_RELAY_SCHEDULE_PUBLISH")
             ),
         )
         publish = decision.should_publish
