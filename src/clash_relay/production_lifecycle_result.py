@@ -12,10 +12,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from .errors import ValidationError
 from .release_reliability import ReleasePhase
+
+
+class ProductionLifecyclePipeline(Protocol):
+    """Minimal typed producer consumed by the lifecycle-result boundary."""
+
+    def run(self) -> Mapping[str, Any]: ...
 
 
 class ProductionLifecycleStatus(StrEnum):
@@ -37,6 +43,12 @@ class ProductionLifecycleResult:
     reason: str | None
     warnings: tuple[str, ...]
     _document: dict[str, Any]
+
+    @classmethod
+    def from_pipeline(cls, pipeline: ProductionLifecyclePipeline) -> ProductionLifecycleResult:
+        """Run a typed lifecycle producer and validate its stable result contract."""
+
+        return cls.from_mapping(pipeline.run())
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> ProductionLifecycleResult:
