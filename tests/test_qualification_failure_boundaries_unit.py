@@ -35,7 +35,9 @@ class _JsonListResponse:
     ["", "099", "600", "500-400", "abc", "200-"],
 )
 def test_ai_expected_status_parser_fails_closed(value: str) -> None:
-    with pytest.raises(ValidationError, match=r"expected status|invalid AI qualification"):
+    with pytest.raises(
+        ValidationError, match=r"expected status|invalid AI qualification"
+    ):
         ai._expected_status_ranges(value)
 
 
@@ -55,7 +57,9 @@ def test_ai_provider_inventory_rejects_malformed_candidates() -> None:
             {"proxy-providers": {"cr_ai_bad": {"payload": [{"type": "ss"}]}}}
         )
     with pytest.raises(ValidationError, match="no candidate AI proxy nodes"):
-        ai._ai_provider_payloads({"proxy-providers": {"cr_general_any": {"payload": []}}})
+        ai._ai_provider_payloads(
+            {"proxy-providers": {"cr_general_any": {"payload": []}}}
+        )
 
 
 def test_ai_temporary_probe_rejects_disappeared_provider() -> None:
@@ -96,7 +100,9 @@ def test_ai_controller_waits_fail_closed_when_mihomo_exits() -> None:
 
 
 def test_browsing_inventory_and_empty_filter_fail_closed() -> None:
-    with pytest.raises(ValidationError, match="automatic browsing filter cannot be empty"):
+    with pytest.raises(
+        ValidationError, match="automatic browsing filter cannot be empty"
+    ):
         browsing._exact_filter(set())
     with pytest.raises(ValidationError, match="must be a mapping"):
         browsing._browsing_provider_payloads({"proxy-providers": []})
@@ -135,7 +141,9 @@ def test_browsing_controller_waits_fail_closed_when_mihomo_exits() -> None:
     process = _ExitedProcess()
     with pytest.raises(ValidationError, match="before browsing qualification"):
         browsing._wait_for_controller(process, 9090, "secret")
-    with pytest.raises(ValidationError, match="loading browsing qualification providers"):
+    with pytest.raises(
+        ValidationError, match="loading browsing qualification providers"
+    ):
         browsing._wait_for_members(process, 9090, "secret", {"node"})
 
 
