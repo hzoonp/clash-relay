@@ -161,7 +161,11 @@ def test_transport_empty_filter_and_temporary_probe_fail_closed() -> None:
 
 
 def test_transport_controller_rejects_non_object_response(monkeypatch) -> None:
-    monkeypatch.setattr(transport.urllib.request, "urlopen", lambda *args, **kwargs: _JsonListResponse())
+    monkeypatch.setattr(
+        transport.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: _JsonListResponse(),
+    )
     with pytest.raises(ValidationError, match="invalid response"):
         transport._controller_get(9090, "secret", "/version")
 
