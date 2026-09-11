@@ -6,13 +6,13 @@ Publication is downstream of Public Config v2 validation, generation, runtime qu
 
 The production workflow is designed to run from a public repository without turning GitHub into credential storage. Real subscription URLs are supplied only through trusted Secrets on `main`; generated and qualified candidates remain on the ephemeral runner until private publication to Cloudflare Workers KV.
 
-Pull requests use fictional sources and do not receive production subscription Secrets. Automatic `push` and `schedule` events are hard-latched to dry-run mode. Manual `workflow_dispatch` also remains a dry run unless `publish=true` is explicitly selected; only that explicit manual publication path may change production state.
+Pull requests use fictional sources and do not receive production subscription Secrets. Automatic `push` remains hard-latched to dry-run mode. Manual `workflow_dispatch` also remains a dry run unless `publish=true` is explicitly selected. Scheduled publication is a separate intentional state controlled by `CLASH_RELAY_SCHEDULE_PUBLISH` and can never be inferred from a push or manual input.
 
-The supported schedule is a production-parity monitoring run, not an unattended publication path. It re-fetches current private subscriptions and executes generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, and the complete stable Mihomo matrix. Because the run is dry-run, Promotion Guard, release activation, derived-state persistence, metrics persistence, and other production writes remain skipped.
+The supported schedule runs every six hours and re-fetches current private subscriptions before executing generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, Promotion Guard, and the complete stable Mihomo matrix. The authorized upstream `hzoonp/clash-relay` deployment publishes when `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`; setting it to `false` suspends unattended publication. Public forks remain dry-run unless they explicitly opt in with the repository variable set to exact lowercase `true` after their manual bootstrap.
 
-Re-enabling unattended scheduled publication is intentionally a separate reviewed change. It requires fresh exact-SHA validation, an explicit rollback plan, and a contract update that makes scheduled publication an intentional reachable state rather than an implicit side effect.
+Every publishing schedule run remains bound to the exact validated SHA. Any qualification rejection, SHA mismatch, Promotion Guard block, Mihomo rejection, ambiguous release transaction, or other mandatory-gate failure stops before activation. The same versioned rollback and compensating transaction semantics used by manual publication apply to scheduled publication.
 
-If an explicitly published final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
+If an explicitly or automatically published final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
 
 ## Secret masking and privacy
 
@@ -44,7 +44,7 @@ Public Config v2 + private Secrets
 
 Scripts are thin adapters. Python production stages do not launch sibling Python scripts or exchange business results through stdout/stderr JSON. Mihomo remains an explicit external-program boundary.
 
-Dry-run execution intentionally omits the production-only baseline/Promotion Guard and write stages while preserving the candidate-generation, qualification, current-policy audit, and real-core validation path.
+Dry-run execution intentionally omits the production-only baseline/Promotion Guard and write stages while preserving the candidate-generation, qualification, current-policy audit, and real-core validation path. Publishing scheduled execution uses the same full publication lifecycle as manual `publish=true`; it does not have a shortened or alternate publisher path.
 
 ## Cloudflare Workers KV
 
@@ -68,7 +68,8 @@ GitHub Actions expects:
 
 - Secret `CLOUDFLARE_API_TOKEN` with narrowly scoped Workers KV write permission;
 - Variable `CLOUDFLARE_ACCOUNT_ID`;
-- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`.
+- Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`;
+- Variable `CLASH_RELAY_SCHEDULE_PUBLISH` when a public fork intentionally opts into scheduled publication or when an operator needs to suspend/restore the upstream scheduled path.
 
 The complete Worker profile URL is a bearer credential and must not be copied into GitHub.
 

@@ -8,7 +8,7 @@ For a routine fork, you only need to own three surfaces:
 
 1. put real subscription URLs in `CLASH_RELAY_SUBSCRIPTIONS`;
 2. edit `subscriptions.yaml` only when subscription admission or allowed scenarios must change;
-3. configure private Cloudflare KV, dry-run with `publish=false`, then intentionally publish.
+3. configure private Cloudflare KV, dry-run with `publish=false`, then intentionally publish before opting in to scheduled publication.
 
 You do **not** need to understand or edit RuntimeGraph internals, qualification implementations, scheduler history, release transactions, or Mihomo pins for a normal fork. See [Fork configuration surface](fork-configuration.md) for the goal-to-file decision table and the boundary between routine and advanced changes.
 
@@ -22,9 +22,10 @@ You do **not** need to understand or edit RuntimeGraph internals, qualification 
 5. Run `clash-relay doctor` with private inputs
 6. Manually run Generate, validate, and publish with publish=false
 7. Inspect aggregate proof; only then publish=true
+8. After bootstrap, set CLASH_RELAY_SCHEDULE_PUBLISH=true if this fork should publish every six hours
 ```
 
-The first manual workflow defaults to `publish=false`. Treat a successful dry run as the prerequisite for an intentional first publication.
+The first manual workflow defaults to `publish=false`. Treat a successful dry run as the prerequisite for an intentional first publication and for enabling unattended publication in a fork.
 
 ## 1. Fork without adding credentials
 
@@ -107,9 +108,9 @@ Browsing/transport retry is deliberately narrow: only a structured whole-probe t
 
 Inspect the GitHub Actions summary. It intentionally exposes only aggregate production proof.
 
-## 6. Publish
+## 6. Publish and enable scheduled refresh
 
-Only an explicit manual `workflow_dispatch` with `publish = true` may publish production state. Automatic `push` and `schedule` events remain hard-latched to dry-run mode.
+Manual `workflow_dispatch` publishes only when `publish = true`; automatic `push` remains hard-latched to dry-run. Scheduled execution can publish only when the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate is enabled.
 
 Publication stages immutable release objects first, verifies exact read-back bytes, activates the fixed client-facing production key, then commits release pointers. Cloudflare KV does not provide cross-key transactions, so pointer-commit failures use compensating restoration of the previous exact production bytes.
 
@@ -121,7 +122,9 @@ prepared -> qualified -> promoted -> published -> verified
 
 A proof/manifest/metrics problem after the client-visible release transaction has committed is reported as post-release observability degradation; it does not falsely claim the release was never published. Before publication, every mandatory gate remains fail closed.
 
-The scheduled workflow still runs every six hours (`17 */6 * * *` UTC), but it is a production-parity monitoring dry run. It re-fetches current private subscriptions and reruns generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-qualification audit, and the complete stable Mihomo matrix without changing production or persisted derived state. Re-enabling unattended scheduled publication is intentionally a separate reviewed change with fresh exact-SHA validation and an explicit rollback plan.
+The scheduled workflow runs every six hours (`17 */6 * * *` UTC). On the authorized upstream `hzoonp/clash-relay`, scheduled publication is active when `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`; setting it to `false` suspends unattended publication and returns scheduled runs to dry-run. Public forks default to dry-run and must explicitly set the repository variable to exact lowercase `true` after a successful manual dry-run and bootstrap publication.
+
+A publishing schedule run still re-fetches current private subscriptions and reruns generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-qualification audit, Promotion Guard, and the complete stable Mihomo matrix. Any uncertainty or gate failure stops before production activation.
 
 Overlapping production Actions are serialized by the workflow concurrency group with `cancel-in-progress: false`; an older production run is never cancelled mid-lifecycle by a newer refresh.
 

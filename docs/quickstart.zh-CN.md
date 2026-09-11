@@ -8,7 +8,7 @@
 
 1. 真实订阅 URL 只放进 `CLASH_RELAY_SUBSCRIPTIONS`；
 2. 只有订阅准入或允许场景需要变化时才修改 `subscriptions.yaml`；
-3. 配置私有 Cloudflare KV，先 `publish=false` dry-run，再有意正式发布。
+3. 配置私有 Cloudflare KV，先 `publish=false` dry-run，再有意正式发布，最后再决定是否启用定时自动发布。
 
 日常 Fork **不需要**先理解或修改 RuntimeGraph 内部实现、qualification 实现、scheduler history、release transaction 或 Mihomo 固定版本。需要判断“某个需求到底该改哪个文件”时，直接看 [Fork 配置边界](fork-configuration.zh-CN.md)。
 
@@ -22,9 +22,10 @@
 5. 使用私有输入运行 clash-relay doctor
 6. 手动运行 Generate, validate, and publish，publish=false
 7. 查看 aggregate proof；确认通过后再 publish=true
+8. bootstrap 成功后，如需每 6 小时自动发布，再设置 CLASH_RELAY_SCHEDULE_PUBLISH=true
 ```
 
-首次手动 Workflow 默认保持 `publish=false`。把成功的 dry-run 作为第一次正式发布的前置条件。
+首次手动 Workflow 默认保持 `publish=false`。把成功的 dry-run 作为第一次正式发布以及 Fork 开启无人值守发布的前置条件。
 
 ## 1. Fork 时不要加入任何凭据
 
@@ -113,9 +114,9 @@ Retry 非常严格：只有结构化的整轮 browsing live probe 瞬时基础�
 
 只查看 GitHub Actions 中的 aggregate production proof。
 
-## 6. 正式发布
+## 6. 正式发布并启用定时刷新
 
-只有显式手动 `workflow_dispatch` 并设置 `publish = true` 才允许修改生产状态。自动 `push` 与 `schedule` 事件始终被硬锁为 dry-run。
+手动 `workflow_dispatch` 只有 `publish = true` 才允许修改生产状态；自动 `push` 继续硬锁为 dry-run。定时 `schedule` 只有 schedule 专用 `CLASH_RELAY_SCHEDULE_PUBLISH` 门禁启用时才允许发布。
 
 发布流程先写入并 read-back 验证不可变 release 对象，再激活固定客户端 production key，最后提交 release pointers。Cloudflare KV 不支持跨 key 事务，因此 pointer commit 异常时使用补偿恢复上一版本的精确生产字节。
 
@@ -127,7 +128,9 @@ prepared -> qualified -> promoted -> published -> verified
 
 如果 client-visible release transaction 已经成功提交，而后续 proof / manifest / metrics 出现异常，系统会把它报告为 post-release observability 降级，而不会错误宣称“发布没有发生”。发布前所有 mandatory gate 仍保持 fail-closed。
 
-定时 Workflow 仍每 6 小时运行一次（UTC `17 */6 * * *`），但它当前是 production-parity 监测 dry-run：重新获取私有订阅，执行生成、source isolation、browsing/transport qualification、ServiceQualification、声明式 client-path hardening、qualification 后审计以及完整 stable Mihomo matrix，但不会修改生产状态或持久化 derived state。若未来恢复无人值守定时发布，必须作为独立受审变更，并重新完成 exact-SHA 验证与明确回滚计划。
+定时 Workflow 每 6 小时运行一次（UTC `17 */6 * * *`）。已明确授权的上游 `hzoonp/clash-relay` 在 `CLASH_RELAY_SCHEDULE_PUBLISH` 未设置或设为精确小写 `true` 时自动发布；设为 `false` 会暂停无人值守发布，并让定时运行恢复为 dry-run。公开 Fork 默认仍为 dry-run，必须在成功完成手动 dry-run 与 bootstrap 发布后，显式把仓库变量设为精确小写 `true` 才启用自动发布。
+
+定时发布仍会重新获取当前私有订阅，并完整执行生成、source isolation、browsing/transport qualification、ServiceQualification、声明式 client-path hardening、qualification 后审计、Promotion Guard 以及完整 stable Mihomo matrix。任何不确定状态或门禁失败都会在生产激活前 fail-closed。
 
 多个生产 Actions 同时到达时会通过 concurrency group 串行执行，且 `cancel-in-progress: false`；旧运行不会在生产生命周期中途被新运行取消。
 

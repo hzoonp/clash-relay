@@ -17,14 +17,14 @@ Fork
   -> clash-relay doctor
   -> manual dry-run (publish=false)
   -> inspect aggregate production proof
-  -> publish=true
-  -> six-hour production-parity dry-run
+  -> manual bootstrap publish=true
+  -> opt in to guarded six-hour scheduled publication
   -> validated rollback when required
 ```
 
 `clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes.
 
-Automatic `push` and `schedule` production runs are hard-latched to dry-run mode. Only an explicit manual `workflow_dispatch` with `publish=true` may change production state. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
+Automatic `push` production runs remain hard-latched to dry-run mode. Manual `workflow_dispatch` publishes only with `publish=true`. Scheduled runs may publish only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate: the authorized upstream `hzoonp/clash-relay` deployment is enabled when the variable is unset, while public forks remain dry-run unless they explicitly set the repository variable to `true`. Setting it to `false` suspends unattended publication. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
 ## Public Config v2
 
@@ -190,6 +190,14 @@ Secret:   CLOUDFLARE_API_TOKEN
 Variable: CLOUDFLARE_ACCOUNT_ID
 Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
+
+Scheduled publication control:
+
+```text
+Variable: CLASH_RELAY_SCHEDULE_PUBLISH
+```
+
+For public forks, set it to exact lowercase `true` only after a successful manual dry-run and bootstrap publication. Set it to `false` to keep or return the scheduled path to dry-run. The authorized upstream repository is enabled when the variable is unset and can also be stopped by setting it to `false`.
 
 Never write real subscription URLs into tracked YAML, documentation, workflow arguments, or logs.
 
