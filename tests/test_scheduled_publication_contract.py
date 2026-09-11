@@ -73,6 +73,7 @@ def test_canonical_runner_enforces_exact_sha_for_every_ci_publication() -> None:
     assert 'os.environ.get("CLASH_RELAY_VALIDATED_SHA", "").strip()' in text
     assert "github_sha != validated_sha" in text
     assert "CI publication requires the exact validated commit SHA" in text
+    assert "audit_production_event_result(result, decision)" in text
 
 
 def test_scheduled_publish_uses_the_same_guard_matrix_and_release_transaction() -> None:

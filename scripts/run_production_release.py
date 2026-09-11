@@ -11,6 +11,7 @@ from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
+from clash_relay.production_event_audit import audit_production_event_result
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
 from clash_relay.production_lifecycle_result import ProductionLifecycleResult
@@ -69,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 workers=args.workers,
             )
         )
+        audit_production_event_result(result, decision)
         print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:
