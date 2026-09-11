@@ -40,6 +40,8 @@ jobs:
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
+      - name: Show exact formatter diff
+        run: ruff format --diff tests/test_qualification_failure_boundaries_unit.py || true
       - run: ruff format --check .
       - name: Static type gate for core and application boundaries
         run: |
