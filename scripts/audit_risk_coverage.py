@@ -31,7 +31,7 @@ RISK_COVERAGE_FLOORS: dict[str, float] = {
     "src/clash_relay/transport_qualification.py": 45.0,
     "src/clash_relay/browsing_qualification.py": 40.0,
     "src/clash_relay/ai_qualification.py": 40.0,
-    "src/clash_relay/production_application.py": 40.0,
+    "src/clash_relay/production_application.py": 55.0,
 }
 
 
