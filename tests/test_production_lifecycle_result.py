@@ -11,6 +11,16 @@ from clash_relay.production_lifecycle_result import (
 from clash_relay.release_reliability import ReleasePhase
 
 
+class _Pipeline:
+    def __init__(self, result: dict[str, object]) -> None:
+        self.result = result
+        self.calls = 0
+
+    def run(self) -> dict[str, object]:
+        self.calls += 1
+        return self.result
+
+
 def test_passed_lifecycle_result_round_trips_without_dropping_safe_fields() -> None:
     raw = {
         "status": "passed",
@@ -30,6 +40,33 @@ def test_passed_lifecycle_result_round_trips_without_dropping_safe_fields() -> N
     assert result.reason is None
     assert result.warnings == ("optional_stage",)
     assert result.as_dict() == raw
+
+
+def test_lifecycle_result_accepts_typed_pipeline_producer_once() -> None:
+    raw = {
+        "status": "passed",
+        "publication_status": "dry-run",
+        "release_phase": "verified",
+        "warnings": [],
+    }
+    pipeline = _Pipeline(raw)
+
+    result = ProductionLifecycleResult.from_pipeline(pipeline)
+
+    assert pipeline.calls == 1
+    assert result.status is ProductionLifecycleStatus.PASSED
+    assert result.publication_status is ProductionPublicationStatus.DRY_RUN
+    assert result.release_phase is ReleasePhase.VERIFIED
+    assert result.as_dict() == raw
+
+
+def test_lifecycle_result_rejects_invalid_typed_pipeline_output() -> None:
+    pipeline = _Pipeline({"status": "passed", "publication_status": "dry-run"})
+
+    with pytest.raises(ValidationError, match="requires a release phase"):
+        ProductionLifecycleResult.from_pipeline(pipeline)
+
+    assert pipeline.calls == 1
 
 
 @pytest.mark.parametrize("phase", ["published", "verified"])
