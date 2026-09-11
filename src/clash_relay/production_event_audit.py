@@ -54,9 +54,7 @@ def audit_production_event_result(
 
     if decision.should_publish:
         if result.publication_status is not ProductionPublicationStatus.PUBLISHED:
-            raise ValidationError(
-                "production publish decision requires published lifecycle status"
-            )
+            raise ValidationError("production publish decision requires published lifecycle status")
         _require_status(document, "release_status", "published")
         _require_status(document, "promotion_guard", "passed")
         return
