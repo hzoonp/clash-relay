@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import http.client
 import io
 import ipaddress
 import socket
@@ -10,7 +11,9 @@ import ssl
 import urllib.error
 import urllib.request
 import zlib
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from .errors import FetchError
@@ -68,15 +71,16 @@ def validate_subscription_url(
         raise FetchError("subscription URL may not target a private or special-use IP literal")
 
 
-def _validate_resolved_destination(url: str) -> None:
-    """Reject hostnames whose current DNS answers include private/special-use addresses."""
+def _resolve_public_destination(url: str) -> tuple[tuple[Any, ...], ...]:
+    """Resolve one URL and return only the addresses this connection may use."""
     parsed = urlsplit(url)
     if parsed.scheme == "file":
-        return
+        return ()
     hostname = parsed.hostname
     if not hostname:
         raise FetchError("subscription URL has no hostname")
-    if hostname.lower() == "localhost" or hostname.lower().endswith(".localhost"):
+    lowered = hostname.lower().rstrip(".")
+    if lowered == "localhost" or lowered.endswith(".localhost"):
         raise FetchError("subscription hostname may not target localhost")
     port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
     try:
@@ -85,13 +89,117 @@ def _validate_resolved_destination(url: str) -> None:
         raise FetchError(
             f"subscription hostname could not be resolved for {redact_url(url)}"
         ) from exc
-    addresses = {
-        str(answer[4][0]) for answer in answers if answer and len(answer) >= 5 and answer[4]
-    }
-    if not addresses:
+
+    usable: list[tuple[Any, ...]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for answer in answers:
+        if not answer or len(answer) < 5 or not answer[4]:
+            continue
+        address = str(answer[4][0])
+        if _is_private_literal(address):
+            raise FetchError("subscription hostname resolves to a private or special-use address")
+        normalized = tuple(answer)
+        if normalized not in seen:
+            seen.add(normalized)
+            usable.append(normalized)
+    if not usable:
         raise FetchError("subscription hostname resolved to no usable address")
-    if any(_is_private_literal(address) for address in addresses):
-        raise FetchError("subscription hostname resolves to a private or special-use address")
+    return tuple(usable)
+
+
+def _validate_resolved_destination(url: str) -> None:
+    """Reject hostnames whose current DNS answers include private/special-use addresses."""
+    _resolve_public_destination(url)
+
+
+def _connect_resolved(
+    answers: Iterable[tuple[Any, ...]],
+    *,
+    timeout: float | object,
+    source_address: tuple[str, int] | None,
+) -> socket.socket:
+    """Connect only to a previously validated getaddrinfo result set."""
+    last_error: OSError | None = None
+    for family, socktype, proto, _canonname, sockaddr in answers:
+        sock: socket.socket | None = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)  # type: ignore[arg-type]
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            last_error = exc
+            if sock is not None:
+                sock.close()
+    if last_error is not None:
+        raise last_error
+    raise OSError("no validated subscription destination is available")
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, resolved_answers: tuple[tuple[Any, ...], ...], **kwargs) -> None:
+        self._resolved_answers = resolved_answers
+        super().__init__(*args, **kwargs)
+
+    def connect(self) -> None:
+        self.sock = _connect_resolved(
+            self._resolved_answers,
+            timeout=self.timeout,
+            source_address=self.source_address,
+        )
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, resolved_answers: tuple[tuple[Any, ...], ...], **kwargs) -> None:
+        self._resolved_answers = resolved_answers
+        super().__init__(*args, **kwargs)
+
+    def connect(self) -> None:
+        self.sock = _connect_resolved(
+            self._resolved_answers,
+            timeout=self.timeout,
+            source_address=self.source_address,
+        )
+        server_hostname = self.host
+        if self._tunnel_host:
+            self._tunnel()
+            server_hostname = self._tunnel_host
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=server_hostname)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        answers = _resolve_public_destination(req.full_url)
+
+        def connection(host, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, **kwargs):
+            return _PinnedHTTPConnection(
+                host,
+                timeout=timeout,
+                resolved_answers=answers,
+                **kwargs,
+            )
+
+        return self.do_open(connection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        answers = _resolve_public_destination(req.full_url)
+
+        def connection(host, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, **kwargs):
+            return _PinnedHTTPSConnection(
+                host,
+                timeout=timeout,
+                resolved_answers=answers,
+                **kwargs,
+            )
+
+        return self.do_open(connection, req, context=self._context)
 
 
 class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -166,8 +274,12 @@ def fetch_subscription(
         )
         context = ssl.create_default_context()
         opener = urllib.request.build_opener(
+            # Subscription fetches must never inherit ambient HTTP(S) proxy
+            # settings: a proxy would break the validated-DNS-to-socket binding.
+            urllib.request.ProxyHandler({}),
             _SafeRedirectHandler(allow_http=allow_http, allow_file=allow_file),
-            urllib.request.HTTPSHandler(context=context),
+            _PinnedHTTPHandler(),
+            _PinnedHTTPSHandler(context=context),
         )
         try:
             with opener.open(request, timeout=timeout) as response:
