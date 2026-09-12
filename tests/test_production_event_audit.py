@@ -66,6 +66,66 @@ def test_enabled_schedule_unchanged_result_passes_event_audit() -> None:
     audit_production_event_result(result, decision)
 
 
+@pytest.mark.parametrize(
+    ("status_key", "warning"),
+    [
+        ("proof_status", "render_production_proof"),
+        ("manifest_status", "render_release_manifest"),
+    ],
+)
+def test_published_result_accepts_explicit_post_commit_observability_degradation(
+    status_key: str,
+    warning: str,
+) -> None:
+    decision = resolve_publication_decision(
+        event_name="schedule",
+        scheduled_publish="true",
+    )
+    result = _passed_result(
+        publication_status="published",
+        release_phase="published",
+        release_status="published",
+        promotion_guard="passed",
+        warnings=[warning],
+        **{status_key: "unavailable"},
+    )
+
+    audit_production_event_result(result, decision)
+
+
+def test_published_degradation_requires_matching_warning_evidence() -> None:
+    decision = resolve_publication_decision(
+        event_name="schedule",
+        scheduled_publish="true",
+    )
+    result = _passed_result(
+        publication_status="published",
+        release_phase="published",
+        release_status="published",
+        promotion_guard="passed",
+        proof_status="unavailable",
+    )
+
+    with pytest.raises(ValidationError, match="render_production_proof warning"):
+        audit_production_event_result(result, decision)
+
+
+def test_published_phase_rejects_complete_observability_evidence() -> None:
+    decision = resolve_publication_decision(
+        event_name="schedule",
+        scheduled_publish="true",
+    )
+    result = _passed_result(
+        publication_status="published",
+        release_phase="published",
+        release_status="published",
+        promotion_guard="passed",
+    )
+
+    with pytest.raises(ValidationError, match="complete observability"):
+        audit_production_event_result(result, decision)
+
+
 def test_dry_run_skip_remains_valid_for_missing_canonical_declarations() -> None:
     decision = resolve_publication_decision(
         event_name="schedule",
@@ -99,10 +159,7 @@ def test_publish_decision_rejects_skipped_lifecycle_result() -> None:
         audit_production_event_result(result, decision)
 
 
-@pytest.mark.parametrize(
-    "key",
-    ["production_pipeline", "mihomo_matrix", "proof_status", "manifest_status"],
-)
+@pytest.mark.parametrize("key", ["production_pipeline", "mihomo_matrix"])
 def test_event_audit_rejects_failed_core_release_evidence(key: str) -> None:
     decision = resolve_publication_decision(event_name="push")
 
@@ -113,19 +170,31 @@ def test_event_audit_rejects_failed_core_release_evidence(key: str) -> None:
         )
 
 
-def test_event_audit_requires_verified_final_release_phase() -> None:
+@pytest.mark.parametrize("key", ["proof_status", "manifest_status"])
+def test_dry_run_rejects_failed_post_commit_evidence(key: str) -> None:
+    decision = resolve_publication_decision(event_name="push")
+
+    with pytest.raises(ValidationError, match=key):
+        audit_production_event_result(
+            _passed_result(**{key: "failed"}),
+            decision,
+        )
+
+
+@pytest.mark.parametrize("key", ["proof_status", "manifest_status"])
+def test_published_result_rejects_failed_observability_status(key: str) -> None:
     decision = resolve_publication_decision(
         event_name="schedule",
         scheduled_publish="true",
     )
     result = _passed_result(
         publication_status="published",
-        release_phase="published",
         release_status="published",
         promotion_guard="passed",
+        **{key: "failed"},
     )
 
-    with pytest.raises(ValidationError, match="verified release phase"):
+    with pytest.raises(ValidationError, match=key):
         audit_production_event_result(result, decision)
 
 
