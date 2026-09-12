@@ -18,7 +18,7 @@ def test_dns_rebinding_must_not_reach_private_address_on_second_resolution(monke
     hits = 0
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
+        def do_GET(self) -> None:
             nonlocal hits
             hits += 1
             payload = b"proxies: []\n"
