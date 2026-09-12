@@ -40,10 +40,7 @@ jobs:
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
-      - name: Temporary P19D formatter diff
-        run: |
-          ruff format --diff tests/integration/test_flclash_mihomo_consumer_contract.py
-          exit 1
+      - run: ruff format --check .
       - name: Static type gate for core and application boundaries
         run: |
           mypy --follow-imports=skip --ignore-missing-imports --check-untyped-defs \
