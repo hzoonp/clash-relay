@@ -27,8 +27,6 @@ def test_private_host_rejection_uses_normalized_server(server: str) -> None:
 
 
 def test_public_hostname_is_normalized_before_storage() -> None:
-    result = parse_subscription(
-        yaml.safe_dump({"proxies": [_http(" node.invalid.example ")]})
-    )
+    result = parse_subscription(yaml.safe_dump({"proxies": [_http(" node.invalid.example ")]}))
 
     assert result.proxies[0]["server"] == "node.invalid.example"
