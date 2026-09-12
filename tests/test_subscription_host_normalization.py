@@ -17,6 +17,7 @@ def _http(server: str) -> dict[str, object]:
         " 127.0.0.1 ",
         " [::1] ",
         " localhost ",
+        " localhost. ",
         " localhost.localdomain ",
     ],
 )
