@@ -11,10 +11,14 @@ from pathlib import Path
 
 from clash_relay.errors import ClashRelayError, ValidationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
-from clash_relay.production_event_audit import audit_production_event_result
+from clash_relay.production_event_audit import (
+    audit_production_event_result,
+    audit_production_preflight_result,
+)
 from clash_relay.production_failure_metrics import persist_failure_diagnostic
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
 from clash_relay.production_lifecycle_result import ProductionLifecycleResult
+from clash_relay.production_preflight import ProductionPreflightPipeline
 from clash_relay.publication_decision import resolve_publication_decision
 
 
@@ -26,7 +30,8 @@ def _parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--publish", action="store_true", dest="publish")
     mode.add_argument("--dry-run", action="store_false", dest="publish")
-    parser.set_defaults(publish=None)
+    mode.add_argument("--production-preflight", action="store_true", dest="production_preflight")
+    parser.set_defaults(publish=None, production_preflight=False)
     parser.add_argument("--event-name")
     parser.add_argument("--manual-publish")
     parser.add_argument("--schedule-publish")
@@ -47,30 +52,46 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     publish = False
     try:
+        preflight = bool(args.production_preflight)
         decision = resolve_publication_decision(
-            explicit_publish=args.publish,
-            event_name=args.event_name or os.environ.get("GITHUB_EVENT_NAME"),
+            explicit_publish=False if preflight else args.publish,
+            event_name=None
+            if preflight
+            else args.event_name or os.environ.get("GITHUB_EVENT_NAME"),
             manual_publish=(
-                args.manual_publish
+                None
+                if preflight
+                else args.manual_publish
                 if args.manual_publish is not None
                 else os.environ.get("CLASH_RELAY_MANUAL_PUBLISH")
             ),
             scheduled_publish=(
-                args.schedule_publish
+                None
+                if preflight
+                else args.schedule_publish
                 if args.schedule_publish is not None
                 else os.environ.get("CLASH_RELAY_SCHEDULE_PUBLISH")
             ),
         )
         publish = decision.should_publish
         _enforce_validated_ci_sha(publish=publish)
-        result = ProductionLifecycleResult.from_pipeline(
-            ProductionPipeline(
+        pipeline = (
+            ProductionPreflightPipeline(
+                ProductionLifecyclePaths.canonical(args.root),
+                workers=args.workers,
+            )
+            if preflight
+            else ProductionPipeline(
                 ProductionLifecyclePaths.canonical(args.root),
                 publish=publish,
                 workers=args.workers,
             )
         )
-        audit_production_event_result(result, decision)
+        result = ProductionLifecycleResult.from_pipeline(pipeline)
+        if preflight:
+            audit_production_preflight_result(result)
+        else:
+            audit_production_event_result(result, decision)
         print(json.dumps(result.as_dict(), ensure_ascii=False, sort_keys=True))
         return 0
     except (OSError, ClashRelayError) as exc:

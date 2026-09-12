@@ -111,3 +111,26 @@ def audit_production_event_result(
     if result.release_status is not ProductionReleaseStatus.DRY_RUN:
         raise ValidationError("production dry-run decision requires release_status='dry-run'")
     _require_status(document, "promotion_guard", "skipped")
+
+
+def audit_production_preflight_result(result: ProductionLifecycleResult) -> None:
+    """Require a complete production-relative validation with no publication."""
+
+    if result.status is not ProductionLifecycleStatus.PASSED:
+        raise ValidationError("production preflight must complete rather than skip")
+    if result.publication_status is not ProductionPublicationStatus.PREFLIGHT:
+        raise ValidationError("production preflight requires preflight lifecycle status")
+    if result.release_status is not ProductionReleaseStatus.PREFLIGHT:
+        raise ValidationError("production preflight requires release_status='preflight'")
+    if result.release_phase is not ReleasePhase.VERIFIED:
+        raise ValidationError("production preflight must finish in verified release phase")
+
+    document = result.as_dict()
+    for key in (
+        "production_pipeline",
+        "promotion_guard",
+        "mihomo_matrix",
+        "proof_status",
+        "manifest_status",
+    ):
+        _require_status(document, key, "passed")
