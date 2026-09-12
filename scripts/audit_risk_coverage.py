@@ -23,6 +23,7 @@ RISK_COVERAGE_FLOORS: dict[str, float] = {
     "src/clash_relay/qualification_pipeline.py": 85.0,
     "src/clash_relay/production_pipeline.py": 85.0,
     "src/clash_relay/release_bundle.py": 95.0,
+    "src/clash_relay/release_reconciliation.py": 90.0,
     "src/clash_relay/publishers/cloudflare_kv.py": 80.0,
     "src/clash_relay/qualification_reliability.py": 75.0,
     "src/clash_relay/service_qualification.py": 75.0,

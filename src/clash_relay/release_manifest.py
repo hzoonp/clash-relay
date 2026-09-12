@@ -83,7 +83,7 @@ def build_release_manifest(
 ) -> dict[str, Any]:
     """Build a machine-readable manifest that cannot disclose node-level material."""
 
-    if publication_status not in {"dry-run", "published"}:
+    if publication_status not in {"dry-run", "preflight", "published"}:
         raise ValidationError("release manifest publication_status is invalid")
     if candidate_bytes is None:
         raise ValidationError("release manifest requires exact candidate bytes")
