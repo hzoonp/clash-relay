@@ -72,6 +72,7 @@ jobs:
             src/clash_relay/promotion_guard.py \
             src/clash_relay/production_release_stage.py \
             src/clash_relay/release_bundle.py \
+            src/clash_relay/release_reconciliation.py \
             src/clash_relay/publishers/cloudflare_kv.py \
             src/clash_relay/operational_slo.py \
             src/clash_relay/slo_application.py \
