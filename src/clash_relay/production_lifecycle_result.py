@@ -31,6 +31,7 @@ class ProductionLifecycleStatus(StrEnum):
 
 class ProductionPublicationStatus(StrEnum):
     PUBLISHED = "published"
+    PREFLIGHT = "preflight"
     DRY_RUN = "dry-run"
     NOT_APPLICABLE = "not_applicable"
 
@@ -40,6 +41,7 @@ class ProductionReleaseStatus(StrEnum):
 
     PUBLISHED = "published"
     UNCHANGED = "unchanged"
+    PREFLIGHT = "preflight"
     DRY_RUN = "dry-run"
 
 
@@ -114,6 +116,11 @@ class ProductionLifecycleResult:
                 and release_phase is not ReleasePhase.VERIFIED
             ):
                 raise ValidationError("passed dry-run lifecycle result must be verified")
+            if (
+                publication_status is ProductionPublicationStatus.PREFLIGHT
+                and release_phase is not ReleasePhase.VERIFIED
+            ):
+                raise ValidationError("passed preflight lifecycle result must be verified")
             if (
                 publication_status is ProductionPublicationStatus.PUBLISHED
                 and release_phase not in {ReleasePhase.PUBLISHED, ReleasePhase.VERIFIED}
