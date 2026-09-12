@@ -16,6 +16,18 @@ def test_rollback_is_manual_confirmed_and_main_only() -> None:
     assert "clash-relay-publish-${{ github.ref }}" in text
 
 
+def test_rollback_executor_must_be_the_exact_fully_validated_sha() -> None:
+    text = ROLLBACK.read_text(encoding="utf-8")
+    assert "  validate:\n" in text
+    assert "uses: ./.github/workflows/validate.yml" in text
+    assert "needs: validate" in text
+    assert "needs.validate.outputs.validated_sha == github.sha" in text
+    assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
+    assert "VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}" in text
+    assert 'test "$VALIDATED_SHA" = "$GITHUB_SHA"' in text
+    assert 'test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"' in text
+
+
 def test_rollback_fetches_private_versioned_previous_release_without_subscription_secrets() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "python scripts/fetch_previous_config.py" in text
