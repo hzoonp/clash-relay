@@ -59,7 +59,9 @@ class ParsedSubscription:
 
 
 def _private_host(value: str) -> bool:
-    lowered = value.lower().strip("[]")
+    lowered = value.lower().rstrip(".")
+    if lowered.startswith("[") and lowered.endswith("]"):
+        lowered = lowered[1:-1]
     if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(".localhost"):
         return True
     try:
@@ -124,7 +126,10 @@ def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]
     proxy_type = proxy_type.lower().strip()
     if proxy_type not in _ALLOWED_PROXY_TYPES:
         raise SubscriptionError(f"proxy {name!r} uses unsupported type {proxy_type!r}")
-    if not isinstance(server, str) or not server.strip() or len(server) > 253:
+    if not isinstance(server, str):
+        raise SubscriptionError(f"proxy {name!r} has no valid server")
+    server = server.strip()
+    if not server or len(server) > 253:
         raise SubscriptionError(f"proxy {name!r} has no valid server")
     port = cleaned.get("port")
     if isinstance(port, str) and port.isdigit():
@@ -139,7 +144,7 @@ def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]
     _validate_structured_options(cleaned, name=name)
     cleaned["name"] = name.strip()
     cleaned["type"] = proxy_type
-    cleaned["server"] = server.strip()
+    cleaned["server"] = server
     cleaned["port"] = port
     # Ensure the mapping can be represented deterministically and does not contain exotic objects.
     try:
