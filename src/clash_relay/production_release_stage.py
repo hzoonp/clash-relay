@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_loader import ProjectDefinition
+from .errors import ValidationError
 from .mihomo_matrix_application import validate_mihomo_matrix
 from .production_application import (
     fetch_current_production_config,
@@ -60,18 +61,26 @@ def run_release_candidate_stage(
     primary_binary: Path,
     paths: ReleaseCandidateStagePaths,
     env: Mapping[str, str] | None = None,
+    preflight: bool = False,
 ) -> ReleaseCandidateStageResult:
     """Promote one qualified candidate without owning lifecycle orchestration.
 
-    The ordering is deliberately fail closed: production baseline + Promotion
-    Guard first, then the complete stable Mihomo matrix, then private release
-    activation. A failure in either gate prevents publication.
+    Publish mode and production-preflight both read the live production baseline,
+    run Promotion Guard, and validate the complete stable Mihomo matrix. Only
+    publish mode may activate a release. Normal dry-run remains fixture/local
+    validation and deliberately does not read production state.
     """
+
+    if publish and preflight:
+        raise ValidationError("publish and production preflight are mutually exclusive")
 
     timings: dict[str, float] = {}
 
     started = time.perf_counter()
+    production_relative = preflight
     if publish:
+        production_relative = True
+    if production_relative:
         baseline = fetch_current_production_config(
             project=project,
             output=paths.baseline,
