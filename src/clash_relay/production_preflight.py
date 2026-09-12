@@ -63,10 +63,9 @@ class ProductionPreflightPipeline(ProductionPipeline):
             qualification=self._private("qualification-pipeline-summary.json"),
             release=None,
             validated_cores_report=self._private("mihomo-validation-matrix.json"),
-            publication_status="dry-run",
+            publication_status="preflight",
             markdown=None,
         )
-        proof["publication"] = "preflight"
         self._write_json(self._private("production-proof.json"), proof)
         markdown = self._private("production-proof.md")
         atomic_write(markdown, render_production_proof_markdown(proof))
@@ -95,11 +94,10 @@ class ProductionPreflightPipeline(ProductionPipeline):
             promotion_guard=promotion,
             matrix=matrix,
             release=None,
-            publication_status="dry-run",
+            publication_status="preflight",
             policy_model_version=policy_model.model_version,
             commit_sha=os.environ.get("GITHUB_SHA") or None,
         )
-        manifest["publication_status"] = "preflight"
         self._write_json(self._public("release-manifest.json"), manifest)
         markdown = self._public("release-manifest.md")
         atomic_write(markdown, render_release_manifest_markdown(manifest))
