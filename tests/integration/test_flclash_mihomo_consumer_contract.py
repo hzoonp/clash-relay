@@ -107,7 +107,7 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
 
     document = yaml.safe_load(result.yaml_text)
     graph = RuntimeGraph.from_candidate(document)
-    general = graph.walk_resolved("Proxy")
+    general = graph.walk_resolved("代理选择")
     assert general.providers
     general_proxy_names = set(general.proxies)
     assert not any("US Standard" in name for name in general_proxy_names)
