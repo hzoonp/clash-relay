@@ -36,9 +36,7 @@ def _acl_fixture_fetcher(url: str, **kwargs) -> str:
     return "DOMAIN-SUFFIX,fictional-consumer.example\n"
 
 
-def _canonical_project(
-    repo_root: Path, tmp_path: Path
-) -> tuple[dict[str, Path], dict[str, str]]:
+def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path], dict[str, str]]:
     root = tmp_path / "canonical-consumer"
     root.mkdir()
     for name in ("config.yaml", "subscriptions.yaml", "policies.yaml"):
@@ -106,9 +104,7 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert "US 2.01x" not in result.yaml_text
     assert "US EMBY 1x" not in result.yaml_text
 
-    general_pools = [
-        row for row in result.report["pools"] if row.get("source_use") == "general"
-    ]
+    general_pools = [row for row in result.report["pools"] if row.get("source_use") == "general"]
     assert general_pools
     for pool in general_pools:
         assert "subscription_1" not in pool.get("sources", {})
