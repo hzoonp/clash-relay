@@ -14,7 +14,9 @@ from clash_relay.fetch import fetch_subscription
     strict=True,
     reason="known DNS validation/connection TOCTOU: preflight DNS is not pinned to the socket",
 )
-def test_dns_rebinding_must_not_reach_private_address_on_second_resolution(monkeypatch) -> None:
+def test_dns_rebinding_must_not_reach_private_address_on_second_resolution(
+    monkeypatch,
+) -> None:
     hits = 0
 
     class Handler(BaseHTTPRequestHandler):
@@ -55,7 +57,14 @@ def test_dns_rebinding_must_not_reach_private_address_on_second_resolution(monke
             )
         ]
 
-    for name in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
+    for name in (
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("NO_PROXY", "*")
     monkeypatch.setenv("no_proxy", "*")
