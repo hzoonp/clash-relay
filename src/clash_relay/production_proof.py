@@ -10,7 +10,7 @@ from typing import Any
 from .errors import ValidationError
 from .util import load_yaml_file
 
-_ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "published"})
+_ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "preflight", "published"})
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 
 
