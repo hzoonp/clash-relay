@@ -35,3 +35,16 @@ class ValidationError(ClashRelayError):
 
 class PublicationError(ClashRelayError):
     """A publication safety gate rejected the operation."""
+
+
+class CommitUnknownError(PublicationError):
+    """A remote write may have committed, so automated recovery must stop."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        production_changed: bool | str = "unknown",
+    ) -> None:
+        super().__init__(message)
+        self.production_changed = production_changed

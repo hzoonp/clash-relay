@@ -10,26 +10,50 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from ..errors import PublicationError
+from ..errors import CommitUnknownError, PublicationError
 
 _API_ROOT = "https://api.cloudflare.com/client/v4"
 _MAX_VALUE_BYTES = 25 * 1024 * 1024
 _MAX_NAMESPACE_PAGES = 100
+_AMBIGUOUS_HTTP_STATUSES = frozenset({408, 425, 429})
 
 
-def _request_json(request: urllib.request.Request) -> dict[str, Any]:
+def _http_write_outcome_is_ambiguous(status: int) -> bool:
+    return status >= 500 or status in _AMBIGUOUS_HTTP_STATUSES
+
+
+def _request_json(
+    request: urllib.request.Request,
+    *,
+    commit_unknown_on_unverified_response: bool = False,
+) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = response.read()
     except urllib.error.HTTPError as exc:
+        if commit_unknown_on_unverified_response and _http_write_outcome_is_ambiguous(exc.code):
+            raise CommitUnknownError(
+                f"Cloudflare API write outcome is unknown after HTTP {exc.code}"
+            ) from exc
+        # Definite client-side rejection (for example 400/401/403/404/413/422)
+        # can use the ordinary failure/compensation path. Retryable or server
+        # failures stay commit-unknown because the remote mutation may have run.
         raise PublicationError(f"Cloudflare API request failed with HTTP {exc.code}") from exc
     except (urllib.error.URLError, OSError) as exc:
+        if commit_unknown_on_unverified_response:
+            raise CommitUnknownError("Cloudflare API write response was not received") from exc
         raise PublicationError("Cloudflare API request failed") from exc
     try:
         document = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        if commit_unknown_on_unverified_response:
+            raise CommitUnknownError("Cloudflare API write response could not be verified") from exc
         raise PublicationError("Cloudflare API returned an invalid response") from exc
-    if not isinstance(document, dict) or document.get("success") is not True:
+    if not isinstance(document, dict):
+        if commit_unknown_on_unverified_response:
+            raise CommitUnknownError("Cloudflare API write response could not be verified")
+        raise PublicationError("Cloudflare API returned an invalid response")
+    if document.get("success") is not True:
         raise PublicationError("Cloudflare API rejected the request")
     return document
 
@@ -158,7 +182,7 @@ class CloudflareKVPublisher:
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
             },
         )
-        _request_json(request)
+        _request_json(request, commit_unknown_on_unverified_response=True)
         return {
             "backend": "cloudflare_kv",
             "namespace_title": self._namespace_title,
