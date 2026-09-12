@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Any
 
 from .errors import (
+    CommitUnknownError,
     ConfigurationError,
     FetchError,
     GenerationError,
@@ -34,6 +35,7 @@ class ProductionFailureCategory(StrEnum):
     AI_QUALIFICATION = "ai_qualification"
     QUALIFICATION = "qualification"
     CLOUDFLARE_PUBLICATION = "cloudflare_publication"
+    CLOUDFLARE_COMMIT_UNKNOWN = "cloudflare_commit_unknown"
     CANDIDATE_VALIDATION = "candidate_validation"
     IO_FAILURE = "io_failure"
     UNKNOWN = "unknown"
@@ -93,6 +95,17 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
             "qualification_stage": _safe_qualification_stage(qualification.stage),
             "qualification_failure_category": qualification.category.value,
             "retryable": qualification.retryable,
+        }
+
+    commit_unknown = next(
+        (item for item in chain if isinstance(item, CommitUnknownError)),
+        None,
+    )
+    if isinstance(commit_unknown, CommitUnknownError):
+        return {
+            "status": "failed",
+            "category": ProductionFailureCategory.CLOUDFLARE_COMMIT_UNKNOWN.value,
+            "production_changed": commit_unknown.production_changed,
         }
 
     category = ProductionFailureCategory.UNKNOWN

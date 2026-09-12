@@ -4,7 +4,8 @@ Mihomo/FlClash consumers continue reading the configured production KV key.
 Immutable releases are staged and verified first, then the client-facing key and
 versioned release pointers are updated. Failed activation or pointer commits
 restore the previous client-visible state where possible and report incomplete
-compensation explicitly otherwise.
+compensation explicitly otherwise. Ambiguous remote writes are never followed
+by automated compensation because the final remote state is not yet proven.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .errors import PublicationError
+from .errors import CommitUnknownError, PublicationError
 
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 _READ_BACK_DELAYS = (0.0, 0.25, 0.5, 1.0, 2.0)
@@ -112,24 +113,44 @@ def _matches_after_write(publisher: KVValue, expected: bytes) -> bool:
     return False
 
 
-def _publish_verified(factory: PublisherFactory, key: str, content: bytes) -> dict[str, Any]:
+def _recovered_write_result(key: str, content: bytes) -> dict[str, Any]:
+    return {
+        "key": key,
+        "bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "recovered_from_ambiguous_write": True,
+    }
+
+
+def _publish_verified(
+    factory: PublisherFactory,
+    key: str,
+    content: bytes,
+) -> dict[str, Any]:
     publisher = factory(key)
+    verified_by_readback = False
     try:
         result = publisher.publish(content=content)
-    except PublicationError:
-        # A remote PUT may succeed while its response is lost. Read back before
-        # declaring failure so an ambiguous network response cannot create a
-        # false "failed but production changed" result.
+    except CommitUnknownError:
+        # A typed ambiguity means the remote write may have committed. Exact
+        # bounded read-back may prove success; otherwise preserve unknown.
         if not _matches_after_write(publisher, content):
             raise
-        result = {
-            "key": key,
-            "bytes": len(content),
-            "sha256": hashlib.sha256(content).hexdigest(),
-            "recovered_from_ambiguous_write": True,
-        }
-    if not _matches_after_write(publisher, content):
-        raise PublicationError(f"Cloudflare KV read-back verification failed for {key!r}")
+        verified_by_readback = True
+        result = _recovered_write_result(key, content)
+    except PublicationError:
+        # Backward-compatible publisher doubles historically represented a lost
+        # response as PublicationError. Recover only when the desired bytes are
+        # already observable; otherwise preserve the definite failure.
+        if not _matches_after_write(publisher, content):
+            raise
+        verified_by_readback = True
+        result = _recovered_write_result(key, content)
+
+    if not verified_by_readback and not _matches_after_write(publisher, content):
+        # A successful API response proves acceptance, but failure to confirm
+        # exact bytes means client-visible state is still not safe to assert.
+        raise CommitUnknownError("remote publication state is unknown after read-back verification")
     return result
 
 
@@ -141,18 +162,26 @@ def _ensure_immutable_release(
     release_id = release_id_for(content)
     config_key = keys.config(release_id)
     existing = factory(config_key).read()
-    if existing is None:
-        _publish_verified(factory, config_key, content)
-    elif existing != content:
-        raise PublicationError("immutable production release key contains different bytes")
+    try:
+        if existing is None:
+            _publish_verified(factory, config_key, content)
+        elif existing != content:
+            raise PublicationError("immutable production release key contains different bytes")
 
-    expected_manifest = manifest_bytes(content)
-    manifest_key = keys.manifest(release_id)
-    existing_manifest = factory(manifest_key).read()
-    if existing_manifest is None:
-        _publish_verified(factory, manifest_key, expected_manifest)
-    elif existing_manifest != expected_manifest:
-        raise PublicationError("immutable production release manifest does not match release bytes")
+        expected_manifest = manifest_bytes(content)
+        manifest_key = keys.manifest(release_id)
+        existing_manifest = factory(manifest_key).read()
+        if existing_manifest is None:
+            _publish_verified(factory, manifest_key, expected_manifest)
+        elif existing_manifest != expected_manifest:
+            raise PublicationError(
+                "immutable production release manifest does not match release bytes"
+            )
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "immutable release staging state is unknown",
+            production_changed=False,
+        ) from exc
     return release_id
 
 
@@ -180,15 +209,30 @@ def _restore_after_failed_commit(
     errors: list[str] = []
     try:
         _publish_verified(factory, keys.production, previous_content)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "production compensation state is unknown",
+            production_changed="unknown",
+        ) from exc
     except PublicationError:
         errors.append("production")
     try:
         _restore_pointer(factory, keys.current_pointer, previous_release_id)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "current pointer compensation state is unknown",
+            production_changed=False,
+        ) from exc
     except PublicationError:
         errors.append("current-pointer")
     restore_previous = previous_pointer_before or previous_release_id
     try:
         _restore_pointer(factory, keys.previous_pointer, restore_previous)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "previous pointer compensation state is unknown",
+            production_changed=False,
+        ) from exc
     except PublicationError:
         errors.append("previous-pointer")
     if errors:
@@ -205,14 +249,35 @@ def _activate_first_release(
     new_release_id: str,
     current_pointer_before: str | None,
 ) -> None:
-    # The pointer is internal and is staged before the client-facing key. If the
-    # production write fails, restore the exact prior pointer semantic state.
-    _restore_pointer(factory, keys.current_pointer, new_release_id)
+    # The pointer is internal and is staged before the client-facing key. If its
+    # remote write is ambiguous, production is still known unchanged and no
+    # further writes are allowed.
+    try:
+        _restore_pointer(factory, keys.current_pointer, new_release_id)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "first release pointer staging state is unknown",
+            production_changed=False,
+        ) from exc
+
     try:
         _publish_verified(factory, keys.production, content)
+    except CommitUnknownError as exc:
+        # The client-facing PUT may have committed. Never restore the pointer or
+        # retry automatically until a later attempt reconciles the production
+        # value by reading it first.
+        raise CommitUnknownError(
+            "first release activation state is unknown",
+            production_changed="unknown",
+        ) from exc
     except PublicationError as exc:
         try:
             _restore_pointer(factory, keys.current_pointer, current_pointer_before)
+        except CommitUnknownError as compensation_error:
+            raise CommitUnknownError(
+                "first release pointer compensation state is unknown",
+                production_changed=False,
+            ) from compensation_error
         except PublicationError as compensation_error:
             raise PublicationError(
                 "first release activation failed and pointer compensation was incomplete"
@@ -237,7 +302,13 @@ def publish_release_bundle(
 
     if current_content == content:
         if current_pointer_before != new_release_id:
-            _restore_pointer(factory, keys.current_pointer, new_release_id)
+            try:
+                _restore_pointer(factory, keys.current_pointer, new_release_id)
+            except CommitUnknownError as exc:
+                raise CommitUnknownError(
+                    "unchanged release pointer repair state is unknown",
+                    production_changed=False,
+                ) from exc
         return {
             "status": "unchanged",
             "release_id": new_release_id,
@@ -269,8 +340,55 @@ def publish_release_bundle(
 
     try:
         _publish_verified(factory, keys.production, content)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "production activation state is unknown",
+            production_changed="unknown",
+        ) from exc
+    except PublicationError as exc:
+        try:
+            _restore_after_failed_commit(
+                factory,
+                keys,
+                previous_content=current_content,
+                previous_release_id=old_release_id,
+                previous_pointer_before=previous_pointer_before,
+            )
+        except PublicationError as compensation_error:
+            raise compensation_error from exc
+        raise PublicationError(
+            "release commit failed; previous production bytes were restored"
+        ) from exc
+
+    try:
         _restore_pointer(factory, keys.previous_pointer, old_release_id)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "previous release pointer commit state is unknown",
+            production_changed=True,
+        ) from exc
+    except PublicationError as exc:
+        try:
+            _restore_after_failed_commit(
+                factory,
+                keys,
+                previous_content=current_content,
+                previous_release_id=old_release_id,
+                previous_pointer_before=previous_pointer_before,
+            )
+        except PublicationError as compensation_error:
+            raise compensation_error from exc
+        raise PublicationError(
+            "release commit failed; previous production bytes were restored"
+        ) from exc
+
+    try:
         _restore_pointer(factory, keys.current_pointer, new_release_id)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "current release pointer commit state is unknown",
+            production_changed=True,
+        ) from exc
     except PublicationError as exc:
         try:
             _restore_after_failed_commit(
