@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import gzip
+import io
 import ipaddress
 import socket
 import ssl
 import urllib.error
 import urllib.request
+import zlib
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -108,7 +110,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _read_bounded(response, max_bytes: int) -> bytes:
+def _read_bounded(response, max_bytes: int, *, limit_error: str | None = None) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -118,8 +120,23 @@ def _read_bounded(response, max_bytes: int) -> bytes:
         chunks.append(chunk)
         total += len(chunk)
         if total > max_bytes:
-            raise FetchError("subscription exceeds the configured byte limit")
+            raise FetchError(limit_error or "subscription exceeds the configured byte limit")
     return b"".join(chunks)
+
+
+def _decompress_gzip_bounded(raw: bytes, max_bytes: int) -> bytes:
+    """Decompress gzip data without allocating beyond the expanded byte budget."""
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw), mode="rb") as stream:
+            return _read_bounded(
+                stream,
+                max_bytes,
+                limit_error="decompressed subscription exceeds the byte limit",
+            )
+    except FetchError:
+        raise
+    except (OSError, EOFError, zlib.error) as exc:
+        raise FetchError("subscription gzip payload is invalid") from exc
 
 
 def fetch_subscription(
@@ -160,12 +177,7 @@ def fetch_subscription(
                 _validate_resolved_destination(response.geturl())
                 raw = _read_bounded(response, max_bytes)
                 if response.headers.get("Content-Encoding", "").lower() == "gzip":
-                    try:
-                        raw = gzip.decompress(raw)
-                    except (OSError, EOFError) as exc:
-                        raise FetchError("subscription gzip payload is invalid") from exc
-                    if len(raw) > max_bytes:
-                        raise FetchError("decompressed subscription exceeds the byte limit")
+                    raw = _decompress_gzip_bounded(raw, max_bytes)
         except FetchError:
             raise
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
