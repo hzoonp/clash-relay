@@ -9,6 +9,7 @@ import yaml
 
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
+from clash_relay.runtime_graph import RuntimeGraph
 
 pytestmark = pytest.mark.integration
 
@@ -104,10 +105,14 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert "US 2.01x" not in result.yaml_text
     assert "US EMBY 1x" not in result.yaml_text
 
-    general_pools = [row for row in result.report["pools"] if row.get("source_use") == "general"]
-    assert general_pools
-    for pool in general_pools:
-        assert "subscription_1" not in pool.get("sources", {})
+    document = yaml.safe_load(result.yaml_text)
+    graph = RuntimeGraph.from_candidate(document)
+    general = graph.walk_resolved("Proxy")
+    assert general.providers
+    general_proxy_names = set(general.proxies)
+    assert not any("US Standard" in name for name in general_proxy_names)
+    assert not any("US Exactly 2x" in name for name in general_proxy_names)
+    assert any("US General 02" in name for name in general_proxy_names)
 
     # FlClash consumes Mihomo configuration. CI can prove that the exact
     # consumer-facing YAML is accepted and starts on the pinned real Mihomo
