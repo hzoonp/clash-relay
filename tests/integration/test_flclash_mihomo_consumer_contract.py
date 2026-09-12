@@ -36,7 +36,9 @@ def _acl_fixture_fetcher(url: str, **kwargs) -> str:
     return "DOMAIN-SUFFIX,fictional-consumer.example\n"
 
 
-def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path], dict[str, str]]:
+def _canonical_project(
+    repo_root: Path, tmp_path: Path
+) -> tuple[dict[str, Path], dict[str, str]]:
     root = tmp_path / "canonical-consumer"
     root.mkdir()
     for name in ("config.yaml", "subscriptions.yaml", "policies.yaml"):
