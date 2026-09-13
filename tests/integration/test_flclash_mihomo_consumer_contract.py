@@ -86,6 +86,14 @@ def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path]
     )
 
 
+def _assert_ai_is_fail_closed(document: dict) -> None:
+    graph = RuntimeGraph.from_candidate(document)
+    ai = graph.walk_resolved("人工智能")
+    assert not ai.proxies
+    assert ai.builtins == frozenset({"REJECT"})
+    assert "DIRECT" not in ai.builtins
+
+
 def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_mihomo(
     repo_root: Path,
     tmp_path: Path,
@@ -107,14 +115,30 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
 
     document = yaml.safe_load(result.yaml_text)
     graph = RuntimeGraph.from_candidate(document)
+
     general = graph.walk_resolved("代理选择")
     assert general.providers
     general_proxy_names = set(general.proxies)
-    assert not any("US Standard" in name for name in general_proxy_names)
-    assert not any("US Exactly 2x" in name for name in general_proxy_names)
-    assert any("US General 02" in name for name in general_proxy_names)
+    assert not any("subscription_1/" in name for name in general_proxy_names)
+    assert any("subscription_2/" in name and "US General 02" in name for name in general_proxy_names)
 
-    # FlClash consumes Mihomo configuration. CI can prove that the exact
+    ai = graph.walk_resolved("人工智能")
+    assert ai.providers
+    ai_proxy_names = set(ai.proxies)
+    assert any("subscription_1/" in name and "US Standard" in name for name in ai_proxy_names)
+    assert any("subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names)
+    assert not any("subscription_2/" in name for name in ai_proxy_names)
+    assert not any("subscription_3/" in name for name in ai_proxy_names)
+    assert not any("subscription_4/" in name for name in ai_proxy_names)
+    assert "DIRECT" not in ai.builtins
+
+    # "AI direct via subscription_1" means one proxy hop, not Mihomo DIRECT and
+    # not a relay/dialer chain. The canonical topology has no chains, and every
+    # AI-reachable runtime proxy must therefore have no dialer-proxy field.
+    runtime_proxies = graph.proxies
+    assert all("dialer-proxy" not in runtime_proxies[name] for name in ai_proxy_names)
+
+    # FlClash consumes Mihomo configuration. CI proves that the exact
     # consumer-facing YAML is accepted and starts on the pinned real Mihomo
     # cores; it intentionally does not claim GUI/device-specific FlClash tests.
     candidate = tmp_path / "flclash-facing.yaml"
@@ -122,3 +146,52 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     report = validate_with_mihomo(_binary(), candidate, startup_seconds=1.0)
     assert report["config_test"] == "passed"
     assert report["startup_smoke"] == "passed"
+
+
+def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources_work(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    paths, env = _canonical_project(repo_root, tmp_path)
+    missing = paths["config_path"].parent / "missing-subscription-1.yaml"
+    env["SUBSCRIPTION_1_URL"] = missing.resolve().as_uri()
+
+    result = build_candidate(**paths, env=env, rule_fetcher=_acl_fixture_fetcher)
+    reports = {row["id"]: row for row in result.report["subscriptions"]}
+    assert reports["subscription_1"]["status"] == "failed"
+    assert all(reports[source_id]["status"] == "ok" for source_id in ("subscription_2", "subscription_3", "subscription_4"))
+
+    _assert_ai_is_fail_closed(result.config)
+    general = RuntimeGraph.from_candidate(result.config).walk_resolved("代理选择")
+    assert any("subscription_2/" in name for name in general.proxies)
+    assert any("subscription_3/" in name for name in general.proxies)
+    assert any("subscription_4/" in name for name in general.proxies)
+
+
+def test_ai_fails_closed_when_subscription_1_nodes_are_all_rejected_by_admission(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    paths, env = _canonical_project(repo_root, tmp_path)
+    root = paths["config_path"].parent
+    env["SUBSCRIPTION_1_URL"] = _subscription(
+        root / "subscription-1-rejected.yaml",
+        [
+            _http("US 2.01x", "sub1-over-only.invalid.example", 21101),
+            _http("US EMBY 1x", "sub1-emby-only.invalid.example", 21102),
+        ],
+    )
+
+    result = build_candidate(**paths, env=env, rule_fetcher=_acl_fixture_fetcher)
+    restricted = next(
+        row for row in result.report["subscriptions"] if row["id"] == "subscription_1"
+    )
+    assert restricted["status"] == "ok"
+    assert restricted["nodes"] == 0
+    assert restricted["filtered_by_name"] == 1
+    assert restricted["filtered_over_multiplier"] == 1
+
+    _assert_ai_is_fail_closed(result.config)
+    general = RuntimeGraph.from_candidate(result.config).walk_resolved("代理选择")
+    assert general.proxies
+    assert not any("subscription_1/" in name for name in general.proxies)
