@@ -101,6 +101,16 @@ def _safe_candidate_validation_stage(stage: str) -> str:
     return normalized if normalized in _SAFE_CANDIDATE_VALIDATION_STAGES else "other"
 
 
+def _validation_stage(error: BaseException) -> str | None:
+    if isinstance(error, CandidateValidationStageError):
+        return error.stage
+    if isinstance(error, ValidationError):
+        stage = getattr(error, "validation_stage", None)
+        if isinstance(stage, str):
+            return stage
+    return None
+
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
@@ -129,16 +139,14 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
             "production_changed": commit_unknown.production_changed,
         }
 
-    candidate_stage = next(
-        (item for item in chain if isinstance(item, CandidateValidationStageError)),
-        None,
-    )
-    if isinstance(candidate_stage, CandidateValidationStageError):
-        return {
-            "status": "failed",
-            "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
-            "validation_stage": _safe_candidate_validation_stage(candidate_stage.stage),
-        }
+    for item in chain:
+        stage = _validation_stage(item)
+        if stage is not None:
+            return {
+                "status": "failed",
+                "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
+                "validation_stage": _safe_candidate_validation_stage(stage),
+            }
 
     category = ProductionFailureCategory.UNKNOWN
     if any(isinstance(item, SecretError | ConfigurationError) for item in chain):
