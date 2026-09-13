@@ -120,13 +120,19 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert general.providers
     general_proxy_names = set(general.proxies)
     assert not any("subscription_1/" in name for name in general_proxy_names)
-    assert any("subscription_2/" in name and "US General 02" in name for name in general_proxy_names)
+    assert any(
+        "subscription_2/" in name and "US General 02" in name for name in general_proxy_names
+    )
 
     ai = graph.walk_resolved("人工智能")
     assert ai.providers
     ai_proxy_names = set(ai.proxies)
-    assert any("subscription_1/" in name and "US Standard" in name for name in ai_proxy_names)
-    assert any("subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names)
+    assert any(
+        "subscription_1/" in name and "US Standard" in name for name in ai_proxy_names
+    )
+    assert any(
+        "subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names
+    )
     assert not any("subscription_2/" in name for name in ai_proxy_names)
     assert not any("subscription_3/" in name for name in ai_proxy_names)
     assert not any("subscription_4/" in name for name in ai_proxy_names)
@@ -159,7 +165,10 @@ def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources
     result = build_candidate(**paths, env=env, rule_fetcher=_acl_fixture_fetcher)
     reports = {row["id"]: row for row in result.report["subscriptions"]}
     assert reports["subscription_1"]["status"] == "failed"
-    assert all(reports[source_id]["status"] == "ok" for source_id in ("subscription_2", "subscription_3", "subscription_4"))
+    assert all(
+        reports[source_id]["status"] == "ok"
+        for source_id in ("subscription_2", "subscription_3", "subscription_4")
+    )
 
     _assert_ai_is_fail_closed(result.config)
     general = RuntimeGraph.from_candidate(result.config).walk_resolved("代理选择")
