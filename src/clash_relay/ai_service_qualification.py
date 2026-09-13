@@ -385,9 +385,7 @@ def apply_ai_service_qualification(
             "qualified_nodes": 0,
             "country_groups": country_counts,
             "removed_country_groups": public_names,
-            "service_qualified_nodes": {
-                _SERVICE_LABELS[service]: 0 for service in _SERVICE_ORDER
-            },
+            "service_qualified_nodes": {_SERVICE_LABELS[service]: 0 for service in _SERVICE_ORDER},
             "service_country_groups": {
                 _SERVICE_LABELS[service]: dict(country_counts) for service in _SERVICE_ORDER
             },
