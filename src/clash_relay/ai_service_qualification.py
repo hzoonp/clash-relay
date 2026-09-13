@@ -350,9 +350,49 @@ def apply_ai_service_qualification(
     }
     union_names = set().union(*(set(qualified_by_probe[service]) for service in _SERVICE_ORDER))
     if not union_names:
-        raise ValidationError(
-            "no nodes passed any AI service qualification probe; refusing to replace the published profile"
+        ai_policy = next(
+            (
+                group
+                for group in groups
+                if isinstance(group, dict)
+                and not group.get("hidden", False)
+                and group.get("name") == AI_POLICY_GROUP
+            ),
+            None,
         )
+        if not isinstance(ai_policy, dict) or not isinstance(ai_policy.get("proxies"), list):
+            raise ValidationError("AI policy group is missing from the generated candidate")
+
+        public_names = sorted({public_name for _, public_name in routes.values()})
+        route_group_names = {group_name for route in routes.values() for group_name in route}
+        for provider_name in ai_provider_names:
+            providers.pop(provider_name, None)
+        groups[:] = [
+            group
+            for group in groups
+            if not isinstance(group, dict) or str(group.get("name")) not in route_group_names
+        ]
+        ai_policy["proxies"] = ["REJECT"]
+        for service in _SERVICE_ORDER:
+            _add_service_target(groups, service=service, child_names=[], template=None)
+
+        routing_report = _rewrite_service_rules(config)
+        validate_generated_config(config)
+        country_counts = dict.fromkeys(public_names, 0)
+        return {
+            "qualification_mode": "per-service",
+            "tested_nodes": sum(len(names) for names in original_names_by_provider.values()),
+            "qualified_nodes": 0,
+            "country_groups": country_counts,
+            "removed_country_groups": public_names,
+            "service_qualified_nodes": {_SERVICE_LABELS[service]: 0 for service in _SERVICE_ORDER},
+            "service_country_groups": {
+                _SERVICE_LABELS[service]: dict(country_counts) for service in _SERVICE_ORDER
+            },
+            "service_fail_closed": [_SERVICE_LABELS[service] for service in _SERVICE_ORDER],
+            "service_rules": routing_report,
+            "preferred_regions": list(preferred_regions or ()),
+        }
 
     # Reuse the existing country-pool pruning logic, but keep the union of
     # service-qualified nodes instead of requiring one node to pass all services.
