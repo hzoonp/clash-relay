@@ -11,8 +11,9 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
+import clash_relay.ai_application as ai_application
 import clash_relay.production_pipeline as production_pipeline
 import clash_relay.production_release_stage as production_release_stage
 import clash_relay.qualification_pipeline as qualification_pipeline
@@ -55,6 +56,22 @@ def main() -> int:
                 "run_browsing_qualification",
                 "run_ai_qualification",
                 "harden_declared_service_client_paths",
+            ),
+        ),
+        (
+            ai_application,
+            (
+                "load_registered_ai_probe_specs",
+                "load_scheduler_policy",
+                "load_policy_document",
+                "load_routing_policy_v2",
+                "_cache_inputs",
+                "ai_runtime_fingerprints",
+                "cached_service_decisions",
+                "_probe_names",
+                "update_ai_cache_service",
+                "rewrite_ai_service_qualified_candidate",
+                "apply_service_route_postprocessing",
             ),
         ),
         (
