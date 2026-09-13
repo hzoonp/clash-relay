@@ -36,7 +36,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_2_URL
     ingest_order: 200
     on_error: skip
-    allowed_uses: [general, browsing, ai]
+    allowed_uses: [general, browsing]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
@@ -48,7 +48,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_3_URL
     ingest_order: 300
     on_error: skip
-    allowed_uses: [general, browsing, ai]
+    allowed_uses: [general, browsing]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
@@ -60,7 +60,7 @@ subscriptions:
     secret_name: SUBSCRIPTION_4_URL
     ingest_order: 400
     on_error: skip
-    allowed_uses: [general, browsing, ai]
+    allowed_uses: [general, browsing]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
