@@ -64,6 +64,9 @@ _SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
         "ai_service_probe",
         "ai_service_rewrite",
         "ai_route_postprocess",
+        "release_baseline",
+        "promotion_guard",
+        "mihomo_matrix",
     }
 )
 
