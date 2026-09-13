@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import clash_relay.production_pipeline as pipeline
-from clash_relay.errors import ValidationError
+from clash_relay.errors import CandidateValidationStageError, ValidationError
 from clash_relay.production_pipeline import (
     ProductionPipelineOutputs,
     ProjectPaths,
@@ -33,6 +33,28 @@ def test_pipeline_json_helpers_fail_closed_and_write_deterministically(tmp_path)
     output = tmp_path / "written.json"
     pipeline._write_json(output, {"b": 2, "a": 1})
     assert output.read_text(encoding="utf-8") == '{\n  "a": 1,\n  "b": 2\n}\n'
+
+
+def _paths(tmp_path):
+    project_paths = ProjectPaths(
+        config=tmp_path / "config.yaml",
+        subscriptions=tmp_path / "subscriptions.yaml",
+        policies=tmp_path / "policies.yaml",
+    )
+    qualification_paths = QualificationPaths(
+        candidate=tmp_path / "generated.yaml",
+        output=tmp_path / "qualified.yaml",
+        mihomo_bin=tmp_path / "mihomo",
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+    outputs = ProductionPipelineOutputs(
+        pre_audit=tmp_path / "pre.json",
+        post_audit=tmp_path / "post.json",
+        qualification=tmp_path / "qualification.json",
+    )
+    return project_paths, qualification_paths, outputs
 
 
 def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
@@ -113,3 +135,53 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     assert json.loads(outputs.post_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
     assert outputs.summary_markdown.read_text(encoding="utf-8") == "PRODUCTION\n\nQUALIFICATION\n"
+
+
+@pytest.mark.parametrize(
+    ("failure_point", "expected_stage"),
+    [
+        ("pre_audit", "production_pre_audit"),
+        ("qualification", "qualification_pipeline"),
+        ("post_audit", "production_post_audit"),
+    ],
+)
+def test_pipeline_classifies_validation_failure_stage_without_relaxing_failure(
+    monkeypatch, tmp_path, failure_point: str, expected_stage: str
+) -> None:
+    project = SimpleNamespace(acl4ssr=None)
+    project_paths, qualification_paths, outputs = _paths(tmp_path)
+    monkeypatch.setattr(ProjectPaths, "load", lambda self: project)
+
+    candidates = iter(({"stage": "generated"}, {"stage": "qualified"}))
+    monkeypatch.setattr(pipeline, "load_candidate", lambda _path: next(candidates))
+
+    audit_calls = 0
+
+    def fake_audit(_project, _candidate, *, build_report=None):
+        nonlocal audit_calls
+        del build_report
+        audit_calls += 1
+        if failure_point == "pre_audit" and audit_calls == 1:
+            raise ValidationError("private pre-audit detail")
+        if failure_point == "post_audit" and audit_calls == 2:
+            raise ValidationError("private post-audit detail")
+        return {"status": "passed", "routing_v2": {"status": "passed"}}
+
+    def fake_qualification(**kwargs):
+        del kwargs
+        if failure_point == "qualification":
+            raise ValidationError("private qualification detail")
+        return {"status": "qualified"}
+
+    monkeypatch.setattr(pipeline, "audit_candidate", fake_audit)
+    monkeypatch.setattr(pipeline, "run_qualification_pipeline", fake_qualification)
+
+    with pytest.raises(CandidateValidationStageError) as captured:
+        run_production_pipeline(
+            project_paths=project_paths,
+            qualification_paths=qualification_paths,
+            outputs=outputs,
+        )
+
+    assert captured.value.stage == expected_stage
+    assert "private" not in str(captured.value)
