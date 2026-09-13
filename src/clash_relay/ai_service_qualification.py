@@ -364,9 +364,7 @@ def apply_ai_service_qualification(
             raise ValidationError("AI policy group is missing from the generated candidate")
 
         public_names = sorted({public_name for _, public_name in routes.values()})
-        route_group_names = {
-            group_name for route in routes.values() for group_name in route
-        }
+        route_group_names = {group_name for route in routes.values() for group_name in route}
         for provider_name in ai_provider_names:
             providers.pop(provider_name, None)
         groups[:] = [
