@@ -56,6 +56,9 @@ _SAFE_QUALIFICATION_STAGES = frozenset(
 )
 _SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
     {
+        "production_pre_audit",
+        "qualification_pipeline",
+        "production_post_audit",
         "ai_setup",
         "ai_cache_fingerprints",
         "ai_service_probe",
