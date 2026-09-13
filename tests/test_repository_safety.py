@@ -72,9 +72,11 @@ def test_public_production_ai_candidates_are_country_scoped_and_live_gated(
         "US",
         "KR",
     }
-    for subscription in subscriptions["subscriptions"]:
-        assert "ai" in subscription["allowed_uses"]
-        assert "*" in subscription["allowed_countries"]
+    by_id = {item["id"]: item for item in subscriptions["subscriptions"]}
+    assert "ai" in by_id["subscription_1"]["allowed_uses"]
+    for source_id in ("subscription_2", "subscription_3", "subscription_4"):
+        assert "ai" not in by_id[source_id]["allowed_uses"]
+    assert all("*" in item["allowed_countries"] for item in subscriptions["subscriptions"])
 
     pools = {item["display_name"]: item for item in policies["pools"]}
     assert "AI · 香港" not in pools
