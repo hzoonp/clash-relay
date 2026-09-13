@@ -33,6 +33,14 @@ class ValidationError(ClashRelayError):
     """A candidate failed static or real-core validation."""
 
 
+class CandidateValidationStageError(ValidationError):
+    """A validation failure annotated with one static privacy-safe stage identifier."""
+
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__("candidate validation failed in a classified stage")
+
+
 class PublicationError(ClashRelayError):
     """A publication safety gate rejected the operation."""
 
