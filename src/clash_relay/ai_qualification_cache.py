@@ -96,8 +96,10 @@ def ai_runtime_fingerprints(candidate: dict[str, Any], key: bytes) -> dict[str, 
             if previous is not None and previous != fingerprint:
                 raise ValidationError("AI qualification cache found a duplicate runtime proxy name")
             result[runtime_name] = fingerprint
-    if not result:
-        raise ValidationError("AI qualification cache found no candidate AI nodes")
+    # An empty runtime inventory is a valid fail-closed state. The qualification
+    # layer must be allowed to continue so it can rewrite all AI service targets
+    # to REJECT. Returning an empty mapping also guarantees that historical cache
+    # records cannot reintroduce a node that is absent from the current candidate.
     return result
 
 
