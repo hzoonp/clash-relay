@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import copy
-
 import pytest
 
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
@@ -225,17 +223,46 @@ def test_service_qualification_rejects_nested_hidden_provider_scope_drift() -> N
         )
 
 
-def test_service_qualification_rejects_when_every_service_is_empty() -> None:
-    config = copy.deepcopy(_config())
-    with pytest.raises(ValidationError, match="no nodes passed any AI service qualification probe"):
-        apply_ai_service_qualification(
-            config,
-            {
-                "ai_openai": set(),
-                "ai_claude": set(),
-                "ai_gemini": set(),
-            },
-        )
+def test_service_qualification_fails_closed_when_every_service_is_empty() -> None:
+    config = _config()
+    report = apply_ai_service_qualification(
+        config,
+        {
+            "ai_openai": set(),
+            "ai_claude": set(),
+            "ai_gemini": set(),
+        },
+    )
+
+    assert config["proxy-providers"] == {}
+    groups = {group["name"]: group for group in config["proxy-groups"]}
+    assert groups["人工智能"] == {
+        "name": "人工智能",
+        "type": "select",
+        "proxies": ["REJECT"],
+    }
+    assert "AI · 新加坡" not in groups
+    assert "AI · 美国" not in groups
+    for target in (
+        "__CR_AI_SERVICE_OPENAI",
+        "__CR_AI_SERVICE_CLAUDE",
+        "__CR_AI_SERVICE_GEMINI",
+    ):
+        assert groups[target] == {
+            "name": target,
+            "type": "select",
+            "hidden": True,
+            "proxies": ["REJECT"],
+        }
+
+    assert report["qualification_mode"] == "per-service"
+    assert report["tested_nodes"] == 3
+    assert report["qualified_nodes"] == 0
+    assert report["country_groups"] == {"AI · 新加坡": 0, "AI · 美国": 0}
+    assert report["removed_country_groups"] == ["AI · 新加坡", "AI · 美国"]
+    assert report["service_qualified_nodes"] == {"openai": 0, "claude": 0, "gemini": 0}
+    assert report["service_fail_closed"] == ["openai", "claude", "gemini"]
+    assert "DIRECT" not in repr(config["proxy-groups"])
 
 
 def test_service_qualification_rejects_unknown_probe_results() -> None:
