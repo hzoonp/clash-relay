@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_loader import ProjectDefinition
-from .errors import ValidationError
+from .errors import CandidateValidationStageError, ValidationError
 from .mihomo_matrix_application import validate_mihomo_matrix
 from .production_application import (
     fetch_current_production_config,
@@ -81,34 +81,43 @@ def run_release_candidate_stage(
     if publish:
         production_relative = True
     if production_relative:
-        baseline = fetch_current_production_config(
-            project=project,
-            output=paths.baseline,
-            allow_missing=True,
-            env=env,
-        )
+        try:
+            baseline = fetch_current_production_config(
+                project=project,
+                output=paths.baseline,
+                allow_missing=True,
+                env=env,
+            )
+        except ValidationError as exc:
+            raise CandidateValidationStageError("release_baseline") from exc
         _write_json(paths.baseline_report, baseline)
-        promotion = run_promotion_guard(
-            project=project,
-            candidate_path=paths.candidate,
-            baseline_path=paths.baseline,
-            guard_path=paths.guard_policy,
-            qualification_path=paths.qualification,
-            report_path=paths.guard_report,
-            markdown_path=paths.guard_markdown,
-        )
+        try:
+            promotion = run_promotion_guard(
+                project=project,
+                candidate_path=paths.candidate,
+                baseline_path=paths.baseline,
+                guard_path=paths.guard_policy,
+                qualification_path=paths.qualification,
+                report_path=paths.guard_report,
+                markdown_path=paths.guard_markdown,
+            )
+        except ValidationError as exc:
+            raise CandidateValidationStageError("promotion_guard") from exc
     else:
         promotion = {"status": "skipped", "reason": "dry_run"}
     timings["promotion_guard"] = _elapsed_ms(started)
 
     started = time.perf_counter()
-    matrix = validate_mihomo_matrix(
-        candidate=paths.candidate,
-        manifest=paths.mihomo_manifest,
-        channel="stable",
-        work_dir=paths.mihomo_work_dir,
-        reuse_primary_bin=primary_binary,
-    )
+    try:
+        matrix = validate_mihomo_matrix(
+            candidate=paths.candidate,
+            manifest=paths.mihomo_manifest,
+            channel="stable",
+            work_dir=paths.mihomo_work_dir,
+            reuse_primary_bin=primary_binary,
+        )
+    except ValidationError as exc:
+        raise CandidateValidationStageError("mihomo_matrix") from exc
     _write_json(paths.matrix_report, matrix)
     timings["mihomo_matrix"] = _elapsed_ms(started)
 
