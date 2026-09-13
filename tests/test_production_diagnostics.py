@@ -103,6 +103,19 @@ def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
     assert "secret" not in repr(safe_failure_diagnostic(error))
 
 
+def test_tagged_validation_error_keeps_message_but_diagnostic_is_safe() -> None:
+    error = ValidationError("promotion blocked for private-node.example")
+    error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+
+    assert str(error) == "promotion blocked for private-node.example"
+    assert safe_failure_diagnostic(error) == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "promotion_guard",
+    }
+    assert "private-node.example" not in repr(safe_failure_diagnostic(error))
+
+
 def test_unknown_candidate_validation_stage_is_not_reflected_verbatim() -> None:
     error = CandidateValidationStageError("private-node-name.example")
 
