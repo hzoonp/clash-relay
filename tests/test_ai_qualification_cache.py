@@ -45,6 +45,43 @@ def test_ai_cache_fingerprint_is_opaque_and_changes_with_proxy_payload() -> None
     assert "one" not in fingerprint
 
 
+def test_empty_ai_inventory_returns_no_fingerprints_and_cannot_revive_cached_nodes() -> None:
+    key = derive_ai_cache_key("token")
+    existing_fingerprint = ai_runtime_fingerprints(_candidate(), key)["runtime-secret-name"]
+    candidate = {
+        "proxy-providers": {
+            "cr_ai_us": {"type": "inline", "payload": []},
+            "cr_general_any": {
+                "type": "inline",
+                "payload": [{"name": "general", "server": "198.51.100.20"}],
+            },
+        }
+    }
+
+    fingerprints = ai_runtime_fingerprints(candidate, key)
+    assert fingerprints == {}
+
+    cache = {
+        "version": 1,
+        "nodes": {
+            existing_fingerprint: {
+                "services": {
+                    "ai_openai": {"passed": True, "checked_epoch": 1000},
+                }
+            }
+        },
+    }
+    passed, failed, live = cached_service_decisions(
+        cache,
+        fingerprints,
+        "ai_openai",
+        now_epoch=1000,
+    )
+    assert passed == set()
+    assert failed == set()
+    assert live == set()
+
+
 def test_invalid_ai_cache_safely_degrades_to_empty() -> None:
     cache, status = parse_ai_cache_bytes(b'{"version":999,"nodes":{"SECRET":{}}}')
     assert status == "invalid"
