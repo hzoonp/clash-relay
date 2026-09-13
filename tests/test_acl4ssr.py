@@ -125,7 +125,6 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "AI · 台湾",
         "AI · 韩国",
         "AI · 其他地区",
-        "DIRECT",
     ]
     assert _group_members(groups["流媒体"]) == ["媒体自动", *general_choices]
     assert _group_members(groups["消息通讯"]) == ["通讯自动", *general_choices]
@@ -177,7 +176,6 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "消息通讯",
         "下载流量",
     }
-
     rule_targets = {item["target"] for item in manifest["sources"]}
     rule_targets.update(item["target"] for item in manifest["inline_rules"])
     rule_targets.add(manifest["final_target"])
