@@ -97,6 +97,18 @@ def _group(candidate: dict, name: str) -> dict:
     return next(row for row in candidate["proxy-groups"] if row["name"] == name)
 
 
+def _add_fail_closed_ai_service_targets(candidate: dict) -> None:
+    for service in ("OPENAI", "CLAUDE", "GEMINI"):
+        candidate["proxy-groups"].append(
+            {
+                "name": f"__CR_AI_SERVICE_{service}",
+                "type": "select",
+                "hidden": True,
+                "proxies": ["REJECT"],
+            }
+        )
+
+
 def test_routing_v2_audit_accepts_prequalification_graph(repo_root) -> None:
     project = _project(repo_root)
     summary = audit_routing_v2(project, _candidate(project))
@@ -117,21 +129,36 @@ def test_routing_v2_audit_accepts_prequalification_graph(repo_root) -> None:
 def test_routing_v2_audit_accepts_complete_fail_closed_ai_service_set(repo_root) -> None:
     project = _project(repo_root)
     candidate = _candidate(project)
-    for service in ("OPENAI", "CLAUDE", "GEMINI"):
-        candidate["proxy-groups"].append(
-            {
-                "name": f"__CR_AI_SERVICE_{service}",
-                "type": "select",
-                "hidden": True,
-                "proxies": ["REJECT"],
-            }
-        )
+    _add_fail_closed_ai_service_targets(candidate)
 
     summary = audit_routing_v2(project, candidate)
 
     assert summary["ai"]["stage"] == "post_qualification"
     assert summary["ai"]["service_targets_checked"] == 3
     assert summary["visible_groups"] == 6
+
+
+def test_routing_v2_audit_accepts_all_empty_ai_post_qualification(repo_root) -> None:
+    project = _project(repo_root)
+    candidate = _candidate(project)
+    _group(candidate, "人工智能")["proxies"] = ["REJECT"]
+    _add_fail_closed_ai_service_targets(candidate)
+
+    summary = audit_routing_v2(project, candidate)
+
+    assert summary["ai"]["stage"] == "post_qualification"
+    assert summary["ai"]["service_targets_checked"] == 3
+    assert summary["cutover"]["ai_region_order"] == []
+    assert summary["visible_groups"] == 6
+
+
+def test_routing_v2_audit_rejects_mixed_reject_and_ai_region(repo_root) -> None:
+    project = _project(repo_root)
+    candidate = _candidate(project)
+    _group(candidate, "人工智能")["proxies"] = ["REJECT", "AI · 美国"]
+
+    with pytest.raises(ValidationError, match="generic AI country order"):
+        audit_routing_v2(project, candidate)
 
 
 def test_routing_v2_audit_rejects_acl4ssr_selector_drift(repo_root) -> None:
