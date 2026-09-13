@@ -105,10 +105,10 @@ def test_multiplier_filter_keeps_two_times_and_unmarked_nodes() -> None:
     assert rejected == 2
 
 
-def test_source_use_boundary_excludes_subscription_1_from_general() -> None:
+def test_source_use_boundary_excludes_subscription_1_from_general_and_secondary_from_ai() -> None:
     nodes = [
         _node("subscription_1", {"browsing", "ai"}, "111"),
-        _node("subscription_2", {"general", "browsing", "ai"}, "222"),
+        _node("subscription_2", {"general", "browsing"}, "222"),
     ]
 
     assert [node.source_id for node in select_nodes(nodes, _selector("general"), "ANY")] == [
@@ -119,8 +119,7 @@ def test_source_use_boundary_excludes_subscription_1_from_general() -> None:
         "subscription_2",
     ]
     assert [node.source_id for node in select_nodes(nodes, _selector("ai"), "ANY")] == [
-        "subscription_1",
-        "subscription_2",
+        "subscription_1"
     ]
 
 
@@ -259,7 +258,7 @@ def test_source_exclusion_rejects_unknown_subscription_ids() -> None:
         )
 
 
-def test_canonical_subscription_1_is_browsing_and_ai_only(repo_root: Path) -> None:
+def test_canonical_subscription_1_is_the_only_ai_source(repo_root: Path) -> None:
     subscriptions = yaml.safe_load((repo_root / "subscriptions.yaml").read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in subscriptions["subscriptions"]}
 
@@ -270,7 +269,8 @@ def test_canonical_subscription_1_is_browsing_and_ai_only(repo_root: Path) -> No
     assert "general" not in subscription_1["allowed_uses"]
 
     for source_id in ("subscription_2", "subscription_3", "subscription_4"):
-        assert set(by_id[source_id]["allowed_uses"]) == {"general", "browsing", "ai"}
+        assert set(by_id[source_id]["allowed_uses"]) == {"general", "browsing"}
+        assert "ai" not in by_id[source_id]["allowed_uses"]
 
 
 def test_canonical_browsing_route_is_separate_from_application_routes(repo_root: Path) -> None:
