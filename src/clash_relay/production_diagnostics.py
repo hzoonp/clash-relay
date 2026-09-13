@@ -63,6 +63,13 @@ _SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
         "ai_cache_fingerprints",
         "ai_service_probe",
         "ai_service_rewrite",
+        "ai_service_inputs",
+        "ai_service_routes",
+        "ai_service_union_prune",
+        "ai_service_country_order",
+        "ai_service_group_build",
+        "ai_service_rules",
+        "ai_service_validate",
         "ai_route_postprocess",
         "release_baseline",
         "promotion_guard",
@@ -111,6 +118,49 @@ def _validation_stage(error: BaseException) -> str | None:
     return None
 
 
+def _ai_service_rewrite_substage(chain: tuple[BaseException, ...]) -> str | None:
+    """Map only known static ValidationError contracts to safe rewrite substages."""
+
+    messages = [str(item) for item in chain if type(item) is ValidationError]
+    for message in messages:
+        if message == "AI qualification could not resolve every country provider route":
+            return "ai_service_routes"
+        if message.startswith("AI routing uses unknown preferred region"):
+            return "ai_service_country_order"
+        if message in {
+            "AI service qualification is missing required probe results",
+            "candidate proxy provider/group structure is invalid",
+            "candidate contains no AI country providers",
+            "AI provider payload is invalid",
+            "AI service qualification returned unknown candidate nodes",
+        }:
+            return "ai_service_inputs"
+        if message in {
+            "AI policy group is missing after qualification",
+            "no nodes passed all AI qualification probes; refusing to replace the published profile",
+        }:
+            return "ai_service_union_prune"
+        if message in {
+            "AI service filter cannot be empty",
+            "AI service routing requires a url-test country anchor",
+            "AI service routing cannot compose an existing country filter",
+            "AI service fallback requires a country probe template",
+            "AI qualification references a missing country group",
+        } or message.startswith("AI service fallback template is missing"):
+            return "ai_service_group_build"
+        if message.startswith("AI service routing requires exactly one ") or message in {
+            "AI service routing requires generated ACL4SSR rule providers",
+            "AI service routing requires the pinned ACL4SSR AI provider",
+            "AI service routing requires the pinned ACL4SSR OpenAI provider",
+            "pinned ACL4SSR AI rules changed; service routing requires review",
+            "generic ACL4SSR AI rule no longer targets the AI policy group",
+        }:
+            return "ai_service_rules"
+        if message.startswith("generated configuration is invalid:"):
+            return "ai_service_validate"
+    return None
+
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
@@ -142,6 +192,8 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     for item in chain:
         stage = _validation_stage(item)
         if stage is not None:
+            if stage == "ai_service_rewrite":
+                stage = _ai_service_rewrite_substage(chain) or stage
             return {
                 "status": "failed",
                 "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,

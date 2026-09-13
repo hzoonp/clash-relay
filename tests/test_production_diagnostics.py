@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from clash_relay.errors import (
     CandidateValidationStageError,
     ConfigurationError,
@@ -101,6 +103,67 @@ def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
     }
     assert "private-node.example" not in repr(safe_failure_diagnostic(error))
     assert "secret" not in repr(safe_failure_diagnostic(error))
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_stage"),
+    [
+        (
+            "AI qualification could not resolve every country provider route",
+            "ai_service_routes",
+        ),
+        ("AI routing uses unknown preferred region 'PRIVATE'", "ai_service_country_order"),
+        ("AI service qualification returned unknown candidate nodes", "ai_service_inputs"),
+        (
+            "no nodes passed all AI qualification probes; refusing to replace the published profile",
+            "ai_service_union_prune",
+        ),
+        (
+            "AI service fallback template is missing 'private-field'",
+            "ai_service_group_build",
+        ),
+        (
+            "pinned ACL4SSR AI rules changed; service routing requires review",
+            "ai_service_rules",
+        ),
+        (
+            "generated configuration is invalid: private-node.example token=secret",
+            "ai_service_validate",
+        ),
+    ],
+)
+def test_ai_service_rewrite_known_errors_map_to_static_safe_substages(
+    message: str,
+    expected_stage: str,
+) -> None:
+    outer = CandidateValidationStageError("ai_service_rewrite")
+    outer.__cause__ = ValidationError(message)
+
+    result = safe_failure_diagnostic(outer)
+
+    assert result == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": expected_stage,
+    }
+    assert message not in repr(result)
+    assert "private" not in repr(result)
+    assert "secret" not in repr(result)
+
+
+def test_unknown_ai_service_rewrite_error_stays_generic_without_leaking_text() -> None:
+    outer = CandidateValidationStageError("ai_service_rewrite")
+    outer.__cause__ = ValidationError("private-node.example token=super-secret")
+
+    result = safe_failure_diagnostic(outer)
+
+    assert result == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "ai_service_rewrite",
+    }
+    assert "private-node.example" not in repr(result)
+    assert "super-secret" not in repr(result)
 
 
 def test_tagged_validation_error_keeps_message_but_diagnostic_is_safe() -> None:
