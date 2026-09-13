@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from clash_relay.errors import (
+    CandidateValidationStageError,
     ConfigurationError,
     FetchError,
     GenerationError,
@@ -87,6 +88,45 @@ def test_ai_and_unknown_qualification_stages_are_coarsened() -> None:
     assert safe_failure_diagnostic(ai)["qualification_stage"] == "ai_service"
     assert safe_failure_diagnostic(other)["category"] == "qualification"
     assert safe_failure_diagnostic(other)["qualification_stage"] == "other"
+
+
+def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
+    error = CandidateValidationStageError("ai_service_rewrite")
+    error.__cause__ = ValidationError("private-node.example token=secret")
+
+    assert safe_failure_diagnostic(error) == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "ai_service_rewrite",
+    }
+    assert "private-node.example" not in repr(safe_failure_diagnostic(error))
+    assert "secret" not in repr(safe_failure_diagnostic(error))
+
+
+def test_tagged_validation_error_keeps_message_but_diagnostic_is_safe() -> None:
+    error = ValidationError("promotion blocked for private-node.example")
+    error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+
+    assert str(error) == "promotion blocked for private-node.example"
+    assert safe_failure_diagnostic(error) == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "promotion_guard",
+    }
+    assert "private-node.example" not in repr(safe_failure_diagnostic(error))
+
+
+def test_unknown_candidate_validation_stage_is_not_reflected_verbatim() -> None:
+    error = CandidateValidationStageError("private-node-name.example")
+
+    result = safe_failure_diagnostic(error)
+
+    assert result == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "other",
+    }
+    assert "private-node-name.example" not in repr(result)
 
 
 def test_unknown_exception_never_serializes_exception_text() -> None:

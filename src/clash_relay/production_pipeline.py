@@ -15,7 +15,7 @@ from typing import Any
 from .acl4ssr_reference import validate_acl4ssr_fidelity
 from .ai_runtime_reliability import audit_openai_client_path
 from .config_loader import ProjectDefinition, load_project
-from .errors import ValidationError
+from .errors import CandidateValidationStageError, ValidationError
 from .mihomo import load_candidate
 from .openai_app_contract import audit_route_lock
 from .production_audit import audit_production_candidate, render_production_summary_markdown
@@ -192,29 +192,44 @@ def run_production_pipeline(
     build_report = _load_json(build_report_path) if build_report_path is not None else None
 
     generated = load_candidate(qualification_paths.candidate)
-    pre_audit = audit_candidate(project, generated, build_report=build_report)
+    try:
+        pre_audit = audit_candidate(project, generated, build_report=build_report)
+    except CandidateValidationStageError:
+        raise
+    except ValidationError as exc:
+        raise CandidateValidationStageError("production_pre_audit") from exc
     _write_json(outputs.pre_audit, pre_audit)
 
-    qualification = run_qualification_pipeline(
-        candidate=qualification_paths.candidate,
-        output=qualification_paths.output,
-        policies=project_paths.policies,
-        mihomo_bin=qualification_paths.mihomo_bin,
-        stage_dir=qualification_paths.stage_dir,
-        browsing_report=qualification_paths.browsing_report,
-        ai_report=qualification_paths.ai_report,
-        workers=workers,
-        history=qualification_paths.history,
-        history_key=qualification_paths.history_key,
-        next_history=qualification_paths.next_history,
-        cache=qualification_paths.cache,
-        cache_key=qualification_paths.cache_key,
-        next_cache=qualification_paths.next_cache,
-    )
+    try:
+        qualification = run_qualification_pipeline(
+            candidate=qualification_paths.candidate,
+            output=qualification_paths.output,
+            policies=project_paths.policies,
+            mihomo_bin=qualification_paths.mihomo_bin,
+            stage_dir=qualification_paths.stage_dir,
+            browsing_report=qualification_paths.browsing_report,
+            ai_report=qualification_paths.ai_report,
+            workers=workers,
+            history=qualification_paths.history,
+            history_key=qualification_paths.history_key,
+            next_history=qualification_paths.next_history,
+            cache=qualification_paths.cache,
+            cache_key=qualification_paths.cache_key,
+            next_cache=qualification_paths.next_cache,
+        )
+    except CandidateValidationStageError:
+        raise
+    except ValidationError as exc:
+        raise CandidateValidationStageError("qualification_pipeline") from exc
     _write_json(outputs.qualification, qualification)
 
     qualified = load_candidate(qualification_paths.output)
-    post_audit = audit_candidate(project, qualified, build_report=build_report)
+    try:
+        post_audit = audit_candidate(project, qualified, build_report=build_report)
+    except CandidateValidationStageError:
+        raise
+    except ValidationError as exc:
+        raise CandidateValidationStageError("production_post_audit") from exc
     _write_json(outputs.post_audit, post_audit)
 
     if outputs.summary_markdown is not None:

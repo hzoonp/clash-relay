@@ -17,7 +17,7 @@ from .ai_qualification_cache import (
     update_ai_cache_service,
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
-from .errors import ValidationError
+from .errors import CandidateValidationStageError, ValidationError
 from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
 from .scheduler_policy import load_scheduler_policy
@@ -166,21 +166,28 @@ def run_ai_qualification(
     """Qualify registered AI services and rewrite one private candidate in place."""
 
     diagnostics = _service_diagnostics()
-    scheduler_policy = load_scheduler_policy(policies)
-    policies_document = load_policy_document(policies).document
-    routing_policy = load_routing_policy_v2(policies_document)
-    probes = load_registered_ai_probe_specs(policies)
-    candidate_config = load_yaml_file(candidate)
-    if not isinstance(candidate_config, dict):
-        raise ValidationError("candidate is not a YAML mapping")
-    cache_inputs = _cache_inputs(cache=cache, cache_key=cache_key, next_cache=next_cache)
+    try:
+        scheduler_policy = load_scheduler_policy(policies)
+        policies_document = load_policy_document(policies).document
+        routing_policy = load_routing_policy_v2(policies_document)
+        probes = load_registered_ai_probe_specs(policies)
+        candidate_config = load_yaml_file(candidate)
+        if not isinstance(candidate_config, dict):
+            raise ValidationError("candidate is not a YAML mapping")
+        cache_inputs = _cache_inputs(cache=cache, cache_key=cache_key, next_cache=next_cache)
+    except ValidationError as exc:
+        raise CandidateValidationStageError("ai_setup") from exc
+
     fingerprints: dict[str, str] | None = None
     cache_document: dict[str, Any] | None = None
     next_cache_document: dict[str, Any] | None = None
     cache_status = "disabled"
     if cache_inputs is not None:
         cache_document, fingerprint_key, cache_status = cache_inputs
-        fingerprints = ai_runtime_fingerprints(candidate_config, fingerprint_key)
+        try:
+            fingerprints = ai_runtime_fingerprints(candidate_config, fingerprint_key)
+        except ValidationError as exc:
+            raise CandidateValidationStageError("ai_cache_fingerprints") from exc
         next_cache_document = cache_document
         diagnostics["tested_nodes"] = len(fingerprints)
 
@@ -207,13 +214,16 @@ def run_ai_qualification(
             )
 
         qualification_probes = service.qualification_probes(probe)
-        live_qualified, probe_diagnostics = _probe_names(
-            binary=mihomo_bin,
-            candidate=candidate,
-            names=live_names,
-            probes=qualification_probes,
-            workers=workers,
-        )
+        try:
+            live_qualified, probe_diagnostics = _probe_names(
+                binary=mihomo_bin,
+                candidate=candidate,
+                names=live_names,
+                probes=qualification_probes,
+                workers=workers,
+            )
+        except ValidationError as exc:
+            raise CandidateValidationStageError("ai_service_probe") from exc
 
         if live_names is None:
             live_tested = int(probe_diagnostics.get("tested_nodes", 0))
@@ -221,7 +231,7 @@ def run_ai_qualification(
                 expected_candidate_nodes = live_tested
                 diagnostics["tested_nodes"] = live_tested
             elif live_tested != expected_candidate_nodes:
-                raise ValidationError("AI service probes tested inconsistent node inventories")
+                raise CandidateValidationStageError("ai_service_probe")
             live_names_for_cache: set[str] = set()
         else:
             live_tested = len(live_names)
@@ -231,7 +241,7 @@ def run_ai_qualification(
 
         selector_failures = diagnostics["selector_failures"]
         if not isinstance(selector_failures, int) or isinstance(selector_failures, bool):
-            raise ValidationError("AI selector failure diagnostics must be an integer")
+            raise CandidateValidationStageError("ai_service_probe")
         diagnostics["selector_failures"] = selector_failures + int(
             probe_diagnostics.get("selector_failures", 0)
         )
@@ -256,13 +266,16 @@ def run_ai_qualification(
         supporting_qualified: set[str] = set()
         supporting_probes = service.supporting_probes()
         if supporting_probes and live_qualified:
-            supporting_qualified, supporting_diagnostics = _probe_names(
-                binary=mihomo_bin,
-                candidate=candidate,
-                names=live_qualified,
-                probes=supporting_probes,
-                workers=workers,
-            )
+            try:
+                supporting_qualified, supporting_diagnostics = _probe_names(
+                    binary=mihomo_bin,
+                    candidate=candidate,
+                    names=live_qualified,
+                    probes=supporting_probes,
+                    workers=workers,
+                )
+            except ValidationError as exc:
+                raise CandidateValidationStageError("ai_service_probe") from exc
         extended = service.build_extended_diagnostics(
             live_tested=live_tested,
             live_qualified=live_qualified,
@@ -319,12 +332,18 @@ def run_ai_qualification(
         )
         cache_report.update(ai_cache_summary(next_cache_document))
 
-    report = rewrite_ai_service_qualified_candidate(
-        candidate,
-        qualified_by_probe,
-        preferred_regions=routing_policy.ai.preferred_regions,
-    )
-    service_postprocessing = apply_service_route_postprocessing(candidate)
+    try:
+        report = rewrite_ai_service_qualified_candidate(
+            candidate,
+            qualified_by_probe,
+            preferred_regions=routing_policy.ai.preferred_regions,
+        )
+    except ValidationError as exc:
+        raise CandidateValidationStageError("ai_service_rewrite") from exc
+    try:
+        service_postprocessing = apply_service_route_postprocessing(candidate)
+    except ValidationError as exc:
+        raise CandidateValidationStageError("ai_route_postprocess") from exc
     return {
         "status": "qualified",
         "diagnostics": diagnostics,

@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Any
 
 from .errors import (
+    CandidateValidationStageError,
     CommitUnknownError,
     ConfigurationError,
     FetchError,
@@ -53,6 +54,21 @@ _SAFE_QUALIFICATION_STAGES = frozenset(
         "service",
     }
 )
+_SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
+    {
+        "production_pre_audit",
+        "qualification_pipeline",
+        "production_post_audit",
+        "ai_setup",
+        "ai_cache_fingerprints",
+        "ai_service_probe",
+        "ai_service_rewrite",
+        "ai_route_postprocess",
+        "release_baseline",
+        "promotion_guard",
+        "mihomo_matrix",
+    }
+)
 
 
 def _chain(error: BaseException) -> tuple[BaseException, ...]:
@@ -78,6 +94,21 @@ def _qualification_category(error: QualificationStageRejected) -> ProductionFail
 def _safe_qualification_stage(stage: str) -> str:
     normalized = stage.strip().casefold()
     return normalized if normalized in _SAFE_QUALIFICATION_STAGES else "other"
+
+
+def _safe_candidate_validation_stage(stage: str) -> str:
+    normalized = stage.strip().casefold()
+    return normalized if normalized in _SAFE_CANDIDATE_VALIDATION_STAGES else "other"
+
+
+def _validation_stage(error: BaseException) -> str | None:
+    if isinstance(error, CandidateValidationStageError):
+        return error.stage
+    if isinstance(error, ValidationError):
+        stage = getattr(error, "validation_stage", None)
+        if isinstance(stage, str):
+            return stage
+    return None
 
 
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
@@ -107,6 +138,15 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
             "category": ProductionFailureCategory.CLOUDFLARE_COMMIT_UNKNOWN.value,
             "production_changed": commit_unknown.production_changed,
         }
+
+    for item in chain:
+        stage = _validation_stage(item)
+        if stage is not None:
+            return {
+                "status": "failed",
+                "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
+                "validation_stage": _safe_candidate_validation_stage(stage),
+            }
 
     category = ProductionFailureCategory.UNKNOWN
     if any(isinstance(item, SecretError | ConfigurationError) for item in chain):
