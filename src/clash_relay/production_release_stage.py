@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_loader import ProjectDefinition
-from .errors import CandidateValidationStageError, ValidationError
+from .errors import ValidationError
 from .mihomo_matrix_application import validate_mihomo_matrix
 from .production_application import (
     fetch_current_production_config,
@@ -54,6 +54,12 @@ def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000.0, 3)
 
 
+def _tag_validation_stage(error: ValidationError, stage: str) -> None:
+    """Attach a static diagnostic stage without changing the exception contract."""
+
+    error.validation_stage = stage  # type: ignore[attr-defined]
+
+
 def run_release_candidate_stage(
     *,
     project: ProjectDefinition,
@@ -89,7 +95,8 @@ def run_release_candidate_stage(
                 env=env,
             )
         except ValidationError as exc:
-            raise CandidateValidationStageError("release_baseline") from exc
+            _tag_validation_stage(exc, "release_baseline")
+            raise
         _write_json(paths.baseline_report, baseline)
         try:
             promotion = run_promotion_guard(
@@ -102,7 +109,8 @@ def run_release_candidate_stage(
                 markdown_path=paths.guard_markdown,
             )
         except ValidationError as exc:
-            raise CandidateValidationStageError("promotion_guard") from exc
+            _tag_validation_stage(exc, "promotion_guard")
+            raise
     else:
         promotion = {"status": "skipped", "reason": "dry_run"}
     timings["promotion_guard"] = _elapsed_ms(started)
@@ -117,7 +125,8 @@ def run_release_candidate_stage(
             reuse_primary_bin=primary_binary,
         )
     except ValidationError as exc:
-        raise CandidateValidationStageError("mihomo_matrix") from exc
+        _tag_validation_stage(exc, "mihomo_matrix")
+        raise
     _write_json(paths.matrix_report, matrix)
     timings["mihomo_matrix"] = _elapsed_ms(started)
 
