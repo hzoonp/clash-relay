@@ -64,6 +64,15 @@ def test_final_routing_v2_presentation_and_acl_compatibility(repo_root: Path) ->
     assert groups["流媒体"]["members"][0] == {"group": "媒体自动"}
     assert groups["消息通讯"]["members"][0] == {"group": "通讯自动"}
     assert groups["下载流量"]["members"][0] == {"group": "下载自动"}
+    assert groups["人工智能"]["members"] == [
+        {"group": "AI · 美国"},
+        {"group": "AI · 新加坡"},
+        {"group": "AI · 日本"},
+        {"group": "AI · 台湾"},
+        {"group": "AI · 韩国"},
+        {"group": "AI · 其他地区"},
+    ]
+    assert {"builtin": "DIRECT"} not in groups["人工智能"]["members"]
 
     assert groups["全球直连"]["members"] == [
         {"builtin": "DIRECT"},
