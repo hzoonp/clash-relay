@@ -380,7 +380,7 @@ def apply_ai_service_qualification(
 
         routing_report = _rewrite_service_rules(config)
         validate_generated_config(config)
-        country_counts = {public_name: 0 for public_name in public_names}
+        country_counts = dict.fromkeys(public_names, 0)
         return {
             "qualification_mode": "per-service",
             "tested_nodes": sum(len(names) for names in original_names_by_provider.values()),
