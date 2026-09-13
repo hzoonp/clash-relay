@@ -79,6 +79,14 @@ def main() -> int:
             ai_service_qualification,
             (
                 "rewrite_ai_service_qualified_candidate",
+                "apply_ai_service_qualification",
+                "_provider_routes",
+                "_ordered_country_names",
+                "_clone_country_anchor",
+                "_add_service_target",
+                "_rewrite_service_rules",
+                "_hide_country_groups",
+                "validate_generated_config",
             ),
         ),
         (
@@ -94,6 +102,12 @@ def main() -> int:
         for name in names:
             if hasattr(module, name):
                 _trace(module, name)
+
+    # ai_application imported the rewrite callable directly, so rebind that alias
+    # after instrumenting the source module to expose the inner safe stage trace.
+    ai_application.rewrite_ai_service_qualified_candidate = (
+        ai_service_qualification.rewrite_ai_service_qualified_candidate
+    )
 
     pipeline = ProductionPipeline(
         ProductionLifecyclePaths.canonical(Path(".")),
