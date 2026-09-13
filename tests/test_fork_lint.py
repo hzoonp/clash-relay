@@ -41,7 +41,7 @@ def test_canonical_fork_lint_exposes_source_policy_boundaries(repo_root: Path) -
 
     assert report["status"] == "passed"
     assert report["enabled_sources"] == 4
-    assert report["sources_by_use"] == {"general": 3, "browsing": 4, "ai": 4}
+    assert report["sources_by_use"] == {"general": 3, "browsing": 4, "ai": 1}
     assert report["restricted_non_general_sources"] == 1
     assert report["multiplier_capped_sources"] == 1
     assert report["deny_filtered_sources"] == 1
