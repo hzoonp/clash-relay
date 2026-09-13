@@ -37,6 +37,11 @@ def _acl_fixture_fetcher(url: str, **kwargs) -> str:
     return "DOMAIN-SUFFIX,fictional-consumer.example\n"
 
 
+def _reachable_servers(graph: RuntimeGraph, proxy_names: frozenset[str]) -> set[str]:
+    runtime_proxies = graph.proxies
+    return {str(runtime_proxies[name]["server"]) for name in proxy_names}
+
+
 def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path], dict[str, str]]:
     root = tmp_path / "canonical-consumer"
     root.mkdir()
@@ -118,20 +123,18 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
 
     general = graph.walk_resolved("代理选择")
     assert general.providers
-    general_proxy_names = set(general.proxies)
-    assert not any("subscription_1/" in name for name in general_proxy_names)
-    assert any(
-        "subscription_2/" in name and "US General 02" in name for name in general_proxy_names
-    )
+    general_servers = _reachable_servers(graph, general.proxies)
+    assert not any(server.startswith("sub1-") for server in general_servers)
+    assert "sub2-general.invalid.example" in general_servers
 
     ai = graph.walk_resolved("人工智能")
     assert ai.providers
-    ai_proxy_names = set(ai.proxies)
-    assert any("subscription_1/" in name and "US Standard" in name for name in ai_proxy_names)
-    assert any("subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names)
-    assert not any("subscription_2/" in name for name in ai_proxy_names)
-    assert not any("subscription_3/" in name for name in ai_proxy_names)
-    assert not any("subscription_4/" in name for name in ai_proxy_names)
+    ai_proxy_names = ai.proxies
+    ai_servers = _reachable_servers(graph, ai_proxy_names)
+    assert ai_servers == {
+        "sub1-standard.invalid.example",
+        "sub1-two.invalid.example",
+    }
     assert "DIRECT" not in ai.builtins
 
     # "AI direct via subscription_1" means one proxy hop, not Mihomo DIRECT and
@@ -167,10 +170,13 @@ def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources
     )
 
     _assert_ai_is_fail_closed(result.config)
-    general = RuntimeGraph.from_candidate(result.config).walk_resolved("代理选择")
-    assert any("subscription_2/" in name for name in general.proxies)
-    assert any("subscription_3/" in name for name in general.proxies)
-    assert any("subscription_4/" in name for name in general.proxies)
+    graph = RuntimeGraph.from_candidate(result.config)
+    general = graph.walk_resolved("代理选择")
+    assert _reachable_servers(graph, general.proxies) == {
+        "sub2-general.invalid.example",
+        "sub3-general.invalid.example",
+        "sub4-general.invalid.example",
+    }
 
 
 def test_ai_fails_closed_when_subscription_1_nodes_are_all_rejected_by_admission(
@@ -197,6 +203,8 @@ def test_ai_fails_closed_when_subscription_1_nodes_are_all_rejected_by_admission
     assert restricted["filtered_over_multiplier"] == 1
 
     _assert_ai_is_fail_closed(result.config)
-    general = RuntimeGraph.from_candidate(result.config).walk_resolved("代理选择")
-    assert general.proxies
-    assert not any("subscription_1/" in name for name in general.proxies)
+    graph = RuntimeGraph.from_candidate(result.config)
+    general = graph.walk_resolved("代理选择")
+    general_servers = _reachable_servers(graph, general.proxies)
+    assert general_servers
+    assert not any(server.startswith("sub1-") for server in general_servers)
