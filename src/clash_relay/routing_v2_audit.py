@@ -232,7 +232,9 @@ def _audit_cutover_routes(
         for region in policy.ai.preferred_regions
         if region in canonical_display
     ]
-    ai_regions = [] if ai_policy == ["REJECT"] else [name for name in ai_policy if name != "DIRECT"]
+    ai_regions = (
+        [] if ai_policy == ["REJECT"] else [name for name in ai_policy if name != "DIRECT"]
+    )
     positions = [preferred_names.index(name) for name in ai_regions if name in preferred_names]
     if len(positions) != len(ai_regions) or positions != sorted(positions):
         raise ValidationError("generic AI country order does not follow Routing V2 preference")
