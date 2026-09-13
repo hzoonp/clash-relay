@@ -300,6 +300,97 @@ def _ordered_country_names(
     return ordered
 
 
+def _ai_policy(groups: list[dict[str, Any]]) -> dict[str, Any]:
+    policy = next(
+        (
+            group
+            for group in groups
+            if isinstance(group, dict)
+            and not group.get("hidden", False)
+            and group.get("name") == AI_POLICY_GROUP
+        ),
+        None,
+    )
+    if not isinstance(policy, dict) or not isinstance(policy.get("proxies"), list):
+        raise ValidationError("AI policy group is missing from the generated candidate")
+    return policy
+
+
+def _fail_closed_empty_inventory(
+    config: dict[str, Any],
+    *,
+    providers: dict[str, Any],
+    groups: list[dict[str, Any]],
+    ai_provider_names: set[str],
+    routes: dict[str, tuple[str, str]],
+    original_names_by_provider: dict[str, set[str]],
+    preferred_regions: tuple[str, ...] | list[str] | None,
+) -> dict[str, Any]:
+    """Collapse an empty AI inventory to explicit REJECT-only service routing."""
+
+    ai_policy = _ai_policy(groups)
+    known_country_names = set(_REGION_PUBLIC_NAMES.values())
+    public_names = sorted(
+        {
+            str(group["name"])
+            for group in groups
+            if isinstance(group, dict) and str(group.get("name")) in known_country_names
+        }
+        | {public_name for _, public_name in routes.values()}
+    )
+
+    by_name = {
+        str(group["name"]): group
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("name"), str)
+    }
+    route_group_names = {group_name for route in routes.values() for group_name in route}
+    route_group_names.update(public_names)
+    for public_name in public_names:
+        country_group = by_name.get(public_name)
+        references = country_group.get("proxies", []) if isinstance(country_group, dict) else []
+        if not isinstance(references, list):
+            continue
+        for reference in references:
+            anchor_name = str(reference)
+            anchor = by_name.get(anchor_name)
+            if (
+                isinstance(anchor, dict)
+                and anchor.get("hidden", False)
+                and anchor.get("proxies") == ["REJECT"]
+            ):
+                route_group_names.add(anchor_name)
+
+    for provider_name in ai_provider_names:
+        providers.pop(provider_name, None)
+    groups[:] = [
+        group
+        for group in groups
+        if not isinstance(group, dict) or str(group.get("name")) not in route_group_names
+    ]
+    ai_policy["proxies"] = ["REJECT"]
+    for service in _SERVICE_ORDER:
+        _add_service_target(groups, service=service, child_names=[], template=None)
+
+    routing_report = _rewrite_service_rules(config)
+    validate_generated_config(config)
+    country_counts = dict.fromkeys(public_names, 0)
+    return {
+        "qualification_mode": "per-service",
+        "tested_nodes": sum(len(names) for names in original_names_by_provider.values()),
+        "qualified_nodes": 0,
+        "country_groups": country_counts,
+        "removed_country_groups": public_names,
+        "service_qualified_nodes": {_SERVICE_LABELS[service]: 0 for service in _SERVICE_ORDER},
+        "service_country_groups": {
+            _SERVICE_LABELS[service]: dict(country_counts) for service in _SERVICE_ORDER
+        },
+        "service_fail_closed": [_SERVICE_LABELS[service] for service in _SERVICE_ORDER],
+        "service_rules": routing_report,
+        "preferred_regions": list(preferred_regions or ()),
+    }
+
+
 def apply_ai_service_qualification(
     config: dict[str, Any],
     qualified_by_probe: dict[str, set[str]],
@@ -319,7 +410,17 @@ def apply_ai_service_qualification(
         str(name) for name in providers if str(name).startswith(AI_PROVIDER_PREFIX)
     }
     if not ai_provider_names:
-        raise ValidationError("candidate contains no AI country providers")
+        if any(qualified_by_probe[service] for service in _SERVICE_ORDER):
+            raise ValidationError("AI service qualification returned unknown candidate nodes")
+        return _fail_closed_empty_inventory(
+            config,
+            providers=providers,
+            groups=groups,
+            ai_provider_names=set(),
+            routes={},
+            original_names_by_provider={},
+            preferred_regions=preferred_regions,
+        )
 
     routes = _provider_routes(groups, ai_provider_names)
     original_names_by_provider: dict[str, set[str]] = {}
@@ -350,49 +451,15 @@ def apply_ai_service_qualification(
     }
     union_names = set().union(*(set(qualified_by_probe[service]) for service in _SERVICE_ORDER))
     if not union_names:
-        ai_policy = next(
-            (
-                group
-                for group in groups
-                if isinstance(group, dict)
-                and not group.get("hidden", False)
-                and group.get("name") == AI_POLICY_GROUP
-            ),
-            None,
+        return _fail_closed_empty_inventory(
+            config,
+            providers=providers,
+            groups=groups,
+            ai_provider_names=ai_provider_names,
+            routes=routes,
+            original_names_by_provider=original_names_by_provider,
+            preferred_regions=preferred_regions,
         )
-        if not isinstance(ai_policy, dict) or not isinstance(ai_policy.get("proxies"), list):
-            raise ValidationError("AI policy group is missing from the generated candidate")
-
-        public_names = sorted({public_name for _, public_name in routes.values()})
-        route_group_names = {group_name for route in routes.values() for group_name in route}
-        for provider_name in ai_provider_names:
-            providers.pop(provider_name, None)
-        groups[:] = [
-            group
-            for group in groups
-            if not isinstance(group, dict) or str(group.get("name")) not in route_group_names
-        ]
-        ai_policy["proxies"] = ["REJECT"]
-        for service in _SERVICE_ORDER:
-            _add_service_target(groups, service=service, child_names=[], template=None)
-
-        routing_report = _rewrite_service_rules(config)
-        validate_generated_config(config)
-        country_counts = dict.fromkeys(public_names, 0)
-        return {
-            "qualification_mode": "per-service",
-            "tested_nodes": sum(len(names) for names in original_names_by_provider.values()),
-            "qualified_nodes": 0,
-            "country_groups": country_counts,
-            "removed_country_groups": public_names,
-            "service_qualified_nodes": {_SERVICE_LABELS[service]: 0 for service in _SERVICE_ORDER},
-            "service_country_groups": {
-                _SERVICE_LABELS[service]: dict(country_counts) for service in _SERVICE_ORDER
-            },
-            "service_fail_closed": [_SERVICE_LABELS[service] for service in _SERVICE_ORDER],
-            "service_rules": routing_report,
-            "preferred_regions": list(preferred_regions or ()),
-        }
 
     # Reuse the existing country-pool pruning logic, but keep the union of
     # service-qualified nodes instead of requiring one node to pass all services.
