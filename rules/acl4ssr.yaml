@@ -243,6 +243,8 @@ groups:
     route:
       scenario: ai
       profile: ai
+    # AI must fail closed when subscription_1 has no eligible node. Do not
+    # expose DIRECT or any general-source escape hatch from this selector.
     members:
       - {group: AI · 美国}
       - {group: AI · 新加坡}
@@ -250,7 +252,6 @@ groups:
       - {group: AI · 台湾}
       - {group: AI · 韩国}
       - {group: AI · 其他地区}
-      - {builtin: DIRECT}
 
   - id: policy_media
     display_name: 流媒体
