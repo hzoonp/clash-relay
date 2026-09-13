@@ -127,12 +127,8 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     ai = graph.walk_resolved("人工智能")
     assert ai.providers
     ai_proxy_names = set(ai.proxies)
-    assert any(
-        "subscription_1/" in name and "US Standard" in name for name in ai_proxy_names
-    )
-    assert any(
-        "subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names
-    )
+    assert any("subscription_1/" in name and "US Standard" in name for name in ai_proxy_names)
+    assert any("subscription_1/" in name and "US Exactly 2x" in name for name in ai_proxy_names)
     assert not any("subscription_2/" in name for name in ai_proxy_names)
     assert not any("subscription_3/" in name for name in ai_proxy_names)
     assert not any("subscription_4/" in name for name in ai_proxy_names)
