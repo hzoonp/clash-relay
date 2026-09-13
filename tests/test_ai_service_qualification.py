@@ -117,6 +117,41 @@ def _config() -> dict:
     }
 
 
+def _empty_inventory_config() -> dict:
+    config = _config()
+    config["proxy-providers"] = {}
+    config["proxy-groups"] = [
+        {
+            "name": "__CR_FAIL_CLOSED_AI_SG",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["REJECT"],
+        },
+        {
+            "name": "AI · 新加坡",
+            "type": "select",
+            "proxies": ["__CR_FAIL_CLOSED_AI_SG"],
+        },
+        {
+            "name": "__CR_FAIL_CLOSED_AI_US",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["REJECT"],
+        },
+        {
+            "name": "AI · 美国",
+            "type": "select",
+            "proxies": ["__CR_FAIL_CLOSED_AI_US"],
+        },
+        {
+            "name": "人工智能",
+            "type": "select",
+            "proxies": ["AI · 新加坡", "AI · 美国"],
+        },
+    ]
+    return config
+
+
 def test_service_qualification_routes_each_service_through_its_own_nodes() -> None:
     config = _config()
     report = apply_ai_service_qualification(
@@ -263,6 +298,59 @@ def test_service_qualification_fails_closed_when_every_service_is_empty() -> Non
     assert report["service_qualified_nodes"] == {"openai": 0, "claude": 0, "gemini": 0}
     assert report["service_fail_closed"] == ["openai", "claude", "gemini"]
     assert "DIRECT" not in repr(config["proxy-groups"])
+
+
+def test_service_qualification_fails_closed_when_ai_provider_inventory_is_empty() -> None:
+    config = _empty_inventory_config()
+    report = apply_ai_service_qualification(
+        config,
+        {
+            "ai_openai": set(),
+            "ai_claude": set(),
+            "ai_gemini": set(),
+        },
+    )
+
+    assert config["proxy-providers"] == {}
+    groups = {group["name"]: group for group in config["proxy-groups"]}
+    assert groups["人工智能"] == {
+        "name": "人工智能",
+        "type": "select",
+        "proxies": ["REJECT"],
+    }
+    assert "AI · 新加坡" not in groups
+    assert "AI · 美国" not in groups
+    assert "__CR_FAIL_CLOSED_AI_SG" not in groups
+    assert "__CR_FAIL_CLOSED_AI_US" not in groups
+    for target in (
+        "__CR_AI_SERVICE_OPENAI",
+        "__CR_AI_SERVICE_CLAUDE",
+        "__CR_AI_SERVICE_GEMINI",
+    ):
+        assert groups[target]["proxies"] == ["REJECT"]
+        assert groups[target]["hidden"] is True
+
+    assert report["tested_nodes"] == 0
+    assert report["qualified_nodes"] == 0
+    assert report["country_groups"] == {"AI · 新加坡": 0, "AI · 美国": 0}
+    assert report["removed_country_groups"] == ["AI · 新加坡", "AI · 美国"]
+    assert report["service_qualified_nodes"] == {"openai": 0, "claude": 0, "gemini": 0}
+    assert report["service_fail_closed"] == ["openai", "claude", "gemini"]
+    assert "DIRECT" not in repr(config["proxy-groups"])
+
+
+def test_empty_ai_provider_inventory_rejects_stale_probe_or_cache_names() -> None:
+    config = _empty_inventory_config()
+
+    with pytest.raises(ValidationError, match="unknown candidate nodes"):
+        apply_ai_service_qualification(
+            config,
+            {
+                "ai_openai": {"stale-runtime-node"},
+                "ai_claude": set(),
+                "ai_gemini": set(),
+            },
+        )
 
 
 def test_service_qualification_rejects_unknown_probe_results() -> None:
