@@ -108,6 +108,7 @@ def test_invalid_proxy_skip_policy() -> None:
     result = parse_subscription(yaml.safe_dump(document), invalid_policy="skip")
     assert len(result.proxies) == 1
     assert result.skipped_items == 1
+    assert result.skipped_reason_counts == (("invalid_server", 1),)
 
 
 @pytest.mark.parametrize(

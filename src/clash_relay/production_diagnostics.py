@@ -55,6 +55,46 @@ _SAFE_QUALIFICATION_STAGES = frozenset(
         "service",
     }
 )
+_SAFE_SOURCE_FAILURE_CATEGORIES = frozenset(
+    {
+        "subscription_fetch",
+        "subscription_admission",
+        "subscription_parse",
+        "io_failure",
+    }
+)
+_SAFE_SOURCE_FAILURE_REASONS = frozenset(
+    {
+        "http_error",
+        "tls_error",
+        "timeout",
+        "dns_error",
+        "invalid_url",
+        "destination_rejected",
+        "size_limit",
+        "payload_encoding",
+        "io_error",
+        "transport_error",
+        "unsafe_payload",
+        "no_usable_proxies",
+        "parse_error",
+        "invalid_value",
+        "empty_subscription",
+        "mixed_invalid_proxies",
+        "all_invalid_entries",
+        "all_invalid_fields",
+        "all_invalid_names",
+        "all_missing_types",
+        "all_unsupported_types",
+        "all_invalid_servers",
+        "all_invalid_ports",
+        "all_private_hosts",
+        "all_missing_required_fields",
+        "all_malformed_options",
+        "all_unsupported_values",
+        "all_other_invalid",
+    }
+)
 _SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
     {
         "production_pre_audit",
@@ -170,13 +210,10 @@ def _safe_promotion_guard_report(error: BaseException) -> dict[str, Any] | None:
     return {key: report.get(key) for key in keys}
 
 
-def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None:
-    report = getattr(error, "source_admission_report", None)
-    if not isinstance(report, Mapping):
-        return None
+def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any] | None:
     subscriptions = report.get("subscriptions")
     if not isinstance(subscriptions, list):
-        subscriptions = []
+        return None
     safe_rows: list[dict[str, Any]] = []
     allowed = {
         "id",
@@ -186,12 +223,18 @@ def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None
         "filtered_by_name",
         "filtered_over_multiplier",
         "max_node_multiplier",
-        "failure_category",
-        "failure_reason",
     }
     for row in subscriptions:
-        if isinstance(row, Mapping):
-            safe_rows.append({str(key): row.get(key) for key in allowed if key in row})
+        if not isinstance(row, Mapping):
+            continue
+        safe_row = {str(key): row.get(key) for key in allowed if key in row}
+        category = row.get("failure_category")
+        if category in _SAFE_SOURCE_FAILURE_CATEGORIES:
+            safe_row["failure_category"] = category
+        reason = row.get("failure_reason")
+        if reason in _SAFE_SOURCE_FAILURE_REASONS:
+            safe_row["failure_reason"] = reason
+        safe_rows.append(safe_row)
     return {
         "successful_subscriptions": report.get("successful_subscriptions"),
         "parsed_nodes": report.get("parsed_nodes"),
@@ -200,6 +243,13 @@ def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None
         "multiplier_filtered_nodes": report.get("multiplier_filtered_nodes"),
         "subscriptions": safe_rows,
     }
+
+
+def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None:
+    report = getattr(error, "source_admission_report", None)
+    if not isinstance(report, Mapping):
+        return None
+    return sanitize_source_admission_report(report)
 
 
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:

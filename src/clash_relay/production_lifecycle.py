@@ -36,6 +36,7 @@ from .production_application import (
     persist_scheduler_history,
     render_production_proof_application,
 )
+from .production_diagnostics import sanitize_source_admission_report
 from .production_pipeline import (
     ProductionPipelineOutputs,
     ProjectPaths,
@@ -374,33 +375,7 @@ class ProductionPipeline:
             report = self._load_json(path)
         except ValidationError:
             return None
-        rows = report.get("subscriptions")
-        if not isinstance(rows, list):
-            return None
-        safe_rows: list[dict[str, Any]] = []
-        allowed = (
-            "id",
-            "status",
-            "nodes",
-            "skipped_invalid_nodes",
-            "filtered_by_name",
-            "filtered_over_multiplier",
-            "max_node_multiplier",
-            "failure_category",
-            "failure_reason",
-        )
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            safe_rows.append({key: row.get(key) for key in allowed if key in row})
-        return {
-            "successful_subscriptions": report.get("successful_subscriptions"),
-            "parsed_nodes": report.get("parsed_nodes"),
-            "usable_nodes": report.get("usable_nodes"),
-            "name_filtered_nodes": report.get("name_filtered_nodes"),
-            "multiplier_filtered_nodes": report.get("multiplier_filtered_nodes"),
-            "subscriptions": safe_rows,
-        }
+        return sanitize_source_admission_report(report)
 
     def _record_operational_slo(
         self,
