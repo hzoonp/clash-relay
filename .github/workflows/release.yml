@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: clash-relay-release
