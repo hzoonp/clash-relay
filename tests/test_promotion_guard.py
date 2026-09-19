@@ -196,9 +196,10 @@ def test_promotion_guard_tolerates_retired_source_only_in_historical_baseline(
 
     assert report["status"] == "passed"
     assert report["reason"] == "within_thresholds"
-    assert report["ratios"]["uses"]["general"]["baseline_sources"] > report["ratios"]["uses"][
-        "general"
-    ]["candidate_sources"]
+    assert (
+        report["ratios"]["uses"]["general"]["baseline_sources"]
+        > report["ratios"]["uses"]["general"]["candidate_sources"]
+    )
 
 
 def test_promotion_guard_blocks_severe_inventory_collapse(built_candidate, project_paths) -> None:
