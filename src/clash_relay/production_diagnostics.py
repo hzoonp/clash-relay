@@ -251,6 +251,7 @@ def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None
         return None
     return sanitize_source_admission_report(report)
 
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
