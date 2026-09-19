@@ -44,7 +44,7 @@ def test_rollback_runs_current_safety_audit_before_core_validation_and_activatio
     text = ROLLBACK.read_text(encoding="utf-8")
     fetch = text.index("Fetch private previous release")
     audit = text.index("Audit previous release against current production policy")
-    ci = text.index("Validate previous release with pinned stable Mihomo matrix")
+    validate = text.index("Validate previous release with pinned stable Mihomo matrix")
     activate = text.index("Activate audited validated previous release")
     assert fetch < audit < validate < activate
     audit_block = text[audit:validate]
@@ -64,7 +64,7 @@ def test_rollback_has_no_historical_openai_shape_exemption() -> None:
 
 def test_rollback_uses_manifest_matrix_and_versioned_release_transaction() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
-    ci = text.index("Validate previous release with pinned stable Mihomo matrix")
+    validate = text.index("Validate previous release with pinned stable Mihomo matrix")
     activate = text.index("Activate audited validated previous release")
     assert "python scripts/validate_mihomo_matrix.py" in text
     assert "--manifest tools/mihomo-versions.json" in text
