@@ -25,8 +25,13 @@ def test_main_governance_contract_matches_authoritative_workflows(repo_root: Pat
     assert contract["required_status_checks"] == [
         {
             "workflow": "CI",
-            "job": "Validated SHA",
-            "check_context": "Validated SHA",
+            "job": "Validate exact commit / Validated SHA",
+            "check_context": "Validate exact commit / Validated SHA",
+        },
+        {
+            "workflow": "CI",
+            "job": "Verify finalized Routing V2 graph",
+            "check_context": "Verify finalized Routing V2 graph",
         },
     ]
 
@@ -35,7 +40,8 @@ def test_main_governance_contract_matches_authoritative_workflows(repo_root: Pat
     assert "workflow_call:" in ci
     assert "name: Python 3.12 quality" in ci
     assert "name: Verify Routing V2 drift" in ci
-    assert "name: Validated SHA" in ci
+    assert "name: Verify finalized Routing V2 graph" in ci
+    assert "name: Validate exact commit / Validated SHA" in ci
 
-    ci_check = contract["required_status_checks"][0]
-    assert ci_check["check_context"] == ci_check["job"]
+    for check in contract["required_status_checks"]:
+        assert check["check_context"] == check["job"]
