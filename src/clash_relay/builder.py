@@ -188,13 +188,15 @@ def build_candidate(
     multiplier_filtered_nodes = 0
     for spec in sorted(enabled_specs, key=lambda item: (item.ingest_order, item.id)):
         try:
-            text = fetcher(
-                urls[spec.id],
-                timeout=generation["fetch_timeout_seconds"],
-                max_bytes=generation["max_subscription_bytes"],
-                allow_http=generation["allow_http_subscription_urls"],
-                allow_file=generation["allow_file_subscription_urls"],
-            )
+            fetch_options: dict[str, Any] = {
+                "timeout": generation["fetch_timeout_seconds"],
+                "max_bytes": generation["max_subscription_bytes"],
+                "allow_http": generation["allow_http_subscription_urls"],
+                "allow_file": generation["allow_file_subscription_urls"],
+            }
+            if spec.client_profile != "default":
+                fetch_options["client_profile"] = spec.client_profile
+            text = fetcher(urls[spec.id], **fetch_options)
             parsed = parse_subscription(
                 text,
                 invalid_policy=generation["invalid_proxy_policy"],
