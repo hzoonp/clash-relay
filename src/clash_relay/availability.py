@@ -122,14 +122,14 @@ def collect_baseline_inventory(
         regions_by_use.setdefault(source_use, set())
         for region in pool["regions"]:
             provider_name = _provider_name(pool_id, str(region))
-            names = graph.provider_proxies.get(provider_name)
-            if names is None:
+            provider_nodes = graph.provider_proxies.get(provider_name)
+            if provider_nodes is None:
                 continue
             providers_by_use[source_use] = providers_by_use.get(source_use, 0) + 1
-            nodes_by_use[source_use] = nodes_by_use.get(source_use, 0) + len(names)
-            if names:
+            nodes_by_use[source_use] = nodes_by_use.get(source_use, 0) + len(provider_nodes)
+            if provider_nodes:
                 regions_by_use[source_use].add(str(region))
-            for runtime_name in names:
+            for runtime_name in provider_nodes:
                 sources_by_use[source_use].add(_historical_source_label(runtime_name))
 
     return InventoryCount(
