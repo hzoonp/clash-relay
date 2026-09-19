@@ -138,13 +138,11 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     repo_root: Path,
 ) -> None:
     ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     assert "always()" not in ci
     assert "continue-on-error" not in ci
-    assert "uses: ./.github/workflows/validate.yml" in ci
-    assert "--require-hashes" in validate
-    assert "--cov-fail-under=75" in validate
-    assert "mypy --follow-imports=skip" in validate
+    assert "--require-hashes" in ci
+    assert "--cov-fail-under=75" in ci
+    assert "mypy --follow-imports=skip" in ci
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
@@ -157,7 +155,7 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error" not in publish
     assert "always()" not in publish
     assert publish.count("python scripts/run_production_release.py") == 1
-    assert "uses: ./.github/workflows/validate.yml" in publish
+    assert "uses: ./.github/workflows/ci.yml" in publish
     assert "needs.validate.outputs.validated_sha == github.sha" in publish
     assert "python scripts/run_production_pipeline.py" not in publish
     assert "python scripts/check_promotion_guard.py" not in publish
