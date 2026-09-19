@@ -158,7 +158,6 @@ Preferred Actions Secret value:
 {
   "SUBSCRIPTION_1_URL": "<private URL>",
   "SUBSCRIPTION_2_URL": "<private URL>",
-  "SUBSCRIPTION_3_URL": "<private URL>",
   "SUBSCRIPTION_4_URL": "<private URL>"
 }
 ```
