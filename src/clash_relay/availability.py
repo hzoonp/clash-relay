@@ -92,17 +92,25 @@ def collect_inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> 
     )
 
 
+def _authorized_source_ids(project: ProjectDefinition, source_use: str) -> set[str]:
+    return {
+        spec.id
+        for spec in project.subscriptions
+        if spec.enabled and (source_use in spec.allowed_uses or "*" in spec.allowed_uses)
+    }
+
+
 def collect_baseline_inventory(
     project: ProjectDefinition,
     candidate: dict[str, Any],
 ) -> InventoryCount:
-    """Collect historical baseline capacity without reapplying current source admission.
+    """Collect historical capacity while honoring today's source-use contract.
 
-    The active candidate is always audited against current policy. A historical
-    production baseline may legitimately contain a source that was intentionally
-    removed from today's declarations, so baseline collection treats runtime
-    source labels as opaque historical identities and uses them only for aggregate
-    capacity ratios.
+    Historical node/provider/region capacity remains intact for degradation ratios.
+    Historical source labels, however, count toward a use only when that source is
+    still enabled and authorized for the use today. This prevents an intentional
+    source-use boundary change from looking like an availability collapse while
+    absolute source/node/region gates and aggregate capacity ratios remain active.
     """
 
     graph = RuntimeGraph.from_candidate(candidate)
@@ -111,6 +119,7 @@ def collect_baseline_inventory(
         runtime_nodes.update(names)
 
     sources_by_use: dict[str, set[str]] = {}
+    authorized_sources_by_use: dict[str, set[str]] = {}
     providers_by_use: dict[str, int] = {}
     nodes_by_use: dict[str, int] = {}
     regions_by_use: dict[str, set[str]] = {}
@@ -119,6 +128,9 @@ def collect_baseline_inventory(
         pool_id = str(pool["id"])
         source_use = str(pool["source_use"])
         sources_by_use.setdefault(source_use, set())
+        authorized_sources_by_use.setdefault(
+            source_use, _authorized_source_ids(project, source_use)
+        )
         regions_by_use.setdefault(source_use, set())
         for region in pool["regions"]:
             provider_name = _provider_name(pool_id, str(region))
@@ -130,7 +142,9 @@ def collect_baseline_inventory(
             if provider_nodes:
                 regions_by_use[source_use].add(str(region))
             for runtime_name in provider_nodes:
-                sources_by_use[source_use].add(_historical_source_label(runtime_name))
+                source_id = _historical_source_label(runtime_name)
+                if source_id in authorized_sources_by_use[source_use]:
+                    sources_by_use[source_use].add(source_id)
 
     return InventoryCount(
         nodes=len(runtime_nodes),
