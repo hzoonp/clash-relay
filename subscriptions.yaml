@@ -17,6 +17,9 @@ subscriptions:
     secret_name: SUBSCRIPTION_1_URL
     ingest_order: 100
     on_error: skip
+    # Some providers negotiate Clash/Mihomo output by User-Agent. This static
+    # profile changes only the request identity; all SSRF and parsing gates remain.
+    client_profile: mihomo
     allowed_uses: [browsing, ai]
     allowed_countries: ['*']
     default_capabilities: [general]
