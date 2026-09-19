@@ -20,7 +20,7 @@ jobs:
   validate:
     name: Validate rollback executor SHA
     if: github.ref == 'refs/heads/main' && inputs.confirm == true
-    uses: ./.github/workflows/validate.yml
+    uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
