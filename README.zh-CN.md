@@ -178,7 +178,6 @@ CLASH_RELAY_SUBSCRIPTIONS
 {
   "SUBSCRIPTION_1_URL": "https://example.invalid/subscription-1",
   "SUBSCRIPTION_2_URL": "https://example.invalid/subscription-2",
-  "SUBSCRIPTION_3_URL": "https://example.invalid/subscription-3",
   "SUBSCRIPTION_4_URL": "https://example.invalid/subscription-4"
 }
 ```
