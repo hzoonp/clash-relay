@@ -22,50 +22,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  cleanup-actions-history:
-    name: Cleanup deprecated Actions history
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Delete completed runs for retired workflows
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp)"
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
-            --jq '.workflow_runs[] | [.id, .name, .path, .status] | @tsv' > "$tmp"
-
-          deleted=0
-          skipped=0
-          while IFS=$'\t' read -r run_id run_name run_path run_status; do
-            case "$run_path|$run_name" in
-              ".github/workflows/ci.yml|CI"|".github/workflows/publish.yml|Generate, validate, and publish"|".github/workflows/release.yml|Release source baseline"|".github/workflows/rollback.yml|Roll back production config")
-                skipped=$((skipped + 1))
-                continue
-                ;;
-            esac
-
-            if [ "$run_name" = "Dependabot Updates" ]; then
-              skipped=$((skipped + 1))
-              continue
-            fi
-
-            if [ "$run_status" != "completed" ]; then
-              skipped=$((skipped + 1))
-              continue
-            fi
-
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-            deleted=$((deleted + 1))
-          done < "$tmp"
-
-          echo "Deleted deprecated workflow runs: $deleted" >> "$GITHUB_STEP_SUMMARY"
-          echo "Preserved current/in-progress workflow runs: $skipped" >> "$GITHUB_STEP_SUMMARY"
-
   validate:
     name: Validate release SHA
     uses: ./.github/workflows/ci.yml
