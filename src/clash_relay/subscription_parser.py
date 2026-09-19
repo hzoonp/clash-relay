@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,6 +57,7 @@ _MAX_PROXIES = 20_000
 class ParsedSubscription:
     proxies: tuple[dict[str, Any], ...]
     skipped_items: int
+    skipped_reason_counts: tuple[tuple[str, int], ...] = ()
 
 
 def _private_host(value: str) -> bool:
@@ -223,6 +225,33 @@ def _parse_payload(text: str, *, depth: int = 0) -> list[Any]:
     return _parse_payload(decoded, depth=depth + 1)
 
 
+def _invalid_proxy_reason(error: BaseException) -> str:
+    message = str(error)
+    if message == "proxy entry must be a mapping":
+        return "invalid_entry"
+    if message == "proxy fields must use string keys":
+        return "invalid_fields"
+    if message.endswith("has no valid name"):
+        return "invalid_name"
+    if message.endswith("has no type"):
+        return "missing_type"
+    if " uses unsupported type " in message:
+        return "unsupported_type"
+    if message.endswith("has no valid server"):
+        return "invalid_server"
+    if message.endswith("has no valid port"):
+        return "invalid_port"
+    if message.endswith("targets a private or special-use host"):
+        return "private_host"
+    if " lacks required field " in message:
+        return "missing_required_field"
+    if " has malformed structured option field " in message:
+        return "malformed_options"
+    if message.endswith("contains unsupported values"):
+        return "unsupported_values"
+    return "other_invalid"
+
+
 def parse_subscription(
     text: str,
     *,
@@ -236,6 +265,7 @@ def parse_subscription(
         raise SubscriptionError(f"subscription contains more than {_MAX_PROXIES} proxies")
     valid: list[dict[str, Any]] = []
     skipped = 0
+    skipped_reasons: Counter[str] = Counter()
     errors: list[str] = []
     for index, entry in enumerate(entries):
         try:
@@ -245,8 +275,13 @@ def parse_subscription(
                 errors.append(f"item {index + 1}: {exc}")
             else:
                 skipped += 1
+                skipped_reasons[_invalid_proxy_reason(exc)] += 1
     if errors:
         rendered = "; ".join(errors[:10])
         extra = "" if len(errors) <= 10 else f"; plus {len(errors) - 10} more"
         raise SubscriptionError(f"subscription contains invalid proxies: {rendered}{extra}")
-    return ParsedSubscription(tuple(valid), skipped)
+    return ParsedSubscription(
+        tuple(valid),
+        skipped,
+        tuple(sorted(skipped_reasons.items())),
+    )
