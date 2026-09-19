@@ -16,12 +16,142 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: clash-relay-release
   cancel-in-progress: false
 
 jobs:
+  cleanup-actions-history:
+    name: Cleanup deprecated Actions history
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete completed runs for retired workflows
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.id, .name, .path, .status] | @tsv' > "$tmp"
+
+          deleted=0
+          skipped=0
+          while IFS=    name: Validate release SHA
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Create source-only release
+    needs: validate
+    if: needs.validate.outputs.validated_sha == github.sha
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.validate.outputs.validated_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
+      - id: version
+        name: Resolve release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          with Path('pyproject.toml').open('rb') as handle:
+              print(tomllib.load(handle)['project']['version'])
+          PY
+          )"
+          tag="v${version}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Verify versioned release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes="docs/releases/${VERSION}.md"
+          test -f "$notes"
+          grep -Fq "# clash-relay ${VERSION}" "$notes"
+      - id: existing
+        name: Detect existing tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Render public release notes
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp "docs/releases/${VERSION}.md" .release-notes.md
+      - name: Create source-only GitHub Release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file .release-notes.md
+      - name: Record release status
+        run: |
+          echo "Release tag: ${{ steps.version.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Quality authority: reusable ci.yml on exact commit ${{ needs.validate.outputs.validated_sha }}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Source-only release: production config and private scheduler state are not release assets." >> "$GITHUB_STEP_SUMMARY"
+\t' read -r run_id run_name run_path run_status; do
+            case "$run_path" in
+              ".github/workflows/ci.yml"|".github/workflows/publish.yml"|".github/workflows/release.yml"|".github/workflows/rollback.yml")
+                skipped=$((skipped + 1))
+                continue
+                ;;
+            esac
+
+            if [ "$run_name" = "Dependabot Updates" ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if [ "$run_status" != "completed" ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+            deleted=$((deleted + 1))
+          done < "$tmp"
+
+          echo "Deleted deprecated workflow runs: $deleted" >> "$GITHUB_STEP_SUMMARY"
+          echo "Preserved current/in-progress workflow runs: $skipped" >> "$GITHUB_STEP_SUMMARY"
+
   validate:
     name: Validate release SHA
     uses: ./.github/workflows/ci.yml
