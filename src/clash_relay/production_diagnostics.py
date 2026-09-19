@@ -8,6 +8,7 @@ behavior.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
@@ -161,6 +162,14 @@ def _ai_service_rewrite_substage(chain: tuple[BaseException, ...]) -> str | None
     return None
 
 
+def _safe_promotion_guard_report(error: BaseException) -> dict[str, Any] | None:
+    report = getattr(error, "promotion_guard_report", None)
+    if not isinstance(report, Mapping):
+        return None
+    keys = ("status", "reason", "candidate", "baseline", "ratios", "thresholds", "violations")
+    return {key: report.get(key) for key in keys}
+
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
@@ -194,11 +203,16 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
         if stage is not None:
             if stage == "ai_service_rewrite":
                 stage = _ai_service_rewrite_substage(chain) or stage
-            return {
+            diagnostic: dict[str, Any] = {
                 "status": "failed",
                 "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
                 "validation_stage": _safe_candidate_validation_stage(stage),
             }
+            if stage == "promotion_guard":
+                report = _safe_promotion_guard_report(item)
+                if report is not None:
+                    diagnostic["promotion_guard"] = report
+            return diagnostic
 
     category = ProductionFailureCategory.UNKNOWN
     if any(isinstance(item, SecretError | ConfigurationError) for item in chain):

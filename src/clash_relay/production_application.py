@@ -289,7 +289,9 @@ def run_promotion_guard(
     if markdown_path is not None:
         atomic_write(markdown_path, render_promotion_guard_markdown(report))
     if report.get("status") == "blocked":
-        raise ValidationError("promotion guard blocked the candidate")
+        error = ValidationError("promotion guard blocked the candidate")
+        error.promotion_guard_report = report  # type: ignore[attr-defined]
+        raise error
     if report.get("status") != "passed":
         raise ValidationError("promotion guard returned an invalid decision")
     return report

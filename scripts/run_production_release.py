@@ -39,18 +39,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _safe_promotion_guard_report(root: Path) -> dict[str, object] | None:
-    path = root / ".work" / "private" / "promotion-guard.json"
-    try:
-        report = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(report, dict):
-        return None
-    keys = ("status", "reason", "candidate", "baseline", "ratios", "thresholds", "violations")
-    return {key: report.get(key) for key in keys}
-
-
 def _enforce_validated_ci_sha(*, publish: bool) -> None:
     if not publish or os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
         return
@@ -108,10 +96,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (OSError, ClashRelayError) as exc:
         diagnostic = safe_failure_diagnostic(exc)
-        if diagnostic.get("validation_stage") == "promotion_guard":
-            promotion_guard = _safe_promotion_guard_report(args.root)
-            if promotion_guard is not None:
-                diagnostic["promotion_guard"] = promotion_guard
         if publish:
             persist_failure_diagnostic(root=args.root, diagnostic=diagnostic, env=os.environ)
         print(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True), file=sys.stderr)
