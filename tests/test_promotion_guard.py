@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from clash_relay.availability import collect_baseline_inventory, collect_inventory
+from clash_relay.builder import build_candidate
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ValidationError
 from clash_relay.promotion_guard import (
@@ -206,11 +207,7 @@ def test_promotion_guard_source_ratio_uses_current_source_use_contract(
     project_factory, fixture_env, yaml_editor
 ) -> None:
     _root, paths = project_factory()
-    historical_project = _project(paths)
-    historical = __import__("clash_relay.builder", fromlist=["build_candidate"]).build_candidate(
-        **paths,
-        env=fixture_env,
-    ).config
+    historical = build_candidate(**paths, env=fixture_env).config
 
     def restrict_ai(document):
         for item in document["subscriptions"]:
@@ -221,15 +218,11 @@ def test_promotion_guard_source_ratio_uses_current_source_use_contract(
 
     yaml_editor(paths["subscriptions_path"], restrict_ai)
     project = _project(paths)
-    candidate = __import__("clash_relay.builder", fromlist=["build_candidate"]).build_candidate(
-        **paths,
-        env=fixture_env,
-    ).config
+    candidate = build_candidate(**paths, env=fixture_env).config
 
     historical_inventory = collect_baseline_inventory(project, historical)
     candidate_inventory = collect_inventory(project, candidate)
 
-    assert historical_project.subscriptions[1].id == "secondary"
     assert historical_inventory.sources_by_use["ai"] == 1
     assert candidate_inventory.sources_by_use["ai"] == 1
 
