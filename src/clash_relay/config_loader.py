@@ -243,6 +243,7 @@ def load_project(
                 allowed_countries=frozenset(row["allowed_countries"]),
                 default_capabilities=frozenset(row["default_capabilities"]),
                 default_cost_level=row["default_cost_level"],
+                client_profile=str(row.get("client_profile", "default")),
                 max_node_multiplier=(
                     float(row["max_node_multiplier"])
                     if row.get("max_node_multiplier") is not None
