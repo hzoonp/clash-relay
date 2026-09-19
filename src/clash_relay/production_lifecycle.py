@@ -377,7 +377,6 @@ class ProductionPipeline:
             return None
         return sanitize_source_admission_report(report)
 
-
     def _record_operational_slo(
         self,
         *,
