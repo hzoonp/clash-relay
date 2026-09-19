@@ -21,7 +21,7 @@ from .pinned_fetch import fetch_pinned_text
 from .policy_compiler import compile_runtime_graph
 from .redact import redact_text
 from .secrets import resolve_subscription_urls
-from .subscription_parser import parse_subscription
+from .subscription_parser import ParsedSubscription, parse_subscription
 from .util import dump_yaml, sha256_text
 from .validator import validate_generated_config
 
@@ -133,6 +133,36 @@ def _source_failure_diagnostic(error: BaseException) -> dict[str, str]:
     }
 
 
+_EMPTY_SUBSCRIPTION_REASON_BY_INVALID_REASON = {
+    "invalid_entry": "all_invalid_entries",
+    "invalid_fields": "all_invalid_fields",
+    "invalid_name": "all_invalid_names",
+    "missing_type": "all_missing_types",
+    "unsupported_type": "all_unsupported_types",
+    "invalid_server": "all_invalid_servers",
+    "invalid_port": "all_invalid_ports",
+    "private_host": "all_private_hosts",
+    "missing_required_field": "all_missing_required_fields",
+    "malformed_options": "all_malformed_options",
+    "unsupported_values": "all_unsupported_values",
+    "other_invalid": "all_other_invalid",
+}
+
+
+def _empty_subscription_failure_reason(parsed: ParsedSubscription) -> str:
+    if parsed.skipped_items <= 0:
+        return "empty_subscription"
+    reasons = {
+        reason
+        for reason, count in parsed.skipped_reason_counts
+        if isinstance(count, int) and not isinstance(count, bool) and count > 0
+    }
+    if len(reasons) != 1:
+        return "mixed_invalid_proxies"
+    reason = next(iter(reasons))
+    return _EMPTY_SUBSCRIPTION_REASON_BY_INVALID_REASON.get(reason, "all_other_invalid")
+
+
 def build_candidate(
     *,
     config_path: Path,
@@ -171,7 +201,21 @@ def build_candidate(
                 reject_private_hosts=generation["reject_private_proxy_hosts"],
             )
             if not parsed.proxies:
-                raise SubscriptionError("subscription contains no usable proxies")
+                source_reports.append(
+                    {
+                        "id": spec.id,
+                        "display_name": spec.display_name,
+                        "status": "failed",
+                        "failure_category": "subscription_parse",
+                        "failure_reason": _empty_subscription_failure_reason(parsed),
+                        "skipped_invalid_nodes": parsed.skipped_items,
+                    }
+                )
+                if _failure_is_fatal(spec, project):
+                    raise GenerationError(
+                        f"subscription {spec.id!r} failed: subscription contains no usable proxies"
+                    )
+                continue
 
             admitted_by_name, rejected_name = filter_proxies_by_name_patterns(
                 parsed.proxies,
