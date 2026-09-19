@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from clash_relay.availability import collect_inventory
+from clash_relay.availability import collect_baseline_inventory, collect_inventory
+from clash_relay.builder import build_candidate
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ValidationError
 from clash_relay.promotion_guard import (
@@ -198,8 +199,46 @@ def test_promotion_guard_tolerates_retired_source_only_in_historical_baseline(
     assert report["reason"] == "within_thresholds"
     assert (
         report["ratios"]["uses"]["general"]["baseline_sources"]
-        > report["ratios"]["uses"]["general"]["candidate_sources"]
+        == report["ratios"]["uses"]["general"]["candidate_sources"]
     )
+
+
+def test_promotion_guard_source_ratio_uses_current_source_use_contract(
+    project_factory, fixture_env, yaml_editor
+) -> None:
+    _root, paths = project_factory()
+    historical = build_candidate(**paths, env=fixture_env).config
+
+    def restrict_ai(document):
+        for item in document["subscriptions"]:
+            if item["id"] == "secondary":
+                item["allowed_uses"] = [use for use in item["allowed_uses"] if use != "ai"]
+
+    yaml_editor(paths["subscriptions_path"], restrict_ai)
+    project = _project(paths)
+    candidate = build_candidate(**paths, env=fixture_env).config
+
+    historical_inventory = collect_baseline_inventory(project, historical)
+    candidate_inventory = collect_inventory(project, candidate)
+
+    assert historical_inventory.sources_by_use["ai"] == 1
+    assert candidate_inventory.sources_by_use["ai"] == 1
+
+    policy = replace(
+        _fixture_policy(),
+        minimum_total_node_ratio=0.0,
+        minimum_provider_ratio=0.0,
+        minimum_source_ratio_by_use={"ai": 1.0},
+        minimum_sources_by_use={"ai": 1},
+        minimum_nodes_by_use={"ai": 1},
+        minimum_regions_by_use={"ai": 1},
+    )
+    report = assess_promotion(project, candidate, historical, policy)
+
+    assert report["status"] == "passed"
+    assert report["ratios"]["uses"]["ai"]["baseline_sources"] == 1
+    assert report["ratios"]["uses"]["ai"]["candidate_sources"] == 1
+    assert report["ratios"]["uses"]["ai"]["source_ratio"] == 1.0
 
 
 def test_promotion_guard_blocks_severe_inventory_collapse(built_candidate, project_paths) -> None:
