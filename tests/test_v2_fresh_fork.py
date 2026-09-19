@@ -26,7 +26,6 @@ def test_fresh_fork_public_preflight_and_fictional_build(
     assert doctor["guidance"]["enabled_subscription_secrets"] == [
         "SUBSCRIPTION_1_URL",
         "SUBSCRIPTION_2_URL",
-        "SUBSCRIPTION_3_URL",
         "SUBSCRIPTION_4_URL",
     ]
 

@@ -268,7 +268,7 @@ def test_canonical_subscription_1_is_the_only_ai_source(repo_root: Path) -> None
     assert set(subscription_1["allowed_uses"]) == {"browsing", "ai"}
     assert "general" not in subscription_1["allowed_uses"]
 
-    for source_id in ("subscription_2", "subscription_3", "subscription_4"):
+    for source_id in ("subscription_2", "subscription_4"):
         assert set(by_id[source_id]["allowed_uses"]) == {"general", "browsing"}
         assert "ai" not in by_id[source_id]["allowed_uses"]
 

@@ -68,10 +68,6 @@ def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path]
         root / "subscription-2.yaml",
         [_http("US General 02", "sub2-general.invalid.example", 22001)],
     )
-    subscription_3 = _subscription(
-        root / "subscription-3.yaml",
-        [_http("JP General 03", "sub3-general.invalid.example", 23001)],
-    )
     subscription_4 = _subscription(
         root / "subscription-4.yaml",
         [_http("SG General 04", "sub4-general.invalid.example", 24001)],
@@ -85,7 +81,6 @@ def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path]
         {
             "SUBSCRIPTION_1_URL": subscription_1,
             "SUBSCRIPTION_2_URL": subscription_2,
-            "SUBSCRIPTION_3_URL": subscription_3,
             "SUBSCRIPTION_4_URL": subscription_4,
         },
     )
@@ -165,8 +160,7 @@ def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources
     reports = {row["id"]: row for row in result.report["subscriptions"]}
     assert reports["subscription_1"]["status"] == "failed"
     assert all(
-        reports[source_id]["status"] == "ok"
-        for source_id in ("subscription_2", "subscription_3", "subscription_4")
+        reports[source_id]["status"] == "ok" for source_id in ("subscription_2", "subscription_4")
     )
 
     _assert_ai_is_fail_closed(result.config)
@@ -174,7 +168,6 @@ def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources
     general = graph.walk_resolved("代理选择")
     assert _reachable_servers(graph, general.proxies) == {
         "sub2-general.invalid.example",
-        "sub3-general.invalid.example",
         "sub4-general.invalid.example",
     }
 
