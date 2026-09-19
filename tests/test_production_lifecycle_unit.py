@@ -114,6 +114,63 @@ def test_promotion_slo_state_distinguishes_passed_blocked_and_unknown(tmp_path: 
     assert pipeline._promotion_slo_state() == (False, False)
 
 
+def test_safe_source_admission_summary_is_aggregate_and_fail_closed(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    pipeline.paths.private_dir.mkdir(parents=True)
+
+    assert pipeline._safe_source_admission_summary() is None
+
+    report = pipeline._private("build-report.json")
+    report.write_text("not-json", encoding="utf-8")
+    assert pipeline._safe_source_admission_summary() is None
+
+    pipeline._write_json(report, {"subscriptions": "invalid"})
+    assert pipeline._safe_source_admission_summary() is None
+
+    pipeline._write_json(
+        report,
+        {
+            "successful_subscriptions": 2,
+            "parsed_nodes": 130,
+            "usable_nodes": 129,
+            "name_filtered_nodes": 3,
+            "multiplier_filtered_nodes": 7,
+            "subscriptions": [
+                {
+                    "id": "subscription_1",
+                    "status": "ok",
+                    "nodes": 4,
+                    "skipped_invalid_nodes": 1,
+                    "filtered_by_name": 3,
+                    "filtered_over_multiplier": 7,
+                    "max_node_multiplier": 2.0,
+                    "error": "private-fetch-detail",
+                },
+                "invalid-row",
+            ],
+        },
+    )
+
+    assert pipeline._safe_source_admission_summary() == {
+        "successful_subscriptions": 2,
+        "parsed_nodes": 130,
+        "usable_nodes": 129,
+        "name_filtered_nodes": 3,
+        "multiplier_filtered_nodes": 7,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 4,
+                "skipped_invalid_nodes": 1,
+                "filtered_by_name": 3,
+                "filtered_over_multiplier": 7,
+                "max_node_multiplier": 2.0,
+            }
+        ],
+    }
+
+
 def test_dry_run_operational_slo_does_not_touch_external_state(tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path, publish=False)
 

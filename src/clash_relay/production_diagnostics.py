@@ -170,6 +170,36 @@ def _safe_promotion_guard_report(error: BaseException) -> dict[str, Any] | None:
     return {key: report.get(key) for key in keys}
 
 
+def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None:
+    report = getattr(error, "source_admission_report", None)
+    if not isinstance(report, Mapping):
+        return None
+    subscriptions = report.get("subscriptions")
+    if not isinstance(subscriptions, list):
+        subscriptions = []
+    safe_rows: list[dict[str, Any]] = []
+    allowed = {
+        "id",
+        "status",
+        "nodes",
+        "skipped_invalid_nodes",
+        "filtered_by_name",
+        "filtered_over_multiplier",
+        "max_node_multiplier",
+    }
+    for row in subscriptions:
+        if isinstance(row, Mapping):
+            safe_rows.append({str(key): row.get(key) for key in allowed if key in row})
+    return {
+        "successful_subscriptions": report.get("successful_subscriptions"),
+        "parsed_nodes": report.get("parsed_nodes"),
+        "usable_nodes": report.get("usable_nodes"),
+        "name_filtered_nodes": report.get("name_filtered_nodes"),
+        "multiplier_filtered_nodes": report.get("multiplier_filtered_nodes"),
+        "subscriptions": safe_rows,
+    }
+
+
 def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
     """Classify one failure without copying any exception text into output."""
 
@@ -212,6 +242,9 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
                 report = _safe_promotion_guard_report(item)
                 if report is not None:
                     diagnostic["promotion_guard"] = report
+                source_admission = _safe_source_admission_report(item)
+                if source_admission is not None:
+                    diagnostic["source_admission"] = source_admission
             return diagnostic
 
     category = ProductionFailureCategory.UNKNOWN

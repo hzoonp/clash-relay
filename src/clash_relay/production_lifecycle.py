@@ -366,6 +366,40 @@ class ProductionPipeline:
         status = report.get("status")
         return status in {"passed", "blocked"}, status == "blocked"
 
+    def _safe_source_admission_summary(self) -> dict[str, Any] | None:
+        path = self._private("build-report.json")
+        if not path.is_file():
+            return None
+        try:
+            report = self._load_json(path)
+        except ValidationError:
+            return None
+        rows = report.get("subscriptions")
+        if not isinstance(rows, list):
+            return None
+        safe_rows: list[dict[str, Any]] = []
+        allowed = (
+            "id",
+            "status",
+            "nodes",
+            "skipped_invalid_nodes",
+            "filtered_by_name",
+            "filtered_over_multiplier",
+            "max_node_multiplier",
+        )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            safe_rows.append({key: row.get(key) for key in allowed if key in row})
+        return {
+            "successful_subscriptions": report.get("successful_subscriptions"),
+            "parsed_nodes": report.get("parsed_nodes"),
+            "usable_nodes": report.get("usable_nodes"),
+            "name_filtered_nodes": report.get("name_filtered_nodes"),
+            "multiplier_filtered_nodes": report.get("multiplier_filtered_nodes"),
+            "subscriptions": safe_rows,
+        }
+
     def _record_operational_slo(
         self,
         *,
@@ -602,6 +636,10 @@ class ProductionPipeline:
                 "warnings": sorted(self.warnings),
             }
         except Exception as exc:
+            if getattr(exc, "validation_stage", None) == "promotion_guard":
+                source_admission = self._safe_source_admission_summary()
+                if source_admission is not None:
+                    exc.source_admission_report = source_admission  # type: ignore[attr-defined]
             if project is not None:
                 category = qualification_failure_category(exc)
                 guard_checked, guard_blocked = self._promotion_slo_state()
