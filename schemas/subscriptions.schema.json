@@ -62,6 +62,7 @@
         },
         "default_capabilities": {"$ref": "#/$defs/capabilityList"},
         "default_cost_level": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "client_profile": {"enum": ["default", "mihomo"]},
         "max_node_multiplier": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000},
         "deny_name_patterns": {
           "type": "array",

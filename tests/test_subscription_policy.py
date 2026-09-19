@@ -265,6 +265,7 @@ def test_canonical_subscription_1_is_the_only_ai_source(repo_root: Path) -> None
     subscription_1 = by_id["subscription_1"]
     assert subscription_1["secret_name"] == "SUBSCRIPTION_1_URL"
     assert subscription_1["max_node_multiplier"] == 2.0
+    assert subscription_1["client_profile"] == "mihomo"
     assert set(subscription_1["allowed_uses"]) == {"browsing", "ai"}
     assert "general" not in subscription_1["allowed_uses"]
 

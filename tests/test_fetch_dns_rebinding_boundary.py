@@ -78,6 +78,7 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
     monkeypatch,
 ) -> None:
     captured = []
+    requests = []
 
     class FakeResponse:
         def __init__(self) -> None:
@@ -97,6 +98,7 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
 
     class FakeOpener:
         def open(self, request, timeout):
+            requests.append(request)
             return FakeResponse()
 
     def fake_build_opener(*handlers):
@@ -116,6 +118,7 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
             max_bytes=64 * 1024,
             allow_http=True,
             allow_file=False,
+            client_profile="mihomo",
         )
         == ""
     )
@@ -125,3 +128,5 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
     ]
     assert len(proxy_handlers) == 1
     assert proxy_handlers[0].proxies == {}
+    assert len(requests) == 1
+    assert requests[0].get_header("User-agent") == "clash.meta"

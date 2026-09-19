@@ -20,6 +20,10 @@ from .errors import FetchError
 from .redact import redact_text, redact_url
 
 _USER_AGENT = "clash-relay/0.1 (+https://github.com/)"
+_CLIENT_USER_AGENTS = {
+    "default": _USER_AGENT,
+    "mihomo": "clash.meta",
+}
 
 
 def _is_private_literal(hostname: str) -> bool:
@@ -254,6 +258,7 @@ def fetch_subscription(
     max_bytes: int,
     allow_http: bool,
     allow_file: bool,
+    client_profile: str = "default",
 ) -> str:
     validate_subscription_url(url, allow_http=allow_http, allow_file=allow_file)
     parsed = urlsplit(url)
@@ -267,9 +272,12 @@ def fetch_subscription(
             raise FetchError("subscription exceeds the configured byte limit")
     else:
         _validate_resolved_destination(url)
+        user_agent = _CLIENT_USER_AGENTS.get(client_profile)
+        if user_agent is None:
+            raise FetchError("unsupported subscription client profile")
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": _USER_AGENT, "Accept-Encoding": "gzip"},
+            headers={"User-Agent": user_agent, "Accept-Encoding": "gzip"},
             method="GET",
         )
         context = ssl.create_default_context()
