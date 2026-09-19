@@ -175,14 +175,15 @@ def test_final_routing_v2_drift_guard_is_healthy(repo_root: Path) -> None:
 
 
 def test_shadow_era_state_names_are_removed_from_drift_guard(repo_root: Path) -> None:
-    workflow = (repo_root / ".github" / "workflows" / "routing-shadow.yml").read_text(
+    workflow = (repo_root / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
     )
     implementation = (repo_root / "src" / "clash_relay" / "routing_shadow.py").read_text(
         encoding="utf-8"
     )
 
-    assert "Routing V2 Drift Guard" in workflow
+    assert "Verify Routing V2 drift" in workflow
+    assert "python scripts/routing_shadow.py" in workflow
     assert "current_mode" not in workflow
     assert "cutover_mode" not in workflow
     assert "region_order_would_change" not in workflow
