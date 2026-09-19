@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from .config_loader import ProjectDefinition
+from .errors import ValidationError
 from .production_audit import audit_production_candidate
 from .runtime_graph import RuntimeGraph
 from .service_qualification import service_qualifications
@@ -28,8 +30,18 @@ class ServiceAvailabilityCount:
     qualified_regions_by_service: dict[str, int]
 
 
+_RUNTIME_SOURCE = re.compile(r"^\[[^\]]+\]\s+([^/]+)/")
+
+
 def _provider_name(pool_id: str, region: str) -> str:
     return f"cr_{safe_identifier(pool_id)}_{safe_identifier(region)}"
+
+
+def _historical_source_label(runtime_name: str) -> str:
+    match = _RUNTIME_SOURCE.match(runtime_name)
+    if match is None:
+        raise ValidationError("promotion baseline contains an invalid runtime source label")
+    return match.group(1)
 
 
 def collect_inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> InventoryCount:
@@ -77,6 +89,56 @@ def collect_inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> 
         providers_by_use=dict(sorted(providers_by_use.items())),
         nodes_by_use=dict(sorted(nodes_by_use.items())),
         regions_by_use={name: len(values) for name, values in sorted(regions.items())},
+    )
+
+
+def collect_baseline_inventory(
+    project: ProjectDefinition,
+    candidate: dict[str, Any],
+) -> InventoryCount:
+    """Collect historical baseline capacity without reapplying current source admission.
+
+    The active candidate is always audited against current policy. A historical
+    production baseline may legitimately contain a source that was intentionally
+    removed from today's declarations, so baseline collection treats runtime
+    source labels as opaque historical identities and uses them only for aggregate
+    capacity ratios.
+    """
+
+    graph = RuntimeGraph.from_candidate(candidate)
+    runtime_nodes: set[str] = set()
+    for names in graph.provider_proxies.values():
+        runtime_nodes.update(names)
+
+    sources_by_use: dict[str, set[str]] = {}
+    providers_by_use: dict[str, int] = {}
+    nodes_by_use: dict[str, int] = {}
+    regions_by_use: dict[str, set[str]] = {}
+
+    for pool in project.policies["pools"]:
+        pool_id = str(pool["id"])
+        source_use = str(pool["source_use"])
+        sources_by_use.setdefault(source_use, set())
+        regions_by_use.setdefault(source_use, set())
+        for region in pool["regions"]:
+            provider_name = _provider_name(pool_id, str(region))
+            provider_nodes = graph.provider_proxies.get(provider_name)
+            if provider_nodes is None:
+                continue
+            providers_by_use[source_use] = providers_by_use.get(source_use, 0) + 1
+            nodes_by_use[source_use] = nodes_by_use.get(source_use, 0) + len(provider_nodes)
+            if provider_nodes:
+                regions_by_use[source_use].add(str(region))
+            for runtime_name in provider_nodes:
+                sources_by_use[source_use].add(_historical_source_label(runtime_name))
+
+    return InventoryCount(
+        nodes=len(runtime_nodes),
+        providers=len(graph.providers),
+        sources_by_use={name: len(values) for name, values in sorted(sources_by_use.items())},
+        providers_by_use=dict(sorted(providers_by_use.items())),
+        nodes_by_use=dict(sorted(nodes_by_use.items())),
+        regions_by_use={name: len(values) for name, values in sorted(regions_by_use.items())},
     )
 
 

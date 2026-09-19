@@ -9,6 +9,7 @@ from typing import Any
 from .availability import (
     InventoryCount,
     ServiceAvailabilityCount,
+    collect_baseline_inventory,
     collect_inventory,
     collect_service_availability,
     ratio,
@@ -201,7 +202,7 @@ def assess_promotion(
             "violations": violations,
         }
 
-    baseline_inventory = collect_inventory(project, baseline)
+    baseline_inventory = collect_baseline_inventory(project, baseline)
     total_node_ratio = ratio(candidate_inventory.nodes, baseline_inventory.nodes)
     provider_ratio = ratio(candidate_inventory.providers, baseline_inventory.providers)
     if total_node_ratio < policy.minimum_total_node_ratio:
