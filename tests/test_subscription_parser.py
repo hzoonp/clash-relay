@@ -45,6 +45,32 @@ def test_remote_provider_is_not_followed_and_yields_empty() -> None:
     }
     result = parse_subscription(yaml.safe_dump(document))
     assert result.proxies == ()
+    assert result.empty_payload_shape == "remote_provider_only"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_shape"),
+    [
+        ("\n\n", "empty_text"),
+        ("[]\n", "yaml_empty_list"),
+        ("proxies: []\n", "yaml_empty_proxies"),
+        ("proxy-providers:\n  inline:\n    type: inline\n    payload: []\n", "yaml_empty_inventory"),
+    ],
+)
+def test_empty_payload_shapes_are_static(payload: str, expected_shape: str) -> None:
+    result = parse_subscription(payload)
+
+    assert result.proxies == ()
+    assert result.skipped_items == 0
+    assert result.empty_payload_shape == expected_shape
+
+
+def test_base64_empty_yaml_preserves_decoded_payload_shape() -> None:
+    encoded = base64.b64encode(b"proxies: []\n").decode("ascii")
+    result = parse_subscription(encoded)
+
+    assert result.proxies == ()
+    assert result.empty_payload_shape == "yaml_empty_proxies"
 
 
 def test_parse_uri_fixture(repo_root: Path) -> None:
@@ -89,7 +115,9 @@ def test_common_uri_schemes(uri: str, proxy_type: str) -> None:
 
 
 def test_empty_subscription_is_parseable_but_has_no_nodes() -> None:
-    assert parse_subscription("\n\n").proxies == ()
+    result = parse_subscription("\n\n")
+    assert result.proxies == ()
+    assert result.empty_payload_shape == "empty_text"
 
 
 def test_invalid_payload_fails() -> None:
