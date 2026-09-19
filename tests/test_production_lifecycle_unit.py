@@ -138,12 +138,14 @@ def test_safe_source_admission_summary_is_aggregate_and_fail_closed(tmp_path: Pa
             "subscriptions": [
                 {
                     "id": "subscription_1",
-                    "status": "ok",
+                    "status": "failed",
                     "nodes": 4,
                     "skipped_invalid_nodes": 1,
                     "filtered_by_name": 3,
                     "filtered_over_multiplier": 7,
                     "max_node_multiplier": 2.0,
+                    "failure_category": "subscription_fetch",
+                    "failure_reason": "http_error",
                     "error": "private-fetch-detail",
                 },
                 "invalid-row",
@@ -160,12 +162,14 @@ def test_safe_source_admission_summary_is_aggregate_and_fail_closed(tmp_path: Pa
         "subscriptions": [
             {
                 "id": "subscription_1",
-                "status": "ok",
+                "status": "failed",
                 "nodes": 4,
                 "skipped_invalid_nodes": 1,
                 "filtered_by_name": 3,
                 "filtered_over_multiplier": 7,
                 "max_node_multiplier": 2.0,
+                "failure_category": "subscription_fetch",
+                "failure_reason": "http_error",
             }
         ],
     }
