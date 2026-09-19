@@ -191,11 +191,13 @@ def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None
         "subscriptions": [
             {
                 "id": "subscription_1",
-                "status": "ok",
+                "status": "failed",
                 "nodes": 0,
                 "filtered_by_name": 3,
                 "filtered_over_multiplier": 7,
                 "max_node_multiplier": 2.0,
+                "failure_category": "subscription_fetch",
+                "failure_reason": "dns_error",
                 "error": "https://private.example/token",
             },
             "invalid-row",
@@ -214,11 +216,13 @@ def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None
         "subscriptions": [
             {
                 "id": "subscription_1",
-                "status": "ok",
+                "status": "failed",
                 "nodes": 0,
                 "filtered_by_name": 3,
                 "filtered_over_multiplier": 7,
                 "max_node_multiplier": 2.0,
+                "failure_category": "subscription_fetch",
+                "failure_reason": "dns_error",
             }
         ],
     }
