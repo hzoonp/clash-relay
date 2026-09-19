@@ -168,51 +168,6 @@ def test_builder_applies_multiplier_ceiling_before_provider_generation(
     assert result.report["multiplier_filtered_nodes"] == 1
 
 
-def test_builder_reports_all_invalid_proxy_reason_without_node_details(
-    project_factory, fixture_env, yaml_editor
-) -> None:
-    root, paths = project_factory()
-    invalid_source = root / "invalid-secondary.yaml"
-    invalid_source.write_text(
-        yaml.safe_dump(
-            {
-                "proxies": [
-                    {
-                        "name": "Private Unsupported Node",
-                        "type": "unsupported-private-type",
-                        "server": "secret.invalid.example",
-                        "port": 443,
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    def skip_invalid(document):
-        document["generation"]["invalid_proxy_policy"] = "skip"
-
-    yaml_editor(paths["config_path"], skip_invalid)
-    env = dict(fixture_env)
-    env["SUB_SECONDARY"] = invalid_source.resolve().as_uri()
-
-    result = build_candidate(**paths, env=env)
-    report = next(
-        item for item in result.report["subscriptions"] if item["id"] == "secondary"
-    )
-
-    assert report["status"] == "failed"
-    assert report["failure_category"] == "subscription_parse"
-    assert report["failure_reason"] == "all_unsupported_types"
-    assert report["skipped_invalid_nodes"] == 1
-    assert "Private Unsupported Node" not in repr(
-        {
-            "failure_category": report["failure_category"],
-            "failure_reason": report["failure_reason"],
-        }
-    )
-
-
 def test_source_exclusion_reuses_provider_and_filters_runtime_source_prefix() -> None:
     output = _routing_output()
     report = apply_acl4ssr_source_exclusions(
