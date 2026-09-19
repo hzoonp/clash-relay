@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import socket
+import ssl
+import urllib.error
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -9,7 +12,7 @@ from typing import Any
 from .acl4ssr import load_acl4ssr_rules
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
-from .errors import FetchError, GenerationError, SubscriptionError
+from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscriptionError
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
 from .models import BuildResult, Node, SubscriptionSpec
@@ -45,6 +48,89 @@ def _with_acl4ssr_attribution(
         first, rest = yaml_text.split("\n", 1)
         return f"{first}\n{attribution}\n{rest}"
     return f"{attribution}\n{yaml_text}"
+
+
+def _exception_chain(error: BaseException) -> tuple[BaseException, ...]:
+    current: BaseException | None = error
+    seen: set[int] = set()
+    values: list[BaseException] = []
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        values.append(current)
+        current = current.__cause__ or current.__context__
+    return tuple(values)
+
+
+def _fetch_failure_reason(error: FetchError) -> str:
+    chain = _exception_chain(error)
+    if any(isinstance(item, urllib.error.HTTPError) for item in chain):
+        return "http_error"
+    if any(isinstance(item, ssl.SSLError) for item in chain):
+        return "tls_error"
+    if any(isinstance(item, TimeoutError | socket.timeout) for item in chain):
+        return "timeout"
+    if any(isinstance(item, socket.gaierror) for item in chain):
+        return "dns_error"
+
+    message = str(error)
+    if message.startswith("subscription hostname could not be resolved for "):
+        return "dns_error"
+    if message == "subscription hostname resolved to no usable address":
+        return "dns_error"
+    if message in {
+        "subscription URL is malformed",
+        "subscription URL userinfo is not allowed",
+        "subscription URL has no hostname",
+        "subscription URL has an invalid port",
+    } or message.startswith("subscription URL scheme "):
+        return "invalid_url"
+    if message in {
+        "subscription URL may not target a private or special-use IP literal",
+        "subscription hostname may not target localhost",
+        "subscription hostname resolves to a private or special-use address",
+    }:
+        return "destination_rejected"
+    if message in {
+        "subscription exceeds the configured byte limit",
+        "decompressed subscription exceeds the byte limit",
+    }:
+        return "size_limit"
+    if message in {
+        "subscription gzip payload is invalid",
+        "subscription is not valid UTF-8",
+    }:
+        return "payload_encoding"
+    if message == "cannot read local subscription fixture":
+        return "io_error"
+    return "transport_error"
+
+
+def _source_failure_diagnostic(error: BaseException) -> dict[str, str]:
+    if isinstance(error, UnsafeSubscriptionError):
+        return {
+            "failure_category": "subscription_admission",
+            "failure_reason": "unsafe_payload",
+        }
+    if isinstance(error, SubscriptionError):
+        return {
+            "failure_category": "subscription_parse",
+            "failure_reason": (
+                "no_usable_proxies"
+                if str(error) == "subscription contains no usable proxies"
+                else "parse_error"
+            ),
+        }
+    if isinstance(error, FetchError):
+        return {
+            "failure_category": "subscription_fetch",
+            "failure_reason": _fetch_failure_reason(error),
+        }
+    if isinstance(error, OSError):
+        return {"failure_category": "io_failure", "failure_reason": "io_error"}
+    return {
+        "failure_category": "subscription_parse",
+        "failure_reason": "invalid_value",
+    }
 
 
 def build_candidate(
@@ -120,6 +206,7 @@ def build_candidate(
                     "id": spec.id,
                     "display_name": spec.display_name,
                     "status": "failed",
+                    **_source_failure_diagnostic(exc),
                     "error": safe_error,
                 }
             )
