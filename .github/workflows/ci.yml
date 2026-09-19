@@ -235,9 +235,17 @@ jobs:
             sleep "$attempt"
           done
 
+  routing-required:
+    name: Verify finalized Routing V2 graph
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm embedded Routing V2 drift gate passed
+        run: echo "Routing V2 drift is enforced by the Python 3.12 quality job."
+
   validated:
-    name: Validated SHA
-    needs: [quality, python-compat, deterministic-generation, stable-mihomo]
+    name: Validate exact commit / Validated SHA
+    needs: [quality, python-compat, deterministic-generation, stable-mihomo, routing-required]
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
