@@ -20,7 +20,7 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     workflow = yaml.load(text, Loader=yaml.BaseLoader)
     assert isinstance(workflow, dict)
     assert workflow["permissions"]["contents"] == "write"
-    assert "uses: ./.github/workflows/validate.yml" in text
+    assert "uses: ./.github/workflows/ci.yml" in text
     assert "needs.validate.outputs.validated_sha == github.sha" in text
     assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
     assert "persist-credentials: false" in text
@@ -47,7 +47,7 @@ def test_release_workflow_does_not_duplicate_the_authoritative_quality_gate(
     assert "run: python scripts/audit_supply_chain.py" not in text
     assert "run: python scripts/audit_acl4ssr_fidelity.py" not in text
     assert "pip install" not in text
-    assert "Quality authority: reusable validate.yml" in text
+    assert "Quality authority: reusable ci.yml" in text
 
 
 def test_versioning_document_freezes_canonical_v2_boundaries(repo_root: Path) -> None:

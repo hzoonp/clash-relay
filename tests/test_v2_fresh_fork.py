@@ -41,18 +41,18 @@ def test_fresh_fork_public_preflight_and_fictional_build(
 
 
 def test_fresh_fork_release_authority_is_composed_from_existing_gates(repo_root: Path) -> None:
-    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     rollback = (repo_root / ".github" / "workflows" / "rollback.yml").read_text(encoding="utf-8")
 
-    assert "name: Python 3.12 quality" in validate
-    assert "name: Python ${{ matrix.python }} compatibility" in validate
-    assert 'python: ["3.11", "3.13"]' in validate
-    assert "needs: [quality, python-compat]" in validate
-    assert "Deterministic fictional generation" in validate
-    assert "Export pinned stable Mihomo matrix" in validate
-    assert "Real startup and provider HEAD integration tests" in validate
-    assert "Validated SHA" in validate
+    assert "name: Python 3.12 quality" in ci
+    assert "name: Python ${{ matrix.python }} compatibility" in ci
+    assert 'python: ["3.11", "3.13"]' in ci
+    assert "needs: [quality, python-compat]" in ci
+    assert "Deterministic fictional generation" in ci
+    assert "Export pinned stable Mihomo matrix" in ci
+    assert "Real startup and provider HEAD integration tests" in ci
+    assert "Validated SHA" in ci
 
     assert "needs.validate.outputs.validated_sha == github.sha" in publish
     assert "ref: ${{ needs.validate.outputs.validated_sha }}" in publish

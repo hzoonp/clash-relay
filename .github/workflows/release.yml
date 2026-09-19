@@ -10,7 +10,7 @@ on:
       - "rules/**"
       - "src/clash_relay/acl4ssr_reference.py"
       - "scripts/audit_acl4ssr_fidelity.py"
-      - ".github/workflows/validate.yml"
+      - ".github/workflows/ci.yml"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release SHA
-    uses: ./.github/workflows/validate.yml
+    uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
@@ -106,5 +106,5 @@ jobs:
       - name: Record release status
         run: |
           echo "Release tag: ${{ steps.version.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Quality authority: reusable validate.yml on exact commit ${{ needs.validate.outputs.validated_sha }}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Quality authority: reusable ci.yml on exact commit ${{ needs.validate.outputs.validated_sha }}." >> "$GITHUB_STEP_SUMMARY"
           echo "Source-only release: production config and private scheduler state are not release assets." >> "$GITHUB_STEP_SUMMARY"

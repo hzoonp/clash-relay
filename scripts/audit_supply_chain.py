@@ -70,7 +70,7 @@ def main() -> int:
     _audit_lock(ROOT / "requirements-dev.lock")
     _audit_workflow_actions()
 
-    validate = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     for token in (
         "workflow_call:",
         "validated_sha:",
@@ -81,12 +81,12 @@ def main() -> int:
         "mypy --follow-imports=skip",
         "Validated SHA",
     ):
-        if token not in validate:
-            raise SystemExit(f"supply-chain audit: reusable validation gate missing {token}")
+        if token not in ci:
+            raise SystemExit(f"supply-chain audit: reusable CI validation gate missing {token}")
 
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     for token in (
-        "uses: ./.github/workflows/validate.yml",
+        "uses: ./.github/workflows/ci.yml",
         "needs.validate.outputs.validated_sha == github.sha",
         "ref: ${{ needs.validate.outputs.validated_sha }}",
         'test "$VALIDATED_SHA" = "$GITHUB_SHA"',

@@ -15,11 +15,11 @@
   "required_status_checks": [
     {
       "workflow": "CI",
-      "job": "Validated SHA",
+      "job": "Validate exact commit / Validated SHA",
       "check_context": "Validate exact commit / Validated SHA"
     },
     {
-      "workflow": "Routing V2 Drift Guard",
+      "workflow": "CI",
       "job": "Verify finalized Routing V2 graph",
       "check_context": "Verify finalized Routing V2 graph"
     }

@@ -25,29 +25,23 @@ def test_main_governance_contract_matches_authoritative_workflows(repo_root: Pat
     assert contract["required_status_checks"] == [
         {
             "workflow": "CI",
-            "job": "Validated SHA",
+            "job": "Validate exact commit / Validated SHA",
             "check_context": "Validate exact commit / Validated SHA",
         },
         {
-            "workflow": "Routing V2 Drift Guard",
+            "workflow": "CI",
             "job": "Verify finalized Routing V2 graph",
             "check_context": "Verify finalized Routing V2 graph",
         },
     ]
 
     ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    validate = (repo_root / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
-    routing = (repo_root / ".github" / "workflows" / "routing-shadow.yml").read_text(
-        encoding="utf-8"
-    )
-
     assert ci.startswith("name: CI\n")
-    assert "    name: Validate exact commit\n" in ci
-    assert "    name: Validated SHA\n" in validate
-    assert routing.startswith("name: Routing V2 Drift Guard\n")
-    assert "    name: Verify finalized Routing V2 graph\n" in routing
+    assert "workflow_call:" in ci
+    assert "name: Python 3.12 quality" in ci
+    assert "name: Verify Routing V2 drift" in ci
+    assert "name: Verify finalized Routing V2 graph" in ci
+    assert "name: Validate exact commit / Validated SHA" in ci
 
-    ci_check = contract["required_status_checks"][0]
-    assert ci_check["check_context"] == f"Validate exact commit / {ci_check['job']}"
-    routing_check = contract["required_status_checks"][1]
-    assert routing_check["check_context"] == routing_check["job"]
+    for check in contract["required_status_checks"]:
+        assert check["check_context"] == check["job"]

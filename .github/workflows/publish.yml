@@ -17,7 +17,7 @@ on:
       - "requirements.lock"
       - "requirements-dev.lock"
       - "tools/mihomo-versions.json"
-      - ".github/workflows/validate.yml"
+      - ".github/workflows/ci.yml"
       - ".github/workflows/publish.yml"
   schedule:
     - cron: "17 */6 * * *"
@@ -39,7 +39,7 @@ concurrency:
 jobs:
   validate:
     name: Validate production SHA
-    uses: ./.github/workflows/validate.yml
+    uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
