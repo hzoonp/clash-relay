@@ -186,8 +186,8 @@ def _safe_source_admission_report(error: BaseException) -> dict[str, Any] | None
         "filtered_by_name",
         "filtered_over_multiplier",
         "max_node_multiplier",
-            "failure_category",
-            "failure_reason",
+        "failure_category",
+        "failure_reason",
     }
     for row in subscriptions:
         if isinstance(row, Mapping):
