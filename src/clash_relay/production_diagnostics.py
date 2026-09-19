@@ -63,6 +63,15 @@ _SAFE_SOURCE_FAILURE_CATEGORIES = frozenset(
         "io_failure",
     }
 )
+_SAFE_EMPTY_PAYLOAD_SHAPES = frozenset(
+    {
+        "empty_text",
+        "yaml_empty_list",
+        "yaml_empty_proxies",
+        "remote_provider_only",
+        "yaml_empty_inventory",
+    }
+)
 _SAFE_SOURCE_FAILURE_REASONS = frozenset(
     {
         "http_error",
@@ -234,6 +243,9 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
         reason = row.get("failure_reason")
         if reason in _SAFE_SOURCE_FAILURE_REASONS:
             safe_row["failure_reason"] = reason
+        payload_shape = row.get("empty_payload_shape")
+        if payload_shape in _SAFE_EMPTY_PAYLOAD_SHAPES:
+            safe_row["empty_payload_shape"] = payload_shape
         safe_rows.append(safe_row)
     return {
         "successful_subscriptions": report.get("successful_subscriptions"),

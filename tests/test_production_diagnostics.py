@@ -198,6 +198,7 @@ def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None
                 "max_node_multiplier": 2.0,
                 "failure_category": "subscription_fetch",
                 "failure_reason": "dns_error",
+                "empty_payload_shape": "remote_provider_only",
                 "error": "https://private.example/token",
             },
             "invalid-row",
@@ -223,6 +224,7 @@ def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None
                 "max_node_multiplier": 2.0,
                 "failure_category": "subscription_fetch",
                 "failure_reason": "dns_error",
+                "empty_payload_shape": "remote_provider_only",
             }
         ],
     }
@@ -240,6 +242,7 @@ def test_promotion_guard_drops_unrecognized_source_failure_codes() -> None:
                 "status": "failed",
                 "failure_category": "private-category-token",
                 "failure_reason": "https://private.example/token",
+                "empty_payload_shape": "private-shape-token",
             }
         ]
     }
@@ -250,6 +253,7 @@ def test_promotion_guard_drops_unrecognized_source_failure_codes() -> None:
         {"id": "subscription_1", "status": "failed"}
     ]
     assert "private-category-token" not in repr(result)
+    assert "private-shape-token" not in repr(result)
     assert "private.example" not in repr(result)
 
 

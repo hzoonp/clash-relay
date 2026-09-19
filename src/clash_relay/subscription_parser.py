@@ -58,6 +58,7 @@ class ParsedSubscription:
     proxies: tuple[dict[str, Any], ...]
     skipped_items: int
     skipped_reason_counts: tuple[tuple[str, int], ...] = ()
+    empty_payload_shape: str | None = None
 
 
 def _private_host(value: str) -> bool:
@@ -191,12 +192,35 @@ def _uri_lines(text: str) -> list[str]:
     ]
 
 
-def _parse_payload(text: str, *, depth: int = 0) -> list[Any]:
+def _empty_yaml_payload_shape(data: Any) -> str:
+    if isinstance(data, list):
+        return "yaml_empty_list"
+    if not isinstance(data, dict):
+        return "yaml_empty_inventory"
+
+    proxies = data.get("proxies")
+    providers = data.get("proxy-providers")
+    if (
+        isinstance(providers, dict)
+        and providers
+        and (proxies is None or proxies == [])
+        and all(
+            isinstance(provider, dict) and provider.get("type") != "inline"
+            for provider in providers.values()
+        )
+    ):
+        return "remote_provider_only"
+    if "proxies" in data and proxies == [] and providers is None:
+        return "yaml_empty_proxies"
+    return "yaml_empty_inventory"
+
+
+def _parse_payload(text: str, *, depth: int = 0) -> tuple[list[Any], str | None]:
     if depth > 2:
         raise SubscriptionError("subscription encoding is nested too deeply")
     stripped = text.strip()
     if not stripped:
-        return []
+        return [], "empty_text"
     try:
         data = yaml_load_no_aliases(stripped, source="subscription payload", untrusted=True)
     except UnsafeSubscriptionError:
@@ -207,13 +231,15 @@ def _parse_payload(text: str, *, depth: int = 0) -> list[Any]:
         deep_size_guard(data)
         extracted = _extract_yaml_proxies(data)
         if extracted is not None:
-            return extracted
+            if not extracted:
+                return extracted, _empty_yaml_payload_shape(data)
+            return extracted, None
         # PyYAML folds a plain multi-line scalar into a single space-separated
         # string. URI subscriptions are line-oriented, so keep the original
         # source text whenever YAML produced only a scalar.
     lines = _uri_lines(stripped)
     if lines and all("://" in line for line in lines):
-        return [parse_proxy_uri(line) for line in lines]
+        return [parse_proxy_uri(line) for line in lines], None
     try:
         decoded = decode_base64_text(stripped)
     except SubscriptionError as exc:
@@ -260,7 +286,7 @@ def parse_subscription(
 ) -> ParsedSubscription:
     if invalid_policy not in {"error", "skip"}:
         raise SubscriptionError(f"unsupported invalid proxy policy: {invalid_policy}")
-    entries = _parse_payload(text)
+    entries, empty_payload_shape = _parse_payload(text)
     if len(entries) > _MAX_PROXIES:
         raise SubscriptionError(f"subscription contains more than {_MAX_PROXIES} proxies")
     valid: list[dict[str, Any]] = []
@@ -284,4 +310,5 @@ def parse_subscription(
         tuple(valid),
         skipped,
         tuple(sorted(skipped_reasons.items())),
+        empty_payload_shape=empty_payload_shape if not entries else None,
     )
