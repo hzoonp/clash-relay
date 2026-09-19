@@ -84,4 +84,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
-        run: python scripts/run_production_release.py
+          CLASH_RELAY_PRODUCTION_PREFLIGHT: ${{ github.event_name == 'push' }}
+        run: |
+          args=()
+          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then args+=(--production-preflight); fi
+          python scripts/run_production_release.py "${args[@]}"
