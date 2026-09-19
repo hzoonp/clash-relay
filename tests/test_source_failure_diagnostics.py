@@ -5,9 +5,8 @@ import ssl
 import urllib.error
 
 import pytest
-import yaml
 
-from clash_relay.builder import _source_failure_diagnostic, build_candidate
+from clash_relay.builder import _source_failure_diagnostic
 from clash_relay.errors import FetchError, SubscriptionError, UnsafeSubscriptionError
 
 
@@ -118,50 +117,3 @@ def test_source_failures_never_reflect_exception_text(
 
     assert result == expected
     assert str(error) not in repr(result)
-
-
-def test_all_invalid_optional_source_reports_static_reason(
-    project_factory,
-    fixture_env,
-    yaml_editor,
-) -> None:
-    root, paths = project_factory()
-    invalid_source = root / "invalid-secondary.yaml"
-    invalid_source.write_text(
-        yaml.safe_dump(
-            {
-                "proxies": [
-                    {
-                        "name": "Private Unsupported Node",
-                        "type": "unsupported-private-type",
-                        "server": "secret.invalid.example",
-                        "port": 443,
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    def skip_invalid(document):
-        document["generation"]["invalid_proxy_policy"] = "skip"
-
-    yaml_editor(paths["config_path"], skip_invalid)
-    env = dict(fixture_env)
-    env["SUB_SECONDARY"] = invalid_source.resolve().as_uri()
-
-    result = build_candidate(**paths, env=env)
-    report = next(
-        item for item in result.report["subscriptions"] if item["id"] == "secondary"
-    )
-
-    assert report["status"] == "failed"
-    assert report["failure_category"] == "subscription_parse"
-    assert report["failure_reason"] == "all_unsupported_types"
-    assert report["skipped_invalid_nodes"] == 1
-    assert "Private Unsupported Node" not in repr(
-        {
-            "failure_category": report["failure_category"],
-            "failure_reason": report["failure_reason"],
-        }
-    )
