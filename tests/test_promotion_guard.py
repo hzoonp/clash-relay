@@ -179,7 +179,7 @@ def test_promotion_guard_tolerates_retired_source_only_in_historical_baseline(
     project = _project(project_paths)
     candidate = copy.deepcopy(built_candidate.config)
     baseline = copy.deepcopy(built_candidate.config)
-    provider = baseline["proxy-providers"]["cr_general_ANY"]
+    provider = baseline["proxy-providers"]["cr_general_any"]
     historical = copy.deepcopy(provider["payload"][0])
     historical["name"] = "[US] retired_source/Fictional Historical Node"
     provider["payload"].append(historical)
