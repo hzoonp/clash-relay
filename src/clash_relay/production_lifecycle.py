@@ -386,6 +386,8 @@ class ProductionPipeline:
             "filtered_by_name",
             "filtered_over_multiplier",
             "max_node_multiplier",
+            "failure_category",
+            "failure_reason",
         )
         for row in rows:
             if not isinstance(row, dict):
