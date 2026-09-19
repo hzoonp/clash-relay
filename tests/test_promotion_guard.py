@@ -4,7 +4,11 @@ import copy
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
+from clash_relay.availability import collect_inventory
 from clash_relay.config_loader import load_project
+from clash_relay.errors import ValidationError
 from clash_relay.promotion_guard import (
     PromotionGuardPolicy,
     assess_promotion,
@@ -167,6 +171,34 @@ def test_promotion_guard_missing_service_summary_fails_closed(
     assert report["status"] == "blocked"
     assert "minimum_qualified_nodes:openai" in report["violations"]
     assert "minimum_qualified_regions:openai" in report["violations"]
+
+
+def test_promotion_guard_tolerates_retired_source_only_in_historical_baseline(
+    built_candidate, project_paths
+) -> None:
+    project = _project(project_paths)
+    candidate = copy.deepcopy(built_candidate.config)
+    baseline = copy.deepcopy(built_candidate.config)
+    provider = baseline["proxy-providers"]["cr_general_ANY"]
+    historical = copy.deepcopy(provider["payload"][0])
+    historical["name"] = "[US] retired_source/Fictional Historical Node"
+    provider["payload"].append(historical)
+
+    with pytest.raises(ValidationError):
+        collect_inventory(project, baseline)
+
+    report = assess_promotion(
+        project,
+        candidate,
+        baseline,
+        _fixture_policy(),
+    )
+
+    assert report["status"] == "passed"
+    assert report["reason"] == "within_thresholds"
+    assert report["ratios"]["uses"]["general"]["baseline_sources"] > report["ratios"]["uses"][
+        "general"
+    ]["candidate_sources"]
 
 
 def test_promotion_guard_blocks_severe_inventory_collapse(built_candidate, project_paths) -> None:
