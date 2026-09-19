@@ -160,8 +160,7 @@ def test_ai_fails_closed_when_subscription_1_fetch_fails_even_if_general_sources
     reports = {row["id"]: row for row in result.report["subscriptions"]}
     assert reports["subscription_1"]["status"] == "failed"
     assert all(
-        reports[source_id]["status"] == "ok"
-        for source_id in ("subscription_2", "subscription_4")
+        reports[source_id]["status"] == "ok" for source_id in ("subscription_2", "subscription_4")
     )
 
     _assert_ai_is_fail_closed(result.config)
