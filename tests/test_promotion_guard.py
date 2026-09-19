@@ -212,9 +212,7 @@ def test_promotion_guard_source_ratio_uses_current_source_use_contract(
     def restrict_ai(document):
         for item in document["subscriptions"]:
             if item["id"] == "secondary":
-                item["allowed_uses"] = [
-                    use for use in item["allowed_uses"] if use != "ai"
-                ]
+                item["allowed_uses"] = [use for use in item["allowed_uses"] if use != "ai"]
 
     yaml_editor(paths["subscriptions_path"], restrict_ai)
     project = _project(paths)
