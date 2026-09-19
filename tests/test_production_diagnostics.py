@@ -230,6 +230,29 @@ def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None
     assert "do-not-leak" not in repr(result)
 
 
+def test_promotion_guard_drops_unrecognized_source_failure_codes() -> None:
+    error = ValidationError("private promotion detail")
+    error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+    error.source_admission_report = {  # type: ignore[attr-defined]
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "failed",
+                "failure_category": "private-category-token",
+                "failure_reason": "https://private.example/token",
+            }
+        ]
+    }
+
+    result = safe_failure_diagnostic(error)
+
+    assert result["source_admission"]["subscriptions"] == [
+        {"id": "subscription_1", "status": "failed"}
+    ]
+    assert "private-category-token" not in repr(result)
+    assert "private.example" not in repr(result)
+
+
 def test_promotion_guard_ignores_malformed_source_admission_diagnostic() -> None:
     error = ValidationError("private promotion detail")
     error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
