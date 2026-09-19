@@ -23,7 +23,7 @@ This checklist is the human release review that complements the exact-SHA automa
 - [ ] All non-integration tests and the coverage floor pass.
 - [ ] Architecture, documentation, operational-SLO, service-qualification, supply-chain, and repository audits pass.
 - [ ] Deterministic double generation and byte comparison pass.
-- [ ] Routing V2 Drift Guard passes.
+- [ ] The Routing V2 drift gate embedded in CI passes.
 - [ ] Every stable Mihomo core declared in `tools/mihomo-versions.json` passes download verification, candidate validation, real startup, and provider `HEAD` integration tests.
 - [ ] The final `Validated SHA` job succeeds.
 
