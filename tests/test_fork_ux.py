@@ -28,7 +28,6 @@ def test_public_doctor_explains_current_policy_model_and_first_publish_path(
     assert report["guidance"]["enabled_subscription_secrets"] == [
         "SUBSCRIPTION_1_URL",
         "SUBSCRIPTION_2_URL",
-        "SUBSCRIPTION_3_URL",
         "SUBSCRIPTION_4_URL",
     ]
     guidance = " ".join(report["guidance"]["next_steps"])
