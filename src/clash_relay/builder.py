@@ -201,7 +201,7 @@ def build_candidate(
                 reject_private_hosts=generation["reject_private_proxy_hosts"],
             )
             if not parsed.proxies:
-                source_report: dict[str, Any] = {
+                empty_source_report: dict[str, Any] = {
                     "id": spec.id,
                     "display_name": spec.display_name,
                     "status": "failed",
@@ -210,8 +210,8 @@ def build_candidate(
                     "skipped_invalid_nodes": parsed.skipped_items,
                 }
                 if parsed.empty_payload_shape is not None:
-                    source_report["empty_payload_shape"] = parsed.empty_payload_shape
-                source_reports.append(source_report)
+                    empty_source_report["empty_payload_shape"] = parsed.empty_payload_shape
+                source_reports.append(empty_source_report)
                 if _failure_is_fatal(spec, project):
                     raise GenerationError(
                         f"subscription {spec.id!r} failed: subscription contains no usable proxies"
