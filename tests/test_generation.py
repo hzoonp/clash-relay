@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import copy
 import json
+import socket
 from pathlib import Path
 
 import pytest
 import yaml
 
 from clash_relay.builder import build_candidate
-from clash_relay.errors import GenerationError
+from clash_relay.errors import FetchError, GenerationError
+from clash_relay.fetch import fetch_subscription
 from clash_relay.util import dump_yaml
 
 
@@ -329,6 +331,36 @@ def test_secret_subscription_urls_never_leak(project_paths, fixture_env) -> None
     assert not any(value in result.yaml_text for value in fixture_env.values())
     report = json.dumps(result.report, sort_keys=True)
     assert not any(value in report for value in fixture_env.values())
+
+
+def test_optional_source_failure_report_uses_static_privacy_safe_codes(
+    project_paths, fixture_env
+) -> None:
+    private_detail = "https://private-source.example/token=do-not-leak"
+
+    def fetcher(url: str, **kwargs):
+        if url == fixture_env["SUB_SECONDARY"]:
+            cause = socket.gaierror(-2, private_detail)
+            error = FetchError(private_detail)
+            error.__cause__ = cause
+            raise error
+        return fetch_subscription(url, **kwargs)
+
+    result = build_candidate(**project_paths, env=fixture_env, fetcher=fetcher)
+    secondary = next(
+        row for row in result.report["subscriptions"] if row["id"] == "secondary"
+    )
+
+    assert secondary["status"] == "failed"
+    assert secondary["failure_category"] == "subscription_fetch"
+    assert secondary["failure_reason"] == "dns_error"
+    assert private_detail not in json.dumps(
+        {
+            "failure_category": secondary["failure_category"],
+            "failure_reason": secondary["failure_reason"],
+        },
+        sort_keys=True,
+    )
 
 
 def test_rules_refer_only_to_public_groups_or_builtins(built_candidate) -> None:
