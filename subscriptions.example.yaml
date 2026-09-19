@@ -12,6 +12,10 @@ subscriptions:
     secret_name: SUBSCRIPTION_1_URL
     ingest_order: 100
     on_error: skip
+    # Optional static request identity for providers that negotiate output by
+    # User-Agent. Allowed values are default and mihomo; arbitrary headers are
+    # intentionally not accepted.
+    client_profile: mihomo
     # Source-level permission boundary: this source may only feed generic web
     # browsing and AI inventories. It cannot enter the general application pool.
     allowed_uses: [browsing, ai]
