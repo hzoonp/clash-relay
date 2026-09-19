@@ -179,6 +179,63 @@ def test_tagged_validation_error_keeps_message_but_diagnostic_is_safe() -> None:
     assert "private-node.example" not in repr(safe_failure_diagnostic(error))
 
 
+def test_promotion_guard_source_admission_diagnostic_is_aggregate_only() -> None:
+    error = ValidationError("private promotion detail")
+    error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+    error.source_admission_report = {  # type: ignore[attr-defined]
+        "successful_subscriptions": 2,
+        "parsed_nodes": 130,
+        "usable_nodes": 130,
+        "name_filtered_nodes": 3,
+        "multiplier_filtered_nodes": 7,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 0,
+                "filtered_by_name": 3,
+                "filtered_over_multiplier": 7,
+                "max_node_multiplier": 2.0,
+                "error": "https://private.example/token",
+            },
+            "invalid-row",
+        ],
+        "secret": "do-not-leak",
+    }
+
+    result = safe_failure_diagnostic(error)
+
+    assert result["source_admission"] == {
+        "successful_subscriptions": 2,
+        "parsed_nodes": 130,
+        "usable_nodes": 130,
+        "name_filtered_nodes": 3,
+        "multiplier_filtered_nodes": 7,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 0,
+                "filtered_by_name": 3,
+                "filtered_over_multiplier": 7,
+                "max_node_multiplier": 2.0,
+            }
+        ],
+    }
+    assert "private.example" not in repr(result)
+    assert "do-not-leak" not in repr(result)
+
+
+def test_promotion_guard_ignores_malformed_source_admission_diagnostic() -> None:
+    error = ValidationError("private promotion detail")
+    error.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+    error.source_admission_report = "invalid"  # type: ignore[attr-defined]
+
+    result = safe_failure_diagnostic(error)
+
+    assert "source_admission" not in result
+
+
 def test_unknown_candidate_validation_stage_is_not_reflected_verbatim() -> None:
     error = CandidateValidationStageError("private-node-name.example")
 
