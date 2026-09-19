@@ -28,6 +28,30 @@ def test_fixture_project_loads(project_paths: dict[str, Path]) -> None:
     }
 
 
+def test_subscription_client_profile_loads_and_defaults(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+
+    def mutate(document):
+        document["subscriptions"][0]["client_profile"] = "mihomo"
+
+    yaml_editor(paths["subscriptions_path"], mutate)
+    project = load_project(**paths)
+
+    assert project.subscriptions[0].client_profile == "mihomo"
+    assert project.subscriptions[1].client_profile == "default"
+
+
+def test_unknown_subscription_client_profile_fails_schema(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+    yaml_editor(
+        paths["subscriptions_path"],
+        lambda data: data["subscriptions"][0].update(client_profile="private-custom-header"),
+    )
+
+    with pytest.raises(ConfigurationError, match="schema validation"):
+        load_project(**paths)
+
+
 def test_arbitrary_subscription_count_is_data_driven(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
 
