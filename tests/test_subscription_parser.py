@@ -54,7 +54,10 @@ def test_remote_provider_is_not_followed_and_yields_empty() -> None:
         ("\n\n", "empty_text"),
         ("[]\n", "yaml_empty_list"),
         ("proxies: []\n", "yaml_empty_proxies"),
-        ("proxy-providers:\n  inline:\n    type: inline\n    payload: []\n", "yaml_empty_inventory"),
+        (
+            "proxy-providers:\n  inline:\n    type: inline\n    payload: []\n",
+            "yaml_empty_inventory",
+        ),
     ],
 )
 def test_empty_payload_shapes_are_static(payload: str, expected_shape: str) -> None:
