@@ -33,6 +33,12 @@ _DEFAULT_WORKERS = 12
 _MIN_STABLE_AUTO_NODES = 3
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
 _RUNTIME_SOURCE = re.compile(r"^\[[^]]+\]\s+sub_([0-9]+)/")
+_SAFE_VLESS_NETWORKS = frozenset({"tcp", "ws", "grpc", "http", "h2", "xhttp"})
+_SAFE_VLESS_FLOWS = frozenset({"xtls-rprx-vision"})
+_SAFE_VLESS_PACKET_ENCODINGS = frozenset({"xudp", "packetaddr"})
+_SAFE_CLIENT_FINGERPRINTS = frozenset(
+    {"chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"}
+)
 _SAFE_PROXY_TYPES = frozenset(
     {
         "ss",
@@ -241,6 +247,137 @@ def _filtered_provider_payloads(
     return result
 
 
+def _static_string(value: Any, allowed: frozenset[str], *, absent: str) -> str:
+    if value in {None, ""}:
+        return absent
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in allowed:
+            return normalized
+    return "other"
+
+
+def _static_bool_kind(value: Any) -> str:
+    if value is None:
+        return "absent"
+    if isinstance(value, bool):
+        return "enabled" if value else "disabled"
+    return "other"
+
+
+def _static_container_kind(value: Any) -> str:
+    if value is None:
+        return "absent"
+    if isinstance(value, dict):
+        return "mapping"
+    if isinstance(value, list):
+        return "list"
+    return "other"
+
+
+def _present(value: Any) -> str:
+    return "present" if value not in {None, ""} else "absent"
+
+
+def _vless_shape(proxy: dict[str, Any]) -> dict[str, str]:
+    network = _static_string(proxy.get("network"), _SAFE_VLESS_NETWORKS, absent="default")
+    reality = proxy.get("reality-opts")
+    reality_mapping = reality if isinstance(reality, dict) else {}
+    transport_keys = ("ws-opts", "grpc-opts", "http-opts", "h2-opts", "xhttp-opts")
+    client_fingerprint = _static_string(
+        proxy.get("client-fingerprint"),
+        _SAFE_CLIENT_FINGERPRINTS,
+        absent="absent",
+    )
+    return {
+        "network": network,
+        "tls": _static_bool_kind(proxy.get("tls")),
+        "reality": _static_container_kind(reality),
+        "flow": _static_string(proxy.get("flow"), _SAFE_VLESS_FLOWS, absent="none"),
+        "packet_encoding": _static_string(
+            proxy.get("packet-encoding"),
+            _SAFE_VLESS_PACKET_ENCODINGS,
+            absent="none",
+        ),
+        "encryption": _static_string(
+            proxy.get("encryption"),
+            frozenset({"none"}),
+            absent="absent",
+        ),
+        "alpn": _static_container_kind(proxy.get("alpn")),
+        "skip_cert_verify": _static_bool_kind(proxy.get("skip-cert-verify")),
+        "udp": _static_bool_kind(proxy.get("udp")),
+        "client_fingerprint": client_fingerprint,
+        "servername": _present(proxy.get("servername")),
+        "transport_opts": (
+            "present" if any(key in proxy for key in transport_keys) else "absent"
+        ),
+        "reality_public_key": _present(reality_mapping.get("public-key")),
+        "reality_short_id": _present(reality_mapping.get("short-id")),
+    }
+
+
+def _vless_shape_groups(
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    source_id: str,
+) -> list[tuple[dict[str, str], dict[str, tuple[dict[str, Any], ...]]]]:
+    grouped: dict[
+        tuple[tuple[str, str], ...],
+        dict[str, list[dict[str, Any]]],
+    ] = {}
+    shapes: dict[tuple[tuple[str, str], ...], dict[str, str]] = {}
+    for provider_name, payload in provider_payloads.items():
+        for proxy in payload:
+            if _runtime_source_id(proxy) != source_id or _runtime_proxy_type(proxy) != "vless":
+                continue
+            shape = _vless_shape(proxy)
+            key = tuple(sorted(shape.items()))
+            shapes[key] = shape
+            grouped.setdefault(key, {}).setdefault(provider_name, []).append(proxy)
+    return [
+        (
+            shapes[key],
+            {provider: tuple(rows) for provider, rows in sorted(grouped[key].items())},
+        )
+        for key in sorted(grouped)
+    ]
+
+
+def _rejected_vless_shapes(
+    binary: Path,
+    workdir: Path,
+    base_config: dict[str, Any],
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    source_ids: list[str],
+    mixed_port: int,
+    controller_port: int,
+    secret: str,
+) -> list[dict[str, Any]]:
+    rejected: list[dict[str, Any]] = []
+    for source_id in source_ids:
+        for shape, payloads in _vless_shape_groups(provider_payloads, source_id=source_id):
+            accepted = _isolated_probe_config_is_accepted(
+                binary,
+                workdir,
+                base_config,
+                payloads,
+                mixed_port=mixed_port,
+                controller_port=controller_port,
+                secret=secret,
+            )
+            if accepted is False:
+                rejected.append(
+                    {
+                        "source_id": source_id,
+                        "nodes": sum(len(rows) for rows in payloads.values()),
+                        **shape,
+                    }
+                )
+    return rejected
+
+
 def _isolated_probe_config_is_accepted(
     binary: Path,
     workdir: Path,
@@ -332,6 +469,21 @@ def _core_rejection_diagnostics(
         if accepted is False:
             rejected_types.append(proxy_type)
 
+    rejected_vless_shapes = (
+        _rejected_vless_shapes(
+            binary,
+            workdir,
+            base_config,
+            provider_payloads,
+            source_ids=rejected_sources,
+            mixed_port=mixed_port,
+            controller_port=controller_port,
+            secret=secret,
+        )
+        if "vless" in rejected_types and rejected_sources
+        else []
+    )
+
     if rejected_sources or rejected_types:
         isolation = "isolated"
     elif source_ids or proxy_types:
@@ -342,6 +494,7 @@ def _core_rejection_diagnostics(
         "core_rejection_isolation": isolation,
         "core_rejection_sources": rejected_sources,
         "core_rejection_proxy_types": rejected_types,
+        "core_rejection_vless_shapes": rejected_vless_shapes,
     }
 
 
