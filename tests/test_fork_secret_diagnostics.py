@@ -33,8 +33,13 @@ def test_secret_name_preflight_reports_missing_names_without_values(repo_root) -
     assert report["status"] == "missing"
     assert report["category"] == "missing_subscription_secrets"
     assert report["resolved"] == 1
-    assert report["expected"] == 3
-    assert report["missing"] == ["SUBSCRIPTION_2_URL", "SUBSCRIPTION_4_URL"]
+    assert report["expected"] == 5
+    assert report["missing"] == [
+        "SUBSCRIPTION_2_URL",
+        "SUBSCRIPTION_3_URL",
+        "SUBSCRIPTION_4_URL",
+        "SUBSCRIPTION_5_URL",
+    ]
     assert "private-one.example" not in serialized
 
 
@@ -46,7 +51,9 @@ def test_secret_name_preflight_reports_ready_counts_only(repo_root) -> None:
             [
                 "SUBSCRIPTION_1_URL",
                 "SUBSCRIPTION_2_URL",
+                "SUBSCRIPTION_3_URL",
                 "SUBSCRIPTION_4_URL",
+                "SUBSCRIPTION_5_URL",
             ],
             start=1,
         )
@@ -56,7 +63,7 @@ def test_secret_name_preflight_reports_ready_counts_only(repo_root) -> None:
 
     assert report["status"] == "ready"
     assert report["category"] is None
-    assert report["resolved"] == report["expected"] == 3
+    assert report["resolved"] == report["expected"] == 5
     assert report["missing"] == []
 
 
@@ -72,7 +79,9 @@ def test_resolver_missing_error_has_stable_category_and_progress(repo_root) -> N
 
     message = str(caught.value)
     assert "category=missing_subscription_secrets" in message
-    assert "resolved=2/3" in message
+    assert "resolved=2/5" in message
+    assert "SUBSCRIPTION_3_URL" in message
     assert "SUBSCRIPTION_4_URL" in message
+    assert "SUBSCRIPTION_5_URL" in message
     assert "private-one.example" not in message
     assert "private-two.example" not in message
