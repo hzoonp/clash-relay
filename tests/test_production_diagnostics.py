@@ -167,6 +167,71 @@ def test_qualification_core_rejection_diagnostics_are_allowlisted() -> None:
     assert "do-not-leak" not in serialized
 
 
+def test_qualification_vless_shapes_are_strictly_sanitized() -> None:
+    rejection = QualificationStageRejected(
+        stage="browsing",
+        category=QualificationFailureCategory.CORE_REJECTION,
+        retryable=False,
+        diagnostics={
+            "core_rejection_isolation": "isolated",
+            "core_rejection_sources": ["subscription_5"],
+            "core_rejection_proxy_types": ["vless"],
+            "core_rejection_vless_shapes": [
+                {
+                    "source_id": "subscription_5",
+                    "nodes": 3,
+                    "network": "ws",
+                    "tls": "enabled",
+                    "reality": "mapping",
+                    "flow": "other",
+                    "packet_encoding": "xudp",
+                    "encryption": "none",
+                    "alpn": "list",
+                    "skip_cert_verify": "disabled",
+                    "udp": "enabled",
+                    "client_fingerprint": "chrome",
+                    "servername": "present",
+                    "transport_opts": "present",
+                    "reality_public_key": "present",
+                    "reality_short_id": "present",
+                    "server": "private.example",
+                },
+                {
+                    "source_id": "private-source",
+                    "nodes": 1,
+                    "network": "private-network",
+                },
+            ],
+        },
+    )
+
+    result = safe_failure_diagnostic(rejection)
+
+    assert result["qualification_diagnostics"]["core_rejection_vless_shapes"] == [
+        {
+            "source_id": "subscription_5",
+            "nodes": 3,
+            "network": "ws",
+            "tls": "enabled",
+            "reality": "mapping",
+            "flow": "other",
+            "packet_encoding": "xudp",
+            "encryption": "none",
+            "alpn": "list",
+            "skip_cert_verify": "disabled",
+            "udp": "enabled",
+            "client_fingerprint": "chrome",
+            "servername": "present",
+            "transport_opts": "present",
+            "reality_public_key": "present",
+            "reality_short_id": "present",
+        }
+    ]
+    assert "private.example" not in repr(result)
+    assert "private-source" not in repr(result)
+    assert "private-network" not in repr(result)
+
+
 def test_qualification_core_rejection_drops_unknown_diagnostics() -> None:
     rejection = QualificationStageRejected(
         stage="browsing",
