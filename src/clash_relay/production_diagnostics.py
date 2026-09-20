@@ -46,6 +46,17 @@ class ProductionFailureCategory(StrEnum):
 
 _SAFE_RUNTIME_SOURCE_ID = re.compile(r"^subscription_[0-9]+$")
 _SAFE_CORE_REJECTION_ISOLATIONS = frozenset({"isolated", "combined", "unavailable"})
+_SAFE_VLESS_NETWORKS = frozenset({"default", "tcp", "ws", "grpc", "http", "h2", "xhttp", "other"})
+_SAFE_VLESS_TLS_STATES = frozenset({"absent", "enabled", "disabled", "other"})
+_SAFE_VLESS_REALITY_STATES = frozenset({"absent", "mapping", "list", "other"})
+_SAFE_VLESS_FLOWS = frozenset({"none", "xtls-rprx-vision", "other"})
+_SAFE_VLESS_PACKET_ENCODINGS = frozenset({"none", "xudp", "packetaddr", "other"})
+_SAFE_VLESS_ENCRYPTIONS = frozenset({"absent", "none", "other"})
+_SAFE_CONTAINER_STATES = frozenset({"absent", "mapping", "list", "other"})
+_SAFE_PRESENCE_STATES = frozenset({"absent", "present"})
+_SAFE_CLIENT_FINGERPRINTS = frozenset(
+    {"absent", "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized", "other"}
+)
 _SAFE_PROXY_TYPES = frozenset(
     {
         "ss",
@@ -235,6 +246,52 @@ def _ai_service_rewrite_substage(chain: tuple[BaseException, ...]) -> str | None
     return None
 
 
+def _safe_vless_shape_rows(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    enum_fields = {
+        "network": _SAFE_VLESS_NETWORKS,
+        "tls": _SAFE_VLESS_TLS_STATES,
+        "reality": _SAFE_VLESS_REALITY_STATES,
+        "flow": _SAFE_VLESS_FLOWS,
+        "packet_encoding": _SAFE_VLESS_PACKET_ENCODINGS,
+        "encryption": _SAFE_VLESS_ENCRYPTIONS,
+        "alpn": _SAFE_CONTAINER_STATES,
+        "skip_cert_verify": _SAFE_VLESS_TLS_STATES,
+        "udp": _SAFE_VLESS_TLS_STATES,
+        "client_fingerprint": _SAFE_CLIENT_FINGERPRINTS,
+        "servername": _SAFE_PRESENCE_STATES,
+        "transport_opts": _SAFE_PRESENCE_STATES,
+        "reality_public_key": _SAFE_PRESENCE_STATES,
+        "reality_short_id": _SAFE_PRESENCE_STATES,
+    }
+    for row in value:
+        if not isinstance(row, Mapping):
+            continue
+        source_id = row.get("source_id")
+        nodes = row.get("nodes")
+        if not (
+            isinstance(source_id, str)
+            and _SAFE_RUNTIME_SOURCE_ID.fullmatch(source_id)
+            and isinstance(nodes, int)
+            and not isinstance(nodes, bool)
+            and nodes > 0
+        ):
+            continue
+        safe_row: dict[str, Any] = {"source_id": source_id, "nodes": nodes}
+        valid = True
+        for key, allowed in enum_fields.items():
+            field_value = row.get(key)
+            if field_value not in allowed:
+                valid = False
+                break
+            safe_row[key] = field_value
+        if valid:
+            result.append(safe_row)
+    return result
+
+
 def _safe_qualification_diagnostics(
     error: QualificationStageRejected,
 ) -> dict[str, Any] | None:
@@ -269,6 +326,10 @@ def _safe_qualification_diagnostics(
         )
         if safe_types:
             result["core_rejection_proxy_types"] = safe_types
+
+    vless_shapes = _safe_vless_shape_rows(diagnostics.get("core_rejection_vless_shapes"))
+    if vless_shapes:
+        result["core_rejection_vless_shapes"] = vless_shapes
     return result or None
 
 
