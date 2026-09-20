@@ -65,10 +65,10 @@ SUBSCRIPTION_1_URL
   ├─ ai                 -> 允许
   └─ general/media/...  -> 禁止
 
-SUBSCRIPTION_2+
-  ├─ general
-  ├─ browsing
-  └─ ai
+SUBSCRIPTION_2_URL .. SUBSCRIPTION_5_URL
+  ├─ general            -> 允许
+  ├─ browsing           -> 允许
+  └─ ai                 -> 禁止
 ```
 
 `ingest_order` 只控制确定性的订阅摄入/去重顺序，不表示路由优先级或节点质量。
@@ -178,7 +178,9 @@ CLASH_RELAY_SUBSCRIPTIONS
 {
   "SUBSCRIPTION_1_URL": "https://example.invalid/subscription-1",
   "SUBSCRIPTION_2_URL": "https://example.invalid/subscription-2",
-  "SUBSCRIPTION_4_URL": "https://example.invalid/subscription-4"
+  "SUBSCRIPTION_3_URL": "https://example.invalid/subscription-3",
+  "SUBSCRIPTION_4_URL": "https://example.invalid/subscription-4",
+  "SUBSCRIPTION_5_URL": "https://example.invalid/subscription-5"
 }
 ```
 
