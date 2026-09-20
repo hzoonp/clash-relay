@@ -34,8 +34,45 @@ subscriptions:
     secret_name: SUBSCRIPTION_2_URL
     ingest_order: 200
     on_error: skip
-    # Ordinary sources may participate in every production inventory.
-    allowed_uses: [general, browsing, ai]
+    # Ordinary sources participate in general application and browsing inventories.
+    # AI remains isolated to subscription_1 in the canonical production policy.
+    allowed_uses: [general, browsing]
+    allowed_countries: ['*']
+    default_capabilities: [general]
+    default_cost_level: standard
+
+  - id: subscription_3
+    display_name: 示例订阅源 3
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_3_URL
+    ingest_order: 300
+    on_error: skip
+    allowed_uses: [general, browsing]
+    allowed_countries: ['*']
+    default_capabilities: [general]
+    default_cost_level: standard
+
+  - id: subscription_4
+    display_name: 示例订阅源 4
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_4_URL
+    ingest_order: 400
+    on_error: skip
+    allowed_uses: [general, browsing]
+    allowed_countries: ['*']
+    default_capabilities: [general]
+    default_cost_level: standard
+
+  - id: subscription_5
+    display_name: 示例订阅源 5
+    enabled: true
+    required: false
+    secret_name: SUBSCRIPTION_5_URL
+    ingest_order: 500
+    on_error: skip
+    allowed_uses: [general, browsing]
     allowed_countries: ['*']
     default_capabilities: [general]
     default_cost_level: standard
