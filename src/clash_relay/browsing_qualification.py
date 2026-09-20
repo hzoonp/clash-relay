@@ -6,6 +6,7 @@ import contextlib
 import json
 import math
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -31,6 +32,27 @@ _DEFAULT_REQUIRED_SUCCESSES = 2
 _DEFAULT_WORKERS = 12
 _MIN_STABLE_AUTO_NODES = 3
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
+_RUNTIME_SOURCE = re.compile(r"^\\[[^\\]]+\\]\\s+sub_([0-9]+)/")
+_SAFE_PROXY_TYPES = frozenset(
+    {
+        "ss",
+        "ssr",
+        "vmess",
+        "vless",
+        "trojan",
+        "http",
+        "socks5",
+        "snell",
+        "hysteria",
+        "hysteria2",
+        "tuic",
+        "anytls",
+        "wireguard",
+        "ssh",
+        "mieru",
+        "masque",
+    }
+)
 
 
 def _free_port() -> int:
@@ -185,6 +207,142 @@ def _temporary_probe_config(
     if isinstance(hosts, dict):
         config["hosts"] = dict(hosts)
     return config
+
+
+def _runtime_source_id(proxy: dict[str, Any]) -> str | None:
+    name = proxy.get("name")
+    if not isinstance(name, str):
+        return None
+    match = _RUNTIME_SOURCE.match(name)
+    return f"subscription_{match.group(1)}" if match is not None else None
+
+
+def _runtime_proxy_type(proxy: dict[str, Any]) -> str | None:
+    value = proxy.get("type")
+    return value if isinstance(value, str) and value in _SAFE_PROXY_TYPES else None
+
+
+def _filtered_provider_payloads(
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    source_id: str | None = None,
+    proxy_type: str | None = None,
+) -> dict[str, tuple[dict[str, Any], ...]]:
+    result: dict[str, tuple[dict[str, Any], ...]] = {}
+    for provider_name, payload in provider_payloads.items():
+        kept = tuple(
+            proxy
+            for proxy in payload
+            if (source_id is None or _runtime_source_id(proxy) == source_id)
+            and (proxy_type is None or _runtime_proxy_type(proxy) == proxy_type)
+        )
+        if kept:
+            result[provider_name] = kept
+    return result
+
+
+def _isolated_probe_config_is_accepted(
+    binary: Path,
+    workdir: Path,
+    base_config: dict[str, Any],
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    mixed_port: int,
+    controller_port: int,
+    secret: str,
+) -> bool | None:
+    if not provider_payloads:
+        return None
+    try:
+        isolated = _temporary_probe_config(
+            base_config,
+            provider_payloads,
+            mixed_port=mixed_port,
+            controller_port=controller_port,
+            secret=secret,
+        )
+        path = workdir / "isolation.yaml"
+        path.write_text(dump_yaml(isolated), encoding="utf-8")
+        result = subprocess.run(
+            [str(binary), "-t", "-d", str(workdir), "-f", str(path)],
+            cwd=workdir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            timeout=30,
+            check=False,
+            env={**os.environ, "TZ": "UTC"},
+        )
+    except (OSError, subprocess.TimeoutExpired, ValidationError):
+        return None
+    return result.returncode == 0
+
+
+def _core_rejection_diagnostics(
+    binary: Path,
+    workdir: Path,
+    base_config: dict[str, Any],
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    mixed_port: int,
+    controller_port: int,
+    secret: str,
+) -> dict[str, Any]:
+    source_ids = sorted(
+        {
+            source_id
+            for payload in provider_payloads.values()
+            for proxy in payload
+            if (source_id := _runtime_source_id(proxy)) is not None
+        }
+    )
+    proxy_types = sorted(
+        {
+            proxy_type
+            for payload in provider_payloads.values()
+            for proxy in payload
+            if (proxy_type := _runtime_proxy_type(proxy)) is not None
+        }
+    )
+
+    rejected_sources: list[str] = []
+    for source_id in source_ids:
+        accepted = _isolated_probe_config_is_accepted(
+            binary,
+            workdir,
+            base_config,
+            _filtered_provider_payloads(provider_payloads, source_id=source_id),
+            mixed_port=mixed_port,
+            controller_port=controller_port,
+            secret=secret,
+        )
+        if accepted is False:
+            rejected_sources.append(source_id)
+
+    rejected_types: list[str] = []
+    for proxy_type in proxy_types:
+        accepted = _isolated_probe_config_is_accepted(
+            binary,
+            workdir,
+            base_config,
+            _filtered_provider_payloads(provider_payloads, proxy_type=proxy_type),
+            mixed_port=mixed_port,
+            controller_port=controller_port,
+            secret=secret,
+        )
+        if accepted is False:
+            rejected_types.append(proxy_type)
+
+    if rejected_sources or rejected_types:
+        isolation = "isolated"
+    elif source_ids or proxy_types:
+        isolation = "combined"
+    else:
+        isolation = "unavailable"
+    return {
+        "core_rejection_isolation": isolation,
+        "core_rejection_sources": rejected_sources,
+        "core_rejection_proxy_types": rejected_types,
+    }
 
 
 def _controller_json(
@@ -393,6 +551,18 @@ def probe_browsing_nodes(
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValidationError("failed to execute Mihomo for browsing qualification") from exc
         if test.returncode != 0:
+            if diagnostics is not None:
+                diagnostics.update(
+                    _core_rejection_diagnostics(
+                        binary,
+                        workdir,
+                        config,
+                        provider_payloads,
+                        mixed_port=mixed_port,
+                        controller_port=controller_port,
+                        secret=secret,
+                    )
+                )
             raise ValidationError("Mihomo rejected the browsing qualification configuration")
 
         try:
