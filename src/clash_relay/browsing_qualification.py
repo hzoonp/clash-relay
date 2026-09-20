@@ -32,7 +32,7 @@ _DEFAULT_REQUIRED_SUCCESSES = 2
 _DEFAULT_WORKERS = 12
 _MIN_STABLE_AUTO_NODES = 3
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
-_RUNTIME_SOURCE = re.compile(r"^\\[[^\\]]+\\]\\s+sub_([0-9]+)/")
+_RUNTIME_SOURCE = re.compile(r"^\[[^]]+\]\s+sub_([0-9]+)/")
 _SAFE_PROXY_TYPES = frozenset(
     {
         "ss",
