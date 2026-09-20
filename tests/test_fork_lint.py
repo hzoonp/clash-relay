@@ -23,7 +23,9 @@ def _private_env() -> dict[str, str]:
             {
                 "SUBSCRIPTION_1_URL": "https://secret-one.example/sub",
                 "SUBSCRIPTION_2_URL": "https://secret-two.example/sub",
+                "SUBSCRIPTION_3_URL": "https://secret-three.example/sub",
                 "SUBSCRIPTION_4_URL": "https://secret-four.example/sub",
+                "SUBSCRIPTION_5_URL": "https://secret-five.example/sub",
             }
         )
     }
@@ -39,8 +41,8 @@ def test_canonical_fork_lint_exposes_source_policy_boundaries(repo_root: Path) -
     report = build_fork_lint(project)
 
     assert report["status"] == "passed"
-    assert report["enabled_sources"] == 3
-    assert report["sources_by_use"] == {"general": 2, "browsing": 3, "ai": 1}
+    assert report["enabled_sources"] == 5
+    assert report["sources_by_use"] == {"general": 4, "browsing": 5, "ai": 1}
     assert report["restricted_non_general_sources"] == 1
     assert report["multiplier_capped_sources"] == 1
     assert report["deny_filtered_sources"] == 1
@@ -60,7 +62,9 @@ def test_public_doctor_embeds_lint_and_expected_secret_names_only(repo_root: Pat
         "expected_names": [
             "SUBSCRIPTION_1_URL",
             "SUBSCRIPTION_2_URL",
+            "SUBSCRIPTION_3_URL",
             "SUBSCRIPTION_4_URL",
+            "SUBSCRIPTION_5_URL",
         ],
     }
     assert report["fork_lint"]["dry_run"]["publication_default"] is False
@@ -78,8 +82,10 @@ def test_private_doctor_reports_secret_presence_without_values(repo_root: Path) 
             "SUBSCRIPTION_2_URL",
             "SUBSCRIPTION_4_URL",
         ],
-        "resolved": 3,
+        "resolved": 5,
         "missing": [],
     }
     assert "secret-one.example" not in serialized
     assert "secret-two.example" not in serialized
+    assert "secret-three.example" not in serialized
+    assert "secret-five.example" not in serialized
