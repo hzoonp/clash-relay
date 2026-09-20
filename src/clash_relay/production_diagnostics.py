@@ -8,9 +8,9 @@ behavior.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from enum import StrEnum
-import re
 from typing import Any
 
 from .errors import (
