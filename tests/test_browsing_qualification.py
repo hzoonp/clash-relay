@@ -8,8 +8,11 @@ import pytest
 
 import clash_relay.browsing_qualification as browsing_qualification
 from clash_relay.browsing_qualification import (
+    _filtered_provider_payloads,
     _group_delay_probe,
     _latency_summary,
+    _runtime_proxy_type,
+    _runtime_source_id,
     _qualified_from_group_samples,
     _stability_tiers_from_group_samples,
     apply_browsing_qualification,
@@ -300,3 +303,34 @@ def test_latency_summary_is_aggregate_only() -> None:
         "max": 130.0,
     }
     assert _latency_summary([]) == {"min": None, "p50": None, "p95": None, "max": None}
+
+
+def test_core_rejection_cohort_helpers_use_only_runtime_source_and_safe_type() -> None:
+    proxy = {
+        "name": "[BROWSING:US] sub_3/Private Node #abcdef1234",
+        "type": "vless",
+        "server": "private.example",
+        "uuid": "do-not-leak",
+    }
+    unsafe_type = {
+        "name": "[BROWSING:US] sub_5/Other #1234567890",
+        "type": "private-protocol-token",
+        "server": "secret.example",
+    }
+    payloads = {"cr_browsing_us": (proxy, unsafe_type)}
+
+    assert _runtime_source_id(proxy) == "subscription_3"
+    assert _runtime_proxy_type(proxy) == "vless"
+    assert _runtime_source_id(unsafe_type) == "subscription_5"
+    assert _runtime_proxy_type(unsafe_type) is None
+    assert _filtered_provider_payloads(payloads, source_id="subscription_3") == {
+        "cr_browsing_us": (proxy,)
+    }
+    assert _filtered_provider_payloads(payloads, proxy_type="vless") == {
+        "cr_browsing_us": (proxy,)
+    }
+
+
+def test_core_rejection_source_parser_rejects_noncanonical_names() -> None:
+    assert _runtime_source_id({"name": "private-node.example", "type": "vless"}) is None
+    assert _runtime_source_id({"name": "[BROWSING:US] token/private", "type": "vless"}) is None
