@@ -332,7 +332,12 @@ def test_core_rejection_cohort_helpers_are_safe() -> None:
 
 
 def test_core_rejection_source_parser_rejects_noncanonical_names() -> None:
-    assert _runtime_source_id({"name": "private-node.example", "type": "vless"}) is None
     assert (
-        _runtime_source_id({"name": "[BROWSING:US] token/private", "type": "vless"}) is None
+        _runtime_source_id({"name": "private-node.example", "type": "vless"}) is None
+    )
+    assert (
+        _runtime_source_id(
+            {"name": "[BROWSING:US] token/private", "type": "vless"}
+        )
+        is None
     )
