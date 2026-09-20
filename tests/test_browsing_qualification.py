@@ -305,7 +305,7 @@ def test_latency_summary_is_aggregate_only() -> None:
     assert _latency_summary([]) == {"min": None, "p50": None, "p95": None, "max": None}
 
 
-def test_core_rejection_cohort_helpers_use_only_runtime_source_and_safe_type() -> None:
+def test_core_rejection_cohort_helpers_are_safe() -> None:
     proxy = {
         "name": "[BROWSING:US] sub_3/Private Node #abcdef1234",
         "type": "vless",
@@ -333,4 +333,6 @@ def test_core_rejection_cohort_helpers_use_only_runtime_source_and_safe_type() -
 
 def test_core_rejection_source_parser_rejects_noncanonical_names() -> None:
     assert _runtime_source_id({"name": "private-node.example", "type": "vless"}) is None
-    assert _runtime_source_id({"name": "[BROWSING:US] token/private", "type": "vless"}) is None
+    assert (
+        _runtime_source_id({"name": "[BROWSING:US] token/private", "type": "vless"}) is None
+    )
