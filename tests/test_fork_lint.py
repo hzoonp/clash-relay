@@ -80,7 +80,9 @@ def test_private_doctor_reports_secret_presence_without_values(repo_root: Path) 
         "expected_names": [
             "SUBSCRIPTION_1_URL",
             "SUBSCRIPTION_2_URL",
+            "SUBSCRIPTION_3_URL",
             "SUBSCRIPTION_4_URL",
+            "SUBSCRIPTION_5_URL",
         ],
         "resolved": 5,
         "missing": [],
