@@ -135,6 +135,56 @@ def test_qualification_failure_includes_safe_source_admission_only() -> None:
     assert "private payload detail" not in serialized
 
 
+def test_qualification_core_rejection_diagnostics_are_allowlisted() -> None:
+    rejection = QualificationStageRejected(
+        stage="browsing",
+        category=QualificationFailureCategory.CORE_REJECTION,
+        retryable=False,
+        diagnostics={
+            "core_rejection_isolation": "isolated",
+            "core_rejection_sources": [
+                "subscription_5",
+                "subscription_3",
+                "https://private.example/token",
+            ],
+            "core_rejection_proxy_types": ["vless", "tuic", "private-protocol-token"],
+            "server": "private-node.example",
+            "token": "do-not-leak",
+        },
+    )
+
+    result = safe_failure_diagnostic(rejection)
+
+    assert result["qualification_diagnostics"] == {
+        "core_rejection_isolation": "isolated",
+        "core_rejection_sources": ["subscription_3", "subscription_5"],
+        "core_rejection_proxy_types": ["tuic", "vless"],
+    }
+    serialized = repr(result)
+    assert "private.example" not in serialized
+    assert "private-node.example" not in serialized
+    assert "private-protocol-token" not in serialized
+    assert "do-not-leak" not in serialized
+
+
+def test_qualification_core_rejection_drops_unknown_diagnostics() -> None:
+    rejection = QualificationStageRejected(
+        stage="browsing",
+        category=QualificationFailureCategory.CORE_REJECTION,
+        retryable=False,
+        diagnostics={
+            "core_rejection_isolation": "private-token",
+            "core_rejection_sources": ["private-source"],
+            "core_rejection_proxy_types": ["private-type"],
+        },
+    )
+
+    result = safe_failure_diagnostic(rejection)
+
+    assert "qualification_diagnostics" not in result
+    assert "private" not in repr(result)
+
+
 def test_unknown_qualification_stage_is_not_reflected_verbatim() -> None:
     rejection = QualificationStageRejected(
         stage="private-node-name.example",
