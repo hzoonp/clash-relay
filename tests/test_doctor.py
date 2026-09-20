@@ -25,7 +25,9 @@ def _private_env() -> dict[str, str]:
             {
                 "SUBSCRIPTION_1_URL": "https://secret-one.example/sub",
                 "SUBSCRIPTION_2_URL": "https://secret-two.example/sub",
+                "SUBSCRIPTION_3_URL": "https://secret-three.example/sub",
                 "SUBSCRIPTION_4_URL": "https://secret-four.example/sub",
+                "SUBSCRIPTION_5_URL": "https://secret-five.example/sub",
             }
         )
     }
@@ -35,7 +37,7 @@ def test_public_only_doctor_validates_tracked_contract(repo_root: Path) -> None:
     report = run_doctor(**_paths(repo_root), public_only=True, env={})
 
     assert report["status"] == "passed"
-    assert report["public"]["enabled_subscriptions"] == 3
+    assert report["public"]["enabled_subscriptions"] == 5
     assert report["public"]["stable_mihomo_cores"] >= 1
     assert report["public"]["scheduler_policy_declared"] is True
     assert report["public"]["policy_model_version"] == 2
@@ -49,12 +51,14 @@ def test_private_readiness_never_serializes_subscription_urls(repo_root: Path) -
     report = run_doctor(**_paths(repo_root), env=environment)
     serialized = json.dumps(report, sort_keys=True)
 
-    assert report["subscriptions"] == {"status": "ready", "enabled": 3, "resolved": 3}
+    assert report["subscriptions"] == {"status": "ready", "enabled": 5, "resolved": 5}
     assert report["cloudflare"]["status"] == "skipped"
     for secret in (
         "secret-one.example",
         "secret-two.example",
+        "secret-three.example",
         "secret-four.example",
+        "secret-five.example",
     ):
         assert secret not in serialized
 
@@ -87,8 +91,8 @@ def test_subscription_connectivity_reports_counts_only(
     )
     serialized = json.dumps(report, sort_keys=True)
 
-    assert len(calls) == 3
-    assert report["subscriptions"]["reachable"] == 3
+    assert len(calls) == 5
+    assert report["subscriptions"]["reachable"] == 5
     assert "PRIVATE SUBSCRIPTION PAYLOAD" not in serialized
     assert "secret-one.example" not in serialized
 

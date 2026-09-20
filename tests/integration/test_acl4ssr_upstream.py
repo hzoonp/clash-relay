@@ -182,7 +182,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         yaml.safe_dump(
             {
                 f"SUBSCRIPTION_{index}_URL": f"https://fixture.invalid/subscription-{index}"
-                for index in range(1, 5)
+                for index in range(1, 6)
             },
             allow_unicode=True,
             sort_keys=True,

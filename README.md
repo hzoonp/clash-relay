@@ -65,10 +65,10 @@ SUBSCRIPTION_1_URL
   ├─ ai                 -> allowed
   └─ general/media/...  -> denied
 
-SUBSCRIPTION_2+
-  ├─ general
-  ├─ browsing
-  └─ ai
+SUBSCRIPTION_2_URL .. SUBSCRIPTION_5_URL
+  ├─ general            -> allowed
+  ├─ browsing           -> allowed
+  └─ ai                 -> denied
 ```
 
 `ingest_order` controls deterministic source ingestion/deduplication order only; it is not a routing or node-quality priority.
@@ -178,7 +178,9 @@ Example shape:
 {
   "SUBSCRIPTION_1_URL": "https://example.invalid/subscription-1",
   "SUBSCRIPTION_2_URL": "https://example.invalid/subscription-2",
-  "SUBSCRIPTION_4_URL": "https://example.invalid/subscription-4"
+  "SUBSCRIPTION_3_URL": "https://example.invalid/subscription-3",
+  "SUBSCRIPTION_4_URL": "https://example.invalid/subscription-4",
+  "SUBSCRIPTION_5_URL": "https://example.invalid/subscription-5"
 }
 ```
 
