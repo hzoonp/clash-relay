@@ -273,13 +273,17 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
         None,
     )
     if isinstance(qualification, QualificationStageRejected):
-        return {
+        qualification_diagnostic: dict[str, Any] = {
             "status": "failed",
             "category": _qualification_category(qualification).value,
             "qualification_stage": _safe_qualification_stage(qualification.stage),
             "qualification_failure_category": qualification.category.value,
             "retryable": qualification.retryable,
         }
+        source_admission = _safe_source_admission_report(error)
+        if source_admission is not None:
+            qualification_diagnostic["source_admission"] = source_admission
+        return qualification_diagnostic
 
     commit_unknown = next(
         (item for item in chain if isinstance(item, CommitUnknownError)),

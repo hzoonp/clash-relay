@@ -613,10 +613,9 @@ class ProductionPipeline:
                 "warnings": sorted(self.warnings),
             }
         except Exception as exc:
-            if getattr(exc, "validation_stage", None) == "promotion_guard":
-                source_admission = self._safe_source_admission_summary()
-                if source_admission is not None:
-                    exc.source_admission_report = source_admission  # type: ignore[attr-defined]
+            source_admission = self._safe_source_admission_summary()
+            if source_admission is not None:
+                exc.source_admission_report = source_admission  # type: ignore[attr-defined]
             if project is not None:
                 category = qualification_failure_category(exc)
                 guard_checked, guard_blocked = self._promotion_slo_state()
