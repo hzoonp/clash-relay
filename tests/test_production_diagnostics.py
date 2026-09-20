@@ -61,6 +61,80 @@ def test_qualification_failure_uses_typed_stage_and_category_only() -> None:
     assert "do-not-leak" not in repr(result)
 
 
+def test_qualification_failure_includes_safe_source_admission_only() -> None:
+    rejection = QualificationStageRejected(
+        stage="browsing",
+        category=QualificationFailureCategory.CORE_REJECTION,
+        retryable=False,
+        diagnostics={"server": "private-node.example", "token": "do-not-leak"},
+    )
+    wrapped = ValidationError("aggregate wrapper")
+    wrapped.__cause__ = rejection
+    wrapped.source_admission_report = {  # type: ignore[attr-defined]
+        "successful_subscriptions": 5,
+        "parsed_nodes": 321,
+        "usable_nodes": 300,
+        "name_filtered_nodes": 4,
+        "multiplier_filtered_nodes": 17,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 42,
+                "skipped_invalid_nodes": 0,
+                "filtered_by_name": 4,
+                "filtered_over_multiplier": 17,
+                "max_node_multiplier": 2.0,
+                "error": "https://private.example/token",
+            },
+            {
+                "id": "subscription_3",
+                "status": "failed",
+                "failure_category": "subscription_parse",
+                "failure_reason": "empty_subscription",
+                "empty_payload_shape": "yaml_empty_proxies",
+                "error": "private payload detail",
+            },
+        ],
+        "secret": "do-not-leak",
+    }
+
+    result = safe_failure_diagnostic(wrapped)
+
+    assert result["category"] == "browsing_qualification"
+    assert result["qualification_failure_category"] == "core_rejection"
+    assert result["source_admission"] == {
+        "successful_subscriptions": 5,
+        "parsed_nodes": 321,
+        "usable_nodes": 300,
+        "name_filtered_nodes": 4,
+        "multiplier_filtered_nodes": 17,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 42,
+                "skipped_invalid_nodes": 0,
+                "filtered_by_name": 4,
+                "filtered_over_multiplier": 17,
+                "max_node_multiplier": 2.0,
+            },
+            {
+                "id": "subscription_3",
+                "status": "failed",
+                "failure_category": "subscription_parse",
+                "failure_reason": "empty_subscription",
+                "empty_payload_shape": "yaml_empty_proxies",
+            },
+        ],
+    }
+    serialized = repr(result)
+    assert "private-node.example" not in serialized
+    assert "private.example" not in serialized
+    assert "do-not-leak" not in serialized
+    assert "private payload detail" not in serialized
+
+
 def test_unknown_qualification_stage_is_not_reflected_verbatim() -> None:
     rejection = QualificationStageRejected(
         stage="private-node-name.example",
