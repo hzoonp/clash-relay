@@ -324,10 +324,10 @@ def test_core_rejection_cohort_helpers_are_safe() -> None:
     assert _runtime_source_id(unsafe_type) == "subscription_5"
     assert _runtime_proxy_type(unsafe_type) is None
     assert _filtered_provider_payloads(payloads, source_id="subscription_3") == {
-        "cr_browsing_us": (proxy,)
+        "cr_browsing_us": (proxy,),
     }
     assert _filtered_provider_payloads(payloads, proxy_type="vless") == {
-        "cr_browsing_us": (proxy,)
+        "cr_browsing_us": (proxy,),
     }
 
 
