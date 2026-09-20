@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
+import re
 from typing import Any
 
 from .errors import (
@@ -42,6 +43,29 @@ class ProductionFailureCategory(StrEnum):
     IO_FAILURE = "io_failure"
     UNKNOWN = "unknown"
 
+
+_SAFE_RUNTIME_SOURCE_ID = re.compile(r"^subscription_[0-9]+$")
+_SAFE_CORE_REJECTION_ISOLATIONS = frozenset({"isolated", "combined", "unavailable"})
+_SAFE_PROXY_TYPES = frozenset(
+    {
+        "ss",
+        "ssr",
+        "vmess",
+        "vless",
+        "trojan",
+        "http",
+        "socks5",
+        "snell",
+        "hysteria",
+        "hysteria2",
+        "tuic",
+        "anytls",
+        "wireguard",
+        "ssh",
+        "mieru",
+        "masque",
+    }
+)
 
 _SAFE_QUALIFICATION_STAGES = frozenset(
     {
@@ -211,6 +235,43 @@ def _ai_service_rewrite_substage(chain: tuple[BaseException, ...]) -> str | None
     return None
 
 
+def _safe_qualification_diagnostics(
+    error: QualificationStageRejected,
+) -> dict[str, Any] | None:
+    diagnostics = error.diagnostics
+    if not isinstance(diagnostics, Mapping):
+        return None
+    result: dict[str, Any] = {}
+    isolation = diagnostics.get("core_rejection_isolation")
+    if isolation in _SAFE_CORE_REJECTION_ISOLATIONS:
+        result["core_rejection_isolation"] = isolation
+
+    sources = diagnostics.get("core_rejection_sources")
+    if isinstance(sources, list):
+        safe_sources = sorted(
+            {
+                value
+                for value in sources
+                if isinstance(value, str) and _SAFE_RUNTIME_SOURCE_ID.fullmatch(value)
+            }
+        )
+        if safe_sources:
+            result["core_rejection_sources"] = safe_sources
+
+    proxy_types = diagnostics.get("core_rejection_proxy_types")
+    if isinstance(proxy_types, list):
+        safe_types = sorted(
+            {
+                value
+                for value in proxy_types
+                if isinstance(value, str) and value in _SAFE_PROXY_TYPES
+            }
+        )
+        if safe_types:
+            result["core_rejection_proxy_types"] = safe_types
+    return result or None
+
+
 def _safe_promotion_guard_report(error: BaseException) -> dict[str, Any] | None:
     report = getattr(error, "promotion_guard_report", None)
     if not isinstance(report, Mapping):
@@ -280,6 +341,9 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
             "qualification_failure_category": qualification.category.value,
             "retryable": qualification.retryable,
         }
+        qualification_details = _safe_qualification_diagnostics(qualification)
+        if qualification_details is not None:
+            qualification_diagnostic["qualification_diagnostics"] = qualification_details
         source_admission = _safe_source_admission_report(error)
         if source_admission is not None:
             qualification_diagnostic["source_admission"] = source_admission
