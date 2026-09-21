@@ -21,7 +21,7 @@ from typing import Any
 
 from .errors import ValidationError
 from .policy_document import load_policy_document
-from .util import atomic_write, dump_yaml, load_yaml_file
+from .util import atomic_write, dump_yaml, load_yaml_file, stable_json
 from .validator import validate_generated_config
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
@@ -345,6 +345,102 @@ def _core_rejection_diagnostics(
     }
 
 
+def _proxy_identity(proxy: dict[str, Any]) -> str:
+    return stable_json({key: value for key, value in proxy.items() if key != "name"})
+
+
+def _core_rejection_candidate_proxies(
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    rejected_sources: set[str],
+    rejected_types: set[str],
+) -> tuple[tuple[str, dict[str, Any]], ...]:
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for provider_name, payload in provider_payloads.items():
+        for proxy in payload:
+            source_id = _runtime_source_id(proxy)
+            proxy_type = _runtime_proxy_type(proxy)
+            if rejected_sources and source_id not in rejected_sources:
+                continue
+            if rejected_types and proxy_type not in rejected_types:
+                continue
+            candidates.append((provider_name, proxy))
+    return tuple(candidates)
+
+
+def _individually_rejected_proxy_identities(
+    binary: Path,
+    workdir: Path,
+    base_config: dict[str, Any],
+    provider_payloads: dict[str, tuple[dict[str, Any], ...]],
+    *,
+    rejected_sources: set[str],
+    rejected_types: set[str],
+    mixed_port: int,
+    controller_port: int,
+    secret: str,
+) -> set[str]:
+    rejected: set[str] = set()
+    for provider_name, proxy in _core_rejection_candidate_proxies(
+        provider_payloads,
+        rejected_sources=rejected_sources,
+        rejected_types=rejected_types,
+    ):
+        accepted = _isolated_probe_config_is_accepted(
+            binary,
+            workdir,
+            base_config,
+            {provider_name: (proxy,)},
+            mixed_port=mixed_port,
+            controller_port=controller_port,
+            secret=secret,
+        )
+        if accepted is False:
+            rejected.add(_proxy_identity(proxy))
+    return rejected
+
+
+def _prune_rejected_proxy_identities(
+    config: dict[str, Any],
+    rejected_identities: set[str],
+) -> int:
+    providers = config.get("proxy-providers")
+    if not isinstance(providers, dict):
+        raise ValidationError("candidate proxy-providers must be a mapping")
+
+    removed = 0
+    replacements: dict[str, list[dict[str, Any]]] = {}
+    for provider_name, provider in providers.items():
+        if not isinstance(provider, dict):
+            continue
+        payload = provider.get("payload")
+        if not isinstance(payload, list):
+            continue
+        kept = [
+            proxy
+            for proxy in payload
+            if not (
+                isinstance(proxy, dict)
+                and _proxy_identity(proxy) in rejected_identities
+            )
+        ]
+        removed += len(payload) - len(kept)
+        if payload and not kept:
+            raise ValidationError(
+                "core compatibility quarantine would empty a proxy provider"
+            )
+        replacements[str(provider_name)] = kept
+
+    if removed == 0:
+        return 0
+    for provider_name, kept in replacements.items():
+        provider = providers.get(provider_name)
+        if isinstance(provider, dict):
+            provider["payload"] = kept
+    validate_generated_config(config)
+    return removed
+
+
 def _controller_json(
     controller_port: int,
     secret: str,
@@ -550,20 +646,82 @@ def probe_browsing_nodes(
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValidationError("failed to execute Mihomo for browsing qualification") from exc
+        core_quarantine: dict[str, Any] = {}
         if test.returncode != 0:
-            if diagnostics is not None:
-                diagnostics.update(
-                    _core_rejection_diagnostics(
-                        binary,
-                        workdir,
-                        config,
-                        provider_payloads,
-                        mixed_port=mixed_port,
-                        controller_port=controller_port,
-                        secret=secret,
-                    )
+            rejection = _core_rejection_diagnostics(
+                binary,
+                workdir,
+                config,
+                provider_payloads,
+                mixed_port=mixed_port,
+                controller_port=controller_port,
+                secret=secret,
+            )
+            rejected_sources = set(rejection["core_rejection_sources"])
+            rejected_types = set(rejection["core_rejection_proxy_types"])
+            rejected_identities = _individually_rejected_proxy_identities(
+                binary,
+                workdir,
+                config,
+                provider_payloads,
+                rejected_sources=rejected_sources,
+                rejected_types=rejected_types,
+                mixed_port=mixed_port,
+                controller_port=controller_port,
+                secret=secret,
+            )
+            if rejected_identities:
+                original = config_path.read_text(encoding="utf-8")
+                removed_entries = _prune_rejected_proxy_identities(
+                    config,
+                    rejected_identities,
                 )
-            raise ValidationError("Mihomo rejected the browsing qualification configuration")
+                atomic_write(config_path, _comment_header(original) + dump_yaml(config))
+                provider_payloads = _browsing_provider_payloads(config)
+                node_names = tuple(
+                    str(proxy["name"])
+                    for payload in provider_payloads.values()
+                    for proxy in payload
+                )
+                temporary = _temporary_probe_config(
+                    config,
+                    provider_payloads,
+                    mixed_port=mixed_port,
+                    controller_port=controller_port,
+                    secret=secret,
+                )
+                probe_path.write_text(dump_yaml(temporary), encoding="utf-8")
+                try:
+                    test = subprocess.run(
+                        [str(binary), "-t", "-d", str(workdir), "-f", str(probe_path)],
+                        cwd=workdir,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.STDOUT,
+                        timeout=30,
+                        check=False,
+                        env={**os.environ, "TZ": "UTC"},
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise ValidationError(
+                        "failed to execute Mihomo after core compatibility quarantine"
+                    ) from exc
+                if test.returncode == 0:
+                    core_quarantine = {
+                        "core_quarantine_status": "recovered",
+                        "core_quarantined_nodes": len(rejected_identities),
+                        "core_quarantined_runtime_entries": removed_entries,
+                        "core_quarantined_sources": sorted(rejected_sources),
+                        "core_quarantined_proxy_types": sorted(rejected_types),
+                    }
+            if test.returncode != 0:
+                if diagnostics is not None:
+                    diagnostics.update(rejection)
+                    diagnostics["core_quarantine_status"] = (
+                        "not_individually_isolatable"
+                        if not rejected_identities
+                        else "rejected_after_quarantine"
+                    )
+                raise ValidationError("Mihomo rejected the browsing qualification configuration")
 
         try:
             process = subprocess.Popen(
@@ -629,6 +787,7 @@ def probe_browsing_nodes(
         "failed_samples": failed_samples,
         "qualified_latency_ms": _latency_summary(qualified_medians),
         "outcomes": dict(sorted(outcomes.items())),
+        **core_quarantine,
     }
     if diagnostics is not None:
         diagnostics.clear()
