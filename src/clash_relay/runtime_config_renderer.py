@@ -28,6 +28,17 @@ class RuntimeConfigRenderer:
             "profile": profile,
         }
 
+        tun = runtime.get("tun")
+        if tun is not None and str(tun.get("mode", "managed")) != "client":
+            output["tun"] = {
+                "enable": tun["enabled"],
+                "stack": tun["stack"],
+                "dns-hijack": list(tun["dns_hijack"]),
+                "auto-route": tun["auto_route"],
+                "auto-detect-interface": tun["auto_detect_interface"],
+                "strict-route": tun["strict_route"],
+            }
+
         sniffer = runtime.get("sniffer")
         if sniffer is not None:
             sniff = sniffer["sniff"]
@@ -64,6 +75,12 @@ class RuntimeConfigRenderer:
             rendered_dns["default-nameserver"] = list(dns["default_nameservers"])
         if "proxy_server_nameservers" in dns:
             rendered_dns["proxy-server-nameserver"] = list(dns["proxy_server_nameservers"])
+        if "direct_nameservers" in dns:
+            rendered_dns["direct-nameserver"] = list(dns["direct_nameservers"])
+        if "direct_nameserver_follow_policy" in dns:
+            rendered_dns["direct-nameserver-follow-policy"] = dns[
+                "direct_nameserver_follow_policy"
+            ]
         if "fake_ip_range" in dns:
             rendered_dns["fake-ip-range"] = dns["fake_ip_range"]
         if "fake_ip_filter_mode" in dns:
