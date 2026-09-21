@@ -201,6 +201,8 @@ jobs:
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
           python -m pip install --no-build-isolation --no-deps --editable .
       - name: Download and verify official Mihomo asset
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python scripts/download_mihomo.py \
             --channel stable \
