@@ -87,13 +87,9 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         if not values:
             raise ValidationError(f"DNS leak audit requires non-empty {field}")
         require_ip_host = field == "default-nameserver"
-        if not all(
-            _encrypted_resolver(item, require_ip_host=require_ip_host) for item in values
-        ):
+        if not all(_encrypted_resolver(item, require_ip_host=require_ip_host) for item in values):
             suffix = " with IP-literal hosts" if require_ip_host else ""
-            raise ValidationError(
-                f"DNS leak audit requires encrypted {field} endpoints{suffix}"
-            )
+            raise ValidationError(f"DNS leak audit requires encrypted {field} endpoints{suffix}")
 
     hijack = tun.get("dns-hijack")
     if not isinstance(hijack, list):
