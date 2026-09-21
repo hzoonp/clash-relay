@@ -6,6 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from .dns_policy import apply_dns_routing_policy
 from .errors import GenerationError
 from .models import Node
 from .rule_compiler import RuleCompiler
@@ -415,6 +416,11 @@ def generate_config(
     output["proxy-providers"] = providers
     if rule_compilation.rule_providers:
         output["rule-providers"] = rule_compilation.rule_providers
+    dns_policy_report = apply_dns_routing_policy(
+        output,
+        config=config,
+        external_rules=external_rules,
+    )
     output["proxy-groups"] = groups
     output["rules"] = rule_compilation.rules
     report = {
@@ -424,6 +430,7 @@ def generate_config(
         "proxy_groups": len(groups),
         "public_groups": [group["name"] for group in groups if not group.get("hidden", False)],
         "routing_rules": len(rule_compilation.rules),
+        "dns_routing_policy": dns_policy_report,
         "pools": pool_report,
     }
     return output, report
