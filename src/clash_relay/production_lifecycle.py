@@ -423,9 +423,7 @@ class ProductionPipeline:
                     "parsed_valid_nodes": int(before.get("parsed_valid_nodes", 0) or 0),
                     "skipped_invalid_nodes": int(before.get("skipped_invalid_nodes", 0) or 0),
                     "filtered_by_name": int(before.get("filtered_by_name", 0) or 0),
-                    "filtered_over_multiplier": int(
-                        before.get("filtered_over_multiplier", 0) or 0
-                    ),
+                    "filtered_over_multiplier": int(before.get("filtered_over_multiplier", 0) or 0),
                     "post_filter_nodes": int(before.get("post_multiplier_filter_nodes", 0) or 0),
                     "post_dedup_nodes": int(before.get("post_dedup_nodes", 0) or 0),
                     "generated_runtime_nodes": generated_runtime,
