@@ -451,8 +451,7 @@ def render_source_stage_delta_markdown(
         final_runtime = int(post.get("runtime_nodes", 0) or 0)
         removed = max(0, generated_runtime - final_runtime)
         lines.append(
-            f"| `{source_id}` | {post_dedup} | {generated_runtime} | "
-            f"{final_runtime} | {removed} |"
+            f"| `{source_id}` | {post_dedup} | {generated_runtime} | {final_runtime} | {removed} |"
         )
     lines.extend(
         [
