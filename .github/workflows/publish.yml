@@ -78,7 +78,7 @@ jobs:
       - name: Run production pipeline
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
-          CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}
+          CLASH_RELAY_MANUAL_PUBLISH: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish Cloudflare KV once')) }}
           CLASH_RELAY_SCHEDULE_PUBLISH: ${{ github.event_name == 'schedule' && (vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true' || (github.repository == 'hzoonp/clash-relay' && vars.CLASH_RELAY_SCHEDULE_PUBLISH == '')) }}
           CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
           GITHUB_TOKEN: ${{ github.token }}
