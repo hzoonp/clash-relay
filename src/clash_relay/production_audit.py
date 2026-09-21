@@ -423,7 +423,6 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-
 def render_source_stage_delta_markdown(
     pre_audit: dict[str, Any],
     post_audit: dict[str, Any],
