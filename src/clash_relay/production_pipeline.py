@@ -142,6 +142,7 @@ def render_qualification_summary_markdown(
         f"Historically demoted stable nodes: **{int(history.get('historically_demoted_nodes', 0) or 0)}**  ",
         f"Scheduler history: **{history.get('status', 'disabled')}** ({int(history.get('records_before', 0) or 0)} → {int(history.get('records_after', 0) or 0)} anonymous records)  ",
         f"Rejected nodes: **{int(browsing_diagnostics.get('failed_nodes', 0) or 0)}**  ",
+        f"Core-incompatible nodes quarantined: **{int(browsing_diagnostics.get('core_quarantined_nodes', 0) or 0)}**  ",
         f"Qualification threshold: **{int(browsing_diagnostics.get('required_successes', 0) or 0)}/{int(browsing_diagnostics.get('attempts_per_node', 0) or 0)} successful HTTPS probes**",
         "",
         "| Qualified latency | ms |",

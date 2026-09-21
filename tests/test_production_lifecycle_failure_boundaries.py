@@ -7,9 +7,13 @@ from typing import Any
 import pytest
 
 import clash_relay.production_lifecycle as lifecycle
-from clash_relay.errors import ValidationError
+from clash_relay.errors import CandidateValidationStageError, ValidationError
 from clash_relay.operational_slo import ProductionOutcome
-from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
+from clash_relay.production_lifecycle import (
+    ProductionLifecyclePaths,
+    ProductionPipeline,
+    _tag_validation_stage,
+)
 from clash_relay.qualification_reliability import (
     QualificationFailureCategory,
     QualificationStageRejected,
@@ -121,3 +125,18 @@ def test_typed_qualification_failure_records_rejected_outcome_and_retry_evidence
     assert recorded["failure_category"] == QualificationFailureCategory.TRANSIENT.value
     assert recorded["failure_retry_attempted"] is True
     assert not pipeline.paths.private_dir.exists()
+
+
+def test_validation_stage_tagging_is_static_and_preserves_existing_stage() -> None:
+    error = ValidationError("private detail")
+    _tag_validation_stage(error, "mihomo_download")
+    assert error.validation_stage == "mihomo_download"  # type: ignore[attr-defined]
+
+    pretagged = ValidationError("private detail")
+    pretagged.validation_stage = "promotion_guard"  # type: ignore[attr-defined]
+    _tag_validation_stage(pretagged, "publication_validation")
+    assert pretagged.validation_stage == "promotion_guard"  # type: ignore[attr-defined]
+
+    typed = CandidateValidationStageError("production_post_audit")
+    _tag_validation_stage(typed, "qualification_pipeline")
+    assert typed.stage == "production_post_audit"

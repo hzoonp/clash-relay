@@ -133,6 +133,10 @@ _SAFE_CANDIDATE_VALIDATION_STAGES = frozenset(
         "production_pre_audit",
         "qualification_pipeline",
         "production_post_audit",
+        "generation_validation",
+        "derived_state_load",
+        "mihomo_download",
+        "publication_validation",
         "ai_setup",
         "ai_cache_fingerprints",
         "ai_service_probe",
@@ -374,9 +378,9 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
                 report = _safe_promotion_guard_report(item)
                 if report is not None:
                     diagnostic["promotion_guard"] = report
-                source_admission = _safe_source_admission_report(item)
-                if source_admission is not None:
-                    diagnostic["source_admission"] = source_admission
+            source_admission = _safe_source_admission_report(item)
+            if source_admission is not None:
+                diagnostic["source_admission"] = source_admission
             return diagnostic
 
     category = ProductionFailureCategory.UNKNOWN

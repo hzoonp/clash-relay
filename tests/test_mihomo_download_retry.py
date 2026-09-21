@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 from pathlib import Path
@@ -164,3 +165,44 @@ def test_digest_mismatch_fails_once_without_retrying_download(tmp_path: Path, mo
 
     assert downloads == 1
     assert not output.exists()
+
+
+def test_github_token_authenticates_release_metadata_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, str | None] = {}
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        seen["authorization"] = request.get_header("Authorization")
+        assert timeout == 60
+        return Response(b'{"prerelease": false, "assets": []}')
+
+    monkeypatch.setenv("GITHUB_TOKEN", "fixture-token")
+    monkeypatch.setattr(mihomo_download.urllib.request, "urlopen", fake_urlopen)
+
+    result = mihomo_download._request_json(
+        "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/v1.19.30"
+    )
+
+    assert result == {"prerelease": False, "assets": []}
+    assert seen["authorization"] == "Bearer fixture-token"
+
+
+def test_rate_limited_http_403_is_retryable() -> None:
+    headers = {"X-RateLimit-Remaining": "0"}
+    error = urllib.error.HTTPError(
+        "https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/v1.19.30",
+        403,
+        "rate limited",
+        headers,
+        None,
+    )
+
+    assert mihomo_download._is_retryable_network_error(error) is True

@@ -28,14 +28,15 @@ _T = TypeVar("_T")
 
 
 def _request_json(url: str) -> Any:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "clash-relay-mihomo-downloader/0.1",
-            "X-GitHub-Api-Version": _API_VERSION,
-        },
-    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "clash-relay-mihomo-downloader/0.1",
+        "X-GitHub-Api-Version": _API_VERSION,
+    }
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=60) as response:
         return json.load(response)
 
@@ -64,7 +65,14 @@ def _download(url: str, maximum: int = 128 * 1024 * 1024) -> bytes:
 
 def _is_retryable_network_error(exc: OSError | urllib.error.URLError) -> bool:
     if isinstance(exc, urllib.error.HTTPError):
-        return exc.code in _RETRYABLE_HTTP_STATUS
+        if exc.code in _RETRYABLE_HTTP_STATUS:
+            return True
+        if exc.code == 403 and exc.headers is not None:
+            return (
+                exc.headers.get("Retry-After") is not None
+                or exc.headers.get("X-RateLimit-Remaining") == "0"
+            )
+        return False
     return True
 
 
