@@ -79,7 +79,6 @@ jobs:
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
           CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}
-          CLASH_RELAY_ONE_SHOT_PUBLISH: "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: publish Cloudflare KV once') }}"
           CLASH_RELAY_SCHEDULE_PUBLISH: ${{ github.event_name == 'schedule' && (vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true' || (github.repository == 'hzoonp/clash-relay' && vars.CLASH_RELAY_SCHEDULE_PUBLISH == '')) }}
           CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -88,11 +87,6 @@ jobs:
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
           CLASH_RELAY_PRODUCTION_PREFLIGHT: ${{ github.event_name == 'push' }}
         run: |
-          if [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" = "true" ]; then
-            export CLASH_RELAY_MANUAL_PUBLISH=true
-          fi
           args=()
-          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ] && [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" != "true" ]; then
-            args+=(--production-preflight)
-          fi
+          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then args+=(--production-preflight); fi
           python scripts/run_production_release.py "${args[@]}"
