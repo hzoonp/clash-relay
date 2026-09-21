@@ -391,6 +391,45 @@ def test_promotion_guard_ignores_malformed_source_admission_diagnostic() -> None
     assert "source_admission" not in result
 
 
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "generation_validation",
+        "derived_state_load",
+        "mihomo_download",
+        "publication_validation",
+    ],
+)
+def test_early_validation_stages_are_exposed_without_private_text(stage: str) -> None:
+    error = ValidationError("private-node.example token=secret")
+    error.validation_stage = stage  # type: ignore[attr-defined]
+    error.source_admission_report = {  # type: ignore[attr-defined]
+        "successful_subscriptions": 1,
+        "parsed_nodes": 10,
+        "usable_nodes": 9,
+        "name_filtered_nodes": 0,
+        "multiplier_filtered_nodes": 1,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "status": "ok",
+                "nodes": 10,
+                "filtered_over_multiplier": 1,
+                "error": "private.example",
+            }
+        ],
+    }
+
+    result = safe_failure_diagnostic(error)
+
+    assert result["validation_stage"] == stage
+    assert result["source_admission"]["usable_nodes"] == 9
+    serialized = repr(result)
+    assert "private-node.example" not in serialized
+    assert "private.example" not in serialized
+    assert "secret" not in serialized
+
+
 def test_unknown_candidate_validation_stage_is_not_reflected_verbatim() -> None:
     error = CandidateValidationStageError("private-node-name.example")
 
