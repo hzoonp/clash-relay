@@ -423,9 +423,7 @@ def _prune_rejected_proxy_identities(
         ]
         removed += len(payload) - len(kept)
         if payload and not kept:
-            raise ValidationError(
-                "core compatibility quarantine would empty a proxy provider"
-            )
+            raise ValidationError("core compatibility quarantine would empty a proxy provider")
         replacements[str(provider_name)] = kept
 
     if removed == 0:
