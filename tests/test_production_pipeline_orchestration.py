@@ -111,6 +111,11 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     )
     monkeypatch.setattr(
         pipeline,
+        "render_source_stage_delta_markdown",
+        lambda _pre, _post: "SOURCE ACCOUNTING\n",
+    )
+    monkeypatch.setattr(
+        pipeline,
         "render_qualification_summary_markdown",
         lambda _browsing, _ai: "QUALIFICATION\n",
     )
@@ -134,7 +139,10 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     assert json.loads(outputs.pre_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.post_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
-    assert outputs.summary_markdown.read_text(encoding="utf-8") == "PRODUCTION\n\nQUALIFICATION\n"
+    assert (
+        outputs.summary_markdown.read_text(encoding="utf-8")
+        == "PRODUCTION\n\nSOURCE ACCOUNTING\n\nQUALIFICATION\n"
+    )
 
 
 @pytest.mark.parametrize(
