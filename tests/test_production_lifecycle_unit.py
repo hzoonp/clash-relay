@@ -175,6 +175,52 @@ def test_safe_source_admission_summary_is_aggregate_and_fail_closed(tmp_path: Pa
     }
 
 
+def test_source_stage_accounting_is_safe_and_qualification_aware(tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    pipeline.paths.private_dir.mkdir(parents=True)
+
+    pipeline._write_json(
+        pipeline._private("production-audit.json"),
+        {
+            "subscriptions": [
+                {
+                    "id": "subscription_4",
+                    "input_nodes": 12,
+                    "parsed_valid_nodes": 11,
+                    "skipped_invalid_nodes": 1,
+                    "filtered_by_name": 2,
+                    "filtered_over_multiplier": 1,
+                    "post_multiplier_filter_nodes": 8,
+                    "post_dedup_nodes": 7,
+                    "runtime_nodes": 6,
+                    "server": "private.example",
+                }
+            ]
+        },
+    )
+    pipeline._write_json(
+        pipeline._private("post-qualification-audit.json"),
+        {"subscriptions": [{"id": "subscription_4", "runtime_nodes": 2}]},
+    )
+
+    assert pipeline._source_stage_accounting() == [
+        {
+            "id": "subscription_4",
+            "input_nodes": 12,
+            "parsed_valid_nodes": 11,
+            "skipped_invalid_nodes": 1,
+            "filtered_by_name": 2,
+            "filtered_over_multiplier": 1,
+            "post_filter_nodes": 8,
+            "post_dedup_nodes": 7,
+            "generated_runtime_nodes": 6,
+            "final_runtime_nodes": 2,
+            "qualification_removed_nodes": 4,
+        }
+    ]
+    assert "private.example" not in repr(pipeline._source_stage_accounting())
+
+
 def test_dry_run_operational_slo_does_not_touch_external_state(tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path, publish=False)
 
