@@ -12,15 +12,15 @@ def _runtime(
     dns: dict[str, object], tun: dict[str, object] | None = None
 ) -> dict[str, object]:
     runtime: dict[str, object] = {
-            "mixed_port": 7890,
-            "allow_lan": False,
-            "bind_address": "127.0.0.1",
-            "mode": "rule",
-            "log_level": "warning",
-            "ipv6": False,
-            "unified_delay": True,
-            "tcp_concurrent": True,
-            "profile": {"store_selected": True, "store_fake_ip": True},
+        "mixed_port": 7890,
+        "allow_lan": False,
+        "bind_address": "127.0.0.1",
+        "mode": "rule",
+        "log_level": "warning",
+        "ipv6": False,
+        "unified_delay": True,
+        "tcp_concurrent": True,
+        "profile": {"store_selected": True, "store_fake_ip": True},
         "dns": dns,
     }
     if tun is not None:
