@@ -426,9 +426,7 @@ class ProductionPipeline:
                     "filtered_over_multiplier": int(
                         before.get("filtered_over_multiplier", 0) or 0
                     ),
-                    "post_filter_nodes": int(
-                        before.get("post_multiplier_filter_nodes", 0) or 0
-                    ),
+                    "post_filter_nodes": int(before.get("post_multiplier_filter_nodes", 0) or 0),
                     "post_dedup_nodes": int(before.get("post_dedup_nodes", 0) or 0),
                     "generated_runtime_nodes": generated_runtime,
                     "final_runtime_nodes": final_runtime,
