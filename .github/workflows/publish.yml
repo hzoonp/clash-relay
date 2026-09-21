@@ -92,5 +92,7 @@ jobs:
             export CLASH_RELAY_MANUAL_PUBLISH=true
           fi
           args=()
-          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then args+=(--production-preflight); fi
+          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ] && [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" != "true" ]; then
+            args+=(--production-preflight)
+          fi
           python scripts/run_production_release.py "${args[@]}"
