@@ -38,8 +38,14 @@ def _audit() -> dict:
             {
                 "id": "subscription_1",
                 "status": "ok",
-                "nodes": 1,
-                "filtered_over_multiplier": 2,
+                "input_nodes": 5,
+                "parsed_valid_nodes": 4,
+                "skipped_invalid_nodes": 1,
+                "filtered_by_name": 1,
+                "nodes": 2,
+                "filtered_over_multiplier": 1,
+                "post_dedup_nodes": 2,
+                "runtime_nodes": 1,
             }
         ],
         "pools": [
@@ -91,6 +97,14 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     assert manifest["public_config_version"] == 2
     assert manifest["runtime"] == {"groups": 1, "providers": 1, "unique_nodes": 1}
     assert manifest["sources"]["configured"] == 1
+    assert manifest["sources"]["input_nodes"] == 5
+    assert manifest["sources"]["parsed_valid_nodes"] == 4
+    assert manifest["sources"]["skipped_invalid_nodes"] == 1
+    assert manifest["sources"]["filtered_by_name"] == 1
+    assert manifest["sources"]["accepted_nodes"] == 2
+    assert manifest["sources"]["filtered_over_multiplier"] == 1
+    assert manifest["sources"]["post_dedup_nodes"] == 2
+    assert manifest["sources"]["runtime_nodes"] == 1
     assert manifest["sources"]["by_use"]["general"]["distinct_sources"] == 1
     assert manifest["dns_security"] == {
         "leak_audit": "passed",

@@ -164,6 +164,20 @@ def _empty_subscription_failure_reason(parsed: ParsedSubscription) -> str:
     return _EMPTY_SUBSCRIPTION_REASON_BY_INVALID_REASON.get(reason, "all_other_invalid")
 
 
+def _deduplicated_source_counts(nodes: list[Node]) -> dict[str, int]:
+    """Count source-specific node occurrences that survive global deduplication."""
+
+    counts: dict[str, int] = {}
+    for node in nodes:
+        occurrences = node.occurrences
+        if not occurrences:
+            counts[node.source_id] = counts.get(node.source_id, 0) + 1
+            continue
+        for occurrence in occurrences:
+            counts[occurrence.source_id] = counts.get(occurrence.source_id, 0) + 1
+    return counts
+
+
 def build_candidate(
     *,
     config_path: Path,
@@ -210,7 +224,12 @@ def build_candidate(
                     "status": "failed",
                     "failure_category": "subscription_parse",
                     "failure_reason": _empty_subscription_failure_reason(parsed),
+                    "input_nodes": parsed.skipped_items,
+                    "parsed_valid_nodes": 0,
                     "skipped_invalid_nodes": parsed.skipped_items,
+                    "post_name_filter_nodes": 0,
+                    "post_multiplier_filter_nodes": 0,
+                    "post_dedup_nodes": 0,
                 }
                 if parsed.empty_payload_shape is not None:
                     empty_source_report["empty_payload_shape"] = parsed.empty_payload_shape
@@ -239,10 +258,14 @@ def build_candidate(
                 "id": spec.id,
                 "display_name": spec.display_name,
                 "status": "ok",
-                "nodes": len(classified),
+                "input_nodes": len(parsed.proxies) + parsed.skipped_items,
+                "parsed_valid_nodes": len(parsed.proxies),
                 "skipped_invalid_nodes": parsed.skipped_items,
+                "post_name_filter_nodes": len(admitted_by_name),
                 "filtered_by_name": rejected_name,
+                "post_multiplier_filter_nodes": len(classified),
                 "filtered_over_multiplier": rejected_multiplier,
+                "nodes": len(classified),
             }
             if spec.max_node_multiplier is not None:
                 source_report["max_node_multiplier"] = spec.max_node_multiplier
@@ -266,6 +289,13 @@ def build_candidate(
             "successful subscriptions are below generation.minimum_successful_subscriptions"
         )
     deduplicated, duplicate_count = deduplicate_nodes(nodes, generation["duplicate_policy"])
+    deduplicated_by_source = _deduplicated_source_counts(deduplicated)
+    for source_report in source_reports:
+        if source_report.get("status") == "ok":
+            source_report["post_dedup_nodes"] = deduplicated_by_source.get(
+                str(source_report.get("id", "")),
+                0,
+            )
     if len(deduplicated) < generation["minimum_usable_nodes"]:
         raise GenerationError("usable nodes are below generation.minimum_usable_nodes")
 

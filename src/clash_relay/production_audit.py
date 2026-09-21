@@ -325,6 +325,9 @@ def audit_production_candidate(
             if isinstance(item, dict) and item.get("id")
         }
 
+    _, runtime_sources = _runtime_source_maps(graph, known_source_ids=set(subscriptions))
+    runtime_source_counts = Counter(runtime_sources.values())
+
     subscription_rows: list[dict[str, Any]] = []
     for spec in sorted(subscriptions.values(), key=lambda item: (item.ingest_order, item.id)):
         source_report = source_reports.get(spec.id, {})
@@ -332,8 +335,21 @@ def audit_production_candidate(
             "id": spec.id,
             "status": str(source_report.get("status", "unknown")),
             "allowed_uses": sorted(spec.allowed_uses),
-            "nodes": int(source_report.get("nodes", 0) or 0),
+            "input_nodes": int(source_report.get("input_nodes", 0) or 0),
+            "parsed_valid_nodes": int(source_report.get("parsed_valid_nodes", 0) or 0),
+            "skipped_invalid_nodes": int(source_report.get("skipped_invalid_nodes", 0) or 0),
+            "post_name_filter_nodes": int(source_report.get("post_name_filter_nodes", 0) or 0),
+            "filtered_by_name": int(source_report.get("filtered_by_name", 0) or 0),
+            "post_multiplier_filter_nodes": int(
+                source_report.get("post_multiplier_filter_nodes", source_report.get("nodes", 0))
+                or 0
+            ),
             "filtered_over_multiplier": int(source_report.get("filtered_over_multiplier", 0) or 0),
+            "post_dedup_nodes": int(
+                source_report.get("post_dedup_nodes", source_report.get("nodes", 0)) or 0
+            ),
+            "nodes": int(source_report.get("nodes", 0) or 0),
+            "runtime_nodes": int(runtime_source_counts.get(spec.id, 0)),
         }
         if spec.max_node_multiplier is not None:
             row["max_node_multiplier"] = spec.max_node_multiplier
@@ -359,15 +375,17 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
         "",
         "### Subscriptions",
         "",
-        "| Source | Status | Accepted nodes | > multiplier filtered | Max multiplier | Allowed uses |",
-        "| --- | --- | ---: | ---: | ---: | --- |",
+        "| Source | Status | Input | Parsed | Invalid | Name filtered | > multiplier | Post-filter | Post-dedup | Runtime | Allowed uses |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for item in summary["subscriptions"]:
-        maximum = item.get("max_node_multiplier", "-")
         uses = ", ".join(item["allowed_uses"])
         lines.append(
-            f"| `{item['id']}` | {item['status']} | {item['nodes']} | "
-            f"{item['filtered_over_multiplier']} | {maximum} | {uses} |"
+            f"| `{item['id']}` | {item['status']} | {item['input_nodes']} | "
+            f"{item['parsed_valid_nodes']} | {item['skipped_invalid_nodes']} | "
+            f"{item['filtered_by_name']} | {item['filtered_over_multiplier']} | "
+            f"{item['post_multiplier_filter_nodes']} | {item['post_dedup_nodes']} | "
+            f"{item['runtime_nodes']} | {uses} |"
         )
 
     lines.extend(
@@ -396,6 +414,49 @@ def render_production_summary_markdown(summary: dict[str, Any]) -> str:
             f"Runtime rules checked: **{reachability['runtime_rules_checked']}**",
             "",
             "This summary intentionally omits node names, servers, ports, credentials, and subscription URLs.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def render_source_stage_delta_markdown(
+    pre_audit: dict[str, Any],
+    post_audit: dict[str, Any],
+) -> str:
+    """Render per-source generated-to-qualified runtime deltas without node identities."""
+
+    pre_rows = {
+        str(item.get("id")): item
+        for item in pre_audit.get("subscriptions", [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    post_rows = {
+        str(item.get("id")): item
+        for item in post_audit.get("subscriptions", [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    source_ids = sorted(set(pre_rows) | set(post_rows))
+    lines = [
+        "## Source stage accounting",
+        "",
+        "| Source | Post-dedup | Generated runtime | Final runtime | Qualification removed |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for source_id in source_ids:
+        pre = pre_rows.get(source_id, {})
+        post = post_rows.get(source_id, {})
+        post_dedup = int(pre.get("post_dedup_nodes", 0) or 0)
+        generated_runtime = int(pre.get("runtime_nodes", 0) or 0)
+        final_runtime = int(post.get("runtime_nodes", 0) or 0)
+        removed = max(0, generated_runtime - final_runtime)
+        lines.append(
+            f"| `{source_id}` | {post_dedup} | {generated_runtime} | {final_runtime} | {removed} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Counts are source-level aggregates only; node names, endpoints, credentials, and probe details remain private.",
             "",
         ]
     )

@@ -385,6 +385,54 @@ class ProductionPipeline:
             return None
         return sanitize_source_admission_report(report)
 
+    def _source_stage_accounting(self) -> list[dict[str, Any]]:
+        """Return privacy-safe per-source stage counts for the completed candidate."""
+
+        pre_path = self._private("production-audit.json")
+        post_path = self._private("post-qualification-audit.json")
+        if not pre_path.is_file() or not post_path.is_file():
+            return []
+        try:
+            pre = self._load_json(pre_path)
+            post = self._load_json(post_path)
+        except ValidationError:
+            return []
+
+        def rows(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+            raw = document.get("subscriptions", [])
+            if not isinstance(raw, list):
+                return {}
+            return {
+                str(item["id"]): item
+                for item in raw
+                if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
+            }
+
+        pre_rows = rows(pre)
+        post_rows = rows(post)
+        result: list[dict[str, Any]] = []
+        for source_id in sorted(set(pre_rows) | set(post_rows)):
+            before = pre_rows.get(source_id, {})
+            after = post_rows.get(source_id, {})
+            generated_runtime = int(before.get("runtime_nodes", 0) or 0)
+            final_runtime = int(after.get("runtime_nodes", 0) or 0)
+            result.append(
+                {
+                    "id": source_id,
+                    "input_nodes": int(before.get("input_nodes", 0) or 0),
+                    "parsed_valid_nodes": int(before.get("parsed_valid_nodes", 0) or 0),
+                    "skipped_invalid_nodes": int(before.get("skipped_invalid_nodes", 0) or 0),
+                    "filtered_by_name": int(before.get("filtered_by_name", 0) or 0),
+                    "filtered_over_multiplier": int(before.get("filtered_over_multiplier", 0) or 0),
+                    "post_filter_nodes": int(before.get("post_multiplier_filter_nodes", 0) or 0),
+                    "post_dedup_nodes": int(before.get("post_dedup_nodes", 0) or 0),
+                    "generated_runtime_nodes": generated_runtime,
+                    "final_runtime_nodes": final_runtime,
+                    "qualification_removed_nodes": max(0, generated_runtime - final_runtime),
+                }
+            )
+        return result
+
     def _record_operational_slo(
         self,
         *,
@@ -638,6 +686,7 @@ class ProductionPipeline:
                 "production_metrics": metrics.get("status"),
                 "scheduler_observation": scheduler_observation.get("status"),
                 "operational_slo": slo.get("status"),
+                "source_stage_accounting": self._source_stage_accounting(),
                 "warnings": sorted(self.warnings),
             }
         except Exception as exc:

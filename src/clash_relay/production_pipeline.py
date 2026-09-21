@@ -18,7 +18,11 @@ from .config_loader import ProjectDefinition, load_project
 from .errors import CandidateValidationStageError, ValidationError
 from .mihomo import load_candidate
 from .openai_app_contract import audit_route_lock
-from .production_audit import audit_production_candidate, render_production_summary_markdown
+from .production_audit import (
+    audit_production_candidate,
+    render_production_summary_markdown,
+    render_source_stage_delta_markdown,
+)
 from .qualification_pipeline import run_qualification_pipeline
 from .routing_v2_audit import audit_routing_v2
 from .util import atomic_write
@@ -237,6 +241,7 @@ def run_production_pipeline(
         browsing = _load_json(qualification_paths.browsing_report)
         ai = _load_json(qualification_paths.ai_report)
         markdown = render_production_summary_markdown(pre_audit)
+        markdown += "\n" + render_source_stage_delta_markdown(pre_audit, post_audit)
         markdown += "\n" + render_qualification_summary_markdown(browsing, ai)
         atomic_write(outputs.summary_markdown, markdown)
 
