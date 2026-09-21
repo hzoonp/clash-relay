@@ -62,9 +62,7 @@ def test_quic_probe_is_amplification_safe_unsupported_version_datagram() -> None
 def test_transport_probe_detaches_production_dns_rule_set_policy() -> None:
     proxy = {"name": "node-a", "type": "http", "server": "a.invalid", "port": 443}
     base = {
-        "proxy-providers": {
-            "cr_general_any": {"type": "inline", "payload": [proxy]}
-        },
+        "proxy-providers": {"cr_general_any": {"type": "inline", "payload": [proxy]}},
         "dns": {
             "enable": True,
             "listen": "127.0.0.1:1053",
