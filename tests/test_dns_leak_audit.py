@@ -69,9 +69,7 @@ def test_dns_leak_audit_rejects_incomplete_port_53_hijack() -> None:
 
 def test_dns_leak_audit_rejects_standalone_dns_classification() -> None:
     candidate = _candidate()
-    candidate["dns"]["nameserver-policy"]["+.example.com"] = [
-        "https://1.1.1.1/dns-query"
-    ]
+    candidate["dns"]["nameserver-policy"]["+.example.com"] = ["https://1.1.1.1/dns-query"]
 
     with pytest.raises(ValidationError, match="standalone DNS classification"):
         audit_dns_leak_protection(candidate)
