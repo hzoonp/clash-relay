@@ -74,22 +74,13 @@ Subscription HTTP(S) connections are bound to the exact public `getaddrinfo` res
 
 ## DNS and TUN leak prevention
 
-The canonical profile uses managed Fake-IP DNS and a managed TUN declaration. DNS routing does not create a second domain-policy database: generated `nameserver-policy` entries reference the already-generated ACL4SSR `rule-set:` providers and reuse their Routing V2 scenario metadata.
+The canonical FlClash profile uses managed Fake-IP DNS but keeps TUN client-owned. DNS routing does not create a second domain-policy database: generated `nameserver-policy` entries reference the already-generated ACL4SSR `rule-set:` providers and reuse their Routing V2 scenario metadata.
 
-Before a candidate is accepted, the generated-config audit requires the managed-TUN profile to keep:
+For the canonical FlClash profile, `runtime.tun.mode: client` means no `tun:` mapping is serialized into the production candidate. This avoids leaving profile-level `strict-route` or `auto-detect-interface` state behind after FlClash applies its own TUN patch. Local TUN/VPN and DNS hijacking are therefore client responsibilities, while the remote profile continues to own managed DNS, Fake-IP, encrypted resolver pools, and DNS routing policy.
 
-- a loopback-only DNS listener;
-- IPv6 DNS responses disabled for the canonical IPv4 Fake-IP contract;
-- encrypted bootstrap/default, normal, proxy-node, direct, and policy resolver endpoints;
-- IP-literal hosts for encrypted bootstrap/default resolvers;
-- `respect-rules: true` plus a dedicated proxy-node resolver pool;
-- `direct-nameserver-follow-policy: true` and an encrypted direct resolver pool;
-- no fallback resolver path;
-- `nameserver-policy` keys restricted to existing `rule-set:` providers;
-- TUN `auto-route`, `auto-detect-interface`, and `strict-route`;
-- both UDP and TCP port-53 hijacking.
+Managed TUN remains available for standalone Mihomo profiles. When a generated candidate actually contains enabled managed TUN, the leak audit still fails closed unless it keeps strict routing, automatic interface/routing controls, and both UDP and TCP port-53 hijacking in addition to the encrypted DNS requirements.
 
-The leak audit is a static production-candidate gate, not a claim that a remote profile can control every client application's local VPN switches. FlClash currently owns several TUN fields in its app configuration. The supported FlClash posture therefore also requires local TUN/VPN and DNS-hijacking settings to remain enabled, DNS override/system-DNS append features to remain disabled, and Android Private DNS to remain off when relying on TUN DNS interception.
+The supported FlClash posture requires local TUN/VPN and DNS-hijacking settings to remain enabled when desired, DNS override/system-DNS append features to remain disabled, and Android Private DNS to remain off when relying on TUN DNS interception.
 ## Logs and reports
 
 Build reports contain source IDs, counts, statuses, and a candidate digest, never source URLs or proxy payloads. Error paths redact full secret values, common query credentials, Authorization headers, and password fields. Workflows do not enable shell tracing and never echo the secret bundle.

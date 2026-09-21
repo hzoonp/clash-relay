@@ -39,18 +39,18 @@ Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, 
 
 `runtime.dns.routing_policy: acl4ssr` compiles `nameserver-policy` from the same pinned ACL4SSR rule-provider scenarios used by Routing V2. It does not maintain a second domain list: rule providers declared as `scenario: direct` resolve through `direct_nameservers`; every other rule-provider scenario uses the normal encrypted resolver pool. Generated DNS policy keys are only `rule-set:<existing-provider>`. DNS compilation never introduces a subscription-specific proxy group.
 
-Canonical `runtime.tun` enables mixed-stack TUN, automatic routing/interface detection, strict routing, and both UDP and TCP port-53 hijacking. The generated-config leak audit fails closed unless the profile keeps Fake-IP, loopback-only DNS listening, encrypted resolver pools, empty fallback DNS, routing-derived policy, `respect-rules`, proxy-server resolution, direct-policy following, `auto-route`, `strict-route`, and both `any:53` plus `tcp://any:53`.
+Canonical FlClash production sets `runtime.tun.mode: client`. The generated profile therefore omits `tun:` entirely and leaves TUN/VPN ownership to FlClash instead of partially overriding the client with profile-level `strict-route` or interface-routing state. Managed TUN remains a supported Public Config V2 capability for standalone Mihomo profiles, where the generated-config leak audit requires Fake-IP, encrypted resolver pools, strict routing, and both UDP/TCP port-53 hijacking.
 
-For FlClash, the profile and the app have separate ownership boundaries. Current FlClash preserves an already-enabled profile DNS section when **Override DNS** is off, but its application settings overwrite `tun.enable`, `tun.stack`, `tun.dns-hijack`, and `tun.auto-route`. The supported FlClash runtime contract is therefore:
+For FlClash, DNS and TUN intentionally have different ownership boundaries: the profile keeps managed Fake-IP DNS, while the app owns TUN/VPN. The supported FlClash runtime contract is therefore:
 
 1. keep **Override DNS** off;
 2. keep **Append system DNS** off;
-3. enable desktop **TUN** or Android **VPN**;
-4. enable Android **DNS Hijacking**;
+3. enable desktop **TUN** or Android **VPN** in FlClash;
+4. enable Android **DNS Hijacking** when using VPN/TUN;
 5. use the mixed TUN stack unless a platform-specific issue requires otherwise;
 6. do not enable Android Private DNS when relying on Mihomo/FlClash DNS hijacking.
 
-The generated profile still carries the stricter two-protocol DNS-hijack declaration for standalone Mihomo. FlClash currently models its own TUN `dns-hijack` list and may replace that raw profile list, so the repository does not claim that a remote profile can force FlClash's local VPN/TUN switches. `strict-route` and `auto-detect-interface` remain profile-level hardening where the client leaves them intact.
+This split prevents the remote profile from leaving residual `strict-route` or `auto-detect-interface` settings that FlClash does not own or overwrite, while preserving managed DNS, Fake-IP, DNS routing policy, and proxy-server bootstrap resolution.
 
 ### `generation`
 

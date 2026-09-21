@@ -138,14 +138,11 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
         str(key).split(":", 1)[1] in document["rule-providers"] for key in dns["nameserver-policy"]
     )
 
-    tun = document["tun"]
-    assert tun["enable"] is True
-    assert tun["stack"] == "mixed"
-    assert tun["dns-hijack"] == ["any:53", "tcp://any:53"]
-    assert tun["auto-route"] is True
-    assert tun["auto-detect-interface"] is True
-    assert tun["strict-route"] is True
-    assert result.report["dns_leak_audit"]["status"] == "passed"
+    assert "tun" not in document
+    assert result.report["dns_leak_audit"] == {
+        "status": "not_applicable",
+        "mode": "no_tun",
+    }
     assert result.report["dns_routing_policy"]["status"] == "compiled"
 
     general = graph.walk_resolved("代理选择")
