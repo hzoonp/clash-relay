@@ -155,9 +155,7 @@ def test_production_audit_fails_closed_on_unresolved_runtime_target(
         audit_production_candidate(project, candidate)
 
 
-def test_production_audit_reports_source_stage_accounting(
-    built_candidate, project_paths
-) -> None:
+def test_production_audit_reports_source_stage_accounting(built_candidate, project_paths) -> None:
     project = _project(project_paths)
     pre = audit_production_candidate(
         project,
