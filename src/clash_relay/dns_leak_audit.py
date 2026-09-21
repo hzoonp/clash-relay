@@ -21,14 +21,25 @@ def _is_loopback_listener(value: Any) -> bool:
         return False
 
 
-def _encrypted_resolver(value: Any) -> bool:
+def _encrypted_resolver(value: Any, *, require_ip_host: bool = False) -> bool:
     if not isinstance(value, str) or not value:
         return False
     try:
         parsed = urlsplit(value.split("#", 1)[0])
     except ValueError:
         return False
-    return parsed.scheme.lower() in _ENCRYPTED_DNS_SCHEMES and bool(parsed.netloc)
+    if parsed.scheme.lower() not in _ENCRYPTED_DNS_SCHEMES or not parsed.netloc:
+        return False
+    if not require_ip_host:
+        return True
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return True
 
 
 def _resolver_values(value: Any) -> list[str]:
@@ -75,8 +86,14 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         values = _resolver_values(dns.get(field))
         if not values:
             raise ValidationError(f"DNS leak audit requires non-empty {field}")
-        if not all(_encrypted_resolver(item) for item in values):
-            raise ValidationError(f"DNS leak audit requires encrypted {field} endpoints")
+        require_ip_host = field == "default-nameserver"
+        if not all(
+            _encrypted_resolver(item, require_ip_host=require_ip_host) for item in values
+        ):
+            suffix = " with IP-literal hosts" if require_ip_host else ""
+            raise ValidationError(
+                f"DNS leak audit requires encrypted {field} endpoints{suffix}"
+            )
 
     hijack = tun.get("dns-hijack")
     if not isinstance(hijack, list):
