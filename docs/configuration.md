@@ -23,7 +23,7 @@ The canonical profile contains:
 - pinned ACL4SSR Full routing data in `rules/acl4ssr.yaml`;
 - live OpenAI / Claude / Gemini qualification before publication;
 - Cloudflare Workers KV as the credential-bearing publication backend;
-- DNS-independent HTTP/TLS/QUIC traffic sniffing for mobile routing identity.
+- managed Fake-IP DNS with rule-respecting DoH, dedicated proxy-server resolution, and HTTP/TLS/QUIC traffic sniffing for mobile routing identity.
 
 The source-policy boundary is intentional: `subscription_1` may enter only `browsing` and `ai`; it may never enter `general`.
 
@@ -35,7 +35,7 @@ The source-policy boundary is intentional: `subscription_1` may enter only `brow
 
 Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, DNS ownership, and optional sniffing. Production does not emit a public controller, controller secret, listeners, or tunnels.
 
-`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses `client` while enabling HTTP Host, TLS SNI, and QUIC sniffing.
+`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses managed Fake-IP DNS with IPv6 DNS responses disabled, a loopback listener, DoH resolvers, `respect-rules: true`, dedicated `proxy-server-nameserver` resolvers, and a small LAN/local Fake-IP exclusion list. The DNS layer does not declare or reference subscription-specific proxy groups, so source-use isolation remains owned by Routing V2. `respect_rules: true` requires at least one `proxy_server_nameservers` entry to avoid proxy-node DNS bootstrap loops.
 
 ### `generation`
 

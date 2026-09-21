@@ -11,9 +11,30 @@ runtime:
   tcp_concurrent: true
   profile:
     store_selected: true
-    store_fake_ip: false
+    store_fake_ip: true
   dns:
-    mode: client
+    mode: managed
+    enabled: true
+    ipv6: false
+    enhanced_mode: fake-ip
+    listen: 127.0.0.1:1053
+    respect_rules: true
+    default_nameservers:
+      - 1.1.1.1
+      - 8.8.8.8
+    nameservers:
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    proxy_server_nameservers:
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    fallback_nameservers: []
+    fake_ip_range: 198.18.0.1/16
+    fake_ip_filter_mode: blacklist
+    fake_ip_filter:
+      - '*.lan'
+      - '*.local'
+      - localhost
   sniffer:
     enabled: true
     force_dns_mapping: false

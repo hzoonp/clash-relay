@@ -49,11 +49,26 @@ class RuntimeConfigRenderer:
             return output
 
         profile["store-fake-ip"] = runtime["profile"]["store_fake_ip"]
-        output["dns"] = {
+        rendered_dns: dict[str, Any] = {
             "enable": dns["enabled"],
             "enhanced-mode": dns["enhanced_mode"],
             "listen": dns["listen"],
             "nameserver": list(dns["nameservers"]),
             "fallback": list(dns["fallback_nameservers"]),
         }
+        if "ipv6" in dns:
+            rendered_dns["ipv6"] = dns["ipv6"]
+        if "respect_rules" in dns:
+            rendered_dns["respect-rules"] = dns["respect_rules"]
+        if "default_nameservers" in dns:
+            rendered_dns["default-nameserver"] = list(dns["default_nameservers"])
+        if "proxy_server_nameservers" in dns:
+            rendered_dns["proxy-server-nameserver"] = list(dns["proxy_server_nameservers"])
+        if "fake_ip_range" in dns:
+            rendered_dns["fake-ip-range"] = dns["fake_ip_range"]
+        if "fake_ip_filter_mode" in dns:
+            rendered_dns["fake-ip-filter-mode"] = dns["fake_ip_filter_mode"]
+        if "fake_ip_filter" in dns:
+            rendered_dns["fake-ip-filter"] = list(dns["fake_ip_filter"])
+        output["dns"] = rendered_dns
         return output

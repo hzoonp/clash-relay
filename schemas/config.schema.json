@@ -34,16 +34,27 @@
           "properties": {
             "mode": {"enum": ["client", "managed"]},
             "enabled": {"type": "boolean"},
+            "ipv6": {"type": "boolean"},
             "enhanced_mode": {"enum": ["fake-ip", "redir-host", "normal"]},
             "listen": {"type": "string", "minLength": 1},
+            "respect_rules": {"type": "boolean"},
+            "default_nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
             "nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-            "fallback_nameservers": {"type": "array", "items": {"type": "string", "minLength": 1}}
+            "proxy_server_nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "fallback_nameservers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "fake_ip_range": {"type": "string", "minLength": 1},
+            "fake_ip_filter_mode": {"enum": ["blacklist", "whitelist", "rule"]},
+            "fake_ip_filter": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
           },
           "allOf": [
             {
               "if": {"required": ["mode"], "properties": {"mode": {"const": "client"}}},
               "then": {},
               "else": {"required": ["enabled", "enhanced_mode", "listen", "nameservers", "fallback_nameservers"]}
+            },
+            {
+              "if": {"required": ["respect_rules"], "properties": {"respect_rules": {"const": true}}},
+              "then": {"required": ["proxy_server_nameservers"]}
             }
           ]
         },

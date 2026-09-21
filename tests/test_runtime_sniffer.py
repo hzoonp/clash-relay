@@ -102,9 +102,13 @@ def test_invalid_sniffer_port_ranges_fail_project_loading(
         load_project(**paths)
 
 
-def test_public_example_declares_client_dns_and_sniffer(repo_root: Path) -> None:
+def test_public_example_declares_managed_dns_and_sniffer(repo_root: Path) -> None:
     import yaml
 
     data = yaml.safe_load((repo_root / "config.example.yaml").read_text(encoding="utf-8"))
-    assert data["runtime"]["dns"] == {"mode": "client"}
+    dns = data["runtime"]["dns"]
+    assert dns["mode"] == "managed"
+    assert dns["enhanced_mode"] == "fake-ip"
+    assert dns["respect_rules"] is True
+    assert dns["proxy_server_nameservers"]
     assert data["runtime"]["sniffer"] == _sniffer()

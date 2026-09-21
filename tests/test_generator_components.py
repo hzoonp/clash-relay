@@ -10,14 +10,16 @@ from clash_relay.rule_compiler import RuleCompiler
 from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
 
 
-def test_runtime_config_renderer_preserves_client_owned_dns(repo_root: Path) -> None:
+def test_runtime_config_renderer_emits_canonical_managed_dns(repo_root: Path) -> None:
     config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
 
     rendered = RuntimeConfigRenderer().render(config)
 
-    assert config["runtime"]["dns"]["mode"] == "client"
-    assert "dns" not in rendered
-    assert "store-fake-ip" not in rendered["profile"]
+    assert config["runtime"]["dns"]["mode"] == "managed"
+    assert rendered["dns"]["enhanced-mode"] == "fake-ip"
+    assert rendered["dns"]["respect-rules"] is True
+    assert rendered["dns"]["proxy-server-nameserver"]
+    assert rendered["profile"]["store-fake-ip"] is True
     assert rendered["sniffer"]["enable"] is True
 
 

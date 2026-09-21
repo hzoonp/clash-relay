@@ -29,10 +29,17 @@ def _managed_dns() -> dict[str, object]:
     return {
         "mode": "managed",
         "enabled": True,
+        "ipv6": False,
         "enhanced_mode": "fake-ip",
         "listen": "127.0.0.1:1053",
+        "respect_rules": True,
+        "default_nameservers": ["1.1.1.1", "8.8.8.8"],
         "nameservers": ["https://1.1.1.1/dns-query"],
+        "proxy_server_nameservers": ["https://1.1.1.1/dns-query"],
         "fallback_nameservers": ["tls://1.0.0.1:853"],
+        "fake_ip_range": "198.18.0.1/16",
+        "fake_ip_filter_mode": "blacklist",
+        "fake_ip_filter": ["*.lan", "*.local", "localhost"],
     }
 
 
@@ -53,6 +60,13 @@ def test_managed_dns_mode_preserves_explicit_dns_runtime() -> None:
         "listen": "127.0.0.1:1053",
         "nameserver": ["https://1.1.1.1/dns-query"],
         "fallback": ["tls://1.0.0.1:853"],
+        "ipv6": False,
+        "respect-rules": True,
+        "default-nameserver": ["1.1.1.1", "8.8.8.8"],
+        "proxy-server-nameserver": ["https://1.1.1.1/dns-query"],
+        "fake-ip-range": "198.18.0.1/16",
+        "fake-ip-filter-mode": "blacklist",
+        "fake-ip-filter": ["*.lan", "*.local", "localhost"],
     }
 
 
@@ -74,3 +88,16 @@ def test_dns_schema_accepts_client_and_legacy_managed_shapes() -> None:
     legacy = _managed_dns()
     legacy.pop("mode")
     validator.validate(legacy)
+
+
+def test_dns_schema_requires_proxy_server_nameserver_when_respecting_rules() -> None:
+    schema = json.loads(Path("schemas/config.schema.json").read_text(encoding="utf-8"))
+    dns_schema = schema["properties"]["runtime"]["properties"]["dns"]
+    validator = Draft202012Validator(dns_schema)
+    invalid = _managed_dns()
+    invalid.pop("proxy_server_nameservers")
+
+    errors = list(validator.iter_errors(invalid))
+
+    assert errors
+    assert any("proxy_server_nameservers" in error.message for error in errors)
