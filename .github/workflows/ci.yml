@@ -60,7 +60,19 @@ jobs:
       - name: Audit supply-chain contract
         run: python scripts/audit_supply_chain.py
       - run: ruff check .
-      - run: ruff format --check .
+      - name: Temporary formatter diagnostic
+        run: |
+          ruff format .
+          git diff -- \
+            src/clash_relay/dns_leak_audit.py \
+            src/clash_relay/runtime_config_renderer.py \
+            tests/integration/test_flclash_mihomo_consumer_contract.py \
+            tests/test_ai_qualification.py \
+            tests/test_browsing_qualification.py \
+            tests/test_dns_leak_audit.py \
+            tests/test_runtime_dns_mode.py \
+            tests/test_transport_qualification.py
+          exit 1
       - name: Static type gate for core and application boundaries
         run: |
           mypy --follow-imports=skip --ignore-missing-imports --check-untyped-defs \
