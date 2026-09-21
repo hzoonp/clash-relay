@@ -135,8 +135,7 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert dns["nameserver-policy"]
     assert all(str(key).startswith("rule-set:") for key in dns["nameserver-policy"])
     assert all(
-        str(key).split(":", 1)[1] in document["rule-providers"]
-        for key in dns["nameserver-policy"]
+        str(key).split(":", 1)[1] in document["rule-providers"] for key in dns["nameserver-policy"]
     )
 
     tun = document["tun"]
