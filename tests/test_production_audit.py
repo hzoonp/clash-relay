@@ -10,6 +10,7 @@ from clash_relay.errors import ValidationError
 from clash_relay.production_audit import (
     audit_production_candidate,
     render_production_summary_markdown,
+    render_source_stage_delta_markdown,
 )
 
 
@@ -152,6 +153,34 @@ def test_production_audit_fails_closed_on_unresolved_runtime_target(
 
     with pytest.raises(ValidationError, match="unresolved references"):
         audit_production_candidate(project, candidate)
+
+
+def test_production_audit_reports_source_stage_accounting(
+    built_candidate, project_paths
+) -> None:
+    project = _project(project_paths)
+    pre = audit_production_candidate(
+        project,
+        built_candidate.config,
+        build_report=built_candidate.report,
+    )
+    by_source = {item["id"]: item for item in pre["subscriptions"]}
+    primary = by_source["primary"]
+
+    assert primary["input_nodes"] >= primary["parsed_valid_nodes"]
+    assert primary["parsed_valid_nodes"] >= primary["post_name_filter_nodes"]
+    assert primary["post_name_filter_nodes"] >= primary["post_multiplier_filter_nodes"]
+    assert primary["post_dedup_nodes"] >= 0
+    assert primary["runtime_nodes"] >= 0
+
+    post = copy.deepcopy(pre)
+    post_primary = next(item for item in post["subscriptions"] if item["id"] == "primary")
+    post_primary["runtime_nodes"] = max(0, primary["runtime_nodes"] - 1)
+
+    markdown = render_source_stage_delta_markdown(pre, post)
+    assert "Source stage accounting" in markdown
+    assert "`primary`" in markdown
+    assert "example.invalid" not in markdown
 
 
 def test_production_audit_includes_multiplier_filter_counts(built_candidate, project_paths) -> None:
