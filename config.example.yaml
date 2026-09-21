@@ -20,14 +20,19 @@ runtime:
     listen: 127.0.0.1:1053
     respect_rules: true
     default_nameservers:
-      - 1.1.1.1
-      - 8.8.8.8
+      - https://1.1.1.1/dns-query
+      - tls://1.0.0.1:853
     nameservers:
       - https://1.1.1.1/dns-query
       - https://dns.google/dns-query
     proxy_server_nameservers:
       - https://1.1.1.1/dns-query
       - https://dns.google/dns-query
+    direct_nameservers:
+      - https://dns.alidns.com/dns-query
+      - https://doh.pub/dns-query
+    direct_nameserver_follow_policy: true
+    routing_policy: acl4ssr
     fallback_nameservers: []
     fake_ip_range: 198.18.0.1/16
     fake_ip_filter_mode: blacklist
@@ -35,6 +40,16 @@ runtime:
       - '*.lan'
       - '*.local'
       - localhost
+  tun:
+    mode: managed
+    enabled: true
+    stack: mixed
+    dns_hijack:
+      - any:53
+      - tcp://any:53
+    auto_route: true
+    auto_detect_interface: true
+    strict_route: true
   sniffer:
     enabled: true
     force_dns_mapping: false
