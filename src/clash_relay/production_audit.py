@@ -325,10 +325,7 @@ def audit_production_candidate(
             if isinstance(item, dict) and item.get("id")
         }
 
-    _, runtime_sources = _runtime_source_maps(
-        graph,
-        known_source_ids=set(subscriptions),
-    )
+    _, runtime_sources = _runtime_source_maps(graph, known_source_ids=set(subscriptions))
     runtime_source_counts = Counter(runtime_sources.values())
 
     subscription_rows: list[dict[str, Any]] = []
