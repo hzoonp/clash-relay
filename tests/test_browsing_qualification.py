@@ -429,9 +429,7 @@ def test_browsing_probe_detaches_production_dns_rule_set_policy() -> None:
         "dns": {
             "enable": True,
             "listen": "127.0.0.1:1053",
-            "nameserver-policy": {
-                "rule-set:acl4ssr_proxy_lite": ["https://1.1.1.1/dns-query"]
-            },
+            "nameserver-policy": {"rule-set:acl4ssr_proxy_lite": ["https://1.1.1.1/dns-query"]},
         },
     }
 
