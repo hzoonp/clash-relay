@@ -78,9 +78,7 @@ class RuntimeConfigRenderer:
         if "direct_nameservers" in dns:
             rendered_dns["direct-nameserver"] = list(dns["direct_nameservers"])
         if "direct_nameserver_follow_policy" in dns:
-            rendered_dns["direct-nameserver-follow-policy"] = dns[
-                "direct_nameserver_follow_policy"
-            ]
+            rendered_dns["direct-nameserver-follow-policy"] = dns["direct_nameserver_follow_policy"]
         if "fake_ip_range" in dns:
             rendered_dns["fake-ip-range"] = dns["fake_ip_range"]
         if "fake_ip_filter_mode" in dns:
