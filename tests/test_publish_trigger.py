@@ -38,8 +38,12 @@ def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
 def test_one_shot_publish_adapts_push_to_manual_dispatch_semantics() -> None:
     text = WORKFLOW.read_text()
     assert "CLASH_RELAY_ONE_SHOT_PUBLISH:" in text
-    assert 'args+=(--event-name workflow_dispatch --manual-publish true)' in text
-    assert 'elif [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then' in text
+    assert (
+        'args+=(--event-name workflow_dispatch --manual-publish true)' in text
+    )
+    assert (
+        'elif [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then' in text
+    )
     assert "export CLASH_RELAY_MANUAL_PUBLISH=true" not in text
 
 
