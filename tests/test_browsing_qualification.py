@@ -8,8 +8,11 @@ import pytest
 
 import clash_relay.browsing_qualification as browsing_qualification
 from clash_relay.browsing_qualification import (
+    _core_rejection_candidate_proxies,
     _group_delay_probe,
     _latency_summary,
+    _proxy_identity,
+    _prune_rejected_proxy_identities,
     _qualified_from_group_samples,
     _stability_tiers_from_group_samples,
     apply_browsing_qualification,
@@ -300,3 +303,116 @@ def test_latency_summary_is_aggregate_only() -> None:
         "max": 130.0,
     }
     assert _latency_summary([]) == {"min": None, "p50": None, "p95": None, "max": None}
+
+
+def test_core_rejection_candidate_proxies_intersect_source_and_type() -> None:
+    source5_vless = {
+        "name": "[BROWSING:US] sub_5/VLESS #1111111111",
+        "type": "vless",
+        "server": "one.example",
+        "port": 443,
+    }
+    source5_vmess = {
+        "name": "[BROWSING:US] sub_5/VMESS #2222222222",
+        "type": "vmess",
+        "server": "two.example",
+        "port": 443,
+    }
+    source3_vless = {
+        "name": "[BROWSING:US] sub_3/VLESS #3333333333",
+        "type": "vless",
+        "server": "three.example",
+        "port": 443,
+    }
+    payloads = {
+        "cr_browsing_us": (source5_vless, source5_vmess, source3_vless),
+    }
+
+    result = _core_rejection_candidate_proxies(
+        payloads,
+        rejected_sources={"subscription_5"},
+        rejected_types={"vless"},
+    )
+
+    assert result == (("cr_browsing_us", source5_vless),)
+
+
+def test_core_quarantine_prunes_same_physical_proxy_across_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad_browsing = {
+        "name": "[BROWSING:US] sub_5/Bad #1111111111",
+        "type": "vless",
+        "server": "bad.example",
+        "port": 443,
+        "uuid": "fixture-uuid",
+    }
+    bad_general = {
+        **bad_browsing,
+        "name": "[GENERAL:ANY] sub_5/Bad #2222222222",
+    }
+    good_browsing = {
+        "name": "[BROWSING:US] sub_2/Good #3333333333",
+        "type": "http",
+        "server": "good.example",
+        "port": 8080,
+    }
+    good_general = {
+        **good_browsing,
+        "name": "[GENERAL:ANY] sub_2/Good #4444444444",
+    }
+    config = {
+        "proxy-providers": {
+            "cr_browsing_us": {
+                "type": "inline",
+                "payload": [bad_browsing, good_browsing],
+            },
+            "cr_general_any": {
+                "type": "inline",
+                "payload": [bad_general, good_general],
+            },
+        }
+    }
+    monkeypatch.setattr(
+        browsing_qualification,
+        "validate_generated_config",
+        lambda _config: None,
+    )
+
+    removed = _prune_rejected_proxy_identities(
+        config,
+        {_proxy_identity(bad_browsing)},
+    )
+
+    assert removed == 2
+    assert config["proxy-providers"]["cr_browsing_us"]["payload"] == [good_browsing]
+    assert config["proxy-providers"]["cr_general_any"]["payload"] == [good_general]
+
+
+def test_core_quarantine_fails_closed_before_emptying_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    only_proxy = {
+        "name": "[BROWSING:US] sub_5/Only #1111111111",
+        "type": "vless",
+        "server": "bad.example",
+        "port": 443,
+    }
+    config = {
+        "proxy-providers": {
+            "cr_browsing_us": {
+                "type": "inline",
+                "payload": [only_proxy],
+            }
+        }
+    }
+    monkeypatch.setattr(
+        browsing_qualification,
+        "validate_generated_config",
+        lambda _config: None,
+    )
+
+    with pytest.raises(ValidationError, match="would empty a proxy provider"):
+        _prune_rejected_proxy_identities(config, {_proxy_identity(only_proxy)})
+
+    assert config["proxy-providers"]["cr_browsing_us"]["payload"] == [only_proxy]
