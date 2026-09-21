@@ -15,7 +15,7 @@ modules:
 
 The canonical profile contains:
 
-- four metadata-only subscription declarations in `subscriptions.yaml`;
+- five metadata-only subscription declarations in `subscriptions.yaml`;
 - Policy Model v2 domain fragments under `policies/`;
 - one `general` inventory for non-browsing application routing;
 - one `browsing` inventory for generic web routing;
@@ -35,7 +35,22 @@ The source-policy boundary is intentional: `subscription_1` may enter only `brow
 
 Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, DNS ownership, and optional sniffing. Production does not emit a public controller, controller secret, listeners, or tunnels.
 
-`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses managed Fake-IP DNS with IPv6 DNS responses disabled, a loopback listener, DoH resolvers, `respect-rules: true`, dedicated `proxy-server-nameserver` resolvers, and a small LAN/local Fake-IP exclusion list. The DNS layer does not declare or reference subscription-specific proxy groups, so source-use isolation remains owned by Routing V2. `respect_rules: true` requires at least one `proxy_server_nameservers` entry to avoid proxy-node DNS bootstrap loops.
+`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses managed Fake-IP DNS with IPv6 DNS responses disabled, a loopback listener, encrypted bootstrap/default resolvers, `respect-rules: true`, dedicated `proxy-server-nameserver` resolvers, and a small LAN/local Fake-IP exclusion list.
+
+`runtime.dns.routing_policy: acl4ssr` compiles `nameserver-policy` from the same pinned ACL4SSR rule-provider scenarios used by Routing V2. It does not maintain a second domain list: rule providers declared as `scenario: direct` resolve through `direct_nameservers`; every other rule-provider scenario uses the normal encrypted resolver pool. Generated DNS policy keys are only `rule-set:<existing-provider>`. DNS compilation never introduces a subscription-specific proxy group.
+
+Canonical `runtime.tun` enables mixed-stack TUN, automatic routing/interface detection, strict routing, and both UDP and TCP port-53 hijacking. The generated-config leak audit fails closed unless the profile keeps Fake-IP, loopback-only DNS listening, encrypted resolver pools, empty fallback DNS, routing-derived policy, `respect-rules`, proxy-server resolution, direct-policy following, `auto-route`, `strict-route`, and both `any:53` plus `tcp://any:53`.
+
+For FlClash, the profile and the app have separate ownership boundaries. Current FlClash preserves an already-enabled profile DNS section when **Override DNS** is off, but its application settings overwrite `tun.enable`, `tun.stack`, `tun.dns-hijack`, and `tun.auto-route`. The supported FlClash runtime contract is therefore:
+
+1. keep **Override DNS** off;
+2. keep **Append system DNS** off;
+3. enable desktop **TUN** or Android **VPN**;
+4. enable Android **DNS Hijacking**;
+5. use the mixed TUN stack unless a platform-specific issue requires otherwise;
+6. do not enable Android Private DNS when relying on Mihomo/FlClash DNS hijacking.
+
+The generated profile still carries the stricter two-protocol DNS-hijack declaration for standalone Mihomo. FlClash currently models its own TUN `dns-hijack` list and may replace that raw profile list, so the repository does not claim that a remote profile can force FlClash's local VPN/TUN switches. `strict-route` and `auto-detect-interface` remain profile-level hardening where the client leaves them intact.
 
 ### `generation`
 
@@ -87,7 +102,7 @@ Canonical `subscription_1`:
   max_node_multiplier: 2.0
 ```
 
-Subscriptions 2-4 allow `[general, browsing, ai]`.
+Subscriptions 2-5 allow `[general, browsing]` and cannot enter the AI inventory.
 
 ### `ingest_order`
 
