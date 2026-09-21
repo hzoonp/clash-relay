@@ -18,7 +18,7 @@ from typing import Any
 
 from .builder import build_candidate
 from .config_loader import ProjectDefinition
-from .errors import ClashRelayError, ValidationError
+from .errors import CandidateValidationStageError, ClashRelayError, ValidationError
 from .mihomo import load_candidate
 from .mihomo_download import download_pinned_mihomo
 from .operational_slo import (
@@ -84,6 +84,14 @@ class ProductionLifecyclePaths:
             public_dir=work / "public",
             bin_dir=work / "bin",
         )
+
+
+def _tag_validation_stage(error: ValidationError, stage: str) -> None:
+    if isinstance(error, CandidateValidationStageError):
+        return
+    current = getattr(error, "validation_stage", None)
+    if not isinstance(current, str):
+        error.validation_stage = stage  # type: ignore[attr-defined]
 
 
 class ProductionPipeline:
@@ -521,24 +529,44 @@ class ProductionPipeline:
             publication_gate(project.config, "cloudflare_kv")
 
             started = time.perf_counter()
-            generation = self._generate()
+            try:
+                generation = self._generate()
+            except ValidationError as exc:
+                _tag_validation_stage(exc, "generation_validation")
+                raise
             self._record_timing("generation", started)
             progress.advance(ReleasePhase.PREPARED)
 
             started = time.perf_counter()
-            self._load_derived_state(project)
+            try:
+                self._load_derived_state(project)
+            except ValidationError as exc:
+                _tag_validation_stage(exc, "derived_state_load")
+                raise
             self._record_timing("derived_state_load", started)
 
             started = time.perf_counter()
-            binary = self._download_primary_mihomo()
+            try:
+                binary = self._download_primary_mihomo()
+            except ValidationError as exc:
+                _tag_validation_stage(exc, "mihomo_download")
+                raise
             self._record_timing("mihomo_download", started)
 
             started = time.perf_counter()
-            pipeline = self._qualify(binary)
+            try:
+                pipeline = self._qualify(binary)
+            except ValidationError as exc:
+                _tag_validation_stage(exc, "qualification_pipeline")
+                raise
             self._record_timing("qualification", started)
             progress.advance(ReleasePhase.QUALIFIED)
 
-            release_stage = self._release_candidate_stage(project, binary)
+            try:
+                release_stage = self._release_candidate_stage(project, binary)
+            except ValidationError as exc:
+                _tag_validation_stage(exc, "publication_validation")
+                raise
             promotion = release_stage.promotion
             matrix = release_stage.matrix
             release = release_stage.release
