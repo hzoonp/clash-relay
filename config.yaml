@@ -41,15 +41,7 @@ runtime:
       - '*.local'
       - localhost
   tun:
-    mode: managed
-    enabled: true
-    stack: mixed
-    dns_hijack:
-      - any:53
-      - tcp://any:53
-    auto_route: true
-    auto_detect_interface: true
-    strict_route: true
+    mode: client
   sniffer:
     enabled: true
     force_dns_mapping: false
