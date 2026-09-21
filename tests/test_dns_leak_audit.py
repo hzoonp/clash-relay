@@ -82,3 +82,11 @@ def test_dns_leak_audit_is_not_applicable_without_tun() -> None:
         "status": "not_applicable",
         "mode": "no_tun",
     }
+
+
+def test_dns_leak_audit_requires_ip_literal_bootstrap_resolvers() -> None:
+    candidate = _candidate()
+    candidate["dns"]["default-nameserver"] = ["https://dns.example/dns-query"]
+
+    with pytest.raises(ValidationError, match="IP-literal"):
+        audit_dns_leak_protection(candidate)
