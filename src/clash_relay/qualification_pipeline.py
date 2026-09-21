@@ -45,6 +45,11 @@ _SAFE_DIAGNOSTIC_KEYS = frozenset(
         "tcp_required_successes",
         "udp_timeout_ms",
         "outcomes",
+        "core_quarantine_status",
+        "core_quarantined_nodes",
+        "core_quarantined_runtime_entries",
+        "core_quarantined_sources",
+        "core_quarantined_proxy_types",
     }
 )
 
@@ -250,6 +255,24 @@ def run_qualification_pipeline(
             "stage_attempts": browsing_attempts_used,
             "recovered_by_retry": recovered_failure_category is not None,
             "recovered_failure_category": recovered_failure_category,
+            "core_quarantine_status": browsing_summary.get("diagnostics", {}).get(
+                "core_quarantine_status", "not_needed"
+            )
+            if isinstance(browsing_summary.get("diagnostics"), dict)
+            else "not_needed",
+            "core_quarantined_nodes": int(
+                browsing_summary.get("diagnostics", {}).get("core_quarantined_nodes", 0) or 0
+            )
+            if isinstance(browsing_summary.get("diagnostics"), dict)
+            else 0,
+            "core_quarantined_runtime_entries": int(
+                browsing_summary.get("diagnostics", {}).get(
+                    "core_quarantined_runtime_entries", 0
+                )
+                or 0
+            )
+            if isinstance(browsing_summary.get("diagnostics"), dict)
+            else 0,
         },
         "ai": {
             "status": ai_summary.get("status"),
