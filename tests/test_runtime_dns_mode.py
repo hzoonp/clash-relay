@@ -8,9 +8,7 @@ from jsonschema import Draft202012Validator
 from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
 
 
-def _runtime(
-    dns: dict[str, object], tun: dict[str, object] | None = None
-) -> dict[str, object]:
+def _runtime(dns: dict[str, object], tun: dict[str, object] | None = None) -> dict[str, object]:
     runtime: dict[str, object] = {
         "mixed_port": 7890,
         "allow_lan": False,
