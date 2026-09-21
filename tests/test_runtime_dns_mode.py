@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from jsonschema import Draft202012Validator
 
 from clash_relay.runtime_config_renderer import RuntimeConfigRenderer
@@ -144,3 +146,13 @@ def test_client_tun_mode_is_omitted() -> None:
     output = RuntimeConfigRenderer().render(_runtime(_managed_dns(), {"mode": "client"}))
 
     assert "tun" not in output
+
+
+def test_canonical_flclash_profile_keeps_tun_client_owned(repo_root: Path) -> None:
+    config = yaml.safe_load((repo_root / "config.yaml").read_text(encoding="utf-8"))
+
+    assert config["runtime"]["tun"] == {"mode": "client"}
+    rendered = RuntimeConfigRenderer().render(config)
+    assert "tun" not in rendered
+    assert rendered["dns"]["enable"] is True
+    assert rendered["dns"]["enhanced-mode"] == "fake-ip"
