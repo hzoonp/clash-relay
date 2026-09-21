@@ -88,11 +88,10 @@ jobs:
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
           CLASH_RELAY_PRODUCTION_PREFLIGHT: ${{ github.event_name == 'push' }}
         run: |
-          if [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" = "true" ]; then
-            export CLASH_RELAY_MANUAL_PUBLISH=true
-          fi
           args=()
-          if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ] && [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" != "true" ]; then
+          if [ "$CLASH_RELAY_ONE_SHOT_PUBLISH" = "true" ]; then
+            args+=(--event-name workflow_dispatch --manual-publish true)
+          elif [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then
             args+=(--production-preflight)
           fi
           python scripts/run_production_release.py "${args[@]}"
