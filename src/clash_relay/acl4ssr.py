@@ -234,6 +234,8 @@ def load_acl4ssr_rules(
             "target": str(source["target"]),
             "provider": provider_name,
         }
+        if source.get("scenario") is not None:
+            directive["scenario"] = str(source["scenario"])
         if source.get("excluded_sources"):
             directive["excluded_sources"] = list(source["excluded_sources"])
         directives.append(directive)
@@ -260,15 +262,16 @@ def load_acl4ssr_rules(
         rule: dict[str, Any] = {"type": str(inline["type"]), "value": inline["value"]}
         if inline.get("options"):
             rule["options"] = list(inline["options"])
-        directives.append(
-            {
-                "priority": int(inline["priority"]),
-                "source_id": str(inline["id"]),
-                "order": 0,
-                "target": str(inline["target"]),
-                "rule": rule,
-            }
-        )
+        inline_directive: dict[str, Any] = {
+            "priority": int(inline["priority"]),
+            "source_id": str(inline["id"]),
+            "order": 0,
+            "target": str(inline["target"]),
+            "rule": rule,
+        }
+        if inline.get("scenario") is not None:
+            inline_directive["scenario"] = str(inline["scenario"])
+        directives.append(inline_directive)
         total_rules += 1
 
     if not directives:

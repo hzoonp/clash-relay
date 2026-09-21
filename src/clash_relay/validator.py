@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .dns_leak_audit import audit_dns_leak_protection
 from .errors import ValidationError
 from .runtime_graph import RuntimeGraph
 from .schema import validate_schema
@@ -330,6 +331,11 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                     f"hidden presentation group {name!r} must be reachable from a public group "
                     "or an active rule target"
                 )
+
+    try:
+        audit_dns_leak_protection(config)
+    except ValidationError as exc:
+        errors.append(str(exc))
 
     serialized = stable_json(config)
     for value in secret_urls:

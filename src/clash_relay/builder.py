@@ -12,6 +12,7 @@ from typing import Any
 from .acl4ssr import load_acl4ssr_rules
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
+from .dns_leak_audit import audit_dns_leak_protection
 from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscriptionError
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
@@ -299,6 +300,7 @@ def build_candidate(
     output = serialize_runtime_graph(compiled.graph)
 
     validate_generated_config(output, secret_urls=secret_values)
+    dns_leak_report = audit_dns_leak_protection(output)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
     yaml_text = _with_acl4ssr_attribution(
         yaml_text,
@@ -319,6 +321,7 @@ def build_candidate(
         "duplicates_removed": duplicate_count,
         "name_filtered_nodes": name_filtered_nodes,
         "multiplier_filtered_nodes": multiplier_filtered_nodes,
+        "dns_leak_audit": dns_leak_report,
         **compiled.report,
     }
     if acl_report is not None:

@@ -85,6 +85,37 @@ def _sniffer_semantics(config: dict[str, Any]) -> None:
                 )
 
 
+def _dns_tun_semantics(config: dict[str, Any]) -> None:
+    runtime = config["runtime"]
+    dns = runtime["dns"]
+    dns_mode = str(dns.get("mode", "managed"))
+    routing_policy = str(dns.get("routing_policy", "none"))
+
+    if routing_policy == "acl4ssr":
+        if dns_mode != "managed" or dns.get("enabled") is not True:
+            raise ConfigurationError(
+                "runtime.dns.routing_policy=acl4ssr requires enabled managed DNS"
+            )
+        acl = config.get("rule_sources", {}).get("acl4ssr", {})
+        if not isinstance(acl, dict) or acl.get("enabled") is not True:
+            raise ConfigurationError(
+                "runtime.dns.routing_policy=acl4ssr requires enabled ACL4SSR rule sources"
+            )
+
+    tun = runtime.get("tun")
+    if not isinstance(tun, dict) or str(tun.get("mode", "managed")) == "client":
+        return
+    if tun.get("enabled") is not True:
+        return
+    if dns_mode != "managed" or dns.get("enabled") is not True:
+        raise ConfigurationError("enabled managed TUN requires enabled managed DNS")
+    hijack = {str(item) for item in tun.get("dns_hijack", [])}
+    if not {"any:53", "tcp://any:53"}.issubset(hijack):
+        raise ConfigurationError("managed TUN requires UDP and TCP port-53 DNS hijacking")
+    if tun.get("auto_route") is not True or tun.get("strict_route") is not True:
+        raise ConfigurationError("managed TUN requires auto_route and strict_route")
+
+
 def _selector_capabilities(selector: dict[str, Any]) -> set[str]:
     return (
         set(selector["capabilities_any"])
@@ -130,6 +161,7 @@ def load_project(
 ) -> ProjectDefinition:
     config = load_and_validate(config_path, "config.schema.json")
     _sniffer_semantics(config)
+    _dns_tun_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
     policy_document = load_policy_document(policies_path)
     policies = policy_document.document

@@ -70,8 +70,26 @@ All subscriptions are untrusted:
 - subscription-supplied chain/interface/routing controls are stripped;
 - output names are regenerated and globally unique.
 
-Current limitation: URL hostnames are not DNS-pinned throughout the HTTP connection, so a hostile resolver capable of rebinding remains outside the current standard-library fetcher threat model. Do not accept subscription URLs from untrusted strangers.
+Subscription HTTP(S) connections are bound to the exact public `getaddrinfo` results that passed destination validation. Redirects are revalidated and re-resolved before their connection is created, so a later ambient resolver lookup cannot silently rebind a validated subscription hostname to a private/special-use address.
 
+## DNS and TUN leak prevention
+
+The canonical profile uses managed Fake-IP DNS and a managed TUN declaration. DNS routing does not create a second domain-policy database: generated `nameserver-policy` entries reference the already-generated ACL4SSR `rule-set:` providers and reuse their Routing V2 scenario metadata.
+
+Before a candidate is accepted, the generated-config audit requires the managed-TUN profile to keep:
+
+- a loopback-only DNS listener;
+- IPv6 DNS responses disabled for the canonical IPv4 Fake-IP contract;
+- encrypted bootstrap/default, normal, proxy-node, direct, and policy resolver endpoints;
+- IP-literal hosts for encrypted bootstrap/default resolvers;
+- `respect-rules: true` plus a dedicated proxy-node resolver pool;
+- `direct-nameserver-follow-policy: true` and an encrypted direct resolver pool;
+- no fallback resolver path;
+- `nameserver-policy` keys restricted to existing `rule-set:` providers;
+- TUN `auto-route`, `auto-detect-interface`, and `strict-route`;
+- both UDP and TCP port-53 hijacking.
+
+The leak audit is a static production-candidate gate, not a claim that a remote profile can control every client application's local VPN switches. FlClash currently owns several TUN fields in its app configuration. The supported FlClash posture therefore also requires local TUN/VPN and DNS-hijacking settings to remain enabled, DNS override/system-DNS append features to remain disabled, and Android Private DNS to remain off when relying on TUN DNS interception.
 ## Logs and reports
 
 Build reports contain source IDs, counts, statuses, and a candidate digest, never source URLs or proxy payloads. Error paths redact full secret values, common query credentials, Authorization headers, and password fields. Workflows do not enable shell tracing and never echo the secret bundle.

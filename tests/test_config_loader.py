@@ -227,3 +227,57 @@ def test_yaml_alias_is_rejected(project_factory) -> None:
     paths["config_path"].write_text("version: &v 1\nruntime: *v\n", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="anchors and aliases"):
         load_project(**paths)
+
+
+def test_dns_routing_policy_requires_enabled_acl4ssr(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+
+    def mutate(data):
+        data["runtime"]["dns"] = {
+            "mode": "managed",
+            "enabled": True,
+            "enhanced_mode": "fake-ip",
+            "listen": "127.0.0.1:1053",
+            "nameservers": ["https://1.1.1.1/dns-query"],
+            "direct_nameservers": ["https://dns.alidns.com/dns-query"],
+            "direct_nameserver_follow_policy": True,
+            "routing_policy": "acl4ssr",
+            "fallback_nameservers": [],
+        }
+        data["rule_sources"] = {
+            "acl4ssr": {
+                "enabled": False,
+                "manifest": "rules/acl4ssr.yaml",
+            }
+        }
+
+    yaml_editor(paths["config_path"], mutate)
+    with pytest.raises(ConfigurationError, match="requires enabled ACL4SSR"):
+        load_project(**paths)
+
+
+def test_managed_tun_requires_udp_and_tcp_dns_hijack(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+
+    def mutate(data):
+        data["runtime"]["dns"] = {
+            "mode": "managed",
+            "enabled": True,
+            "enhanced_mode": "fake-ip",
+            "listen": "127.0.0.1:1053",
+            "nameservers": ["https://1.1.1.1/dns-query"],
+            "fallback_nameservers": [],
+        }
+        data["runtime"]["tun"] = {
+            "mode": "managed",
+            "enabled": True,
+            "stack": "mixed",
+            "dns_hijack": ["any:53"],
+            "auto_route": True,
+            "auto_detect_interface": True,
+            "strict_route": True,
+        }
+
+    yaml_editor(paths["config_path"], mutate)
+    with pytest.raises(ConfigurationError, match="UDP and TCP"):
+        load_project(**paths)

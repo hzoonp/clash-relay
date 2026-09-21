@@ -4,6 +4,7 @@ import copy
 
 import pytest
 
+import clash_relay.ai_qualification as ai_qualification
 from clash_relay.ai_qualification import apply_ai_qualification, load_ai_probe_specs
 from clash_relay.errors import ValidationError
 
@@ -164,3 +165,26 @@ def test_ai_qualification_fails_closed_when_no_node_passes() -> None:
     config = copy.deepcopy(_config())
     with pytest.raises(ValidationError, match="no nodes passed all AI qualification probes"):
         apply_ai_qualification(config, set())
+
+
+def test_ai_probe_detaches_production_dns_rule_set_policy() -> None:
+    provider = _provider("ai-node")
+    base = {
+        "proxy-providers": {"cr_ai_us_us": provider},
+        "dns": {
+            "enable": True,
+            "listen": "127.0.0.1:1053",
+            "nameserver-policy": {"rule-set:acl4ssr_openai": ["https://1.1.1.1/dns-query"]},
+        },
+    }
+
+    probe = ai_qualification._temporary_probe_config(
+        base,
+        provider_name="cr_ai_us_us",
+        payload=(provider["payload"][0],),
+        mixed_port=17891,
+        controller_port=19091,
+        secret="test",
+    )
+
+    assert "nameserver-policy" not in probe["dns"]

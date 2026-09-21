@@ -51,6 +51,16 @@ def _audit() -> dict:
                 "sources": {"subscription_1": 1},
             }
         ],
+        "dns_leak_audit": {
+            "status": "passed",
+            "mode": "strict_tun",
+            "policy_rulesets": 2,
+        },
+        "dns_routing_policy": {
+            "status": "compiled",
+            "mode": "acl4ssr",
+            "total_rulesets": 15,
+        },
     }
 
 
@@ -82,6 +92,12 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     assert manifest["runtime"] == {"groups": 1, "providers": 1, "unique_nodes": 1}
     assert manifest["sources"]["configured"] == 1
     assert manifest["sources"]["by_use"]["general"]["distinct_sources"] == 1
+    assert manifest["dns_security"] == {
+        "leak_audit": "passed",
+        "tun_mode": "strict_tun",
+        "routing_policy": "acl4ssr",
+        "policy_rulesets": 15,
+    }
     encoded = json.dumps(manifest, ensure_ascii=False)
     for secret in ("subscription_1", "sub_1", "secret-node", "secret.example", "do-not-leak"):
         assert secret not in encoded
@@ -117,5 +133,6 @@ def test_published_manifest_uses_release_transaction_identity() -> None:
     markdown = render_release_manifest_markdown(manifest)
     assert "Public Config: **v2**" in markdown
     assert "aggregate-only" in markdown
+    assert "DNS leak audit: **passed**" in markdown
     assert digest in markdown
     assert "secret-node" not in markdown

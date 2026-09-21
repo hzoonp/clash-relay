@@ -88,3 +88,29 @@ def test_load_candidate_accepts_mapping_and_rejects_sequence(tmp_path: Path) -> 
     assert mihomo.load_candidate(mapping) == {"proxies": []}
     with pytest.raises(ValidationError, match="candidate must be a YAML mapping"):
         mihomo.load_candidate(sequence)
+
+
+def test_startup_smoke_copy_disables_tun_without_mutating_validation_copy(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "validation.yaml"
+    source.write_text(
+        "mixed-port: 17890\n"
+        "tun:\n"
+        "  enable: true\n"
+        "  stack: mixed\n"
+        "  dns-hijack: [any:53, tcp://any:53]\n"
+        "  auto-route: true\n"
+        "  strict-route: true\n",
+        encoding="utf-8",
+    )
+
+    startup, disabled = mihomo._startup_smoke_copy(source, tmp_path)
+
+    assert disabled is True
+    assert load_yaml_file(source)["tun"]["enable"] is True
+    assert load_yaml_file(startup)["tun"]["enable"] is False
+    assert load_yaml_file(startup)["tun"]["dns-hijack"] == [
+        "any:53",
+        "tcp://any:53",
+    ]

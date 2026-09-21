@@ -41,6 +41,9 @@
             "default_nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
             "nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
             "proxy_server_nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "direct_nameservers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "direct_nameserver_follow_policy": {"type": "boolean"},
+            "routing_policy": {"enum": ["none", "acl4ssr"]},
             "fallback_nameservers": {"type": "array", "items": {"type": "string", "minLength": 1}},
             "fake_ip_range": {"type": "string", "minLength": 1},
             "fake_ip_filter_mode": {"enum": ["blacklist", "whitelist", "rule"]},
@@ -55,6 +58,30 @@
             {
               "if": {"required": ["respect_rules"], "properties": {"respect_rules": {"const": true}}},
               "then": {"required": ["proxy_server_nameservers"]}
+            },
+            {
+              "if": {"required": ["routing_policy"], "properties": {"routing_policy": {"const": "acl4ssr"}}},
+              "then": {"required": ["direct_nameservers", "direct_nameserver_follow_policy"]}
+            }
+          ]
+        },
+        "tun": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {"enum": ["client", "managed"]},
+            "enabled": {"type": "boolean"},
+            "stack": {"enum": ["system", "gvisor", "mixed", "mips"]},
+            "dns_hijack": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "auto_route": {"type": "boolean"},
+            "auto_detect_interface": {"type": "boolean"},
+            "strict_route": {"type": "boolean"}
+          },
+          "allOf": [
+            {
+              "if": {"required": ["mode"], "properties": {"mode": {"const": "client"}}},
+              "then": {},
+              "else": {"required": ["enabled", "stack", "dns_hijack", "auto_route", "auto_detect_interface", "strict_route"]}
             }
           ]
         },

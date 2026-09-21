@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import clash_relay.transport_qualification as transport_qualification
 from clash_relay.errors import ValidationError
 from clash_relay.transport_qualification import (
     _quic_probe_payload,
@@ -56,3 +57,27 @@ def test_quic_probe_is_amplification_safe_unsupported_version_datagram() -> None
     assert payload[6:14] == b"p13dcid1"
     assert payload[14] == 8
     assert payload[15:23] == b"p13scid1"
+
+
+def test_transport_probe_detaches_production_dns_rule_set_policy() -> None:
+    proxy = {"name": "node-a", "type": "http", "server": "a.invalid", "port": 443}
+    base = {
+        "proxy-providers": {"cr_general_any": {"type": "inline", "payload": [proxy]}},
+        "dns": {
+            "enable": True,
+            "listen": "127.0.0.1:1053",
+            "nameserver-policy": {
+                "rule-set:acl4ssr_china_domain": ["https://dns.alidns.com/dns-query"]
+            },
+        },
+    }
+
+    probe = transport_qualification._temporary_probe_config(
+        base,
+        {"cr_general_any": (proxy,)},
+        mixed_port=17892,
+        controller_port=19092,
+        secret="test",
+    )
+
+    assert "nameserver-policy" not in probe["dns"]

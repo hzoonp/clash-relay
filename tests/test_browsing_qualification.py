@@ -416,3 +416,29 @@ def test_core_quarantine_fails_closed_before_emptying_provider(
         _prune_rejected_proxy_identities(config, {_proxy_identity(only_proxy)})
 
     assert config["proxy-providers"]["cr_browsing_us"]["payload"] == [only_proxy]
+
+
+def test_browsing_probe_detaches_production_dns_rule_set_policy() -> None:
+    base = {
+        "proxy-providers": {
+            "cr_browsing_any": {
+                "type": "inline",
+                "payload": [{"name": "node-a", "type": "http", "server": "a.invalid", "port": 443}],
+            }
+        },
+        "dns": {
+            "enable": True,
+            "listen": "127.0.0.1:1053",
+            "nameserver-policy": {"rule-set:acl4ssr_proxy_lite": ["https://1.1.1.1/dns-query"]},
+        },
+    }
+
+    probe = browsing_qualification._temporary_probe_config(
+        base,
+        {"cr_browsing_any": (base["proxy-providers"]["cr_browsing_any"]["payload"][0],)},
+        mixed_port=17890,
+        controller_port=19090,
+        secret="test",
+    )
+
+    assert "nameserver-policy" not in probe["dns"]

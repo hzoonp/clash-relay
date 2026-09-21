@@ -126,6 +126,28 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     document = yaml.safe_load(result.yaml_text)
     graph = RuntimeGraph.from_candidate(document)
 
+    dns = document["dns"]
+    assert dns["enable"] is True
+    assert dns["enhanced-mode"] == "fake-ip"
+    assert dns["respect-rules"] is True
+    assert dns["direct-nameserver-follow-policy"] is True
+    assert dns["fallback"] == []
+    assert dns["nameserver-policy"]
+    assert all(str(key).startswith("rule-set:") for key in dns["nameserver-policy"])
+    assert all(
+        str(key).split(":", 1)[1] in document["rule-providers"] for key in dns["nameserver-policy"]
+    )
+
+    tun = document["tun"]
+    assert tun["enable"] is True
+    assert tun["stack"] == "mixed"
+    assert tun["dns-hijack"] == ["any:53", "tcp://any:53"]
+    assert tun["auto-route"] is True
+    assert tun["auto-detect-interface"] is True
+    assert tun["strict-route"] is True
+    assert result.report["dns_leak_audit"]["status"] == "passed"
+    assert result.report["dns_routing_policy"]["status"] == "compiled"
+
     general = graph.walk_resolved("代理选择")
     assert general.providers
     general_servers = _reachable_servers(graph, general.proxies)

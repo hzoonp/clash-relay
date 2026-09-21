@@ -57,6 +57,23 @@ def _validation_copy(config_path: Path, workdir: Path) -> Path:
     return target
 
 
+def _startup_smoke_copy(validation_path: Path, workdir: Path) -> tuple[Path, bool]:
+    config = load_yaml_file(validation_path)
+    if not isinstance(config, dict):
+        raise ValidationError("validation candidate is not a YAML mapping")
+    config = dict(config)
+    tun = config.get("tun")
+    tun_disabled = False
+    if isinstance(tun, dict) and tun.get("enable") is True:
+        startup_tun = dict(tun)
+        startup_tun["enable"] = False
+        config["tun"] = startup_tun
+        tun_disabled = True
+    target = workdir / "startup-smoke.yaml"
+    target.write_text(dump_yaml(config), encoding="utf-8")
+    return target, tun_disabled
+
+
 def validate_with_mihomo(
     binary: Path,
     config_path: Path,
@@ -81,7 +98,8 @@ def validate_with_mihomo(
         if test.returncode != 0:
             output = redact_text(test.stdout[-5000:], secret_values)
             raise ValidationError(f"Mihomo configuration test failed: {output}")
-        command = [str(binary), "-d", str(workdir), "-f", str(validation_path)]
+        startup_path, startup_tun_disabled = _startup_smoke_copy(validation_path, workdir)
+        command = [str(binary), "-d", str(workdir), "-f", str(startup_path)]
         try:
             process = subprocess.Popen(
                 command,
@@ -122,6 +140,7 @@ def validate_with_mihomo(
         "version": version_line,
         "config_test": "passed",
         "startup_smoke": "passed",
+        "startup_tun_disabled": startup_tun_disabled,
     }
 
 

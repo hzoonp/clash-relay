@@ -200,6 +200,9 @@ def _temporary_probe_config(
     dns = base_config.get("dns")
     if isinstance(dns, dict):
         probe_dns = dict(dns)
+        # The qualification probe intentionally omits the production rule graph,
+        # so routing-derived DNS rule-set bindings cannot be resolved here.
+        probe_dns.pop("nameserver-policy", None)
         if probe_dns.get("enable"):
             probe_dns["listen"] = f"127.0.0.1:{_free_port()}"
         config["dns"] = probe_dns

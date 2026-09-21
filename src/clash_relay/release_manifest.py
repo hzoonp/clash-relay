@@ -67,6 +67,22 @@ def _source_inventory(audit: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dns_security(audit: dict[str, Any]) -> dict[str, Any] | None:
+    leak = audit.get("dns_leak_audit")
+    policy = audit.get("dns_routing_policy")
+    if not isinstance(leak, dict) and not isinstance(policy, dict):
+        return None
+
+    leak_row = leak if isinstance(leak, dict) else {}
+    policy_row = policy if isinstance(policy, dict) else {}
+    return {
+        "leak_audit": str(leak_row.get("status", "unknown")),
+        "tun_mode": str(leak_row.get("mode", "unknown")),
+        "routing_policy": str(policy_row.get("mode", "unknown")),
+        "policy_rulesets": int(policy_row.get("total_rulesets", 0) or 0),
+    }
+
+
 def build_release_manifest(
     *,
     candidate: dict[str, Any],
@@ -147,6 +163,9 @@ def build_release_manifest(
             "validated_cores": [str(item) for item in validated_cores],
         },
     }
+    dns_security = _dns_security(audit)
+    if dns_security is not None:
+        document["dns_security"] = dns_security
     if commit_sha:
         document["commit_sha"] = commit_sha
     if release is not None:
@@ -167,6 +186,9 @@ def render_release_manifest_markdown(manifest: dict[str, Any]) -> str:
     mihomo = manifest.get("mihomo", {})
     cores = mihomo.get("validated_cores", []) if isinstance(mihomo, dict) else []
     core_text = ", ".join(str(item) for item in cores) if cores else "-"
+    dns_security = manifest.get("dns_security", {})
+    if not isinstance(dns_security, dict):
+        dns_security = {}
     lines = [
         "## Release manifest",
         "",
@@ -181,7 +203,8 @@ def render_release_manifest_markdown(manifest: dict[str, Any]) -> str:
         f"Runtime: **{int(runtime.get('groups', 0) or 0)} groups / {int(runtime.get('providers', 0) or 0)} providers / {int(runtime.get('unique_nodes', 0) or 0)} unique nodes**  ",
         f"Sources: **{int(sources.get('active', 0) or 0)}/{int(sources.get('configured', 0) or 0)} active**  ",
         f"Promotion Guard: **{promotion.get('status', 'not_applicable')}**  ",
-        f"Mihomo cores: **{core_text}**",
+        f"Mihomo cores: **{core_text}**  ",
+        f"DNS leak audit: **{dns_security.get('leak_audit', 'not_applicable')}** / policy sets: **{int(dns_security.get('policy_rulesets', 0) or 0)}**",
         "",
         "This manifest is aggregate-only and excludes node names, servers, ports, credentials, subscription URLs, and probe endpoints.",
         "",
