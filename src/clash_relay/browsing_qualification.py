@@ -419,10 +419,7 @@ def _prune_rejected_proxy_identities(
         kept = [
             proxy
             for proxy in payload
-            if not (
-                isinstance(proxy, dict)
-                and _proxy_identity(proxy) in rejected_identities
-            )
+            if not (isinstance(proxy, dict) and _proxy_identity(proxy) in rejected_identities)
         ]
         removed += len(payload) - len(kept)
         if payload and not kept:
