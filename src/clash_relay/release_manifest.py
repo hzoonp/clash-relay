@@ -20,16 +20,28 @@ def _source_inventory(audit: dict[str, Any]) -> dict[str, Any]:
         subscriptions = []
     configured = 0
     active = 0
+    input_nodes = 0
+    parsed_valid_nodes = 0
+    skipped_invalid_nodes = 0
+    filtered_by_name = 0
     accepted_nodes = 0
     filtered_nodes = 0
+    post_dedup_nodes = 0
+    runtime_nodes = 0
     for row in subscriptions:
         if not isinstance(row, dict):
             continue
         configured += 1
         if row.get("status") == "ok":
             active += 1
+        input_nodes += int(row.get("input_nodes", 0) or 0)
+        parsed_valid_nodes += int(row.get("parsed_valid_nodes", 0) or 0)
+        skipped_invalid_nodes += int(row.get("skipped_invalid_nodes", 0) or 0)
+        filtered_by_name += int(row.get("filtered_by_name", 0) or 0)
         accepted_nodes += int(row.get("nodes", 0) or 0)
         filtered_nodes += int(row.get("filtered_over_multiplier", 0) or 0)
+        post_dedup_nodes += int(row.get("post_dedup_nodes", row.get("nodes", 0)) or 0)
+        runtime_nodes += int(row.get("runtime_nodes", 0) or 0)
 
     aggregate: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"pools": 0, "providers": 0, "node_entries": 0, "sources": set()}
@@ -61,8 +73,14 @@ def _source_inventory(audit: dict[str, Any]) -> dict[str, Any]:
     return {
         "configured": configured,
         "active": active,
+        "input_nodes": input_nodes,
+        "parsed_valid_nodes": parsed_valid_nodes,
+        "skipped_invalid_nodes": skipped_invalid_nodes,
+        "filtered_by_name": filtered_by_name,
         "accepted_nodes": accepted_nodes,
         "filtered_over_multiplier": filtered_nodes,
+        "post_dedup_nodes": post_dedup_nodes,
+        "runtime_nodes": runtime_nodes,
         "by_use": per_use,
     }
 
@@ -202,6 +220,7 @@ def render_release_manifest_markdown(manifest: dict[str, Any]) -> str:
         "",
         f"Runtime: **{int(runtime.get('groups', 0) or 0)} groups / {int(runtime.get('providers', 0) or 0)} providers / {int(runtime.get('unique_nodes', 0) or 0)} unique nodes**  ",
         f"Sources: **{int(sources.get('active', 0) or 0)}/{int(sources.get('configured', 0) or 0)} active**  ",
+        f"Source nodes: **{int(sources.get('input_nodes', 0) or 0)} input → {int(sources.get('parsed_valid_nodes', 0) or 0)} parsed → {int(sources.get('post_dedup_nodes', 0) or 0)} dedup → {int(sources.get('runtime_nodes', 0) or 0)} final runtime**  ",
         f"Promotion Guard: **{promotion.get('status', 'not_applicable')}**  ",
         f"Mihomo cores: **{core_text}**  ",
         f"DNS leak audit: **{dns_security.get('leak_audit', 'not_applicable')}** / policy sets: **{int(dns_security.get('policy_rulesets', 0) or 0)}**",
