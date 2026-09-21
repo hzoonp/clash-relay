@@ -11,8 +11,8 @@ from typing import Any
 
 from .acl4ssr import load_acl4ssr_rules
 from .classify import classify_proxy, deduplicate_nodes
-from .dns_leak_audit import audit_dns_leak_protection
 from .config_loader import ProjectDefinition, load_project
+from .dns_leak_audit import audit_dns_leak_protection
 from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscriptionError
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
