@@ -48,7 +48,7 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(tun, dict):
         raise ValidationError("DNS leak audit requires tun to be a mapping")
     if tun.get("enable") is not True:
-        raise ValidationError("DNS leak audit requires managed TUN to be enabled")
+        return {"status": "not_applicable", "mode": "tun_disabled"}
 
     dns = config.get("dns")
     if not isinstance(dns, dict) or dns.get("enable") is not True:
