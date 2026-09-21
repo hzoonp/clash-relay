@@ -292,10 +292,15 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
     allowed = {
         "id",
         "status",
-        "nodes",
+        "input_nodes",
+        "parsed_valid_nodes",
         "skipped_invalid_nodes",
+        "post_name_filter_nodes",
         "filtered_by_name",
+        "post_multiplier_filter_nodes",
         "filtered_over_multiplier",
+        "post_dedup_nodes",
+        "nodes",
         "max_node_multiplier",
     }
     for row in subscriptions:
