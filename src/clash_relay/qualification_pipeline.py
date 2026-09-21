@@ -261,7 +261,10 @@ def run_qualification_pipeline(
             if isinstance(browsing_summary.get("diagnostics"), dict)
             else "not_needed",
             "core_quarantined_nodes": int(
-                browsing_summary.get("diagnostics", {}).get("core_quarantined_nodes", 0) or 0
+                browsing_summary.get("diagnostics", {}).get(
+                    "core_quarantined_nodes", 0
+                )
+                or 0
             )
             if isinstance(browsing_summary.get("diagnostics"), dict)
             else 0,
