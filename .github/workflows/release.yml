@@ -83,10 +83,15 @@ jobs:
           set -euo pipefail
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
             tag_sha="$(git rev-list -n 1 "$TAG")"
-            test "$tag_sha" = "$GITHUB_SHA"
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            if [ "$tag_sha" = "$GITHUB_SHA" ]; then
+              echo "tag_matches_validated_sha=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "tag_matches_validated_sha=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag_matches_validated_sha=true" >> "$GITHUB_OUTPUT"
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release_exists=true" >> "$GITHUB_OUTPUT"
@@ -94,14 +99,14 @@ jobs:
             echo "release_exists=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Render public release notes
-        if: steps.existing.outputs.release_exists != 'true'
+        if: steps.existing.outputs.release_exists != 'true' && steps.existing.outputs.tag_matches_validated_sha == 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           cp "docs/releases/${VERSION}.md" .release-notes.md
       - name: Create source-only GitHub Release
-        if: steps.existing.outputs.release_exists != 'true'
+        if: steps.existing.outputs.release_exists != 'true' && steps.existing.outputs.tag_matches_validated_sha == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -116,3 +121,6 @@ jobs:
           echo "Release tag: ${{ steps.version.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Quality authority: reusable ci.yml on exact commit ${{ needs.validate.outputs.validated_sha }}." >> "$GITHUB_STEP_SUMMARY"
           echo "Source-only release: production config and private scheduler state are not release assets." >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.existing.outputs.tag_matches_validated_sha }}" = "false" ]; then
+            echo "Release action: skipped because this package version is already tagged on a different validated commit." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -65,4 +65,4 @@ This checklist is the human release review that complements the exact-SHA automa
 - [ ] `docs/releases/<version>.md` exists and matches the package version.
 - [ ] The source-release workflow checks out the exact `Validated SHA`.
 - [ ] The GitHub Release is source-only and contains no private operational assets.
-- [ ] The release tag points to the exact validated `main` commit.
+- [ ] For a new package version, the release tag points to the exact validated `main` commit.

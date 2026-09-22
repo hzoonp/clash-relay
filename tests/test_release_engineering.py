@@ -29,7 +29,10 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert "gh release create" in text
     assert "gh release view" in text
     assert "tag_sha=" in text
-    assert 'test "$tag_sha" = "$GITHUB_SHA"' in text
+    assert "tag_matches_validated_sha" in text
+    assert 'if [ "$tag_sha" = "$GITHUB_SHA" ]; then' in text
+    assert "tag_matches_validated_sha == 'true'" in text
+    assert "already tagged on a different validated commit" in text
     assert "release_exists" in text
     assert "--notes-file .release-notes.md" in text
     assert "actions/upload-artifact" not in text
