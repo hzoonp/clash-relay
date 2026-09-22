@@ -1,0 +1,165 @@
+name: Branch housekeeping
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report deletions without changing refs"
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/branch-housekeeping.yml
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-housekeeping
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.head_commit.message, 'maintenance: cleanup merged branches')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Delete merged and fully integrated branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["GH_TOKEN"]
+          repository = os.environ["GH_REPOSITORY"]
+          dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
+          api = "https://api.github.com"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "clash-relay-branch-housekeeping",
+          }
+
+          def get_pages(path: str) -> list[dict]:
+              items: list[dict] = []
+              page = 1
+              while True:
+                  sep = "&" if "?" in path else "?"
+                  req = urllib.request.Request(
+                      f"{api}{path}{sep}per_page=100&page={page}",
+                      headers=headers,
+                  )
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      batch = json.loads(response.read().decode("utf-8"))
+                  if not batch:
+                      break
+                  items.extend(batch)
+                  if len(batch) < 100:
+                      break
+                  page += 1
+              return items
+
+          branches = get_pages(f"/repos/{repository}/branches")
+          open_pulls = get_pages(f"/repos/{repository}/pulls?state=open")
+          closed_pulls = get_pages(f"/repos/{repository}/pulls?state=closed")
+
+          open_heads = {
+              pull["head"]["ref"]
+              for pull in open_pulls
+              if pull.get("head", {}).get("repo", {}).get("full_name") == repository
+          }
+          merged_heads = {
+              pull["head"]["ref"]
+              for pull in closed_pulls
+              if pull.get("merged_at")
+              and pull.get("head", {}).get("repo", {}).get("full_name") == repository
+          }
+
+          subprocess.run(
+              ["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*", "--prune"],
+              check=True,
+          )
+
+          deleted: list[str] = []
+          kept_open: list[str] = []
+          kept_unmerged: list[str] = []
+          failures: list[str] = []
+
+          for item in sorted(branches, key=lambda value: value["name"]):
+              name = item["name"]
+              if name == "main" or item.get("protected"):
+                  continue
+              if name in open_heads:
+                  kept_open.append(name)
+                  continue
+
+              ancestor = (
+                  subprocess.run(
+                      ["git", "merge-base", "--is-ancestor", f"origin/{name}", "origin/main"],
+                      check=False,
+                  ).returncode
+                  == 0
+              )
+              merged_pr = name in merged_heads
+              if not (ancestor or merged_pr):
+                  kept_unmerged.append(name)
+                  continue
+
+              if dry_run:
+                  deleted.append(name)
+                  continue
+
+              encoded = urllib.parse.quote(f"heads/{name}", safe="/")
+              request = urllib.request.Request(
+                  f"{api}/repos/{repository}/git/refs/{encoded}",
+                  method="DELETE",
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      response.read()
+                  deleted.append(name)
+              except urllib.error.HTTPError as exc:
+                  failures.append(f"{name}: HTTP {exc.code}")
+
+          print(
+              json.dumps(
+                  {
+                      "dry_run": dry_run,
+                      "deleted_or_would_delete": deleted,
+                      "deleted_or_would_delete_count": len(deleted),
+                      "kept_open_pr_heads": kept_open,
+                      "kept_open_pr_heads_count": len(kept_open),
+                      "kept_unmerged": kept_unmerged,
+                      "kept_unmerged_count": len(kept_unmerged),
+                      "failures": failures,
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+          )
+          if failures:
+              raise SystemExit("one or more branch deletions failed")
+          PY
