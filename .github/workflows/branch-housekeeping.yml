@@ -26,7 +26,8 @@ jobs:
   cleanup:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.head_commit.message, 'maintenance: cleanup merged branches')
+      startsWith(github.event.head_commit.message, 'maintenance: cleanup merged branches') ||
+      startsWith(github.event.head_commit.message, 'maintenance: cleanup stale branches')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history
@@ -85,6 +86,25 @@ jobs:
           open_pulls = get_pages(f"/repos/{repository}/pulls?state=open")
           closed_pulls = get_pages(f"/repos/{repository}/pulls?state=closed")
 
+          stale_allowlist = {
+              "agent/p11-integration-stack",
+              "agent/p11-stage-cb",
+              "agent/p11-stage-cbd",
+              "agent/p11-stage-cbde",
+              "agent/p11-stage-cbdef",
+              "agent/p11-stage-cbdefg",
+              "agent/p11-stage-final",
+              "agent/v2.2.0-architecture-convergence",
+              "diag/prod-stage-0586c807",
+              "diag/prod-stage-3147dae6",
+              "diagnostic/subscription3-ai-probe",
+              "feat/phase-3-ai-service-runtime-probes",
+              "work/ai-sub1-policy-boundary",
+              "work/p17c-dns-connection-boundary",
+              "release/dns-tun-one-shot-dispatch-20260921",
+              "work/remove-actions-history-cleanup",
+          }
+
           open_heads = {
               pull["head"]["ref"]
               for pull in open_pulls
@@ -123,7 +143,8 @@ jobs:
                   == 0
               )
               merged_pr = name in merged_heads
-              if not (ancestor or merged_pr):
+              reviewed_stale = name in stale_allowlist
+              if not (ancestor or merged_pr or reviewed_stale):
                   kept_unmerged.append(name)
                   continue
 
