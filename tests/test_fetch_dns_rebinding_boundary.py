@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from clash_relay import fetch
 from clash_relay.errors import FetchError
 from clash_relay.fetch import fetch_subscription
 
@@ -107,7 +108,7 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
 
     monkeypatch.setattr(
         "clash_relay.fetch._validate_resolved_destination",
-        lambda url: None,
+        lambda url, **kwargs: None,
     )
     monkeypatch.setattr("clash_relay.fetch.urllib.request.build_opener", fake_build_opener)
 
@@ -130,3 +131,53 @@ def test_subscription_fetch_opener_explicitly_disables_environment_proxies(
     assert proxy_handlers[0].proxies == {}
     assert len(requests) == 1
     assert requests[0].get_header("User-agent") == "clash.meta"
+
+
+def test_dns_resolution_consumes_the_shared_subscription_deadline(monkeypatch) -> None:
+    ticks = iter((0.0, 0.0, 2.0))
+    monkeypatch.setattr(fetch.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(
+        fetch.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    with pytest.raises(FetchError, match="total timeout"):
+        fetch._resolve_public_destination(
+            "https://subscription.invalid.example/path",
+            deadline=fetch._Deadline(1.0),
+        )
+
+
+def test_response_reads_stop_when_the_shared_deadline_expires(monkeypatch) -> None:
+    ticks = iter((0.0, 0.0, 2.0))
+    monkeypatch.setattr(fetch.time, "monotonic", lambda: next(ticks))
+
+    class Response:
+        def read(self, size: int) -> bytes:
+            return b"chunk"
+
+    with pytest.raises(FetchError, match="total timeout"):
+        fetch._read_bounded(Response(), 1024, deadline=fetch._Deadline(1.0))
+
+
+def test_redirect_validation_observes_the_shared_deadline(monkeypatch) -> None:
+    ticks = iter((0.0, 2.0))
+    monkeypatch.setattr(fetch.time, "monotonic", lambda: next(ticks))
+    deadline = fetch._Deadline(1.0)
+    handler = fetch._SafeRedirectHandler(allow_http=True, allow_file=False, deadline=deadline)
+    monkeypatch.setattr(
+        fetch.urllib.request.HTTPRedirectHandler,
+        "redirect_request",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        fetch,
+        "_validate_resolved_destination",
+        lambda url, *, deadline: deadline.remaining(),
+    )
+
+    with pytest.raises(FetchError, match="total timeout"):
+        handler.redirect_request(None, None, 302, "Found", None, "http://public.invalid/path")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from clash_relay import mihomo_download
@@ -33,7 +34,8 @@ def test_verified_mihomo_cache_is_reused_without_network_metadata(tmp_path: Path
     assert result is not None
     assert result["cache_hit"] is True
     assert second_output.read_bytes() == executable
-    assert second_output.stat().st_mode & 0o111
+    if os.name != "nt":
+        assert second_output.stat().st_mode & 0o111
 
 
 def test_tampered_mihomo_cache_is_never_reused(tmp_path: Path) -> None:

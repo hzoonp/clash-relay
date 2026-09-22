@@ -40,6 +40,8 @@ def repository_files() -> list[Path]:
 def main() -> int:
     failures: list[str] = []
     for path in repository_files():
+        if not path.is_file():
+            continue
         relative = path.relative_to(ROOT)
         if path.name in FORBIDDEN_BASENAMES:
             failures.append(f"forbidden tracked filename: {relative}")

@@ -36,7 +36,11 @@ def yaml_load_no_aliases(text: str, *, source: str, untrusted: bool = False) -> 
                 error = UnsafeSubscriptionError if untrusted else ConfigurationError
                 raise error(f"{source}: YAML anchors and aliases are not allowed")
         return yaml.safe_load(text)
-    except (yaml.YAMLError, UnicodeError) as exc:
+    # PyYAML can exhaust Python's recursion limit while composing an extremely
+    # deep collection, before callers can apply their structural depth guard.
+    # Treat it like every other malformed untrusted document so an optional
+    # subscription cannot escape the builder's failure boundary.
+    except (yaml.YAMLError, UnicodeError, RecursionError) as exc:
         error = SubscriptionError if untrusted else ConfigurationError
         raise error(f"{source}: invalid YAML") from exc
 

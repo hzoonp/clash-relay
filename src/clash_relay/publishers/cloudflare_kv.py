@@ -75,6 +75,7 @@ class CloudflareKVPublisher:
         account_id: str,
         namespace_title: str,
         key_name: str = "production-config",
+        namespace_id: str | None = None,
     ) -> None:
         if not token:
             raise PublicationError("Cloudflare API token is required")
@@ -87,6 +88,7 @@ class CloudflareKVPublisher:
         self._account_id = account_id
         self._namespace_title = namespace_title
         self._key_name = key_name
+        self._resolved_namespace_id = namespace_id
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -96,6 +98,8 @@ class CloudflareKVPublisher:
         }
 
     def _namespace_id(self) -> str:
+        if self._resolved_namespace_id is not None:
+            return self._resolved_namespace_id
         matches: list[str] = []
         encoded_account = urllib.parse.quote(self._account_id, safe="")
         for page in range(1, _MAX_NAMESPACE_PAGES + 1):
@@ -127,7 +131,12 @@ class CloudflareKVPublisher:
             raise PublicationError(
                 "Cloudflare KV namespace title must resolve to exactly one namespace"
             )
-        return matches[0]
+        self._resolved_namespace_id = matches[0]
+        return self._resolved_namespace_id
+
+    def resolve_namespace_id(self) -> str:
+        """Resolve and cache the unique namespace identity for a lifecycle."""
+        return self._namespace_id()
 
     def _value_url(self, namespace_id: str) -> str:
         encoded_account = urllib.parse.quote(self._account_id, safe="")
@@ -189,4 +198,19 @@ class CloudflareKVPublisher:
             "key": self._key_name,
             "bytes": len(content),
             "sha256": hashlib.sha256(content).hexdigest(),
+        }
+
+    def delete(self) -> dict[str, Any]:
+        """Delete one KV value after an explicitly reviewed retention plan."""
+        namespace_id = self._namespace_id()
+        request = urllib.request.Request(
+            self._value_url(namespace_id),
+            headers=self._headers(),
+            method="DELETE",
+        )
+        _request_json(request, commit_unknown_on_unverified_response=True)
+        return {
+            "backend": "cloudflare_kv",
+            "namespace_title": self._namespace_title,
+            "key": self._key_name,
         }

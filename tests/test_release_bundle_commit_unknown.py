@@ -8,6 +8,7 @@ import pytest
 from clash_relay.errors import CommitUnknownError, PublicationError
 from clash_relay.production_diagnostics import safe_failure_diagnostic
 from clash_relay.release_bundle import (
+    _restore_after_failed_commit,
     parse_release_pointer,
     publish_release_bundle,
     release_id_for,
@@ -75,6 +76,38 @@ class AmbiguousKV:
 
 def _single_readback(monkeypatch) -> None:
     monkeypatch.setattr("clash_relay.release_bundle._READ_BACK_DELAYS", (0.0,))
+
+
+def test_pointer_compensation_unknown_preserves_failed_production_recovery_evidence(
+    monkeypatch,
+) -> None:
+    _single_readback(monkeypatch)
+    keys = release_keys("production-config")
+
+    def factory(key: str):
+        class Publisher:
+            def read(self) -> bytes | None:
+                return b"different\n" if key == keys.current_pointer else None
+
+            def publish(self, *, content: bytes) -> dict[str, object]:
+                if key == keys.production:
+                    raise PublicationError("simulated production recovery rejection")
+                if key == keys.current_pointer:
+                    raise CommitUnknownError("simulated pointer recovery ambiguity")
+                return {"key": key, "bytes": len(content)}
+
+        return Publisher()
+
+    with pytest.raises(CommitUnknownError) as captured:
+        _restore_after_failed_commit(
+            factory,
+            keys,
+            previous_content=b"previous\n",
+            previous_release_id=release_id_for(b"previous\n"),
+            previous_pointer_before=None,
+        )
+
+    assert captured.value.production_changed == "unknown"
 
 
 def test_first_release_ambiguous_activation_stops_without_pointer_compensation(

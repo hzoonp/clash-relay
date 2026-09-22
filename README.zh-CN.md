@@ -152,6 +152,7 @@ generated graph
 <production>.release-v1.<sha256>.manifest
 <production>.current-release-v1
 <production>.previous-release-v1
+<production>.release-journal-v1
 ```
 
 这里的 `v1` 表示稳定的**私有存储 schema 版本**，不是 clash-relay 产品大版本。v2 删除旧 `previous-v1` rollback slot/fallback。回滚必须通过 versioned previous pointer 解析，验证精确 SHA-256 字节和 immutable manifest，再通过当前策略审计和完整 stable Mihomo matrix 后才能激活。

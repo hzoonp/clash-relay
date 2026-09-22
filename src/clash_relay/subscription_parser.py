@@ -215,12 +215,17 @@ def _empty_yaml_payload_shape(data: Any) -> str:
     return "yaml_empty_inventory"
 
 
-def _parse_payload(text: str, *, depth: int = 0) -> tuple[list[Any], str | None]:
+def _parse_payload(
+    text: str,
+    *,
+    invalid_policy: str,
+    depth: int = 0,
+) -> tuple[list[Any], str | None, int, Counter[str]]:
     if depth > 2:
         raise SubscriptionError("subscription encoding is nested too deeply")
     stripped = text.strip()
     if not stripped:
-        return [], "empty_text"
+        return [], "empty_text", 0, Counter()
     try:
         data = yaml_load_no_aliases(stripped, source="subscription payload", untrusted=True)
     except UnsafeSubscriptionError:
@@ -232,14 +237,25 @@ def _parse_payload(text: str, *, depth: int = 0) -> tuple[list[Any], str | None]
         extracted = _extract_yaml_proxies(data)
         if extracted is not None:
             if not extracted:
-                return extracted, _empty_yaml_payload_shape(data)
-            return extracted, None
+                return extracted, _empty_yaml_payload_shape(data), 0, Counter()
+            return extracted, None, 0, Counter()
         # PyYAML folds a plain multi-line scalar into a single space-separated
         # string. URI subscriptions are line-oriented, so keep the original
         # source text whenever YAML produced only a scalar.
     lines = _uri_lines(stripped)
     if lines and all("://" in line for line in lines):
-        return [parse_proxy_uri(line) for line in lines], None
+        entries: list[Any] = []
+        skipped_reasons: Counter[str] = Counter()
+        for line in lines:
+            try:
+                entries.append(parse_proxy_uri(line))
+            except (SubscriptionError, ValueError, TypeError) as exc:
+                if invalid_policy == "error":
+                    raise SubscriptionError(
+                        f"subscription contains invalid proxy URI: {exc}"
+                    ) from exc
+                skipped_reasons[_invalid_proxy_reason(exc)] += 1
+        return entries, None, sum(skipped_reasons.values()), skipped_reasons
     try:
         decoded = decode_base64_text(stripped)
     except SubscriptionError as exc:
@@ -248,7 +264,7 @@ def _parse_payload(text: str, *, depth: int = 0) -> tuple[list[Any], str | None]
         ) from exc
     if decoded.strip() == stripped:
         raise SubscriptionError("subscription base64 decoding made no progress")
-    return _parse_payload(decoded, depth=depth + 1)
+    return _parse_payload(decoded, invalid_policy=invalid_policy, depth=depth + 1)
 
 
 def _invalid_proxy_reason(error: BaseException) -> str:
@@ -286,12 +302,13 @@ def parse_subscription(
 ) -> ParsedSubscription:
     if invalid_policy not in {"error", "skip"}:
         raise SubscriptionError(f"unsupported invalid proxy policy: {invalid_policy}")
-    entries, empty_payload_shape = _parse_payload(text)
+    entries, empty_payload_shape, skipped, skipped_reasons = _parse_payload(
+        text,
+        invalid_policy=invalid_policy,
+    )
     if len(entries) > _MAX_PROXIES:
         raise SubscriptionError(f"subscription contains more than {_MAX_PROXIES} proxies")
     valid: list[dict[str, Any]] = []
-    skipped = 0
-    skipped_reasons: Counter[str] = Counter()
     errors: list[str] = []
     for index, entry in enumerate(entries):
         try:

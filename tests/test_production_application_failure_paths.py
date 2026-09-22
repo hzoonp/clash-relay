@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +103,8 @@ def test_scheduler_history_falls_back_only_after_confirmed_missing_key(
     ]
     assert json.loads(output.read_text(encoding="utf-8"))["version"] == 3
     assert len(key_output.read_text(encoding="ascii").strip()) == 64
-    assert oct(key_output.stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":
+        assert oct(key_output.stat().st_mode & 0o777) == "0o600"
 
 
 def test_scheduler_history_transport_error_does_not_fall_back_to_stale_state(

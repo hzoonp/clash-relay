@@ -82,6 +82,7 @@ production-config.release-v1.<sha256>.config
 production-config.release-v1.<sha256>.manifest
 production-config.current-release-v1
 production-config.previous-release-v1
+production-config.release-journal-v1
 ```
 
 The `v1` suffix is the private storage schema version, not the clash-relay product major version. The release ID is the SHA-256 of the exact candidate bytes.
@@ -130,3 +131,19 @@ Generated production configuration, subscription responses, Cloudflare KV data, 
 Any failure before production activation leaves the previous production value active. This includes subscription/schema errors, source isolation violations, qualification rejection, current-policy drift, Promotion Guard rejection, Mihomo rejection, missing Cloudflare configuration, and immutable release-staging failure.
 
 If activation has committed and a later proof/derived-state/SLO operation fails, the release remains committed and the failure is reported as post-commit observability degradation rather than misrepresented as a pre-publication safety failure.
+
+## Read-only reconciliation after an ambiguous commit
+
+When a release transaction reports an unknown commit state, preserve the exact candidate and the exact production bytes observed before that attempt in private storage. Run `clash-relay reconcile-release` with `--candidate` and `--previous` to read the production key and release pointers without publishing, retrying, or compensating. For an ambiguous first release, use `--first-release` instead of `--previous`.
+
+The command reports `committed`, `not_committed`, or `unknown`. Only `committed` and `not_committed` are conclusive; an `unknown` result requires investigation and must not be treated as permission to retry mutation automatically.
+
+## Immutable release retention
+
+`release-journal-v1` is private derived state. It records each successfully observed immutable release ID and its first observation epoch; missing journal state is compatible with pre-journal releases and is initialized after a later successful publication. Journal persistence is best effort and cannot change the outcome of an already committed release.
+
+`clash-relay plan-release-retention --retention-days 30` reads the journal and both live pointers, then emits a read-only candidate list and plan digest. It always protects `current-release-v1`, `previous-release-v1`, and IDs inside the retention window. It never deletes a key.
+
+To execute a reviewed plan, save that exact JSON privately and run `clash-relay apply-release-retention --plan PRIVATE_PLAN.json --confirm-retention-delete`. The command recomputes the plan before mutation and rejects a stale digest. It deletes only each approved immutable config/manifest pair, then removes those IDs from the journal. An ambiguous delete response stops execution and leaves the journal unchanged for the affected remainder.
+
+The supported production path is the manual `Apply immutable release retention` workflow. It requires the reviewed plan digest, `confirm=true`, the exact validated `main` SHA, and the same production concurrency group as publication and rollback. The workflow recreates the plan privately and refuses to delete when its digest has changed.

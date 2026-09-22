@@ -142,6 +142,32 @@ def test_invalid_proxy_skip_policy() -> None:
     assert result.skipped_reason_counts == (("invalid_server", 1),)
 
 
+def test_invalid_uri_skip_policy_keeps_valid_siblings() -> None:
+    result = parse_subscription(
+        "http://node.invalid.example:8080#Good\ntrojan://broken.invalid.example:443#Broken\n",
+        invalid_policy="skip",
+    )
+
+    assert [proxy["name"] for proxy in result.proxies] == ["Good"]
+    assert result.skipped_items == 1
+    assert result.skipped_reason_counts == (("other_invalid", 1),)
+
+
+def test_grpc_uri_preserves_service_name() -> None:
+    result = parse_subscription(
+        "vless://00000000-0000-4000-8000-000000000099@grpc.invalid.example:443"
+        "?security=tls&type=grpc&serviceName=relay#gRPC"
+    )
+
+    assert result.proxies[0]["network"] == "grpc"
+    assert result.proxies[0]["grpc-opts"] == {"grpc-service-name": "relay"}
+
+
+def test_deep_untrusted_yaml_is_a_subscription_error() -> None:
+    with pytest.raises(SubscriptionError):
+        parse_subscription("[" * 600 + "0" + "]" * 600)
+
+
 @pytest.mark.parametrize(
     ("field", "bad_value"),
     [

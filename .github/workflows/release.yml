@@ -31,7 +31,7 @@ jobs:
   release:
     name: Create source-only release
     needs: validate
-    if: needs.validate.outputs.validated_sha == github.sha
+    if: github.ref == 'refs/heads/main' && needs.validate.outputs.validated_sha == github.sha
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -74,26 +74,34 @@ jobs:
           test -f "$notes"
           grep -Fq "# clash-relay ${VERSION}" "$notes"
       - id: existing
-        name: Detect existing tag
+        name: Verify existing release state
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            tag_sha="$(git rev-list -n 1 "$TAG")"
+            test "$tag_sha" = "$GITHUB_SHA"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Render public release notes
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing.outputs.release_exists != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           cp "docs/releases/${VERSION}.md" .release-notes.md
       - name: Create source-only GitHub Release
-        if: steps.existing.outputs.exists != 'true'
+        if: steps.existing.outputs.release_exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}

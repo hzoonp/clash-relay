@@ -115,6 +115,61 @@ def test_cloudflare_publisher_reads_exact_private_value(monkeypatch) -> None:
     assert requests[1].full_url.endswith("/values/production-config.scheduler-state-v1")
 
 
+def test_cloudflare_publisher_reuses_a_resolved_namespace_id(monkeypatch) -> None:
+    requests: list[urllib.request.Request] = []
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        if "/storage/kv/namespaces?" in request.full_url:
+            return _Response(
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
+            )
+        return _Response(_success({}))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    root = CloudflareKVPublisher(
+        token="private-api-token",
+        account_id="0" * 32,
+        namespace_title="clash-relay-config",
+    )
+    namespace_id = root.resolve_namespace_id()
+    CloudflareKVPublisher(
+        token="private-api-token",
+        account_id="0" * 32,
+        namespace_title="clash-relay-config",
+        key_name="production-config.current-release-v1",
+        namespace_id=namespace_id,
+    ).publish(content=b"release\n")
+
+    assert len(requests) == 2
+    assert requests[0].get_method() == "GET"
+    assert requests[1].get_method() == "PUT"
+
+
+def test_cloudflare_publisher_deletes_one_resolved_value(monkeypatch) -> None:
+    requests: list[urllib.request.Request] = []
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        if "/storage/kv/namespaces?" in request.full_url:
+            return _Response(
+                _success([{"id": "1" * 32, "title": "clash-relay-config"}], total_count=1)
+            )
+        return _Response(_success({}))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = CloudflareKVPublisher(
+        token="private-api-token",
+        account_id="0" * 32,
+        namespace_title="clash-relay-config",
+        key_name="production-config.release-v1." + "a" * 64 + ".config",
+    ).delete()
+
+    assert len(requests) == 2
+    assert requests[1].get_method() == "DELETE"
+    assert result["key"].endswith(".config")
+
+
 def test_cloudflare_publisher_returns_none_for_missing_private_value(monkeypatch) -> None:
     def fake_urlopen(request, timeout):
         if "/storage/kv/namespaces?" in request.full_url:

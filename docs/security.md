@@ -61,6 +61,7 @@ All subscriptions are untrusted:
 - HTTPS is required by default;
 - URL userinfo, unsupported schemes, and private/special IP literals are rejected;
 - every redirect destination is revalidated;
+- one monotonic total timeout budget covers each subscription fetch;
 - transfer and gzip-expanded sizes are bounded;
 - UTF-8 is required;
 - YAML anchors and aliases are rejected;

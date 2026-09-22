@@ -14,6 +14,7 @@ from .ai_qualification_cache import (
     ai_runtime_fingerprints,
     cached_service_decisions,
     parse_ai_cache_bytes,
+    qualification_cache_key,
     update_ai_cache_service,
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
@@ -199,7 +200,8 @@ def run_ai_qualification(
     for probe in probes:
         name = str(probe["name"])
         service = service_qualification_by_probe(name)
-        service_cache_key = service.cache_key()
+        qualification_probes = service.qualification_probes(probe)
+        service_cache_key = qualification_cache_key(service.cache_key(), qualification_probes)
         pass_ttl_seconds, failure_ttl_seconds = service.cache_ttls(scheduler_policy.ai_cache)
         cached_pass: set[str] = set()
         cached_fail: set[str] = set()
@@ -213,7 +215,6 @@ def run_ai_qualification(
                 failure_ttl_seconds=failure_ttl_seconds,
             )
 
-        qualification_probes = service.qualification_probes(probe)
         try:
             live_qualified, probe_diagnostics = _probe_names(
                 binary=mihomo_bin,

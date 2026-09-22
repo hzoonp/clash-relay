@@ -152,6 +152,7 @@ Private production candidates are staged as immutable SHA-256 release objects:
 <production>.release-v1.<sha256>.manifest
 <production>.current-release-v1
 <production>.previous-release-v1
+<production>.release-journal-v1
 ```
 
 The `v1` suffix here is the stable private storage-schema version, not the clash-relay product major version. v2 removes the legacy `previous-v1` rollback slot/fallback. Rollback requires the versioned previous pointer, exact bytes, a matching immutable manifest, the current policy audit, and the complete stable Mihomo matrix before activation.

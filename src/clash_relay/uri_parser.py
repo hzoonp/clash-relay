@@ -103,6 +103,10 @@ def _standard_uri(uri: str, proxy_type: str) -> dict[str, Any]:
             "path": query.get("path", ["/"])[0] or "/",
             "headers": headers,
         }
+    if network == "grpc":
+        service_name = query.get("serviceName", query.get("service-name", [""]))[0]
+        if service_name:
+            proxy["grpc-opts"] = {"grpc-service-name": service_name}
     if security == "reality":
         proxy["reality-opts"] = {
             "public-key": query.get("pbk", [""])[0],

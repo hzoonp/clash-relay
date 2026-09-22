@@ -58,6 +58,12 @@ Overlapping production workflows remain serialized with `cancel-in-progress: fal
 
 Stop immediately on qualification rejection, Promotion Guard block, Mihomo validation failure, SHA mismatch, ambiguous publication state, or evidence of an undeclared write path. Do not retry by weakening a gate.
 
+For an ambiguous release commit, preserve the exact candidate and pre-attempt production bytes privately, then run the read-only `clash-relay reconcile-release` command. A result of `unknown` is a stop condition; the command never writes, retries, or compensates.
+
 If a publication commits but post-commit observability degrades, preserve the committed-release truth and use the versioned previous-release rollback procedure only when rollback is actually required.
 
 To suspend future scheduled mutation without changing the publication code path, set `CLASH_RELAY_SCHEDULE_PUBLISH=false`. Existing production bytes remain active; use the manual rollback workflow only when the active release itself must be reverted.
+
+## 6. Immutable release retention
+
+Run `plan-release-retention` first and review its digest and candidate count. Apply a reviewed plan only through the manual `Apply immutable release retention` workflow with the exact digest and `confirm=true`. It shares the production concurrency group, revalidates the exact `main` SHA, recreates the plan privately, and stops if the digest differs. A partial or ambiguous delete leaves the journal unchanged; reconcile the actual KV state before preparing another plan.
