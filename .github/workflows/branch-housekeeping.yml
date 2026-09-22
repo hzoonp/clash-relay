@@ -103,6 +103,14 @@ jobs:
               "work/p17c-dns-connection-boundary",
               "release/dns-tun-one-shot-dispatch-20260921",
               "work/remove-actions-history-cleanup",
+              "dependabot/github_actions/actions/checkout-7.0.1",
+              "dependabot/github_actions/actions/setup-python-7.0.0",
+              "dependabot/pip/hatchling-1.32.0",
+              "dependabot/pip/pytest-9.1.1",
+              "dependabot/pip/pytest-cov-7.1.0",
+              "dependabot/pip/ruff-0.16.8",
+              "feat/harden-release-retention",
+              "work/isolate-vless-shape",
           }
 
           open_heads = {
