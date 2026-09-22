@@ -23,7 +23,17 @@ from .production_proof import build_production_proof, render_production_proof_ma
 from .promotion_guard import assess_promotion, load_promotion_guard_policy
 from .publication import publication_gate
 from .publishers.cloudflare_kv import CloudflareKVPublisher
+from .release_bundle import parse_release_pointer, release_keys
 from .release_bundle import publish_release_bundle as commit_release_bundle
+from .release_journal import (
+    parse_release_journal,
+    plan_release_retention,
+    record_release_observation,
+    release_journal_summary,
+    remove_release_observations,
+    serialize_release_journal,
+)
+from .release_reconciliation import reconcile_release_bundle
 from .scheduler_history import derive_fingerprint_key, parse_history_bytes
 from .util import atomic_write
 from .validator import validate_generated_config
@@ -47,13 +57,19 @@ def _production_key(project: ProjectDefinition) -> str:
 
 
 def _publisher(
-    *, token: str, account_id: str, namespace_title: str, key_name: str
+    *,
+    token: str,
+    account_id: str,
+    namespace_title: str,
+    key_name: str,
+    namespace_id: str | None = None,
 ) -> CloudflareKVPublisher:
     return CloudflareKVPublisher(
         token=token,
         account_id=account_id,
         namespace_title=namespace_title,
         key_name=key_name,
+        namespace_id=namespace_id,
     )
 
 
@@ -318,6 +334,12 @@ def publish_production_release(
     if not token or not account_id or not namespace_title:
         raise PublicationError("Cloudflare credentials are required for production publication")
     production_key = _production_key(project)
+    namespace_id = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    ).resolve_namespace_id()
 
     def factory(key: str) -> CloudflareKVPublisher:
         return _publisher(
@@ -325,9 +347,195 @@ def publish_production_release(
             account_id=account_id,
             namespace_title=namespace_title,
             key_name=key,
+            namespace_id=namespace_id,
         )
 
-    return commit_release_bundle(factory=factory, production_key=production_key, content=content)
+    result = commit_release_bundle(factory=factory, production_key=production_key, content=content)
+    keys = release_keys(production_key)
+    try:
+        journal, journal_status = parse_release_journal(factory(keys.journal).read())
+        if journal_status == "invalid":
+            raise PublicationError("release journal is invalid")
+        updated_journal = record_release_observation(journal, release_id=str(result["release_id"]))
+        factory(keys.journal).publish(content=serialize_release_journal(updated_journal))
+        result["release_journal"] = "recorded"
+        result.update(
+            {
+                f"release_journal_{key}": value
+                for key, value in release_journal_summary(updated_journal).items()
+            }
+        )
+    except PublicationError:
+        # Journal persistence is derived operational state and cannot revise a
+        # release that has already been transactionally committed.
+        result["release_journal"] = "unavailable"
+    return result
+
+
+def reconcile_production_release(
+    *,
+    project: ProjectDefinition,
+    candidate: Path,
+    previous: Path | None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Read only the observable state of an ambiguous production release."""
+    try:
+        candidate_content = candidate.read_bytes()
+    except OSError as exc:
+        raise PublicationError("failed to read reconciliation candidate") from exc
+    if not candidate_content:
+        raise PublicationError("reconciliation candidate must not be empty")
+    previous_content: bytes | None = None
+    if previous is not None:
+        try:
+            previous_content = previous.read_bytes()
+        except OSError as exc:
+            raise PublicationError("failed to read reconciliation previous candidate") from exc
+        if not previous_content:
+            raise PublicationError("reconciliation previous candidate must not be empty")
+
+    token, account_id, namespace_title = _credentials(env)
+    if not token or not account_id or not namespace_title:
+        raise PublicationError("Cloudflare credentials are required for release reconciliation")
+    production_key = _production_key(project)
+    namespace_id = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    ).resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    return reconcile_release_bundle(
+        factory=factory,
+        production_key=production_key,
+        candidate_content=candidate_content,
+        previous_content=previous_content,
+    ).to_dict()
+
+
+def plan_production_release_retention(
+    *,
+    project: ProjectDefinition,
+    retention_days: int,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Produce a read-only immutable-release retention plan."""
+    if retention_days < 0:
+        raise PublicationError("release retention days must not be negative")
+    token, account_id, namespace_title = _credentials(env)
+    if not token or not account_id or not namespace_title:
+        raise PublicationError("Cloudflare credentials are required for release retention planning")
+    production_key = _production_key(project)
+    root = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    )
+    namespace_id = root.resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    keys = release_keys(production_key)
+    journal, journal_status = parse_release_journal(factory(keys.journal).read())
+    if journal_status == "invalid":
+        raise PublicationError("release journal is invalid")
+    current_release_id = parse_release_pointer(factory(keys.current_pointer).read())
+    previous_release_id = parse_release_pointer(factory(keys.previous_pointer).read())
+    plan = plan_release_retention(
+        journal,
+        current_release_id=current_release_id,
+        previous_release_id=previous_release_id,
+        retain_seconds=retention_days * 24 * 60 * 60,
+    ).to_dict()
+    plan["journal_status"] = journal_status
+    plan["retention_days"] = retention_days
+    plan["production_key"] = production_key
+    return plan
+
+
+def apply_production_release_retention(
+    *,
+    project: ProjectDefinition,
+    plan: Mapping[str, Any],
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Delete only immutable objects covered by a freshly revalidated plan."""
+    retention_days = plan.get("retention_days")
+    plan_id = plan.get("plan_id")
+    production_key = _production_key(project)
+    if (
+        not isinstance(retention_days, int)
+        or isinstance(retention_days, bool)
+        or retention_days < 0
+        or not isinstance(plan_id, str)
+        or plan.get("production_key") != production_key
+        or plan.get("mutation") != "none"
+    ):
+        raise PublicationError("release retention plan is invalid")
+    fresh = plan_production_release_retention(
+        project=project,
+        retention_days=retention_days,
+        env=env,
+    )
+    if fresh.get("plan_id") != plan_id:
+        raise PublicationError("release retention plan is stale; generate and review a new plan")
+    candidates = fresh.get("deletion_candidate_ids")
+    if not isinstance(candidates, list) or not all(isinstance(item, str) for item in candidates):
+        raise PublicationError("release retention plan has invalid deletion candidates")
+
+    token, account_id, namespace_title = _credentials(env)
+    assert token and account_id and namespace_title
+    root = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    )
+    namespace_id = root.resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    keys = release_keys(production_key)
+    for release_id in candidates:
+        factory(keys.config(release_id)).delete()
+        factory(keys.manifest(release_id)).delete()
+    journal, journal_status = parse_release_journal(factory(keys.journal).read())
+    if journal_status == "invalid":
+        raise PublicationError("release journal is invalid after retention deletion")
+    factory(keys.journal).publish(
+        content=serialize_release_journal(remove_release_observations(journal, set(candidates)))
+    )
+    return {
+        "status": "deleted",
+        "deleted_release_ids": candidates,
+        "deleted_objects": len(candidates) * 2,
+        "release_journal": "updated",
+    }
 
 
 def persist_ai_qualification_cache(

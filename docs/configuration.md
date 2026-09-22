@@ -58,7 +58,7 @@ This split prevents the remote profile from leaving residual `strict-route` or `
 |---|---|
 | `minimum_successful_subscriptions` | global fetch/parse success gate |
 | `minimum_usable_nodes` | post-deduplication node gate |
-| `fetch_timeout_seconds` | per-source timeout |
+| `fetch_timeout_seconds` | total per-source budget across validation, DNS, redirects, connection, transfer, and decompression |
 | `max_subscription_bytes` | compressed and decompressed payload ceiling |
 | `invalid_proxy_policy` | `error` or `skip` one malformed proxy |
 | `duplicate_policy` | `keep_first` or `error` on identical proxy fingerprints |

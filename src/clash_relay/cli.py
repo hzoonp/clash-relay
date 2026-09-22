@@ -16,6 +16,11 @@ from .config_loader import load_project
 from .doctor import run_doctor
 from .errors import ClashRelayError, PublicationError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
+from .production_application import (
+    apply_production_release_retention,
+    plan_production_release_retention,
+    reconcile_production_release,
+)
 from .publication import ACKNOWLEDGEMENT, publication_gate
 from .publishers.cloudflare_kv import CloudflareKVPublisher
 from .publishers.gist import GistPublisher
@@ -197,6 +202,52 @@ def _command_publish_gist(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_reconcile_release(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    result = reconcile_production_release(
+        project=project,
+        candidate=args.candidate,
+        previous=args.previous,
+    )
+    print(_json_text(result), end="")
+    return 0
+
+
+def _command_plan_release_retention(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    result = plan_production_release_retention(
+        project=project,
+        retention_days=args.retention_days,
+    )
+    print(_json_text(result), end="")
+    return 0
+
+
+def _command_apply_release_retention(args: argparse.Namespace) -> int:
+    try:
+        plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValidationError("failed to read release retention plan") from exc
+    if not isinstance(plan, dict):
+        raise ValidationError("release retention plan must be a JSON mapping")
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    result = apply_production_release_retention(project=project, plan=plan)
+    print(_json_text(result), end="")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="clash-relay",
@@ -305,6 +356,47 @@ def build_parser() -> argparse.ArgumentParser:
     gist.add_argument("--gist-id")
     gist.add_argument("--acknowledgement", default=ACKNOWLEDGEMENT)
     gist.set_defaults(handler=_command_publish_gist)
+
+    reconcile = subparsers.add_parser(
+        "reconcile-release",
+        help="Read-only reconciliation of an ambiguous Cloudflare KV release transaction.",
+    )
+    _add_project_args(reconcile)
+    reconcile.add_argument("--candidate", type=_path, required=True)
+    previous = reconcile.add_mutually_exclusive_group(required=True)
+    previous.add_argument(
+        "--previous",
+        type=_path,
+        help="Exact production bytes observed before the ambiguous update.",
+    )
+    previous.add_argument(
+        "--first-release",
+        action="store_true",
+        help="State that the ambiguous attempt had no prior production value.",
+    )
+    reconcile.set_defaults(handler=_command_reconcile_release)
+
+    retention = subparsers.add_parser(
+        "plan-release-retention",
+        help="Read-only plan for immutable Cloudflare KV release retention.",
+    )
+    _add_project_args(retention)
+    retention.add_argument("--retention-days", type=int, default=30)
+    retention.set_defaults(handler=_command_plan_release_retention)
+
+    apply_retention = subparsers.add_parser(
+        "apply-release-retention",
+        help="Delete immutable releases covered by a fresh reviewed retention plan.",
+    )
+    _add_project_args(apply_retention)
+    apply_retention.add_argument("--plan", type=_path, required=True)
+    apply_retention.add_argument(
+        "--confirm-retention-delete",
+        action="store_true",
+        required=True,
+        help="Required acknowledgement before any immutable release deletion.",
+    )
+    apply_retention.set_defaults(handler=_command_apply_release_retention)
     return parser
 
 

@@ -22,10 +22,15 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert workflow["permissions"]["contents"] == "write"
     assert "uses: ./.github/workflows/ci.yml" in text
     assert "needs.validate.outputs.validated_sha == github.sha" in text
+    assert "github.ref == 'refs/heads/main'" in text
     assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
     assert "persist-credentials: false" in text
     assert "docs/releases/${VERSION}.md" in text
     assert "gh release create" in text
+    assert "gh release view" in text
+    assert "tag_sha=" in text
+    assert 'test "$tag_sha" = "$GITHUB_SHA"' in text
+    assert "release_exists" in text
     assert "--notes-file .release-notes.md" in text
     assert "actions/upload-artifact" not in text
     assert "config.yaml" not in text

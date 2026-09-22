@@ -8,8 +8,18 @@ from clash_relay.ai_qualification_cache import (
     derive_ai_cache_key,
     empty_ai_cache,
     parse_ai_cache_bytes,
+    qualification_cache_key,
     update_ai_cache_service,
 )
+
+
+def test_qualification_cache_key_changes_when_probe_contract_changes() -> None:
+    baseline = ({"name": "ai_test", "url": "https://one.invalid", "expected_status": "204"},)
+    changed = ({"name": "ai_test", "url": "https://two.invalid", "expected_status": "204"},)
+
+    assert qualification_cache_key("ai_test", baseline) != qualification_cache_key(
+        "ai_test", changed
+    )
 
 
 def _candidate(password: str = "secret") -> dict:

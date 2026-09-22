@@ -37,6 +37,9 @@ clash-relay = "clash_relay.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/clash_relay"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "clash_relay/schemas"
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]

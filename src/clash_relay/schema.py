@@ -10,13 +10,15 @@ from jsonschema import Draft202012Validator, FormatChecker
 from .errors import ConfigurationError, ValidationError
 from .util import load_yaml_file
 
-_SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
+_PACKAGED_SCHEMA_DIR = Path(__file__).resolve().parent / "schemas"
+_REPOSITORY_SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
 
 
 def load_schema(name: str) -> dict[str, Any]:
     import json
 
-    path = _SCHEMA_DIR / name
+    schema_dir = _PACKAGED_SCHEMA_DIR if _PACKAGED_SCHEMA_DIR.is_dir() else _REPOSITORY_SCHEMA_DIR
+    path = schema_dir / name
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:

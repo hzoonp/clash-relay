@@ -103,6 +103,16 @@ def ai_runtime_fingerprints(candidate: dict[str, Any], key: bytes) -> dict[str, 
     return result
 
 
+def qualification_cache_key(service_key: str, probes: tuple[dict[str, Any], ...]) -> str:
+    """Bind a cached decision to the exact live qualification contract."""
+    try:
+        canonical = json.dumps(probes, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("AI qualification cache probes are not serializable") from exc
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"{service_key}:{digest}"
+
+
 def cached_service_decisions(
     cache: dict[str, Any],
     fingerprints: dict[str, str],

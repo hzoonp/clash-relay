@@ -39,6 +39,7 @@ class ReleaseKeys:
     production: str
     current_pointer: str
     previous_pointer: str
+    journal: str
 
     def config(self, release_id: str) -> str:
         _validate_release_id(release_id)
@@ -56,6 +57,7 @@ def release_keys(production_key: str) -> ReleaseKeys:
         production=production_key,
         current_pointer=f"{production_key}.current-release-v1",
         previous_pointer=f"{production_key}.previous-release-v1",
+        journal=f"{production_key}.release-journal-v1",
     )
 
 
@@ -207,6 +209,7 @@ def _restore_after_failed_commit(
     previous_pointer_before: str | None,
 ) -> None:
     errors: list[str] = []
+    production_restored = True
     try:
         _publish_verified(factory, keys.production, previous_content)
     except CommitUnknownError as exc:
@@ -216,12 +219,13 @@ def _restore_after_failed_commit(
         ) from exc
     except PublicationError:
         errors.append("production")
+        production_restored = False
     try:
         _restore_pointer(factory, keys.current_pointer, previous_release_id)
     except CommitUnknownError as exc:
         raise CommitUnknownError(
             "current pointer compensation state is unknown",
-            production_changed=False,
+            production_changed=False if production_restored else "unknown",
         ) from exc
     except PublicationError:
         errors.append("current-pointer")
@@ -231,7 +235,7 @@ def _restore_after_failed_commit(
     except CommitUnknownError as exc:
         raise CommitUnknownError(
             "previous pointer compensation state is unknown",
-            production_changed=False,
+            production_changed=False if production_restored else "unknown",
         ) from exc
     except PublicationError:
         errors.append("previous-pointer")

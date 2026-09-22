@@ -80,6 +80,93 @@ def test_validate_existing_candidate(
     assert json.loads(capsys.readouterr().out)["static_validation"] == "passed"
 
 
+def test_reconcile_release_command_is_read_only_adapter(
+    project_paths, monkeypatch, tmp_path: Path, capsys
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    previous = tmp_path / "previous.yaml"
+    candidate.write_text("candidate\n", encoding="utf-8")
+    previous.write_text("previous\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_reconcile(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "committed", "requires_manual_action": False}
+
+    monkeypatch.setattr(cli, "reconcile_production_release", fake_reconcile)
+
+    assert (
+        cli.main(
+            [
+                "reconcile-release",
+                *_project_args(project_paths),
+                "--candidate",
+                str(candidate),
+                "--previous",
+                str(previous),
+            ]
+        )
+        == 0
+    )
+    assert captured["candidate"] == candidate
+    assert captured["previous"] == previous
+    assert json.loads(capsys.readouterr().out)["status"] == "committed"
+
+
+def test_release_retention_plan_command_is_read_only_adapter(
+    project_paths, monkeypatch, capsys
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_plan(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "planned", "mutation": "none"}
+
+    monkeypatch.setattr(cli, "plan_production_release_retention", fake_plan)
+
+    assert (
+        cli.main(
+            [
+                "plan-release-retention",
+                *_project_args(project_paths),
+                "--retention-days",
+                "45",
+            ]
+        )
+        == 0
+    )
+    assert captured["retention_days"] == 45
+    assert json.loads(capsys.readouterr().out)["mutation"] == "none"
+
+
+def test_release_retention_apply_requires_an_explicit_cli_confirmation(
+    project_paths, monkeypatch, tmp_path: Path, capsys
+) -> None:
+    plan = tmp_path / "retention-plan.json"
+    plan.write_text('{"status":"planned"}', encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_apply(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "deleted", "deleted_objects": 0}
+
+    monkeypatch.setattr(cli, "apply_production_release_retention", fake_apply)
+    assert (
+        cli.main(
+            [
+                "apply-release-retention",
+                *_project_args(project_paths),
+                "--plan",
+                str(plan),
+                "--confirm-retention-delete",
+            ]
+        )
+        == 0
+    )
+    assert captured["plan"] == {"status": "planned"}
+    assert json.loads(capsys.readouterr().out)["status"] == "deleted"
+
+
 def test_build_writes_only_after_real_core_validation(
     project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
 ) -> None:

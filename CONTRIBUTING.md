@@ -9,4 +9,4 @@ Contributions should preserve deterministic generation, fail-closed pool semanti
 5. Update schemas and documentation when declarations change.
 6. Never attach a real generated config or subscription URL to a PR or issue.
 
-New services should normally require only a module Boolean, a `services.yaml` row, a rule file, and tests. New Python service branches require an architecture justification.
+New services should normally require a declared qualification probe, routing policy, and tests. New Python service branches require an architecture justification.

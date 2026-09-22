@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import signal
@@ -36,7 +37,11 @@ def _run(command: list[str], *, cwd: Path, timeout: float) -> subprocess.Complet
             check=False,
             env={**os.environ, "TZ": "UTC"},
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except OSError as exc:
+        if exc.errno == errno.EACCES or getattr(exc, "winerror", None) == 193:
+            raise ValidationError("Mihomo binary is not executable") from exc
+        raise ValidationError("failed to execute Mihomo validation") from exc
+    except subprocess.TimeoutExpired as exc:
         raise ValidationError("failed to execute Mihomo validation") from exc
 
 
@@ -125,13 +130,19 @@ def validate_with_mihomo(
                 time.sleep(0.05)
         finally:
             if process.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGTERM)
+                if os.name == "nt":
+                    process.terminate()
+                else:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGTERM)
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(process.pid, signal.SIGKILL)
+                    if os.name == "nt":
+                        process.kill()
+                    else:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
     version = _run([str(binary), "-v"], cwd=config_path.parent, timeout=10)
     version_line = (version.stdout.strip().splitlines() or [binary.name])[0]
