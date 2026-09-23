@@ -17,7 +17,7 @@ def test_runtime_config_renderer_emits_canonical_managed_dns(repo_root: Path) ->
 
     assert config["runtime"]["dns"]["mode"] == "managed"
     assert rendered["dns"]["enhanced-mode"] == "fake-ip"
-    assert rendered["dns"]["respect-rules"] is True
+    assert rendered["dns"]["respect-rules"] is False
     assert rendered["dns"]["proxy-server-nameserver"]
     assert rendered["profile"]["store-fake-ip"] is True
     assert rendered["sniffer"]["enable"] is True

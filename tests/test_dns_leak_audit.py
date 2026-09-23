@@ -21,15 +21,15 @@ def _candidate() -> dict:
             "ipv6": False,
             "enhanced-mode": "fake-ip",
             "listen": "127.0.0.1:1053",
-            "respect-rules": True,
+            "respect-rules": False,
             "default-nameserver": [
                 "https://1.1.1.1/dns-query",
-                "tls://1.0.0.1:853",
+                "https://1.0.0.1/dns-query",
             ],
             "nameserver": ["https://1.1.1.1/dns-query"],
             "proxy-server-nameserver": ["https://1.1.1.1/dns-query"],
             "direct-nameserver": ["https://dns.alidns.com/dns-query"],
-            "direct-nameserver-follow-policy": True,
+            "direct-nameserver-follow-policy": False,
             "fallback": [],
             "nameserver-policy": {
                 "rule-set:acl4ssr_china_domain": ["https://dns.alidns.com/dns-query"],

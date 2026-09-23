@@ -156,13 +156,18 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
 
     assert groups["自动选择"]["provider_pool"] == "general"
     assert groups["自动选择"]["filter"] == ".*"
-    assert groups["自动选择"]["url"] == "http://www.gstatic.com/generate_204"
+    assert groups["自动选择"]["url"] == "https://www.gstatic.com/generate_204"
     assert groups["自动选择"]["interval"] == 300
+    assert groups["自动选择"]["timeout"] == 5000
     assert groups["自动选择"]["tolerance"] == 50
     assert groups["媒体自动"]["provider_pool"] == "general"
     assert groups["通讯自动"]["provider_pool"] == "general"
     assert groups["下载自动"]["provider_pool"] == "general"
     assert groups["美国节点"]["tolerance"] == 150
+    automatic_groups = [group for group in groups.values() if group.get("type") == "url-test"]
+    assert automatic_groups
+    assert all(group["url"] == "https://www.gstatic.com/generate_204" for group in automatic_groups)
+    assert all(group["timeout"] == 5000 for group in automatic_groups)
 
     pseudo_containers = {"国内服务", "更多策略"}
     assert pseudo_containers.isdisjoint(groups)

@@ -29,6 +29,7 @@
         "group_map": {"$ref": "#/$defs/nameMap"},
         "adapted_groups": {"$ref": "#/$defs/nameMap"},
         "member_map": {"$ref": "#/$defs/nameMap"},
+        "health_check_url": {"const": "https://www.gstatic.com/generate_204"},
         "extensions": {
           "type": "array",
           "uniqueItems": true,

@@ -29,7 +29,7 @@ probes:
     method: HEAD
     expected_status: "204"
     interval: 180
-    timeout: 3000
+    timeout: 5000
     lazy: false
     tolerance: 150
   ai_openai:

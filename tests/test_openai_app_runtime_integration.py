@@ -19,7 +19,7 @@ def test_canonical_managed_dns_sniffer_and_openai_route_lock_coexist(repo_root: 
 
     assert canonical["runtime"]["dns"]["mode"] == "managed"
     assert runtime["dns"]["enhanced-mode"] == "fake-ip"
-    assert runtime["dns"]["respect-rules"] is True
+    assert runtime["dns"]["respect-rules"] is False
     assert runtime["dns"]["proxy-server-nameserver"]
     assert runtime["sniffer"]["enable"] is True
     assert 443 in runtime["sniffer"]["sniff"]["TLS"]["ports"]

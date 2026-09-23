@@ -4,12 +4,12 @@ Traffic sniffing is an optional Mihomo runtime layer and does not change DNS own
 
 ## Canonical production contract
 
-Canonical production keeps client-owned DNS and enables HTTP, TLS, and QUIC sniffing:
+Canonical production uses managed Fake-IP DNS and enables HTTP, TLS, and QUIC sniffing:
 
 ```yaml
 runtime:
   dns:
-    mode: client
+    mode: managed
   sniffer:
     enabled: true
     force_dns_mapping: false
@@ -24,13 +24,13 @@ runtime:
         ports: [443, 8443]
 ```
 
-The generated Mihomo configuration therefore contains `sniffer`, but still omits the generated `dns` block and `profile.store-fake-ip`.
+The generated Mihomo configuration therefore contains both `sniffer` and the managed `dns` block, including `profile.store-fake-ip`.
 
 ## Why this is separate from DNS
 
 Sniffing recovers application domain identity from HTTP Host, TLS SNI, or QUIC metadata. That identity lets the existing ACL4SSR and scenario rules classify traffic more accurately when an application connects by IP or otherwise hides the original domain from the rule engine.
 
-Traffic sniffing deliberately does not enable Fake-IP. `force-dns-mapping` remains `false`, and client-owned DNS remains the production baseline.
+Traffic sniffing does not itself enable Fake-IP or change resolver selection. `force-dns-mapping` remains `false`; Fake-IP and `nameserver-policy` stay owned by managed DNS.
 
 ## Compatibility
 

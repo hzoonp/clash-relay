@@ -24,7 +24,7 @@ def _probe_fields() -> dict[str, object]:
     return {
         "url": "https://www.gstatic.com/generate_204",
         "interval": 180,
-        "timeout": 3000,
+        "timeout": 5000,
         "lazy": False,
         "expected-status": 204,
         "tolerance": 150,
@@ -38,7 +38,7 @@ def _provider(name: str) -> dict[str, object]:
             "enable": True,
             "url": "https://www.gstatic.com/generate_204",
             "interval": 180,
-            "timeout": 3000,
+            "timeout": 5000,
             "lazy": False,
             "expected-status": 204,
         },
@@ -126,7 +126,7 @@ def _policies() -> dict[str, object]:
                 "url": "https://www.gstatic.com/generate_204",
                 "expected_status": "204",
                 "interval": 180,
-                "timeout": 3000,
+                "timeout": 5000,
                 "lazy": False,
                 "tolerance": 150,
             }

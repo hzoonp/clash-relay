@@ -68,10 +68,10 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError("DNS leak audit requires fake-ip mode")
     if dns.get("ipv6") is not False:
         raise ValidationError("DNS leak audit requires DNS IPv6 responses to be disabled")
-    if dns.get("respect-rules") is not True:
-        raise ValidationError("DNS leak audit requires respect-rules")
-    if dns.get("direct-nameserver-follow-policy") is not True:
-        raise ValidationError("DNS leak audit requires direct nameserver policy following")
+    if dns.get("respect-rules") is not False:
+        raise ValidationError("DNS leak audit requires resolver transport independent of routing")
+    if dns.get("direct-nameserver-follow-policy") is not False:
+        raise ValidationError("DNS leak audit requires DIRECT resolver policy bypass")
     if dns.get("fallback") not in ([], None):
         raise ValidationError("DNS leak audit requires fallback DNS to remain disabled")
     if not _is_loopback_listener(dns.get("listen")):
@@ -86,7 +86,7 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         values = _resolver_values(dns.get(field))
         if not values:
             raise ValidationError(f"DNS leak audit requires non-empty {field}")
-        require_ip_host = field == "default-nameserver"
+        require_ip_host = field in {"default-nameserver", "proxy-server-nameserver"}
         if not all(_encrypted_resolver(item, require_ip_host=require_ip_host) for item in values):
             suffix = " with IP-literal hosts" if require_ip_host else ""
             raise ValidationError(f"DNS leak audit requires encrypted {field} endpoints{suffix}")

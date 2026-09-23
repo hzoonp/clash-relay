@@ -240,7 +240,7 @@ def test_dns_routing_policy_requires_enabled_acl4ssr(project_factory, yaml_edito
             "listen": "127.0.0.1:1053",
             "nameservers": ["https://1.1.1.1/dns-query"],
             "direct_nameservers": ["https://dns.alidns.com/dns-query"],
-            "direct_nameserver_follow_policy": True,
+            "direct_nameserver_follow_policy": False,
             "routing_policy": "acl4ssr",
             "fallback_nameservers": [],
         }

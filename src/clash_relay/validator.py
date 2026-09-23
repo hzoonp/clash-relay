@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .dns_leak_audit import audit_dns_leak_protection
+from .dns_runtime_audit import audit_dns_runtime_dependencies
 from .errors import ValidationError
 from .runtime_graph import RuntimeGraph
 from .schema import validate_schema
@@ -334,6 +335,10 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
 
     try:
         audit_dns_leak_protection(config)
+    except ValidationError as exc:
+        errors.append(str(exc))
+    try:
+        audit_dns_runtime_dependencies(config)
     except ValidationError as exc:
         errors.append(str(exc))
 
