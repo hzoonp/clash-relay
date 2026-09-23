@@ -49,7 +49,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
     """Remove only hostname proxies unanswered by every configured resolver."""
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
-        raise ValidationError("proxy hostname qualification requires proxy providers")
+        providers = {}
     hostname_inventory = any(
         isinstance(proxy, dict)
         and isinstance(proxy.get("server"), str)
