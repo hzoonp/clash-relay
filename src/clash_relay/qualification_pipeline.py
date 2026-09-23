@@ -13,12 +13,13 @@ from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .proxy_host_qualification import quarantine_unresolvable_proxy_hosts
 from .qualification_pipeline_result import QualificationPipelineResult
 from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
 from .service_qualification import harden_declared_service_client_paths
 from .service_qualification_result import service_qualification_results
-from .util import atomic_write, load_yaml_file
+from .util import atomic_write, dump_yaml, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
 _BROWSING_RETRY_DELAY_SECONDS = 1.0
@@ -156,6 +157,12 @@ def run_qualification_pipeline(
         raise ValidationError("failed to prepare private qualification stages") from exc
 
     generated_artifact = _artifact(generated, "generated")
+    generated_document = load_yaml_file(generated)
+    if not isinstance(generated_document, dict):
+        raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
+    proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
+    atomic_write(generated, dump_yaml(generated_document, header=True))
+    generated_artifact = _artifact(generated, "proxy_host_qualified")
     browsing_started = time.perf_counter()
     browsing_summary: dict[str, Any] | None = None
     browsing_attempts_used = 0
@@ -272,6 +279,7 @@ def run_qualification_pipeline(
             if isinstance(browsing_summary.get("diagnostics"), dict)
             else 0,
         },
+        "proxy_host_resolution": proxy_host_resolution,
         "ai": {
             "status": ai_summary.get("status"),
             "qualification_mode": ai_summary.get("diagnostics", {}).get(
