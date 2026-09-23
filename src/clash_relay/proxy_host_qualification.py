@@ -47,15 +47,36 @@ def _resolve(endpoint: str, hostname: str, timeout: float = 3.0) -> tuple[bool, 
 
 def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any]:
     """Remove only hostname proxies unanswered by every configured resolver."""
+    providers = config.get("proxy-providers")
+    if not isinstance(providers, dict):
+        raise ValidationError("proxy hostname qualification requires proxy providers")
+    hostname_inventory = any(
+        isinstance(proxy, dict)
+        and isinstance(proxy.get("server"), str)
+        and not _public_address(proxy["server"])
+        for provider in providers.values()
+        if isinstance(provider, dict) and isinstance(provider.get("payload"), list)
+        for proxy in provider["payload"]
+    )
+    if not hostname_inventory:
+        return {
+            "status": "skipped",
+            "hostname_nodes": 0,
+            "ip_literal_nodes": 0,
+            "resolved": 0,
+            "unresolved": 0,
+            "resolver_disagreement": 0,
+            "quarantined": 0,
+            "by_source": {},
+            "by_region": {},
+            "by_protocol": {},
+        }
     dns = config.get("dns")
     resolvers = dns.get("proxy-server-nameserver") if isinstance(dns, dict) else None
     if not isinstance(resolvers, list) or len(resolvers) < 2:
         raise ValidationError(
             "proxy hostname qualification requires multiple proxy-server-nameserver resolvers"
         )
-    providers = config.get("proxy-providers")
-    if not isinstance(providers, dict):
-        raise ValidationError("proxy hostname qualification requires proxy providers")
     counts = Counter()
     dimensions: dict[str, Counter[str]] = {
         "source": Counter(),
