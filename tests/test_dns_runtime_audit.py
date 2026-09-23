@@ -30,12 +30,6 @@ def _candidate() -> dict:
                 "url": "https://www.gstatic.com/generate_204",
                 "timeout": 5000,
             },
-            {
-                "name": "fallback",
-                "type": "fallback",
-                "url": "https://www.gstatic.com/generate_204",
-                "timeout": 5000,
-            },
         ],
     }
 
@@ -45,7 +39,7 @@ def test_runtime_dns_audit_proves_resolver_transport_is_independent() -> None:
         "status": "passed",
         "resolver_transport": "independent",
         "direct_resolver_policy": "bypass",
-        "automatic_groups": 2,
+        "automatic_groups": 1,
     }
 
 

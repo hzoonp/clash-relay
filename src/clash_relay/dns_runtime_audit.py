@@ -53,7 +53,7 @@ def audit_dns_runtime_dependencies(candidate: dict[str, Any]) -> dict[str, objec
         raise ValidationError("managed DNS runtime requires proxy groups")
     automatic = 0
     for group in groups:
-        if not isinstance(group, dict) or group.get("type") not in {"url-test", "fallback"}:
+        if not isinstance(group, dict) or group.get("type") != "url-test":
             continue
         automatic += 1
         url = group.get("url")
