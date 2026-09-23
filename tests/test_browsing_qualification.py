@@ -29,7 +29,7 @@ def test_canonical_browsing_probe_is_reused_for_pre_publish_qualification(
         "name": "browsing",
         "url": "https://www.gstatic.com/generate_204",
         "expected_status": "204",
-        "timeout": 3000,
+        "timeout": 5000,
     }
 
 
@@ -54,7 +54,7 @@ def test_group_delay_probe_uses_provider_compatible_group_api(
         "secret",
         {
             "url": "https://www.gstatic.com/generate_204",
-            "timeout": 3000,
+            "timeout": 5000,
             "expected_status": "204",
         },
     )
@@ -65,7 +65,7 @@ def test_group_delay_probe_uses_provider_compatible_group_api(
     assert parsed.path == "/group/__CR_BROWSING_QUALIFICATION/delay"
     assert query == {
         "url": ["https://www.gstatic.com/generate_204"],
-        "timeout": ["3000"],
+        "timeout": ["5000"],
         "expected": ["204"],
     }
     assert sample == {"node-a": 0, "node-b": 240}

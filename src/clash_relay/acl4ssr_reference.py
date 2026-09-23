@@ -164,6 +164,12 @@ def validate_acl4ssr_fidelity(
         str(reference_name): str(internal_name)
         for reference_name, internal_name in contract.get("member_map", {}).items()
     }
+    declared_health_check_url = contract.get("health_check_url")
+    if declared_health_check_url is not None and (
+        not isinstance(declared_health_check_url, str)
+        or not declared_health_check_url.startswith("https://")
+    ):
+        raise GenerationError("ACL4SSR health_check_url must be an HTTPS URL")
 
     ordered_sources = sorted(manifest["sources"], key=lambda row: (row["priority"], row["id"]))
     by_path: dict[str, dict[str, Any]] = {}
@@ -290,7 +296,10 @@ def validate_acl4ssr_fidelity(
                 )
         elif reference["type"] == "url-test":
             for key in ("url", "interval", "tolerance"):
-                if key in reference and group.get(key) != reference[key]:
+                expected = reference[key]
+                if key == "url" and declared_health_check_url is not None:
+                    expected = declared_health_check_url
+                if key in reference and group.get(key) != expected:
                     raise GenerationError(
                         f"ACL4SSR compatibility group {internal_name!r} changed {key}"
                     )
@@ -299,6 +308,16 @@ def validate_acl4ssr_fidelity(
                 f"ACL4SSR Online reference uses unsupported group type {reference['type']!r}"
             )
         groups_checked += 1
+
+    if declared_health_check_url is not None:
+        for group in manifest.get("groups", []):
+            if group.get("type") != "url-test":
+                continue
+            if group.get("url") != declared_health_check_url:
+                raise GenerationError(
+                    "ACL4SSR url-test group "
+                    f"{group.get('display_name')!r} does not use the declared health_check_url"
+                )
 
     disabled_reference_paths = {
         str(row["path"])
@@ -321,4 +340,9 @@ def validate_acl4ssr_fidelity(
         "disabled_sources": len(disabled_paths),
         "extensions": sorted(extension_ids),
         "node_wildcards_omitted_for_source_isolation": True,
+        **(
+            {"health_check_url": declared_health_check_url}
+            if declared_health_check_url is not None
+            else {}
+        ),
     }

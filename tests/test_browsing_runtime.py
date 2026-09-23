@@ -47,7 +47,7 @@ def _policies(regions: list[str] | None = None) -> dict:
                 "method": "HEAD",
                 "expected_status": "204",
                 "interval": 180,
-                "timeout": 3000,
+                "timeout": 5000,
                 "lazy": False,
                 "tolerance": 150,
             }
@@ -163,7 +163,7 @@ def test_hardening_builds_region_priority_surface_and_unifies_https_probe() -> N
             assert tier["type"] == "url-test"
             assert tier["use"] == [f"cr_browsing_{region.lower()}"]
             assert tier["url"] == "https://www.gstatic.com/generate_204"
-            assert tier["timeout"] == 3000
+            assert tier["timeout"] == 5000
             assert tier["expected-status"] == 204
 
     health = config["proxy-providers"]["cr_browsing_us"]["health-check"]
@@ -171,7 +171,7 @@ def test_hardening_builds_region_priority_surface_and_unifies_https_probe() -> N
         "enable": True,
         "url": "https://www.gstatic.com/generate_204",
         "interval": 180,
-        "timeout": 3000,
+        "timeout": 5000,
         "lazy": False,
         "expected-status": 204,
     }

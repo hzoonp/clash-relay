@@ -34,15 +34,15 @@ def _managed_dns() -> dict[str, object]:
         "ipv6": False,
         "enhanced_mode": "fake-ip",
         "listen": "127.0.0.1:1053",
-        "respect_rules": True,
+        "respect_rules": False,
         "default_nameservers": [
             "https://1.1.1.1/dns-query",
-            "tls://1.0.0.1:853",
+            "https://1.0.0.1/dns-query",
         ],
         "nameservers": ["https://1.1.1.1/dns-query"],
         "proxy_server_nameservers": ["https://1.1.1.1/dns-query"],
         "direct_nameservers": ["https://dns.alidns.com/dns-query"],
-        "direct_nameserver_follow_policy": True,
+        "direct_nameserver_follow_policy": False,
         "routing_policy": "acl4ssr",
         "fallback_nameservers": [],
         "fake_ip_range": "198.18.0.1/16",
@@ -69,14 +69,14 @@ def test_managed_dns_mode_preserves_explicit_dns_runtime() -> None:
         "nameserver": ["https://1.1.1.1/dns-query"],
         "fallback": [],
         "ipv6": False,
-        "respect-rules": True,
+        "respect-rules": False,
         "default-nameserver": [
             "https://1.1.1.1/dns-query",
-            "tls://1.0.0.1:853",
+            "https://1.0.0.1/dns-query",
         ],
         "proxy-server-nameserver": ["https://1.1.1.1/dns-query"],
         "direct-nameserver": ["https://dns.alidns.com/dns-query"],
-        "direct-nameserver-follow-policy": True,
+        "direct-nameserver-follow-policy": False,
         "fake-ip-range": "198.18.0.1/16",
         "fake-ip-filter-mode": "blacklist",
         "fake-ip-filter": ["*.lan", "*.local", "localhost"],
@@ -108,6 +108,7 @@ def test_dns_schema_requires_proxy_server_nameserver_when_respecting_rules() -> 
     dns_schema = schema["properties"]["runtime"]["properties"]["dns"]
     validator = Draft202012Validator(dns_schema)
     invalid = _managed_dns()
+    invalid["respect_rules"] = True
     invalid.pop("proxy_server_nameservers")
 
     errors = list(validator.iter_errors(invalid))

@@ -1,6 +1,6 @@
 # Production operations contract
 
-Long-term production operation preserves the six-scenario routing model, source isolation, ACL4SSR fidelity, client-owned DNS, fail-closed qualification, exact-SHA validation, and private publication boundaries.
+Long-term production operation preserves the six-scenario routing model, source isolation, ACL4SSR fidelity, managed Fake-IP DNS with client-owned TUN, fail-closed qualification, exact-SHA validation, and private publication boundaries.
 
 ## Documentation contract
 

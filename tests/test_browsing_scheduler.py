@@ -13,7 +13,7 @@ def test_canonical_browsing_pool_uses_active_stability_probe(repo_root: Path) ->
         "method": "HEAD",
         "expected_status": "204",
         "interval": 180,
-        "timeout": 3000,
+        "timeout": 5000,
         "lazy": False,
         "tolerance": 150,
     }

@@ -23,7 +23,7 @@ The canonical profile contains:
 - pinned ACL4SSR Full routing data in `rules/acl4ssr.yaml`;
 - live OpenAI / Claude / Gemini qualification before publication;
 - Cloudflare Workers KV as the credential-bearing publication backend;
-- managed Fake-IP DNS with rule-respecting DoH, dedicated proxy-server resolution, and HTTP/TLS/QUIC traffic sniffing for mobile routing identity.
+- managed Fake-IP DNS with routing-derived resolver selection, independent encrypted resolver transport, dedicated proxy-server resolution, and HTTP/TLS/QUIC traffic sniffing for mobile routing identity.
 
 The source-policy boundary is intentional: `subscription_1` may enter only `browsing` and `ai`; it may never enter `general`.
 
@@ -35,9 +35,9 @@ The source-policy boundary is intentional: `subscription_1` may enter only `brow
 
 Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, rule mode, log level, IPv6, delay behavior, profile persistence, DNS ownership, and optional sniffing. Production does not emit a public controller, controller secret, listeners, or tunnels.
 
-`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses managed Fake-IP DNS with IPv6 DNS responses disabled, a loopback listener, encrypted bootstrap/default resolvers, `respect-rules: true`, dedicated `proxy-server-nameserver` resolvers, and a small LAN/local Fake-IP exclusion list.
+`runtime.dns.mode: client` omits generated DNS state and leaves DNS behavior to the client environment. `managed` emits the declared DNS settings. Canonical production uses managed Fake-IP DNS with IPv6 DNS responses disabled, a loopback listener, IP-literal encrypted bootstrap/default and proxy-server resolvers, `respect-rules: false`, dedicated `proxy-server-nameserver` resolvers, and a small LAN/local Fake-IP exclusion list. `nameserver-policy` still selects direct or normal resolvers for application domains; resolver transport does not recurse into proxy routing.
 
-`runtime.dns.routing_policy: acl4ssr` compiles `nameserver-policy` from the same pinned ACL4SSR rule-provider scenarios used by Routing V2. It does not maintain a second domain list: rule providers declared as `scenario: direct` resolve through `direct_nameservers`; every other rule-provider scenario uses the normal encrypted resolver pool. Generated DNS policy keys are only `rule-set:<existing-provider>`. DNS compilation never introduces a subscription-specific proxy group.
+`runtime.dns.routing_policy: acl4ssr` compiles `nameserver-policy` from the same pinned ACL4SSR rule-provider scenarios used by Routing V2. It does not maintain a second domain list: rule providers declared as `scenario: direct` resolve through `direct_nameservers`; every other rule-provider scenario uses the normal encrypted resolver pool. `direct_nameserver_follow_policy: false` keeps that DIRECT resolver transport outside a second policy lookup. Generated DNS policy keys are only `rule-set:<existing-provider>`. DNS compilation never introduces a subscription-specific proxy group.
 
 Canonical FlClash production sets `runtime.tun.mode: client`. The generated profile therefore omits `tun:` entirely and leaves TUN/VPN ownership to FlClash instead of partially overriding the client with profile-level `strict-route` or interface-routing state. Managed TUN remains a supported Public Config V2 capability for standalone Mihomo profiles, where the generated-config leak audit requires Fake-IP, encrypted resolver pools, strict routing, and both UDP/TCP port-53 hijacking.
 

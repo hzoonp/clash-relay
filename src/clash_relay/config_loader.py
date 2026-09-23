@@ -101,6 +101,14 @@ def _dns_tun_semantics(config: dict[str, Any]) -> None:
             raise ConfigurationError(
                 "runtime.dns.routing_policy=acl4ssr requires enabled ACL4SSR rule sources"
             )
+        if dns.get("respect_rules") is not False:
+            raise ConfigurationError(
+                "runtime.dns.routing_policy=acl4ssr requires respect_rules=false"
+            )
+        if dns.get("direct_nameserver_follow_policy") is not False:
+            raise ConfigurationError(
+                "runtime.dns.routing_policy=acl4ssr requires direct_nameserver_follow_policy=false"
+            )
 
     tun = runtime.get("tun")
     if not isinstance(tun, dict) or str(tun.get("mode", "managed")) == "client":

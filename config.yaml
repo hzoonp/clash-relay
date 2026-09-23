@@ -18,20 +18,20 @@ runtime:
     ipv6: false
     enhanced_mode: fake-ip
     listen: 127.0.0.1:1053
-    respect_rules: true
+    respect_rules: false
     default_nameservers:
       - https://1.1.1.1/dns-query
-      - tls://1.0.0.1:853
+      - https://1.0.0.1/dns-query
     nameservers:
       - https://1.1.1.1/dns-query
-      - https://dns.google/dns-query
+      - https://8.8.8.8/dns-query
     proxy_server_nameservers:
       - https://1.1.1.1/dns-query
-      - https://dns.google/dns-query
+      - https://8.8.8.8/dns-query
     direct_nameservers:
       - https://dns.alidns.com/dns-query
       - https://doh.pub/dns-query
-    direct_nameserver_follow_policy: true
+    direct_nameserver_follow_policy: false
     routing_policy: acl4ssr
     fallback_nameservers: []
     fake_ip_range: 198.18.0.1/16

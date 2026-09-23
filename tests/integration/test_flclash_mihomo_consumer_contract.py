@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import shutil
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -129,14 +131,28 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     dns = document["dns"]
     assert dns["enable"] is True
     assert dns["enhanced-mode"] == "fake-ip"
-    assert dns["respect-rules"] is True
-    assert dns["direct-nameserver-follow-policy"] is True
+    assert dns["respect-rules"] is False
+    assert dns["direct-nameserver-follow-policy"] is False
     assert dns["fallback"] == []
     assert dns["nameserver-policy"]
     assert all(str(key).startswith("rule-set:") for key in dns["nameserver-policy"])
     assert all(
         str(key).split(":", 1)[1] in document["rule-providers"] for key in dns["nameserver-policy"]
     )
+    for field in ("default-nameserver", "proxy-server-nameserver"):
+        resolvers = dns[field]
+        assert resolvers
+        for resolver in resolvers:
+            parsed = urlsplit(str(resolver))
+            assert parsed.scheme == "https"
+            assert parsed.hostname is not None
+            ip_address(parsed.hostname)
+    automatic_groups = [
+        group for group in document["proxy-groups"] if group.get("type") in {"url-test", "fallback"}
+    ]
+    assert automatic_groups
+    assert all(str(group.get("url", "")).startswith("https://") for group in automatic_groups)
+    assert all(group.get("timeout") == 5000 for group in automatic_groups)
 
     assert "tun" not in document
     assert result.report["dns_leak_audit"] == {
@@ -144,6 +160,12 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
         "mode": "no_tun",
     }
     assert result.report["dns_routing_policy"]["status"] == "compiled"
+    assert result.report["dns_runtime_audit"] == {
+        "status": "passed",
+        "resolver_transport": "independent",
+        "direct_resolver_policy": "bypass",
+        "automatic_groups": len(automatic_groups),
+    }
 
     general = graph.walk_resolved("代理选择")
     assert general.providers

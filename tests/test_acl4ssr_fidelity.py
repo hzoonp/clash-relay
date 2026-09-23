@@ -67,6 +67,7 @@ def test_canonical_manifest_matches_reference_with_only_declared_deviations(
         "disabled_sources": 1,
         "extensions": ["ai", "download", "openai"],
         "node_wildcards_omitted_for_source_isolation": True,
+        "health_check_url": "https://www.gstatic.com/generate_204",
     }
 
 
