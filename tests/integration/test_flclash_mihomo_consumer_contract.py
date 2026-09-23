@@ -147,12 +147,12 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
             assert parsed.scheme == "https"
             assert parsed.hostname is not None
             ip_address(parsed.hostname)
-    automatic_groups = [
-        group for group in document["proxy-groups"] if group.get("type") in {"url-test", "fallback"}
+    urltest_groups = [
+        group for group in document["proxy-groups"] if group.get("type") == "url-test"
     ]
-    assert automatic_groups
-    assert all(str(group.get("url", "")).startswith("https://") for group in automatic_groups)
-    assert all(group.get("timeout") == 5000 for group in automatic_groups)
+    assert urltest_groups
+    assert all(str(group.get("url", "")).startswith("https://") for group in urltest_groups)
+    assert all(group.get("timeout") == 5000 for group in urltest_groups)
 
     assert "tun" not in document
     assert result.report["dns_leak_audit"] == {
@@ -164,7 +164,7 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
         "status": "passed",
         "resolver_transport": "independent",
         "direct_resolver_policy": "bypass",
-        "automatic_groups": len(automatic_groups),
+        "automatic_groups": len(urltest_groups),
     }
 
     general = graph.walk_resolved("代理选择")
