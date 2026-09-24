@@ -113,6 +113,7 @@ def audit_candidate(
 def render_qualification_summary_markdown(
     browsing: dict[str, Any],
     ai: dict[str, Any],
+    endpoint: dict[str, Any] | None = None,
 ) -> str:
     """Render aggregate-only qualification details for GitHub Actions."""
 
@@ -136,7 +137,18 @@ def render_qualification_summary_markdown(
     if not isinstance(cache, dict):
         cache = {}
 
+    endpoint = endpoint if isinstance(endpoint, dict) else {}
+
     lines = [
+        "## Proxy endpoint qualification",
+        "",
+        f"TCP entries tested: **{int(endpoint.get('tested', 0) or 0)}**  ",
+        f"Reachable / unreachable: **{int(endpoint.get('reachable', 0) or 0)} / {int(endpoint.get('unreachable', 0) or 0)}**  ",
+        f"Quarantined entries: **{int(endpoint.get('quarantined', 0) or 0)}**  ",
+        f"UDP-native entries left to Mihomo: **{int(endpoint.get('skipped_udp_native', 0) or 0)}**",
+        "",
+        "Only aggregate counts are shown; endpoint identities remain private.",
+        "",
         "## Browsing qualification",
         "",
         f"Tested nodes: **{int(browsing_diagnostics.get('tested_nodes', 0) or 0)}**  ",
@@ -242,7 +254,9 @@ def run_production_pipeline(
         ai = _load_json(qualification_paths.ai_report)
         markdown = render_production_summary_markdown(pre_audit)
         markdown += "\n" + render_source_stage_delta_markdown(pre_audit, post_audit)
-        markdown += "\n" + render_qualification_summary_markdown(browsing, ai)
+        markdown += "\n" + render_qualification_summary_markdown(
+            browsing, ai, qualification.get("endpoint_qualification")
+        )
         atomic_write(outputs.summary_markdown, markdown)
 
     # Deliberately aggregate-only. The detailed stage reports remain private files.

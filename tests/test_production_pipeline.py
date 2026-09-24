@@ -78,8 +78,15 @@ def test_qualification_summary_is_aggregate_only() -> None:
         },
     }
 
-    markdown = render_qualification_summary_markdown(browsing, ai)
+    markdown = render_qualification_summary_markdown(
+        browsing,
+        ai,
+        {"tested": 7, "reachable": 5, "unreachable": 2, "quarantined": 2, "skipped_udp_native": 3},
+    )
 
+    assert "TCP entries tested: **7**" in markdown
+    assert "Quarantined entries: **2**" in markdown
+    assert "UDP-native entries left to Mihomo: **3**" in markdown
     assert "Tested nodes: **7**" in markdown
     assert "`openai` | 3 | 2" in markdown
     assert "server" not in markdown.lower()

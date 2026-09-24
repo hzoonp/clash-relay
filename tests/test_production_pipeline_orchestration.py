@@ -117,7 +117,7 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     monkeypatch.setattr(
         pipeline,
         "render_qualification_summary_markdown",
-        lambda _browsing, _ai: "QUALIFICATION\n",
+        lambda _browsing, _ai, _endpoint: "QUALIFICATION\n",
     )
 
     result = run_production_pipeline(
