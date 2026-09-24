@@ -51,6 +51,17 @@ def test_dns_leak_audit_accepts_strict_tun_contract() -> None:
     assert report["policy_rulesets"] == 2
 
 
+def test_dns_leak_audit_allows_system_only_on_direct_path() -> None:
+    candidate = _candidate()
+    candidate["dns"]["direct-nameserver"].insert(0, "system")
+    candidate["dns"]["nameserver-policy"]["rule-set:acl4ssr_china_domain"].insert(0, "system")
+    assert audit_dns_leak_protection(candidate)["status"] == "passed"
+
+    candidate["dns"]["nameserver-policy"]["rule-set:acl4ssr_openai"].insert(0, "system")
+    with pytest.raises(ValidationError, match="nameserver-policy"):
+        audit_dns_leak_protection(candidate)
+
+
 def test_dns_leak_audit_rejects_system_resolver_escape() -> None:
     candidate = _candidate()
     candidate["dns"]["nameserver"] = ["system://"]

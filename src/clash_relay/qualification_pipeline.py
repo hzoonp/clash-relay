@@ -13,6 +13,10 @@ from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .proxy_endpoint_qualification import (
+    accelerate_client_health_checks,
+    quarantine_unreachable_tcp_endpoints,
+)
 from .proxy_host_qualification import quarantine_unresolvable_proxy_hosts
 from .qualification_pipeline_result import QualificationPipelineResult
 from .qualification_reliability import QualificationStageRejected
@@ -161,6 +165,10 @@ def run_qualification_pipeline(
     if not isinstance(generated_document, dict):
         raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
     proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
+    endpoint_qualification = quarantine_unreachable_tcp_endpoints(
+        generated_document, workers=workers
+    )
+    accelerated_groups = accelerate_client_health_checks(generated_document)
     atomic_write(generated, dump_yaml(generated_document, header=True))
     generated_artifact = _artifact(generated, "proxy_host_qualified")
     browsing_started = time.perf_counter()
@@ -280,6 +288,8 @@ def run_qualification_pipeline(
             else 0,
         },
         "proxy_host_resolution": proxy_host_resolution,
+        "endpoint_qualification": endpoint_qualification,
+        "accelerated_health_check_groups": accelerated_groups,
         "ai": {
             "status": ai_summary.get("status"),
             "qualification_mode": ai_summary.get("diagnostics", {}).get(
