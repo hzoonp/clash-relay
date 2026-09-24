@@ -123,6 +123,8 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 
+General-pool country `url-test` groups declare `on_empty: omit`. The compiler counts leaves after the group filter against the resolved general inventory, omits a region with no matching general node, and removes that group from every upper selector. Browsing groups continue to use the separate browsing inventory, so a subscription-1-only country remains available under `网页浏览` without entering general, media, messaging, or downloads. All automatic groups are checked again against their final provider/group expansion before serialization.
+
 ## Media, messaging, and download
 
 `ProxyMedia -> 流媒体`, `Telegram -> 消息通讯`, and `Download -> 下载流量` all use general-only schedulers. They cannot select subscription 1.

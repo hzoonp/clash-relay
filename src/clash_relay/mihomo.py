@@ -84,6 +84,7 @@ def validate_with_mihomo(
     config_path: Path,
     *,
     startup_seconds: float = 1.5,
+    config_test_timeout: float = 30.0,
     secret_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     binary = binary.resolve()
@@ -98,7 +99,7 @@ def validate_with_mihomo(
         test = _run(
             [str(binary), "-t", "-d", str(workdir), "-f", str(validation_path)],
             cwd=workdir,
-            timeout=30,
+            timeout=config_test_timeout,
         )
         if test.returncode != 0:
             output = redact_text(test.stdout[-5000:], secret_values)

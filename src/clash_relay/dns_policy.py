@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .errors import GenerationError
+
+_EXACT_DOMAIN = re.compile(r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}")
 
 
 def apply_dns_routing_policy(
@@ -40,7 +43,24 @@ def apply_dns_routing_policy(
     if not direct_resolvers or not proxy_resolvers:
         raise GenerationError("DNS routing policy requires direct and proxy resolver pools")
 
+    existing_policy = dns.get("nameserver-policy", {})
+    if not isinstance(existing_policy, dict):
+        raise GenerationError("DNS nameserver-policy overrides must be a mapping")
     policy: dict[str, list[str]] = {}
+    for domain, resolvers in existing_policy.items():
+        if not isinstance(domain, str) or not _EXACT_DOMAIN.fullmatch(domain):
+            raise GenerationError("DNS nameserver-policy overrides require exact domain names")
+        if (
+            not isinstance(resolvers, list)
+            or not resolvers
+            or not all(
+                isinstance(resolver, str) and resolver.startswith(("https://", "tls://", "quic://"))
+                for resolver in resolvers
+            )
+        ):
+            raise GenerationError("DNS nameserver-policy overrides require encrypted resolvers")
+        policy[domain] = list(resolvers)
+    override_count = len(policy)
     direct_rulesets = 0
     proxy_rulesets = 0
     for directive in external_rules or []:
@@ -56,7 +76,9 @@ def apply_dns_routing_policy(
             )
         key = f"rule-set:{provider}"
         if key in policy:
-            continue
+            raise GenerationError(
+                "DNS nameserver-policy override conflicts with an ACL4SSR rule set"
+            )
         if scenario == "direct":
             policy[key] = list(direct_resolvers)
             direct_rulesets += 1
@@ -74,5 +96,6 @@ def apply_dns_routing_policy(
         "mode": "acl4ssr",
         "direct_rulesets": direct_rulesets,
         "proxy_rulesets": proxy_rulesets,
-        "total_rulesets": len(policy),
+        "total_rulesets": direct_rulesets + proxy_rulesets,
+        "exact_overrides": override_count,
     }

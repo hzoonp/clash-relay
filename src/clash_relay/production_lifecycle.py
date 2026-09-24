@@ -173,6 +173,12 @@ class ProductionPipeline:
             "candidate_sha256": result.report.get("candidate_sha256"),
             "successful_subscriptions": result.report.get("successful_subscriptions", 0),
             "usable_nodes": result.report.get("usable_nodes", 0),
+            "regional_group_counts": result.report.get("acl4ssr_groups", {}).get(
+                "regional_group_counts", {}
+            ),
+            "omitted_empty_groups": result.report.get("acl4ssr_groups", {}).get(
+                "omitted_empty_groups", []
+            ),
         }
         self._write_json(self._private("generation-summary.json"), summary)
         return summary
@@ -687,6 +693,8 @@ class ProductionPipeline:
                 "scheduler_observation": scheduler_observation.get("status"),
                 "operational_slo": slo.get("status"),
                 "source_stage_accounting": self._source_stage_accounting(),
+                "regional_group_counts": generation.get("regional_group_counts", {}),
+                "omitted_empty_groups": generation.get("omitted_empty_groups", []),
                 "endpoint_qualification": pipeline.get("endpoint_qualification"),
                 "accelerated_health_check_groups": pipeline.get(
                     "accelerated_health_check_groups", 0

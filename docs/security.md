@@ -75,7 +75,7 @@ Subscription HTTP(S) connections are bound to the exact public `getaddrinfo` res
 
 ## DNS and TUN leak prevention
 
-The canonical FlClash profile uses managed Fake-IP DNS but keeps TUN client-owned. DNS routing does not create a second domain-policy database: generated `nameserver-policy` entries reference the already-generated ACL4SSR `rule-set:` providers and reuse their Routing V2 scenario metadata.
+The canonical FlClash profile uses managed Fake-IP DNS but keeps TUN client-owned. DNS routing primarily reuses generated ACL4SSR `rule-set:` providers and their Routing V2 scenarios; one exact `stun.l.google.com` resolver override is merged into that policy. Wildcard host overrides are rejected.
 
 For the canonical FlClash profile, `runtime.tun.mode: client` means no `tun:` mapping is serialized into the production candidate. This avoids leaving profile-level `strict-route` or `auto-detect-interface` state behind after FlClash applies its own TUN patch. Local TUN/VPN and DNS hijacking are therefore client responsibilities, while the remote profile continues to own managed DNS, Fake-IP, encrypted resolver pools, and DNS routing policy.
 

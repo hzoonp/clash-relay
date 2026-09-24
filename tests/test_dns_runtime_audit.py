@@ -27,8 +27,9 @@ def _candidate() -> dict:
             {
                 "name": "automatic",
                 "type": "url-test",
-                "url": "https://www.gstatic.com/generate_204",
+                "url": "https://cp.cloudflare.com/generate_204",
                 "timeout": 5000,
+                "expected-status": 204,
             },
         ],
     }
@@ -41,6 +42,13 @@ def test_runtime_dns_audit_proves_resolver_transport_is_independent() -> None:
         "direct_resolver_policy": "bypass",
         "automatic_groups": 1,
     }
+
+
+def test_runtime_dns_audit_accepts_domestic_plain_ip_bootstrap_and_eight_second_probe() -> None:
+    candidate = _candidate()
+    candidate["dns"]["default-nameserver"] = ["223.5.5.5", "119.29.29.29"]
+    candidate["proxy-groups"][0]["timeout"] = 8000
+    assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"
 
 
 @pytest.mark.parametrize(
@@ -61,12 +69,15 @@ def test_runtime_dns_audit_rejects_resolver_dependency_cycles(
         audit_dns_runtime_dependencies(candidate)
 
 
-@pytest.mark.parametrize("url", ["http://www.gstatic.com/generate_204", "http://example.invalid"])
+@pytest.mark.parametrize(
+    "url",
+    ["http://cp.cloudflare.com/generate_204", "https://www.gstatic.com/generate_204"],
+)
 def test_runtime_dns_audit_rejects_non_https_urltest(url: str) -> None:
     candidate = _candidate()
     candidate["proxy-groups"][0]["url"] = url
 
-    with pytest.raises(ValidationError, match="HTTPS health-check"):
+    with pytest.raises(ValidationError, match="canonical Cloudflare"):
         audit_dns_runtime_dependencies(candidate)
 
 
@@ -74,5 +85,26 @@ def test_runtime_dns_audit_rejects_short_urltest_timeout() -> None:
     candidate = _candidate()
     candidate["proxy-groups"][0]["timeout"] = 3000
 
-    with pytest.raises(ValidationError, match="5000ms"):
+    with pytest.raises(ValidationError, match="5000ms or 8000ms"):
         audit_dns_runtime_dependencies(candidate)
+
+
+def test_runtime_dns_audit_rejects_any_other_automatic_timeout() -> None:
+    candidate = _candidate()
+    candidate["proxy-groups"][0]["timeout"] = 9000
+    with pytest.raises(ValidationError, match="5000ms or 8000ms"):
+        audit_dns_runtime_dependencies(candidate)
+
+
+def test_runtime_dns_audit_leaves_ai_probe_semantics_untouched() -> None:
+    candidate = _candidate()
+    candidate["proxy-groups"].append(
+        {
+            "name": "__CR_AI_OPENAI_01",
+            "type": "url-test",
+            "url": "https://android.chat.openai.com/",
+            "timeout": 7000,
+            "expected-status": "200-399",
+        }
+    )
+    assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"

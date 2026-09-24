@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from typing import Any
 from urllib.parse import urlsplit
 
 from .errors import ValidationError
 
 _ENCRYPTED_DNS_SCHEMES = frozenset({"https", "tls", "quic", "h3"})
+_EXACT_DNS_NAME = re.compile(
+    r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$"
+)
 
 
 def _is_loopback_listener(value: Any) -> bool:
@@ -116,11 +120,16 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         raise ValidationError("DNS leak audit requires routing-derived nameserver-policy")
 
     for key, resolvers in policy.items():
-        if not isinstance(key, str) or not key.startswith("rule-set:"):
-            raise ValidationError("DNS leak audit forbids standalone DNS classification rules")
-        provider = key.split(":", 1)[1]
-        if provider not in rule_providers:
-            raise ValidationError("DNS leak audit found an unknown DNS rule-provider reference")
+        if not isinstance(key, str):
+            raise ValidationError("DNS leak audit found an invalid nameserver-policy key")
+        if key.startswith("rule-set:"):
+            provider = key.split(":", 1)[1]
+            if provider not in rule_providers:
+                raise ValidationError("DNS leak audit found an unknown DNS rule-provider reference")
+        elif not _EXACT_DNS_NAME.fullmatch(key):
+            raise ValidationError(
+                "DNS leak audit permits only exact-domain nameserver-policy overrides"
+            )
         values = _resolver_values(resolvers)
         direct_values = _resolver_values(dns.get("direct-nameserver"))
         if not values or not all(
@@ -132,7 +141,8 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": "passed",
         "mode": "strict_tun",
-        "policy_rulesets": len(policy),
+        "policy_rulesets": sum(str(key).startswith("rule-set:") for key in policy),
+        "exact_domain_overrides": sum(not str(key).startswith("rule-set:") for key in policy),
         "encrypted_resolver_fields": 4,
         "dns_hijack_protocols": 2,
     }

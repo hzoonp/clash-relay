@@ -19,6 +19,13 @@ def test_runtime_config_renderer_emits_canonical_managed_dns(repo_root: Path) ->
     assert rendered["dns"]["enhanced-mode"] == "fake-ip"
     assert rendered["dns"]["respect-rules"] is False
     assert rendered["dns"]["proxy-server-nameserver"]
+    assert rendered["dns"]["default-nameserver"] == ["223.5.5.5", "119.29.29.29"]
+    assert rendered["dns"]["nameserver-policy"] == {
+        "stun.l.google.com": [
+            "https://dns.alidns.com/dns-query",
+            "https://doh.pub/dns-query",
+        ]
+    }
     assert rendered["profile"]["store-fake-ip"] is True
     assert rendered["sniffer"]["enable"] is True
 

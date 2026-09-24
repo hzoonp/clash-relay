@@ -134,13 +134,36 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert dns["respect-rules"] is False
     assert dns["direct-nameserver-follow-policy"] is False
     assert dns["direct-nameserver"][0] == "system"
+    assert dns["nameserver-policy"]["stun.l.google.com"] == [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    assert not any("*" in str(key) and "stun" in str(key) for key in dns["nameserver-policy"])
     assert dns["fallback"] == []
     assert dns["nameserver-policy"]
-    assert all(str(key).startswith("rule-set:") for key in dns["nameserver-policy"])
+    exact_overrides = {
+        key: value
+        for key, value in dns["nameserver-policy"].items()
+        if not str(key).startswith("rule-set:")
+    }
+    assert exact_overrides == {
+        "stun.l.google.com": [
+            "https://dns.alidns.com/dns-query",
+            "https://doh.pub/dns-query",
+        ]
+    }
     assert all(
-        str(key).split(":", 1)[1] in document["rule-providers"] for key in dns["nameserver-policy"]
+        str(key).startswith("rule-set:") or key == "stun.l.google.com"
+        for key in dns["nameserver-policy"]
     )
-    for field in ("default-nameserver", "proxy-server-nameserver"):
+    assert all(
+        str(key).split(":", 1)[1] in document["rule-providers"]
+        for key in dns["nameserver-policy"]
+        if str(key).startswith("rule-set:")
+    )
+    for resolver in dns["default-nameserver"]:
+        assert ip_address(str(resolver))
+    for field in ("proxy-server-nameserver",):
         resolvers = dns[field]
         assert resolvers
         for resolver in resolvers:
@@ -153,7 +176,19 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     ]
     assert urltest_groups
     assert all(str(group.get("url", "")).startswith("https://") for group in urltest_groups)
-    assert all(group.get("timeout") == 5000 for group in urltest_groups)
+    region_names = {"香港节点", "台湾节点", "新加坡节点", "日本节点", "美国节点", "韩国节点"}
+    assert all(
+        group.get("timeout")
+        == (
+            8000
+            if group.get("name") in region_names
+            or group.get("name") == "网页自动"
+            or str(group.get("name", "")).startswith(("网页 · ", "__CR_BROWSING_"))
+            or any(str(provider).startswith("cr_browsing_") for provider in group.get("use", []))
+            else 5000
+        )
+        for group in urltest_groups
+    )
 
     assert "tun" not in document
     assert result.report["dns_leak_audit"] == {

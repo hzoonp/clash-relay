@@ -9,11 +9,11 @@ def test_canonical_browsing_pool_uses_active_stability_probe(repo_root: Path) ->
     policies = load_policy_document(repo_root / "policies.yaml").document
     probe = policies["probes"]["browsing"]
     assert probe == {
-        "url": "https://www.gstatic.com/generate_204",
+        "url": "https://cp.cloudflare.com/generate_204",
         "method": "HEAD",
         "expected_status": "204",
         "interval": 180,
-        "timeout": 5000,
+        "timeout": 8000,
         "lazy": False,
         "tolerance": 150,
     }

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .errors import GenerationError
+from .runtime_graph import RuntimeGraph
 from .util import normalize_expected_status, unique
 
 
@@ -68,10 +70,10 @@ def _resolve_route_member(
         return name
     if "auto_pool" in member:
         pool_id = str(member["auto_pool"])
-        name = pool_display_names.get(pool_id)
-        if name is None or name not in groups:
+        pool_name = pool_display_names.get(pool_id)
+        if pool_name is None or pool_name not in groups:
             raise GenerationError(f"deterministic route references unknown pool {pool_id!r}")
-        return name
+        return pool_name
     raise GenerationError("deterministic route contains an invalid member")
 
 
@@ -131,6 +133,8 @@ def apply_acl4ssr_group_semantics(
     hidden_groups: list[str] = []
     deterministic_routes: list[str] = []
     automatic_routes: list[str] = []
+    provider_group_leaf_counts: dict[str, int] = {}
+    omitted_empty_groups: list[str] = []
     for spec in group_specs:
         display_name = str(spec["display_name"])
         group = groups.get(display_name)
@@ -196,6 +200,30 @@ def apply_acl4ssr_group_semantics(
             if isinstance(filter_pattern, str) and filter_pattern:
                 group["filter"] = filter_pattern
 
+            try:
+                compiled_filter = re.compile(filter_pattern) if filter_pattern else None
+            except re.error as exc:
+                raise GenerationError(
+                    f"ACL4SSR group {display_name!r} has an invalid provider filter"
+                ) from exc
+            pool_graph = RuntimeGraph.from_candidate(output)
+            pool_leaves = pool_graph.effective_leaf_proxies(pool_display)
+            leaf_count = sum(
+                1
+                for proxy_name in pool_leaves
+                if compiled_filter is None or compiled_filter.search(proxy_name)
+            )
+            if group_type == "url-test":
+                provider_group_leaf_counts[display_name] = leaf_count
+                if leaf_count == 0:
+                    on_empty = spec.get("on_empty", "error")
+                    if on_empty == "omit":
+                        omitted_empty_groups.append(display_name)
+                        continue
+                    raise GenerationError(
+                        f"ACL4SSR automatic group {display_name!r} has no effective provider leaves"
+                    )
+
             if not spec.get("members"):
                 group.pop("proxies", None)
 
@@ -221,10 +249,37 @@ def apply_acl4ssr_group_semantics(
                 f"ACL4SSR group {display_name!r} uses unsupported runtime type {group_type!r}"
             )
 
+    if omitted_empty_groups:
+        omitted = set(omitted_empty_groups)
+        provider_backed = [name for name in provider_backed if name not in omitted]
+        hidden_groups = [name for name in hidden_groups if name not in omitted]
+        output["proxy-groups"] = [
+            group
+            for group in output.get("proxy-groups", [])
+            if not isinstance(group, dict) or group.get("name") not in omitted
+        ]
+        for group in output["proxy-groups"]:
+            if not isinstance(group, dict):
+                continue
+            members = group.get("proxies")
+            if isinstance(members, list):
+                group["proxies"] = [member for member in members if member not in omitted]
+
     return {
         "provider_backed_groups": sorted(provider_backed),
         "hidden_groups": sorted(hidden_groups),
         "hidden_inventories": sorted(hidden_inventories),
         "deterministic_routes": sorted(deterministic_routes),
         "automatic_routes": sorted(automatic_routes),
+        "provider_group_leaf_counts": dict(sorted(provider_group_leaf_counts.items())),
+        "omitted_empty_groups": sorted(omitted_empty_groups),
+        "regional_group_counts": {
+            str(spec["display_name"]): {
+                "leaf_nodes": provider_group_leaf_counts[str(spec["display_name"])],
+                "omitted": str(spec["display_name"]) in omitted_empty_groups,
+            }
+            for spec in group_specs
+            if spec.get("on_empty") == "omit"
+            and str(spec.get("display_name")) in provider_group_leaf_counts
+        },
     }

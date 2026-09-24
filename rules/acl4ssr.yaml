@@ -11,7 +11,7 @@ reference:
   path: Clash/config/ACL4SSR_Online.ini
   # Upstream Online uses cleartext generate_204. Manifest URLTest groups must
   # use this HTTPS probe so Fake-IP cold starts do not depend on that URL.
-  health_check_url: https://www.gstatic.com/generate_204
+  health_check_url: https://cp.cloudflare.com/generate_204
   # BanProgramAD caused real mobile image/CDN breakage. Keep basic BanAD only.
   disabled_paths:
     - Clash/BanProgramAD.list
@@ -63,9 +63,10 @@ groups:
     type: url-test
     provider_pool: general
     filter: '.*'
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
     timeout: 5000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -85,9 +86,10 @@ groups:
     type: url-test
     provider_pool: browsing
     filter: '.*'
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     interval: 180
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 150
     members: []
 
@@ -111,9 +113,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(港|HK|hk|Hong Kong|HongKong|hongkong)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -124,9 +128,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(台|新北|彰化|TW|Taiwan)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -137,9 +143,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(新加坡|坡|狮城|SG|Singapore)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -150,9 +158,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(日本|川日|东京|大阪|泉日|埼玉|沪日|深日|JP|Japan)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -163,9 +173,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(美|波特兰|达拉斯|俄勒冈|凤凰城|费利蒙|硅谷|拉斯维加斯|洛杉矶|圣何塞|圣克拉拉|西雅图|芝加哥|US|United States)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 150
     members: []
 
@@ -176,9 +188,11 @@ groups:
     type: url-test
     provider_pool: general
     filter: '(KR|Korea|KOR|首尔|韩|韓)'
-    url: https://www.gstatic.com/generate_204
+    on_empty: omit
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
-    timeout: 5000
+    timeout: 8000
+    expected_status: "204"
     tolerance: 50
     members: []
 
@@ -189,9 +203,10 @@ groups:
     type: url-test
     provider_pool: general
     filter: '.*'
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
     timeout: 5000
+    expected_status: "204"
     tolerance: 150
     route:
       scenario: media
@@ -205,9 +220,10 @@ groups:
     type: url-test
     provider_pool: general
     filter: '.*'
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     interval: 300
     timeout: 5000
+    expected_status: "204"
     tolerance: 100
     route:
       scenario: general
@@ -221,9 +237,10 @@ groups:
     type: url-test
     provider_pool: general
     filter: '.*'
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     interval: 600
     timeout: 5000
+    expected_status: "204"
     tolerance: 300
     route:
       scenario: download

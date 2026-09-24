@@ -256,6 +256,32 @@ def test_dns_routing_policy_requires_enabled_acl4ssr(project_factory, yaml_edito
         load_project(**paths)
 
 
+def test_dns_nameserver_policy_override_rejects_wildcard(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+    yaml_editor(
+        paths["config_path"],
+        lambda data: data["runtime"]["dns"].update(
+            nameserver_policy_overrides={"stun*.l.google.com": ["https://dns.alidns.com/dns-query"]}
+        ),
+    )
+    with pytest.raises(ConfigurationError, match="schema validation"):
+        load_project(**paths)
+
+
+def test_nameserver_policy_override_requires_an_exact_domain(project_factory, yaml_editor) -> None:
+    _, paths = project_factory()
+
+    yaml_editor(
+        paths["config_path"],
+        lambda data: data["runtime"]["dns"].update(
+            nameserver_policy_overrides={"stun*.l.google.com": ["https://dns.alidns.com/dns-query"]}
+        ),
+    )
+
+    with pytest.raises(ConfigurationError, match="schema validation"):
+        load_project(**paths)
+
+
 def test_managed_tun_requires_udp_and_tcp_dns_hijack(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
 

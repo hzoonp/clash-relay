@@ -77,6 +77,25 @@ def test_unknown_group_reference_rejected(built_candidate) -> None:
         validate_generated_config(config)
 
 
+def test_filtered_automatic_group_with_no_leaf_is_rejected(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    regional = next(group for group in config["proxy-groups"] if group.get("type") == "url-test")
+    regional["filter"] = "(?i)NO_MATCHING_PROXY"
+
+    with pytest.raises(ValidationError, match="expands to zero leaf proxies"):
+        validate_generated_config(config)
+
+
+def test_empty_fallback_after_group_expansion_is_rejected(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    fallback = next(group for group in config["proxy-groups"] if group.get("type") == "fallback")
+    fallback["proxies"] = ["DIRECT"]
+    fallback.pop("use", None)
+
+    with pytest.raises(ValidationError, match="expands to zero leaf proxies"):
+        validate_generated_config(config)
+
+
 def test_public_group_cannot_reference_nodes_directly(built_candidate) -> None:
     config = _candidate(built_candidate)
     public = next(group for group in config["proxy-groups"] if not group.get("hidden", False))

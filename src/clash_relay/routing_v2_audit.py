@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .config_loader import ProjectDefinition
@@ -132,6 +133,7 @@ def _audit_public_general_selector(
     name: str,
     automatic: str,
     general_region_choices: tuple[str, ...],
+    omittable_general_region_choices: frozenset[str] = frozenset(),
 ) -> None:
     selector = groups.get(name)
     if not isinstance(selector, dict):
@@ -142,7 +144,12 @@ def _audit_public_general_selector(
         raise ValidationError(
             f"Routing V2 public selector {name!r} must not attach proxy providers directly"
         )
-    expected = [automatic, *general_region_choices]
+    expected_regions = [
+        region
+        for region in general_region_choices
+        if region in groups or region not in omittable_general_region_choices
+    ]
+    expected = [automatic, *expected_regions]
     if _group_proxies(groups, name) != expected:
         raise ValidationError(
             f"Routing V2 public selector {name!r} has unexpected general-only choices"
@@ -177,11 +184,44 @@ def _audit_acl_compatibility_selectors(
 
 
 def _audit_cutover_routes(
+    project: ProjectDefinition,
     policy: RoutingPolicyV2,
+    graph: RuntimeGraph,
     groups: dict[str, dict[str, Any]],
     bindings: list[dict[str, Any]],
     contract: RuntimePolicyContract,
 ) -> dict[str, Any]:
+    acl_groups = project.acl4ssr.get("groups", []) if project.acl4ssr else []
+    pools = {str(row["id"]): row for row in project.policies.get("pools", [])}
+    omittable: set[str] = set()
+    for row in acl_groups:
+        if (
+            not isinstance(row, dict)
+            or row.get("provider_pool") != "general"
+            or row.get("type") not in {"url-test", "fallback"}
+            or row.get("on_empty") != "omit"
+        ):
+            continue
+        display_name = str(row["display_name"])
+        pool = pools.get("general")
+        if not isinstance(pool, dict):
+            raise ValidationError("Routing V2 cannot resolve the general pool for omission audit")
+        pool_name = str(pool["display_name"])
+        leaves = graph.effective_leaf_proxies(pool_name)
+        filter_text = row.get("filter")
+        try:
+            pattern = re.compile(str(filter_text)) if isinstance(filter_text, str) else None
+        except re.error as exc:
+            raise ValidationError("Routing V2 found an invalid omittable-region filter") from exc
+        count = sum(1 for leaf in leaves if pattern is None or pattern.search(leaf))
+        present = display_name in groups
+        if count == 0 and present:
+            raise ValidationError(f"Routing V2 empty region {display_name!r} must be omitted")
+        if count > 0 and not present:
+            raise ValidationError(f"Routing V2 region {display_name!r} has leaves but was omitted")
+        if count == 0:
+            omittable.add(display_name)
+    omittable_general_region_choices = frozenset(omittable)
     for purpose in ("media", "messaging", "download"):
         _audit_general_scheduler(
             groups,
@@ -194,6 +234,7 @@ def _audit_cutover_routes(
             name=contract.public_groups[purpose],
             automatic=contract.automatic_groups[purpose],
             general_region_choices=contract.general_region_choices,
+            omittable_general_region_choices=omittable_general_region_choices,
         )
     _audit_acl_compatibility_selectors(groups, contract)
 
@@ -204,6 +245,7 @@ def _audit_cutover_routes(
             name=download_group,
             automatic=contract.automatic_groups["download"],
             general_region_choices=contract.general_region_choices,
+            omittable_general_region_choices=omittable_general_region_choices,
         )
     elif _group_proxies(groups, download_group) != ["DIRECT"]:
         raise ValidationError("direct download mode must route only to DIRECT")
@@ -298,7 +340,7 @@ def audit_routing_v2(
             )
         deterministic_checked += 1
 
-    cutover = _audit_cutover_routes(policy, groups, model["bindings"], contract)
+    cutover = _audit_cutover_routes(project, policy, graph, groups, model["bindings"], contract)
     ai = _audit_ai_materialization(project, groups, contract)
     visible = {
         str(row["name"])

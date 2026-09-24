@@ -62,6 +62,21 @@ def test_dns_leak_audit_allows_system_only_on_direct_path() -> None:
         audit_dns_leak_protection(candidate)
 
 
+def test_dns_leak_audit_accepts_exact_stun_override_and_rejects_wildcard() -> None:
+    candidate = _candidate()
+    candidate["dns"]["nameserver-policy"]["stun.l.google.com"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    assert audit_dns_leak_protection(candidate)["exact_domain_overrides"] == 1
+
+    candidate["dns"]["nameserver-policy"]["stun*.l.google.com"] = [
+        "https://dns.alidns.com/dns-query"
+    ]
+    with pytest.raises(ValidationError, match="exact-domain"):
+        audit_dns_leak_protection(candidate)
+
+
 def test_dns_leak_audit_rejects_system_resolver_escape() -> None:
     candidate = _candidate()
     candidate["dns"]["nameserver"] = ["system://"]
@@ -82,7 +97,7 @@ def test_dns_leak_audit_rejects_standalone_dns_classification() -> None:
     candidate = _candidate()
     candidate["dns"]["nameserver-policy"]["+.example.com"] = ["https://1.1.1.1/dns-query"]
 
-    with pytest.raises(ValidationError, match="standalone DNS classification"):
+    with pytest.raises(ValidationError, match="exact-domain"):
         audit_dns_leak_protection(candidate)
 
 

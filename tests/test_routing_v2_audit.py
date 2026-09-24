@@ -29,12 +29,22 @@ def _candidate(project) -> dict:
         "DIRECT",
     ]
     groups = [
+        {
+            "name": "__CR_GENERAL_INVENTORY",
+            "type": "url-test",
+            "hidden": True,
+            "use": ["fixture_general"],
+        },
         {"name": "代理选择", "type": "select", "proxies": ["DIRECT"]},
         {"name": "网页浏览", "type": "select", "proxies": ["DIRECT"]},
         {"name": "人工智能", "type": "select", "proxies": ["DIRECT"]},
         {"name": "流媒体", "type": "select", "proxies": ["媒体自动", *general_choices]},
         {"name": "消息通讯", "type": "select", "proxies": ["通讯自动", *general_choices]},
         {"name": "下载流量", "type": "select", "proxies": ["下载自动", *general_choices]},
+        *[
+            {"name": name, "type": "url-test", "hidden": True, "use": ["fixture_general"]}
+            for name in general_choices[:-1]
+        ],
         {
             "name": "媒体自动",
             "type": "url-test",
@@ -90,7 +100,25 @@ def _candidate(project) -> dict:
             "proxies": ["代理选择", "全球直连", "自动选择"],
         },
     ]
-    return {"proxy-groups": groups}
+    return {
+        "proxy-groups": groups,
+        "proxy-providers": {
+            "fixture_general": {
+                "type": "inline",
+                "payload": [
+                    {"name": name}
+                    for name in (
+                        "HK fixture",
+                        "TW fixture",
+                        "SG fixture",
+                        "JP fixture",
+                        "US fixture",
+                        "KR fixture",
+                    )
+                ],
+            }
+        },
+    }
 
 
 def _group(candidate: dict, name: str) -> dict:
@@ -168,6 +196,26 @@ def test_routing_v2_audit_rejects_acl4ssr_selector_drift(repo_root) -> None:
 
     with pytest.raises(ValidationError, match="changed its reference member order"):
         audit_routing_v2(project, candidate)
+
+
+def test_routing_v2_audit_accepts_manifest_omitted_general_region(repo_root) -> None:
+    project = _project(repo_root)
+    candidate = _candidate(project)
+    omitted = _group(candidate, "流媒体")["proxies"][-2]
+    candidate["proxy-providers"]["fixture_general"]["payload"] = [
+        proxy
+        for proxy in candidate["proxy-providers"]["fixture_general"]["payload"]
+        if proxy["name"] != "KR fixture"
+    ]
+    candidate["proxy-groups"] = [row for row in candidate["proxy-groups"] if row["name"] != omitted]
+    for name in ("代理选择", "流媒体", "消息通讯", "下载流量"):
+        _group(candidate, name)["proxies"] = [
+            member for member in _group(candidate, name)["proxies"] if member != omitted
+        ]
+
+    summary = audit_routing_v2(project, candidate)
+
+    assert summary["status"] == "passed"
 
 
 def test_routing_v2_audit_rejects_provider_exposure_on_public_scenario(repo_root) -> None:

@@ -27,9 +27,9 @@ def test_canonical_browsing_probe_is_reused_for_pre_publish_qualification(
     probe = load_browsing_probe_spec(repo_root / "policies.yaml")
     assert probe == {
         "name": "browsing",
-        "url": "https://www.gstatic.com/generate_204",
+        "url": "https://cp.cloudflare.com/generate_204",
         "expected_status": "204",
-        "timeout": 5000,
+        "timeout": 8000,
     }
 
 

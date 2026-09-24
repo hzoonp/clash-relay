@@ -17,7 +17,7 @@ scheduler:
 
 probes:
   connectivity:
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     method: HEAD
     expected_status: "204"
     interval: 300
@@ -25,11 +25,11 @@ probes:
     lazy: true
     tolerance: 50
   browsing:
-    url: https://www.gstatic.com/generate_204
+    url: https://cp.cloudflare.com/generate_204
     method: HEAD
     expected_status: "204"
     interval: 180
-    timeout: 5000
+    timeout: 8000
     lazy: false
     tolerance: 150
   ai_openai:

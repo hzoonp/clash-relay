@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -322,6 +323,66 @@ class RuntimeGraph:
                 f"runtime graph target {target!r} has unresolved references: {unresolved}"
             )
         return result
+
+    def effective_leaf_proxies(self, target: str) -> frozenset[str]:
+        """Resolve proxy leaves while applying each provider-backed group's filter."""
+        leaves: set[str] = set()
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(reference: str) -> None:
+            if reference in BUILTIN_TARGETS:
+                return
+            if reference in self._proxies:
+                leaves.add(reference)
+                return
+            group = self._groups.get(reference)
+            if group is None:
+                return
+            if reference in visiting:
+                raise ValidationError(f"runtime graph found a cycle at {reference!r}")
+            if reference in visited:
+                return
+            visiting.add(reference)
+            filter_text = group.get("filter")
+            pattern = None
+            if isinstance(filter_text, str) and filter_text:
+                try:
+                    pattern = re.compile(filter_text)
+                except re.error as exc:
+                    raise ValidationError(
+                        "runtime graph found an invalid proxy group filter"
+                    ) from exc
+            exclude_pattern = None
+            exclude_text = group.get("exclude-filter")
+            if isinstance(exclude_text, str) and exclude_text:
+                try:
+                    exclude_pattern = re.compile(exclude_text)
+                except re.error as exc:
+                    raise ValidationError(
+                        "runtime graph found an invalid proxy group exclude-filter"
+                    ) from exc
+            for provider_name in self.group_uses(reference):
+                provider = self._providers.get(provider_name)
+                if not isinstance(provider, dict):
+                    continue
+                payload = provider.get("payload", [])
+                if not isinstance(payload, list):
+                    continue
+                for proxy in payload:
+                    if not isinstance(proxy, dict) or not isinstance(proxy.get("name"), str):
+                        continue
+                    if (pattern is None or pattern.search(proxy["name"])) and (
+                        exclude_pattern is None or not exclude_pattern.search(proxy["name"])
+                    ):
+                        leaves.add(proxy["name"])
+            for member in self.group_members(reference):
+                visit(member)
+            visiting.remove(reference)
+            visited.add(reference)
+
+        visit(target)
+        return frozenset(leaves)
 
     def reachable_providers(self, target: str, *, require_resolved: bool = False) -> frozenset[str]:
         reachability = self.walk_resolved(target) if require_resolved else self.walk(target)

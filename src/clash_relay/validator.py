@@ -178,6 +178,16 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 parse_expected_status(str(group["expected-status"]))
             except Exception as exc:
                 errors.append(f"group {name!r} has invalid expected-status: {exc}")
+        if group.get("type") in {"url-test", "fallback"} and runtime_graph is not None:
+            try:
+                leaves = runtime_graph.effective_leaf_proxies(name)
+            except ValidationError as exc:
+                errors.append(f"group {name!r} leaf expansion failed: {exc}")
+            else:
+                if not leaves:
+                    errors.append(
+                        f"group {name!r} ({group.get('type')}) expands to zero leaf proxies"
+                    )
 
         if not group.get("hidden", False):
             visible_names.add(name)

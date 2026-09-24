@@ -40,6 +40,7 @@ def test_dns_policy_reuses_routing_scenarios_and_rule_providers() -> None:
         "direct_rulesets": 1,
         "proxy_rulesets": 1,
         "total_rulesets": 2,
+        "exact_overrides": 0,
     }
     assert output["dns"]["nameserver-policy"] == {
         "rule-set:acl4ssr_china_domain": ["https://dns.alidns.com/dns-query"],
@@ -67,3 +68,39 @@ def test_dns_policy_none_leaves_dns_unmodified() -> None:
 
     assert report == {"status": "not_applicable", "mode": "none"}
     assert "nameserver-policy" not in output["dns"]
+
+
+def test_dns_policy_merges_exact_stun_override_with_acl4ssr_rulesets() -> None:
+    output = {
+        "dns": {
+            "enable": True,
+            "nameserver-policy": {"stun.l.google.com": ["https://dns.alidns.com/dns-query"]},
+        },
+        "rule-providers": {"acl4ssr_china_domain": {"type": "inline"}},
+    }
+    report = apply_dns_routing_policy(
+        output,
+        config=_config(),
+        external_rules=[{"provider": "acl4ssr_china_domain", "scenario": "direct"}],
+    )
+    assert output["dns"]["nameserver-policy"]["stun.l.google.com"] == [
+        "https://dns.alidns.com/dns-query"
+    ]
+    assert "rule-set:acl4ssr_china_domain" in output["dns"]["nameserver-policy"]
+    assert report["exact_overrides"] == 1
+
+
+def test_dns_policy_rejects_wildcard_overrides() -> None:
+    output = {
+        "dns": {
+            "enable": True,
+            "nameserver-policy": {"stun*.l.google.com": ["https://dns.alidns.com/dns-query"]},
+        },
+        "rule-providers": {"acl4ssr_china_domain": {"type": "inline"}},
+    }
+    with pytest.raises(GenerationError, match="exact domain"):
+        apply_dns_routing_policy(
+            output,
+            config=_config(),
+            external_rules=[{"provider": "acl4ssr_china_domain", "scenario": "direct"}],
+        )

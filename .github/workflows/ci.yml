@@ -223,7 +223,7 @@ jobs:
         env:
           MIHOMO_BIN: ${{ github.workspace }}/.work/bin/mihomo
         run: |
-          pytest -m integration tests/integration \
+          pytest -m integration tests/integration tests/test_acl4ssr_region_omission.py \
             --ignore=tests/integration/test_acl4ssr_upstream.py \
             --junitxml=.work/integration-${{ matrix.tag }}.xml
           for attempt in 1 2 3; do

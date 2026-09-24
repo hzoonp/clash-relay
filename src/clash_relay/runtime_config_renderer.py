@@ -77,6 +77,11 @@ class RuntimeConfigRenderer:
             rendered_dns["proxy-server-nameserver"] = list(dns["proxy_server_nameservers"])
         if "direct_nameservers" in dns:
             rendered_dns["direct-nameserver"] = list(dns["direct_nameservers"])
+        if "nameserver_policy_overrides" in dns:
+            rendered_dns["nameserver-policy"] = {
+                str(domain): list(resolvers)
+                for domain, resolvers in dns["nameserver_policy_overrides"].items()
+            }
         if "direct_nameserver_follow_policy" in dns:
             rendered_dns["direct-nameserver-follow-policy"] = dns["direct_nameserver_follow_policy"]
         if "fake_ip_range" in dns:
