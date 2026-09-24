@@ -111,6 +111,7 @@ def test_public_example_declares_managed_dns_and_sniffer(repo_root: Path) -> Non
     assert dns["enhanced_mode"] == "fake-ip"
     assert dns["respect_rules"] is False
     assert dns["direct_nameserver_follow_policy"] is False
+    assert dns["direct_nameservers"][0] == "system"
     assert dns["proxy_server_nameservers"] == [
         "https://1.1.1.1/dns-query",
         "https://8.8.8.8/dns-query",

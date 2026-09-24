@@ -87,7 +87,11 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         if not values:
             raise ValidationError(f"DNS leak audit requires non-empty {field}")
         require_ip_host = field in {"default-nameserver", "proxy-server-nameserver"}
-        if not all(_encrypted_resolver(item, require_ip_host=require_ip_host) for item in values):
+        if not all(
+            (field == "direct-nameserver" and item == "system")
+            or _encrypted_resolver(item, require_ip_host=require_ip_host)
+            for item in values
+        ):
             suffix = " with IP-literal hosts" if require_ip_host else ""
             raise ValidationError(f"DNS leak audit requires encrypted {field} endpoints{suffix}")
 
@@ -118,7 +122,11 @@ def audit_dns_leak_protection(config: dict[str, Any]) -> dict[str, Any]:
         if provider not in rule_providers:
             raise ValidationError("DNS leak audit found an unknown DNS rule-provider reference")
         values = _resolver_values(resolvers)
-        if not values or not all(_encrypted_resolver(item) for item in values):
+        direct_values = _resolver_values(dns.get("direct-nameserver"))
+        if not values or not all(
+            _encrypted_resolver(item) or (item == "system" and values == direct_values)
+            for item in values
+        ):
             raise ValidationError("DNS leak audit requires encrypted nameserver-policy endpoints")
 
     return {

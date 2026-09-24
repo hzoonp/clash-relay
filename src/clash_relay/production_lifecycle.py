@@ -687,6 +687,10 @@ class ProductionPipeline:
                 "scheduler_observation": scheduler_observation.get("status"),
                 "operational_slo": slo.get("status"),
                 "source_stage_accounting": self._source_stage_accounting(),
+                "endpoint_qualification": pipeline.get("endpoint_qualification"),
+                "accelerated_health_check_groups": pipeline.get(
+                    "accelerated_health_check_groups", 0
+                ),
                 "warnings": sorted(self.warnings),
             }
         except Exception as exc:

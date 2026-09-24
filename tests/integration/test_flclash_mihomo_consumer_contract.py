@@ -133,6 +133,7 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     assert dns["enhanced-mode"] == "fake-ip"
     assert dns["respect-rules"] is False
     assert dns["direct-nameserver-follow-policy"] is False
+    assert dns["direct-nameserver"][0] == "system"
     assert dns["fallback"] == []
     assert dns["nameserver-policy"]
     assert all(str(key).startswith("rule-set:") for key in dns["nameserver-policy"])

@@ -30,6 +30,7 @@ runtime:
       - https://8.8.8.8/dns-query
       - https://223.5.5.5/dns-query
     direct_nameservers:
+      - system
       - https://dns.alidns.com/dns-query
       - https://doh.pub/dns-query
     direct_nameserver_follow_policy: false
