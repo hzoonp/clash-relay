@@ -9,6 +9,7 @@ from clash_relay.ai_runtime_reliability import (
     runtime_health_contract,
 )
 from clash_relay.ai_service_qualification import apply_ai_service_qualification
+from clash_relay.qualification_pipeline import _entry_inventory, _stage_delta
 
 _CLAUDE_RULES = [
     "DOMAIN-KEYWORD,anthropic",
@@ -202,6 +203,27 @@ def test_openai_runtime_hardening_is_idempotent() -> None:
     assert first["runtime_nodes"] == second["runtime_nodes"] == 2
     assert set(config["proxy-providers"]) == providers_after_first
     assert second["status"] == "passed"
+
+
+def test_real_openai_client_path_clones_are_accounted_as_added_entries() -> None:
+    config = _service_qualified()
+    before = _entry_inventory(config)
+    report = apply_openai_client_path_hardening(config)
+    delta = _stage_delta(
+        before,
+        _entry_inventory(config),
+        stage="service_hardening",
+        reason="service_client_path_hardening",
+    )
+
+    assert report["runtime_nodes"] == 2
+    assert delta["unique_nodes"]["removed"] == 0
+    assert delta["runtime_entries"] == {
+        "before": len(before),
+        "after": len(before) + 2,
+        "removed": 0,
+        "added": 2,
+    }
 
 
 def test_openai_runtime_preserves_service_fail_closed_state() -> None:

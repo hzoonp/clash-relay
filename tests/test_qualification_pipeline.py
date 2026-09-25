@@ -927,3 +927,42 @@ def test_pipeline_rejects_unattributed_source_removal(tmp_path: Path, monkeypatc
             browsing_report=tmp_path / "browsing.json",
             ai_report=tmp_path / "ai.json",
         )
+
+
+def test_service_hardening_runtime_clone_is_not_a_removal(tmp_path: Path, monkeypatch) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_ai_jp:\n"
+        "    payload:\n"
+        "      - {name: '[AI:JP] sub_1/Solo', type: trojan, server: a.example, port: 443}\n"
+        "proxies: []\nproxy-groups: []\n",
+        encoding="utf-8",
+    )
+    _preflight_stubs(monkeypatch)
+    _success_services(monkeypatch)
+
+    def clone(*, candidate, policies):
+        document = load_yaml_file(candidate)
+        original = document["proxy-providers"]["cr_ai_jp"]["payload"][0]
+        document["proxy-providers"]["cr_openai_runtime_jp"] = {
+            "payload": [{**original, "name": original["name"] + " [OAI:1234]"}],
+        }
+        atomic_write(candidate, dump_yaml(document))
+        return {"status": "passed", "hardened_services": 1, "services": {"openai": {}}}
+
+    monkeypatch.setattr(pipeline, "harden_declared_service_client_paths", clone)
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+    hardening = result["removed_by_stage"]["service_hardening"]
+    assert hardening["unique_nodes"] == {"before": 1, "after": 1, "removed": 0}
+    assert hardening["runtime_entries"] == {"before": 1, "after": 2, "removed": 0, "added": 1}
+    assert result["qualification_removed_unique_nodes"] == 0
+    assert result["qualification_removed_runtime_entries"] == 0

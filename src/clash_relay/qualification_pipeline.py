@@ -227,10 +227,11 @@ def _stage_delta(
     """Aggregate the removal delta between two stage inventories."""
 
     removed_names = set(before) - set(after)
+    added_names = set(after) - set(before)
     removed_rows = [before[name] for name in sorted(removed_names)]
     before_unique = {row["unique"] for row in before.values()}
     after_unique = {row["unique"] for row in after.values()}
-    if after_unique - before_unique or set(after) - set(before):
+    if after_unique - before_unique or (added_names and stage != "service_hardening"):
         raise ValidationError(f"{stage} qualification stage added runtime inventory")
     removed_unique = len(before_unique - after_unique)
     by_source: Counter[str] = Counter(row["source"] for row in removed_rows)
@@ -241,6 +242,13 @@ def _stage_delta(
         if failure_category
         else ({reason: len(removed_rows)} if removed_rows else {})
     )
+    runtime_entries = {
+        "before": len(before),
+        "after": len(after),
+        "removed": len(removed_rows),
+    }
+    if added_names:
+        runtime_entries["added"] = len(added_names)
     return {
         "stage": stage,
         "reason": reason,
@@ -249,11 +257,7 @@ def _stage_delta(
             "after": len(after_unique),
             "removed": removed_unique,
         },
-        "runtime_entries": {
-            "before": len(before),
-            "after": len(after),
-            "removed": len(removed_rows),
-        },
+        "runtime_entries": runtime_entries,
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),
@@ -717,7 +721,9 @@ def run_qualification_pipeline(
         {row["unique"] for row in preflight_inventory.values()}
         - {row["unique"] for row in final_inventory.values()}
     )
-    removed_entries_total = len(preflight_inventory) - len(final_inventory)
+    removed_entries_total = sum(
+        stage_deltas[stage]["runtime_entries"]["removed"] for stage in _PROVENANCE_STAGE_ORDER
+    )
     result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,

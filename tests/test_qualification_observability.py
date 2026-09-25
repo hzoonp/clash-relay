@@ -104,3 +104,19 @@ def test_projection_rejects_identity_bearing_labels() -> None:
     private["sources_fully_removed"][0]["source"] = "secret.example.invalid"
     with pytest.raises(ValidationError, match="source label"):
         safe_qualification_observability(private)
+
+
+def test_projection_keeps_runtime_clone_additions_separate_from_removals() -> None:
+    private = _private_summary()
+    private["removed_by_stage"]["service_hardening"] = {
+        "unique_nodes": {"before": 1, "after": 1, "removed": 0},
+        "runtime_entries": {"before": 1, "after": 2, "removed": 0, "added": 1},
+        "by_source": {},
+        "failure_category": {},
+    }
+    safe = safe_qualification_observability(private)
+    assert safe["removed_by_stage"]["service_hardening"]["runtime_entries"]["added"] == 1
+    assert (
+        "| service_hardening | 1 / 1 / 0 | 1 / 2 / 0 / 1 | none |"
+        in render_qualification_observability_markdown(private)
+    )

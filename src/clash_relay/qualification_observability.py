@@ -50,6 +50,8 @@ def safe_qualification_observability(value: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(values, dict):
                 raise ValidationError("qualification stage accounting is invalid")
             counts[kind] = {key: _count(values.get(key)) for key in ("before", "after", "removed")}
+            if kind == "runtime_entries":
+                counts[kind]["added"] = _count(values.get("added", 0))
         removed_by_stage[stage] = {
             **counts,
             "by_source": _labels(row.get("by_source", {}), _SOURCE),
@@ -143,7 +145,7 @@ def render_qualification_observability_markdown(value: dict[str, Any]) -> str:
         "",
         f"Removed: **{safe['qualification_removed_unique_nodes']} unique nodes / {safe['qualification_removed_runtime_entries']} runtime entries**",
         "",
-        "| Stage | Unique nodes before / after / removed | Runtime entries before / after / removed | Aggregate failure reason |",
+        "| Stage | Unique nodes before / after / removed | Runtime entries before / after / removed / added | Aggregate failure reason |",
         "| --- | ---: | ---: | --- |",
     ]
     for stage, row in safe["removed_by_stage"].items():
@@ -154,7 +156,7 @@ def render_qualification_observability_markdown(value: dict[str, Any]) -> str:
             or "none"
         )
         lines.append(
-            f"| {stage} | {unique['before']} / {unique['after']} / {unique['removed']} | {runtime['before']} / {runtime['after']} / {runtime['removed']} | {reason} |"
+            f"| {stage} | {unique['before']} / {unique['after']} / {unique['removed']} | {runtime['before']} / {runtime['after']} / {runtime['removed']} / {runtime['added']} | {reason} |"
         )
     lines.extend(
         [
