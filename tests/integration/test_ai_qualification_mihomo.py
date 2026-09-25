@@ -83,6 +83,7 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
             "tested_nodes": 1,
             "qualified_nodes": 1,
             "selector_failures": 0,
+            "regions": {"other": {"tested": 1, "qualified": 1}},
             "probes": {
                 "local": {
                     "method": "HEAD",
