@@ -11,13 +11,10 @@ from .errors import GenerationError
 from .models import Node
 from .rule_compiler import RuleCompiler
 from .runtime_config_renderer import RuntimeConfigRenderer
+from .runtime_identity import provider_and_group_names, scope_token
 from .runtime_names import runtime_source_label, validate_runtime_source_labels
 from .selector import select_nodes
 from .util import normalize_expected_status, safe_identifier, unique
-
-
-def _scope_token(value: str) -> str:
-    return safe_identifier(value, upper=True, maximum=36)
 
 
 def _runtime_name(node: Node, scope: str) -> str:
@@ -69,20 +66,17 @@ def _normalized_selector(unit: dict[str, Any]) -> dict[str, Any]:
 
 
 def _internal_names(unit_id: str, region: str) -> tuple[str, str]:
-    token = _scope_token(unit_id)
-    region_token = _scope_token(region)
-    return (
-        f"cr_{safe_identifier(unit_id)}_{safe_identifier(region)}",
-        f"__CR_AUTO_{token}_{region_token}",
-    )
+    """Canonical provider and group identity (shared naming module)."""
+
+    return provider_and_group_names(unit_id, region)
 
 
 def _fallback_name(unit_id: str) -> str:
-    return f"__CR_FALLBACK_{_scope_token(unit_id)}"
+    return f"__CR_FALLBACK_{scope_token(unit_id)}"
 
 
 def _fail_closed_name(unit_id: str) -> str:
-    return f"__CR_FAIL_CLOSED_{_scope_token(unit_id)}"
+    return f"__CR_FAIL_CLOSED_{scope_token(unit_id)}"
 
 
 def _add_provider(
@@ -145,7 +139,7 @@ def _add_regular_pool(
     probe: dict[str, Any],
 ) -> tuple[dict[str, Any], str]:
     unit_id = unit["id"]
-    token = _scope_token(unit_id)
+    token = scope_token(unit_id)
     regions = unit["regions"]
     fallback_order = unit["fallback_order"]
     selector = _normalized_selector(unit)
@@ -165,7 +159,7 @@ def _add_regular_pool(
             provider_name=provider_name,
             auto_name=auto_name,
             nodes=selected,
-            scope=f"{token}:{_scope_token(region)}",
+            scope=f"{token}:{scope_token(region)}",
             probe=probe,
         )
         auto_by_region[region] = auto_name
@@ -219,7 +213,7 @@ def _add_chain(
     chain: dict[str, Any],
     probe: dict[str, Any],
 ) -> dict[str, Any]:
-    token = _scope_token(chain["id"])
+    token = scope_token(chain["id"])
     entry_auto = f"__CR_CHAIN_ENTRY_AUTO_{token}"
     exit_auto = f"__CR_CHAIN_EXIT_AUTO_{token}"
     entry_nodes = _select_chain_leg(nodes, chain["entry"])

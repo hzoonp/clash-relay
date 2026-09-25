@@ -373,10 +373,14 @@ def _record_region_results(
     qualified: set[str],
     node_results: dict[str, tuple[dict[str, Any], ...]],
 ) -> None:
-    """Aggregate per-region node and per-endpoint outcome counts.
+    """Aggregate per-region node and per-endpoint evidence counts.
 
     The region comes from canonical provider metadata (never runtime-name
-    parsing); no identities beyond aggregate region labels are recorded.
+    parsing). Each endpoint records explicit ``passed``/``failed`` counters
+    judged by the probe's own ``expected_status`` (``result["passed"]``), plus
+    ``reached`` (any HTTP status received) and ``network_failure`` (no HTTP
+    response), so callers never re-derive verdicts from outcome prefixes. No
+    identities beyond aggregate region labels are recorded.
     """
 
     regions = diagnostics.setdefault("regions", {})
@@ -388,9 +392,27 @@ def _record_region_results(
             row["qualified"] += 1
         for result in node_results.get(name, ()):
             endpoint = str(result["probe"])
-            endpoint_stats = row["endpoints"].setdefault(endpoint, {"probed": 0, "outcomes": {}})
+            endpoint_stats = row["endpoints"].setdefault(
+                endpoint,
+                {
+                    "probed": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "reached": 0,
+                    "network_failure": 0,
+                    "outcomes": {},
+                },
+            )
             endpoint_stats["probed"] += 1
             outcome = str(result["outcome"])
+            if result["passed"]:
+                endpoint_stats["passed"] += 1
+            else:
+                endpoint_stats["failed"] += 1
+            if outcome.startswith("status_"):
+                endpoint_stats["reached"] += 1
+            else:
+                endpoint_stats["network_failure"] += 1
             outcomes = endpoint_stats.setdefault("outcomes", {})
             outcomes[outcome] = int(outcomes.get(outcome, 0)) + 1
 
@@ -405,16 +427,40 @@ def _record_probe_results(diagnostics: dict[str, Any], results: tuple[dict[str, 
         probe["outcomes"][outcome] = int(probe["outcomes"].get(outcome, 0)) + 1
 
 
+def _merge_region_evidence(target_row: dict[str, Any], source_row: dict[str, Any]) -> None:
+    """Fully aggregate one region row, including per-endpoint evidence."""
+
+    target_row["tested"] += int(source_row.get("tested", 0))
+    target_row["qualified"] += int(source_row.get("qualified", 0))
+    target_endpoints = target_row.setdefault("endpoints", {})
+    for endpoint, source_stats in (source_row.get("endpoints") or {}).items():
+        endpoint_stats = target_endpoints.setdefault(
+            str(endpoint),
+            {
+                "probed": 0,
+                "passed": 0,
+                "failed": 0,
+                "reached": 0,
+                "network_failure": 0,
+                "outcomes": {},
+            },
+        )
+        for key in ("probed", "passed", "failed", "reached", "network_failure"):
+            endpoint_stats[key] = int(endpoint_stats.get(key, 0)) + int(source_stats.get(key, 0))
+        for outcome, count in (source_stats.get("outcomes") or {}).items():
+            outcomes = endpoint_stats.setdefault("outcomes", {})
+            outcomes[str(outcome)] = int(outcomes.get(str(outcome), 0)) + int(count or 0)
+
+
 def _merge_diagnostics(target: dict[str, Any], source: dict[str, Any]) -> None:
     target["tested_nodes"] += int(source["tested_nodes"])
     target["qualified_nodes"] += int(source["qualified_nodes"])
     target["selector_failures"] += int(source["selector_failures"])
-    for region, row in (source.get("regions") or {}).items():
+    for region, source_row in (source.get("regions") or {}).items():
         target_row = target.setdefault("regions", {}).setdefault(
-            str(region), {"tested": 0, "qualified": 0}
+            str(region), {"tested": 0, "qualified": 0, "endpoints": {}}
         )
-        target_row["tested"] += int(row.get("tested", 0))
-        target_row["qualified"] += int(row.get("qualified", 0))
+        _merge_region_evidence(target_row, source_row)
     for name, source_probe in source["probes"].items():
         target_probe = target["probes"][name]
         target_probe["passed"] += int(source_probe["passed"])
@@ -507,14 +553,24 @@ def _qualify_shard(
             return qualified, diagnostics
         finally:
             if process.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGTERM)
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
+                if hasattr(os, "killpg"):
                     with contextlib.suppress(ProcessLookupError):
-                        os.killpg(process.pid, signal.SIGKILL)
-                    process.wait(timeout=5)
+                        os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+                else:
+                    # Windows: no process groups; mihomo spawns no children, so
+                    # a direct terminate covers the same guarantee.
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
 
 
 def probe_ai_nodes(

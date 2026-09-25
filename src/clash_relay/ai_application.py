@@ -23,9 +23,9 @@ from .ai_qualification_cache import (
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
 from .errors import CandidateValidationStageError, ConfigurationError, ValidationError
-from .generator import _internal_names
 from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
+from .runtime_identity import provider_name_for
 from .scheduler_policy import load_scheduler_policy
 from .service_qualification import (
     apply_service_route_postprocessing,
@@ -118,6 +118,16 @@ def _filtered_candidate(candidate: Path, live_names: set[str]) -> Path:
         return Path(handle.name)
 
 
+def _candidate_ai_providers(candidate_config: dict[str, Any]) -> set[str]:
+    """Canonical names of every AI provider in the candidate."""
+
+    return {
+        str(provider_name)
+        for provider_name in (candidate_config.get("proxy-providers") or {})
+        if str(provider_name).startswith(AI_PROVIDER_PREFIX)
+    }
+
+
 def _candidate_ai_names(candidate_config: dict[str, Any]) -> set[str]:
     """Runtime names of every AI candidate node (aggregate-safe labels only)."""
 
@@ -155,9 +165,10 @@ def _ai_provider_regions(
 ) -> dict[str, str]:
     """Map candidate AI provider names to canonical regions.
 
-    The mapping is derived through the generator's own naming function
-    (``_internal_names``) applied to the declared Policy Model pools, so
-    provider identity and region never depend on runtime-name string parsing.
+    The mapping is derived through the shared runtime-identity naming applied
+    to the declared Policy Model pools, so provider identity and region never
+    depend on runtime-name string parsing. A provider whose canonical region
+    mapping is ambiguous fails closed.
     """
 
     providers = candidate_config.get("proxy-providers") or {}
@@ -166,9 +177,14 @@ def _ai_provider_regions(
         if not isinstance(pool, dict):
             continue
         for region in pool.get("regions", []):
-            provider_name, _ = _internal_names(str(pool["id"]), str(region))
-            if provider_name in providers and str(provider_name).startswith(AI_PROVIDER_PREFIX):
-                mapping[provider_name] = str(region).upper()
+            provider_name = provider_name_for(str(pool["id"]), str(region))
+            if provider_name in providers and provider_name.startswith(AI_PROVIDER_PREFIX):
+                mapped = mapping.setdefault(provider_name, str(region).upper())
+                if mapped != str(region).upper():
+                    raise ValidationError(
+                        "AI provider region mapping is ambiguous for "
+                        f"{provider_name!r}: {mapped!r} vs {str(region).upper()!r}"
+                    )
     return mapping
 
 
@@ -256,15 +272,13 @@ def _run_sentinel_gate(
         region: row.get("endpoints", {})
         for region, row in (openai_diagnostics.get("regions") or {}).items()
     }
+    # Control-ok requires explicit passed evidence judged by the connectivity
+    # probe's own expected_status (204): an HTTP 200/206/3xx against it is a
+    # failed control, never a success.
     control_ok_regions = {
         region
         for region, row in (control_diagnostics.get("regions") or {}).items()
-        if any(
-            str(outcome).startswith("status_2")
-            for outcome in (
-                (row.get("endpoints") or {}).get(control_endpoint, {}).get("outcomes") or {}
-            )
-        )
+        if int((row.get("endpoints") or {}).get(control_endpoint, {}).get("passed", 0) or 0) > 0
     }
     report["control_ok_regions"] = sorted(control_ok_regions)
     report["region_endpoint_stats"] = region_stats
@@ -369,11 +383,21 @@ def run_ai_qualification(
     service_evidence: dict[str, dict[str, Any]] = {}
     provider_regions = _ai_provider_regions(policies_document, candidate_config)
     node_regions = _node_regions(candidate_config, provider_regions)
-    control_probe = (
-        _sentinel_control_probe(policies)
-        if any(service.supports_systemic_failure_detection for service in service_qualifications())
-        else None
+    systemic_capable = any(
+        service.supports_systemic_failure_detection for service in service_qualifications()
     )
+    if systemic_capable:
+        # Fail closed: every AI provider must carry exactly one canonical
+        # region. An unmapped or drifting provider would silently collapse the
+        # multi-region evidence that the systemic verdict depends on.
+        unmapped = sorted(
+            str(provider_name)
+            for provider_name in _candidate_ai_providers(candidate_config)
+            if provider_name not in provider_regions
+        )
+        if unmapped:
+            raise CandidateValidationStageError("ai_provider_regions: " + ", ".join(unmapped))
+    control_probe = _sentinel_control_probe(policies) if systemic_capable else None
     expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
     total_live = 0
     total_cache_pass = 0

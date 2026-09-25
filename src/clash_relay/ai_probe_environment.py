@@ -71,9 +71,11 @@ def evaluate_endpoint_blockage(
     connectivity control succeeded through the probed nodes.
 
     A critical endpoint is environment-blocked when probes from at least two
-    regions all failed with network-level outcomes (no HTTP response anywhere
-    -- an HTTP status proves the endpoint was reached) and every such failing
-    region is covered by a successful connectivity control.
+    regions all failed with network-level outcomes (the explicit ``reached``
+    counter is zero -- an HTTP response proves the endpoint was reached) and
+    every such failing region is covered by a successful connectivity control
+    (the explicit ``passed`` counter of the control probe's own
+    ``expected_status``).
     """
 
     blocked: list[str] = []
@@ -87,20 +89,8 @@ def evaluate_endpoint_blockage(
             if not isinstance(stats, Mapping) or int(stats.get("probed", 0)) < 1:
                 continue
             probed_regions += 1
-            outcomes = stats.get("outcomes", {})
-            if not isinstance(outcomes, Mapping):
-                continue
-            reached += sum(
-                int(count)
-                for outcome, count in outcomes.items()
-                if str(outcome).startswith(_STATUS_OUTCOME_PREFIX)
-            )
-            network_failures = sum(
-                int(count)
-                for outcome, count in outcomes.items()
-                if _is_network_outcome(str(outcome))
-            )
-            if network_failures > 0:
+            reached += int(stats.get("reached", 0))
+            if int(stats.get("network_failure", 0)) > 0:
                 failing_regions.append(region)
         if reached > 0:
             continue  # at least one probe reached OpenAI: endpoint works

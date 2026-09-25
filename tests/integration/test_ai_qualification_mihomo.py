@@ -83,7 +83,22 @@ def test_real_mihomo_ai_qualification_honors_expected_status(tmp_path: Path) -> 
             "tested_nodes": 1,
             "qualified_nodes": 1,
             "selector_failures": 0,
-            "regions": {"other": {"tested": 1, "qualified": 1}},
+            "regions": {
+                "other": {
+                    "tested": 1,
+                    "qualified": 1,
+                    "endpoints": {
+                        "local": {
+                            "probed": 1,
+                            "passed": 1,
+                            "failed": 0,
+                            "reached": 1,
+                            "network_failure": 0,
+                            "outcomes": {"status_204": 1},
+                        }
+                    },
+                }
+            },
             "probes": {
                 "local": {
                     "method": "HEAD",

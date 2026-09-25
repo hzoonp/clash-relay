@@ -134,15 +134,30 @@ def test_select_sentinels_covers_every_region_from_full_inventory() -> None:
 
 def test_endpoint_blockage_requires_two_regions_and_control_coverage() -> None:
     critical = ["ai_openai", "openai_app_android"]
+
+    def network(region: str) -> dict[str, int]:
+        return {
+            "probed": 1,
+            "passed": 0,
+            "failed": 1,
+            "reached": 0,
+            "network_failure": 1,
+            "outcomes": {"timeout": 1},
+        }
+
+    def rejected(region: str) -> dict[str, int]:
+        return {
+            "probed": 1,
+            "passed": 0,
+            "failed": 1,
+            "reached": 1,
+            "network_failure": 0,
+            "outcomes": {"status_403": 1},
+        }
+
     stats = {
-        "jp": {
-            "ai_openai": {"probed": 1, "outcomes": {"timeout": 1}},
-            "openai_app_android": {"probed": 1, "outcomes": {"status_403": 1}},
-        },
-        "sg": {
-            "ai_openai": {"probed": 1, "outcomes": {"timeout": 1}},
-            "openai_app_android": {"probed": 1, "outcomes": {"status_403": 1}},
-        },
+        "jp": {"ai_openai": network("jp"), "openai_app_android": rejected("jp")},
+        "sg": {"ai_openai": network("sg"), "openai_app_android": rejected("sg")},
     }
 
     # Both critical endpoints network-fail across two control-covered regions.
@@ -288,8 +303,26 @@ def _patch_probe_environment(
                 else:
                     outcome = "status_200" if gemini_ok else "timeout"
                     passed = gemini_ok
-                stats = row["endpoints"].setdefault(endpoint, {"probed": 0, "outcomes": {}})
+                stats = row["endpoints"].setdefault(
+                    endpoint,
+                    {
+                        "probed": 0,
+                        "passed": 0,
+                        "failed": 0,
+                        "reached": 0,
+                        "network_failure": 0,
+                        "outcomes": {},
+                    },
+                )
                 stats["probed"] += 1
+                if passed:
+                    stats["passed"] += 1
+                else:
+                    stats["failed"] += 1
+                if outcome.startswith("status_"):
+                    stats["reached"] += 1
+                else:
+                    stats["network_failure"] += 1
                 stats["outcomes"][outcome] = int(stats["outcomes"].get(outcome, 0)) + 1
                 node_ok = node_ok and passed
             if node_ok:
