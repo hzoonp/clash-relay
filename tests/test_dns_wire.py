@@ -65,8 +65,15 @@ def test_parse_response_accepts_public_a_answer() -> None:
 
 def test_parse_response_accepts_public_aaaa_answer() -> None:
     assert parse_response(
-        _response(answers=[(28, socket.inet_pton(socket.AF_INET6, "2606:2800:220:1::1"))])
+        _response(answers=[(28, socket.inet_pton(socket.AF_INET6, "2606:2800:220:1::1"))]),
+        qtype=28,
     ) == (True, "answered")
+
+
+def test_parse_response_a_query_ignores_aaaa_answer() -> None:
+    assert parse_response(
+        _response(answers=[(28, socket.inet_pton(socket.AF_INET6, "2606:2800:220:1::1"))])
+    ) == (False, "no_answer")
 
 
 def test_parse_response_ignores_private_answers() -> None:
@@ -181,3 +188,85 @@ def test_probe_doh_classifies_wireformat_payloads(monkeypatch) -> None:
             lambda _request, timeout=None, _payload=payload: _FakeResponse(_payload),
         )
         assert probe_doh("https://resolver/dns-query", "node.example") == (False, expected)
+
+
+def test_parse_response_ignores_authority_and_additional_sections() -> None:
+    """Records beyond ANCOUNT are never results — a stray A record in the
+    Authority/Additional sections must not qualify the hostname."""
+
+    base = _response()  # ANCOUNT=0, NOERROR
+    stray_answer = (
+        _name_wire("stray.example")
+        + struct.pack("!HHIH", 1, 1, 300, 4)
+        + socket.inet_aton("93.184.216.34")
+    )
+    assert parse_response(base + stray_answer) == (False, "no_answer")
+
+
+def test_parse_response_reads_exactly_ancount_answers() -> None:
+    """Only the first ANCOUNT records are answers; extra trailing records are
+    ignored even when they carry a public A record."""
+
+    first = (
+        _name_wire("example.example")
+        + struct.pack("!HHIH", 5, 1, 300, len(_name_wire("target.example")))
+        + _name_wire("target.example")
+    )
+    second = (
+        _name_wire("example.example")
+        + struct.pack("!HHIH", 1, 1, 300, 4)
+        + socket.inet_aton("93.184.216.34")
+    )
+    header = struct.pack("!HHHHHH", 0x1234, 0x8180, 1, 1, 0, 0)
+    question = _name_wire("example.example") + struct.pack("!HH", 1, 1)
+    payload = header + question + first + second
+    assert parse_response(payload) == (False, "no_answer")
+
+
+def test_parse_response_follows_cname_chain_within_answers() -> None:
+    chain = (
+        _name_wire("example.example")
+        + struct.pack("!HHIH", 5, 1, 300, len(_name_wire("target.example")))
+        + _name_wire("target.example")
+    )
+    a_record = (
+        _name_wire("target.example")
+        + struct.pack("!HHIH", 1, 1, 300, 4)
+        + socket.inet_aton("93.184.216.34")
+    )
+    header = struct.pack("!HHHHHH", 0x1234, 0x8180, 1, 2, 0, 0)
+    question = _name_wire("example.example") + struct.pack("!HH", 1, 1)
+    assert parse_response(header + question + chain + a_record) == (True, "answered")
+
+
+def test_parse_response_rejects_truncated_rdata() -> None:
+    header = struct.pack("!HHHHHH", 0x1234, 0x8180, 1, 1, 0, 0)
+    question = _name_wire("example.example") + struct.pack("!HH", 1, 1)
+    truncated_answer = (
+        _name_wire("example.example") + struct.pack("!HHIH", 1, 1, 300, 16) + b"\x01\x02\x03"
+    )
+    assert parse_response(header + question + truncated_answer) == (False, "malformed_response")
+
+
+def test_parse_response_rejects_self_pointing_compression() -> None:
+    payload = _response(answers=[(1, socket.inet_aton("93.184.216.34"))], compressed=True)
+    # Point the answer name at itself: an endless pointer loop must fail closed.
+    payload = payload[:33] + bytes([0xC0, 33]) + payload[35:]
+    assert parse_response(payload) == (False, "malformed_response")
+
+
+def test_probe_doh_queries_aaaa_when_requested(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        return _FakeResponse(
+            _response(answers=[(28, socket.inet_pton(socket.AF_INET6, "2606:2800:220:1::1"))])
+        )
+
+    monkeypatch.setattr("clash_relay.dns_wire.urllib.request.urlopen", fake_urlopen)
+
+    assert probe_doh("https://resolver/dns-query", "node.example", qtype=28) == (True, "answered")
+    encoded = str(captured["url"]).split("?dns=", 1)[1]
+    query = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+    assert query[-4:-2] == struct.pack("!H", 28)  # QTYPE precedes QCLASS

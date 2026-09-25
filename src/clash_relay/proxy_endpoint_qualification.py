@@ -62,9 +62,11 @@ def _failure_category(error: OSError) -> str:
 def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
     """Bounded-retry TCP probe: (admitted, last_failure_category, successes).
 
-    All attempts run so robustness (success on every attempt) is observable
-    even for endpoints that never fail. Do not send application data or log
-    the target.
+    ``successes`` counts *attempts* in which at least one resolved address
+    connected — a multi-address hostname never turns one attempt into several
+    successes. Every attempt runs so robustness (success on every attempt) is
+    observable even for endpoints that never fail. Do not send application
+    data or log the target.
     """
 
     try:
@@ -81,14 +83,17 @@ def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
     successes = 0
     category = "connect_failure"
     for _ in range(_ATTEMPTS):
+        attempt_succeeded = False
         for family, sockaddr in public:
             try:
                 with socket.socket(family, socket.SOCK_STREAM) as connection:
                     connection.settimeout(_CONNECT_TIMEOUT)
                     connection.connect(sockaddr)
-                successes += 1
+                attempt_succeeded = True
             except OSError as exc:
                 category = _failure_category(exc)
+        if attempt_succeeded:
+            successes += 1
     admitted = successes >= _ADMISSION_QUORUM
     return admitted, ("answered" if admitted else category), successes
 
@@ -148,6 +153,8 @@ def quarantine_unreachable_tcp_endpoints(
             "admission_quorum": _ADMISSION_QUORUM,
             "robust_endpoints": 0,
             "reserve_endpoints": 0,
+            "dns_inconclusive": 0,
+            "unique_quarantined_nodes": 0,
             "by_source": {},
             "by_region": {},
             "by_protocol": {},
@@ -162,11 +169,7 @@ def quarantine_unreachable_tcp_endpoints(
         )
     counts: Counter[str] = Counter()
     tiers: Counter[str] = Counter()
-    by_source: Counter[str] = Counter()
-    by_region: Counter[str] = Counter()
-    by_protocol: Counter[str] = Counter()
-    by_failure_category: Counter[str] = Counter()
-    by_source_failure_category: dict[str, Counter[str]] = {}
+    unique_quarantined: dict[tuple[str, str, str, str], tuple[str, str]] = {}
     replacements: dict[str, list[dict[str, Any]]] = {}
     for provider_name, provider in providers.items():
         payload = provider.get("payload") if isinstance(provider, dict) else None
@@ -193,6 +196,14 @@ def quarantine_unreachable_tcp_endpoints(
                 if key is not None and key in results
                 else (False, "connect_failure", 0)
             )
+            if not admitted and failure_category == "dns_failure":
+                # Stage 1 already DNS-qualified this hostname through the
+                # candidate's own DoH resolvers; the runner's system DNS
+                # failing here is inconclusive, never node evidence.
+                counts["dns_inconclusive"] += 1
+                tiers["reserve"] += 1
+                kept.append(proxy)
+                continue
             if admitted:
                 counts["reachable"] += 1
                 tiers[_admission_tier(successes)] += 1
@@ -202,11 +213,15 @@ def quarantine_unreachable_tcp_endpoints(
             counts["quarantined"] += 1
             tiers["quarantined"] += 1
             source = _source(proxy.get("name"))
-            by_source[source] += 1
-            by_region[_region(str(provider_name))] += 1
-            by_protocol[str(kind)] += 1
-            by_failure_category[failure_category] += 1
-            by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
+            unique_key = (
+                source,
+                str(server),
+                str(port),
+                str(kind),
+            )
+            unique_quarantined.setdefault(
+                unique_key, (_region(str(provider_name)), failure_category)
+            )
         if payload and not kept:
             raise ValidationError("endpoint qualification would empty a proxy provider")
         replacements[str(provider_name)] = kept
@@ -214,6 +229,15 @@ def quarantine_unreachable_tcp_endpoints(
         provider = providers[provider_name]
         if isinstance(provider, dict):
             provider["payload"] = kept
+    by_source: Counter[str] = Counter(key[0] for key in unique_quarantined)
+    by_region: Counter[str] = Counter(region for region, _ in unique_quarantined.values())
+    by_protocol: Counter[str] = Counter(key[3] for key in unique_quarantined)
+    by_failure_category: Counter[str] = Counter(
+        category for _, category in unique_quarantined.values()
+    )
+    by_source_failure_category: dict[str, Counter[str]] = {}
+    for unique_key, (_region_name, category) in unique_quarantined.items():
+        by_source_failure_category.setdefault(unique_key[0], Counter())[category] += 1
     return {
         "status": "passed",
         **{
@@ -231,6 +255,8 @@ def quarantine_unreachable_tcp_endpoints(
         "admission_quorum": _ADMISSION_QUORUM,
         "robust_endpoints": int(tiers["robust"]),
         "reserve_endpoints": int(tiers["reserve"]),
+        "dns_inconclusive": int(counts["dns_inconclusive"]),
+        "unique_quarantined_nodes": len(unique_quarantined),
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),

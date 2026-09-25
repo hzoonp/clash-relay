@@ -83,13 +83,29 @@ def test_resolved_hostname_survives_and_disagreement_stays_aggregate(monkeypatch
     assert "broken.example" not in repr(report)
 
 
-def test_nxdomain_with_transport_failure_is_still_dns_confirmed(monkeypatch) -> None:
-    """One authoritative NXDOMAIN is a verdict; another resolver timing out
-    cannot retract it."""
+def test_single_negative_with_transport_failures_keeps_node(monkeypatch) -> None:
+    """One resolver's NXDOMAIN plus another resolver's transport failure is
+    uncorroborated: the node stays (inconclusive), never quarantined."""
 
     _patch_probes(monkeypatch, [(False, "nxdomain"), (False, "connect_timeout")])
     candidate = _cn_three_net_candidate()
     report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    assert report["quarantined"] == 0
+    assert report["dns_inconclusive"] == 1
+    assert [
+        node["server"] for node in candidate["proxy-providers"]["cr_browsing_jp"]["payload"]
+    ] == [
+        "broken.example",
+        "8.8.4.4",
+    ]
+
+
+def test_two_agreeing_negatives_are_required_to_quarantine(monkeypatch) -> None:
+    """Two independent resolvers agreeing on a negative is DNS-confirmed dead."""
+
+    _patch_probes(monkeypatch, [(False, "nxdomain"), (False, "no_answer")])
+    report = quarantine_unresolvable_proxy_hosts(_cn_three_net_candidate())
 
     assert report["quarantined"] == 1
     assert report["by_failure_category"] == {"nxdomain": 1}
@@ -216,3 +232,152 @@ def test_doh_endpoint_filter_keeps_https_only_and_drops_malformed_entries():
             "https://[bad",
         ]
     ) == ["https://dns.alidns.com/dns-query"]
+
+
+def test_duplicate_hostname_across_providers_probes_once_and_counts_unique(
+    monkeypatch,
+) -> None:
+    """The same physical node replicated into several providers is probed once
+    per endpoint and quarantined once as a unique node with multiple runtime
+    entries."""
+
+    probed: list[str] = []
+
+    def probe(endpoint: str, hostname: str):
+        probed.append((endpoint, hostname))
+        return (False, "nxdomain")
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", probe)
+    candidate = _candidate()
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    candidate["proxy-providers"] = {
+        "cr_browsing_jp": {
+            "payload": [
+                {"name": "[BROWSING:JP] sub_2/One", "type": "trojan", "server": "dead.example"},
+                {"name": "[BROWSING:JP] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+            ]
+        },
+        "cr_general_jp": {
+            "payload": [
+                {"name": "[GENERAL:ANY] sub_2/One", "type": "trojan", "server": "dead.example"},
+                {"name": "[GENERAL:ANY] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+            ]
+        },
+        "cr_ai_jp": {
+            "payload": [
+                {"name": "[AI:JP] sub_2/One", "type": "trojan", "server": "dead.example"},
+                {"name": "[AI:JP] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+            ]
+        },
+    }
+
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    # Two endpoints x one unique hostname: exactly two probes.
+    assert len(probed) == 2
+    assert report["quarantined"] == 3
+    assert report["unique_quarantined_nodes"] == 1
+    assert report["by_source"] == {"sub_2": 1}
+    assert report["by_protocol"] == {"trojan": 1}
+
+
+def test_cache_evidence_is_never_reused_across_hostnames(monkeypatch) -> None:
+    """A quarantined hostname's evidence must not leak into another hostname's
+    verdict (regression for the stale-`results` cache bug)."""
+
+    sequence: dict[str, list[tuple[bool, str]]] = {
+        "dead.example": [(False, "nxdomain"), (False, "nxdomain")],
+        "flaky.example": [(False, "connect_timeout"), (False, "refused")],
+    }
+    probed: list[str] = []
+
+    def probe(endpoint: str, hostname: str):
+        probed.append(hostname)
+        return sequence[hostname].pop(0)
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", probe)
+    candidate = _candidate()
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    candidate["proxy-providers"] = {
+        "cr_browsing_jp": {
+            "payload": [
+                {"name": "[BROWSING:JP] sub_2/Dead", "type": "trojan", "server": "dead.example"},
+                {"name": "[BROWSING:JP] sub_2/Flaky", "type": "vless", "server": "flaky.example"},
+            ]
+        }
+    }
+
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    # dead.example: two agreeing negatives -> quarantined.
+    # flaky.example: transport-only evidence -> inconclusive, kept. The stale
+    # cache bug would have counted dead.example's nxdomain responses here and
+    # corrupted the stage-level dns_responses accounting.
+    assert report["quarantined"] == 1
+    assert report["dns_inconclusive"] == 1
+    assert [
+        node["server"] for node in candidate["proxy-providers"]["cr_browsing_jp"]["payload"]
+    ] == ["flaky.example"]
+    assert probed.count("dead.example") == 2
+    assert probed.count("flaky.example") == 2
+
+
+def test_ipv6_enabled_candidate_qualifies_through_aaaa(monkeypatch) -> None:
+    """With DNS IPv6 enabled, an AAAA-only hostname must resolve (and an A
+    probe that returns NOERROR-without-answers must not kill it)."""
+
+    probed: list[int] = []
+
+    def probe(endpoint: str, hostname: str, *, qtype: int = 1):
+        probed.append(qtype)
+        if qtype == 1:
+            return False, "no_answer"
+        return True, "answered"
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", probe)
+    candidate = _candidate()
+    candidate["dns"]["ipv6"] = True
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
+        {"name": "host", "type": "trojan", "server": "v6only.example"}
+    ]
+
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    assert report["resolved"] == 1
+    assert report["quarantined"] == 0
+    assert probed.count(1) == 2 and probed.count(28) == 2
+
+
+def test_ipv6_disabled_candidate_keeps_a_only_probing(monkeypatch) -> None:
+    probed: list[int] = []
+
+    def probe(endpoint: str, hostname: str, *, qtype: int = 1):
+        probed.append(qtype)
+        return False, "no_answer"
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", probe)
+    candidate = _candidate()
+    candidate["dns"]["ipv6"] = False
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
+        {"name": "host", "type": "trojan", "server": "a-only.example"},
+        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+    ]
+
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    assert probed == [1, 1]
+    assert report["quarantined"] == 1

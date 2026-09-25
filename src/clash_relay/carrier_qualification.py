@@ -16,6 +16,7 @@ cross this boundary.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -23,8 +24,10 @@ from .errors import ValidationError
 
 _CARRIERS = frozenset({"telecom", "unicom", "mobile"})
 _PAYLOAD_SCHEMA_VERSION = 1
-_PAYLOAD_KEYS = frozenset({"schema_version", "carriers"})
+_PAYLOAD_KEYS = frozenset({"schema_version", "carriers", "collected_at_epoch"})
 _ROW_KEYS = frozenset({"tested", "reachable", "median_latency_ms"})
+_MAX_RESULT_AGE_SECONDS = 6 * 3600
+_CLOCK_SKEW_SECONDS = 300
 
 
 class CarrierProbeResult:
@@ -106,12 +109,14 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
 
     Accepted shape::
 
-        {"schema_version": 1, "carriers": {"telecom": {"tested": 40,
-         "reachable": 38, "median_latency_ms": 52.4}, ...}}
+        {"schema_version": 1, "collected_at_epoch": 1760000000,
+         "carriers": {"telecom": {"tested": 40, "reachable": 38,
+         "median_latency_ms": 52.4}, ...}}
 
-    Anything else — unknown carriers, unknown row or payload keys, negative or
-    non-integer counts, raw sample lists, or identity-bearing fields — fails
-    closed. Carriers are optional and may cover any subset.
+    ``collected_at_epoch`` is optional. Anything else — unknown carriers,
+    unknown row or payload keys, negative or non-integer counts, raw sample
+    lists, or identity-bearing fields — fails closed. Carriers are optional
+    and may cover any subset.
     """
 
     if not isinstance(payload, Mapping):
@@ -152,18 +157,28 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
     seen = {row.carrier for row in rows}
     if len(seen) != len(rows):
         raise ValidationError("carrier qualification payload repeats a carrier")
+    if "collected_at_epoch" in payload:
+        collected = payload["collected_at_epoch"]
+        if not isinstance(collected, int) or isinstance(collected, bool):
+            raise ValidationError(
+                "carrier qualification collected_at_epoch must be an integer epoch"
+            )
     return rows
 
 
 def run_carrier_qualification(
     results: Sequence[CarrierProbeResult] | Mapping[str, Any] | None = None,
+    *,
+    now_epoch: int | None = None,
 ) -> dict[str, Any]:
     """Entry point the qualification pipeline calls for carrier evidence.
 
     Without input the report stays ``not_configured``. A self-hosted probe
     stage passes either an aggregate payload mapping or
     :class:`CarrierProbeResult` rows; only the aggregate reduction is
-    published.
+    published. A payload carrying ``collected_at_epoch`` older than
+    ``_MAX_RESULT_AGE_SECONDS`` is reported as ``stale`` — its aggregates are
+    not passed evidence.
     """
 
     if results is None or (
@@ -178,7 +193,22 @@ def run_carrier_qualification(
             ),
         }
     if isinstance(results, Mapping):
-        return aggregate_carrier_results(parse_carrier_aggregate_payload(results))
+        report = aggregate_carrier_results(parse_carrier_aggregate_payload(results))
+        collected = results.get("collected_at_epoch")
+        if isinstance(collected, int) and not isinstance(collected, bool):
+            now = int(time.time()) if now_epoch is None else int(now_epoch)
+            if collected > now + _CLOCK_SKEW_SECONDS:
+                raise ValidationError("carrier qualification timestamp is in the future")
+            age_seconds = max(now - collected, 0)
+            report["freshness"] = {
+                "collected_at_epoch": collected,
+                "age_seconds": age_seconds,
+                "max_age_seconds": _MAX_RESULT_AGE_SECONDS,
+                "status": "current" if age_seconds <= _MAX_RESULT_AGE_SECONDS else "stale",
+            }
+            if age_seconds > _MAX_RESULT_AGE_SECONDS:
+                report["status"] = "stale"
+        return report
     rows = list(results)
     if any(not isinstance(row, CarrierProbeResult) for row in rows):
         raise ValidationError("carrier qualification accepts CarrierProbeResult rows only")

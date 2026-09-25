@@ -150,7 +150,11 @@ def test_transient_endpoint_failures_admit_as_reserve(monkeypatch) -> None:
     ]
 
 
-def test_dns_failure_endpoint_is_classified(monkeypatch) -> None:
+def test_runner_dns_failure_keeps_stage_qualified_hostname(monkeypatch) -> None:
+    """Stage 1 already DNS-qualified the hostname through the candidate's own
+    DoH resolvers; a Runner system-DNS failure is inconclusive and must never
+    quarantine the node."""
+
     def probe(server: str, _port: int) -> tuple[bool, str, int]:
         if server == "8.8.4.4":
             return True, "answered", 3
@@ -169,8 +173,81 @@ def test_dns_failure_endpoint_is_classified(monkeypatch) -> None:
     ]
     report = quarantine_unreachable_tcp_endpoints(candidate)
 
-    assert report["by_failure_category"] == {"dns_failure": 1}
-    assert report["by_source_failure_category"] == {"sub_2": {"dns_failure": 1}}
+    assert report["status"] == "passed"
+    assert report["quarantined"] == 0
+    assert report["dns_inconclusive"] == 1
+    assert report["reserve_endpoints"] == 1
+    assert [row["server"] for row in candidate["proxy-providers"]["cr_browsing_jp"]["payload"]] == [
+        "dead.example",
+        "8.8.4.4",
+    ]
+
+
+def test_multi_address_hostname_counts_attempts_not_addresses(monkeypatch) -> None:
+    import socket
+
+    connects: list[tuple[str, int]] = []
+
+    class HealthySocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def settimeout(self, _timeout):
+            pass
+
+        def connect(self, target):
+            connects.append(target)
+            return None
+
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.35", 443)),
+    ]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: addresses)
+    monkeypatch.setattr(socket, "socket", lambda *_args: HealthySocket())
+
+    admitted, category, successes = _probe_tcp("multi.example", 443)
+
+    # Two addresses per attempt must count as ONE successful attempt.
+    assert (admitted, category, successes) == (True, "answered", 3)
+    assert len(connects) == 6
+
+
+def test_multi_address_hostname_partial_attempt_success_is_reserve(monkeypatch) -> None:
+    import socket
+
+    attempt = {"n": 0}
+
+    class FlakySocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def settimeout(self, _timeout):
+            pass
+
+        def connect(self, _target):
+            attempt["n"] += 1
+            if attempt["n"] in {3, 4}:  # every connect of the second attempt fails
+                raise TimeoutError
+
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.35", 443)),
+    ]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: addresses)
+    monkeypatch.setattr(socket, "socket", lambda *_args: FlakySocket())
+
+    admitted, _category, successes = _probe_tcp("flaky.example", 443)
+
+    # Attempts 1 and 3 succeed (each via at least one address); attempt 2 fails.
+    assert (admitted, successes) == (True, 2)
+    assert _admission_tier(successes) == "reserve"
 
 
 def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) -> None:

@@ -2,14 +2,28 @@
 
 The runner probes each hostname through the candidate's DoH
 ``proxy-server-nameserver`` endpoints using RFC 8484 wireformat. Authority
-boundary: this stage only filters hostnames that DNS proves unresolvable
-(NXDOMAIN or a NOERROR response with no public A/AAAA) from a data-center
-vantage point. It is never evidence of China Telecom / Unicom / Mobile
-quality — a hostname the runner cannot resolve may still resolve fine on a
-carrier access network. Runner transport failures never quarantine a node:
-inconclusive probes are admitted as reserve-leaning evidence, and a stage in
-which no resolver returned any DNS response fails closed instead of mass-
-quarantining the inventory.
+boundary: this stage only filters hostnames that DNS proves unresolvable from
+a data-center vantage point. It is never evidence of China Telecom / Unicom /
+Mobile quality — a hostname the runner cannot resolve may still resolve fine
+on a carrier access network.
+
+Failure semantics are deliberately anti-false-kill:
+
+- any resolver returning a public A (or AAAA when the candidate enables DNS
+  IPv6) record resolves the hostname;
+- quarantining requires at least two independent DoH endpoints to agree on a
+  negative answer (NXDOMAIN or NOERROR with no usable address) — a single
+  misbehaving resolver can never kill a node;
+- one negative verdict combined with transport failures elsewhere is
+  inconclusive and keeps the node;
+- runner transport failures never quarantine a node, and a stage in which no
+  resolver returned any DNS response fails closed instead of mass-quarantining
+  the inventory.
+
+Probe evidence is cached per hostname (never reused across hostnames), and
+quarantine accounting is deduplicated to unique physical endpoints
+(source, server, port, protocol); the same node replicated across providers is
+one unique node with multiple runtime entries.
 """
 
 from __future__ import annotations
@@ -26,6 +40,8 @@ from .errors import ValidationError
 _SOURCE_NAME = re.compile(r"\b(sub_[1-5])/", re.ASCII)
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
 _DNS_CONFIRMED_CATEGORIES = frozenset({"nxdomain", "no_answer"})
+_MIN_AGREEING_NEGATIVES = 2
+_UniqueKey = tuple[str, str, str, str]
 
 
 def _public_address(value: object) -> bool:
@@ -63,22 +79,47 @@ def _doh_endpoints(resolvers: list[Any]) -> list[str]:
     return endpoints
 
 
+def _merge_dual_records(records: list[tuple[bool, str]]) -> tuple[bool, str]:
+    """Merge the A and AAAA probe results of one endpoint."""
+
+    if any(answered for answered, _ in records):
+        return True, "answered"
+    categories = [category for _, category in records]
+    if "nxdomain" in categories:
+        return False, "nxdomain"
+    responses = [category for category in categories if category in ANSWER_CATEGORIES]
+    if responses and all(category in _DNS_CONFIRMED_CATEGORIES for category in responses):
+        return False, "no_answer"
+    transports = [category for category in categories if category not in ANSWER_CATEGORIES]
+    return False, (transports[0] if transports else "no_answer")
+
+
+def _probe_hostname(endpoint: str, hostname: str, *, allow_aaaa: bool) -> tuple[bool, str]:
+    answered, category = probe_doh(endpoint, hostname)
+    if answered or not allow_aaaa:
+        return answered, category
+    # DNS IPv6 is enabled: a hostname with only an AAAA record must qualify.
+    aaaa_answered, aaaa_category = probe_doh(endpoint, hostname, qtype=28)
+    return _merge_dual_records([(answered, category), (aaaa_answered, aaaa_category)])
+
+
 def _verdict(results: list[tuple[bool, str]]) -> tuple[str, str]:
     """Return (verdict, failure_category) for one hostname.
 
     verdict is ``resolved``, ``dns_unresolved``, or ``inconclusive``. A
-    hostname is only DNS-confirmed unresolved when every endpoint that returned
-    a DNS response agreed there is no public A/AAAA record and at least one
-    endpoint answered at all.
+    hostname is only DNS-confirmed unresolved when at least
+    ``_MIN_AGREEING_NEGATIVES`` independent endpoints returned a negative
+    answer (NXDOMAIN or a NOERROR response with no public address).
     """
 
     if any(resolved for resolved, _ in results):
         return "resolved", "answered"
-    responses = [category for _, category in results if category in ANSWER_CATEGORIES]
-    if responses and all(category in _DNS_CONFIRMED_CATEGORIES for category in responses):
-        return "dns_unresolved", ("nxdomain" if "nxdomain" in responses else "no_answer")
+    negatives = [category for _, category in results if category in _DNS_CONFIRMED_CATEGORIES]
+    if len(negatives) >= _MIN_AGREEING_NEGATIVES:
+        return "dns_unresolved", ("nxdomain" if "nxdomain" in negatives else "no_answer")
     failures = [category for _, category in results if category not in ANSWER_CATEGORIES]
-    return "inconclusive", (failures[0] if failures else "transport_error")
+    first_failure = negatives[0] if negatives else (failures[0] if failures else "transport_error")
+    return "inconclusive", first_failure
 
 
 def _source(name: object) -> str:
@@ -89,6 +130,24 @@ def _source(name: object) -> str:
 def _region(provider_name: str) -> str:
     suffix = provider_name.rsplit("_", 1)[-1].lower()
     return suffix if suffix in _REGIONS else "other"
+
+
+def _empty_report() -> dict[str, Any]:
+    return {
+        "status": "skipped",
+        "hostname_nodes": 0,
+        "ip_literal_nodes": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "dns_inconclusive": 0,
+        "resolver_disagreement": 0,
+        "quarantined": 0,
+        "unique_quarantined_nodes": 0,
+        "by_source": {},
+        "by_region": {},
+        "by_protocol": {},
+        "by_failure_category": {},
+    }
 
 
 def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any]:
@@ -106,20 +165,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         for proxy in provider["payload"]
     )
     if not hostname_inventory:
-        return {
-            "status": "skipped",
-            "hostname_nodes": 0,
-            "ip_literal_nodes": 0,
-            "resolved": 0,
-            "unresolved": 0,
-            "dns_inconclusive": 0,
-            "resolver_disagreement": 0,
-            "quarantined": 0,
-            "by_source": {},
-            "by_region": {},
-            "by_protocol": {},
-            "by_failure_category": {},
-        }
+        return _empty_report()
     dns = config.get("dns")
     resolvers = dns.get("proxy-server-nameserver") if isinstance(dns, dict) else None
     if not isinstance(resolvers, list):
@@ -131,14 +177,11 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         raise ValidationError(
             "proxy hostname qualification requires multiple DoH proxy-server-nameserver resolvers"
         )
+    allow_aaaa = bool(dns.get("ipv6", False)) if isinstance(dns, dict) else False
     counts: Counter[str] = Counter()
     dns_responses = 0
-    by_source: Counter[str] = Counter()
-    by_region: Counter[str] = Counter()
-    by_protocol: Counter[str] = Counter()
-    by_failure_category: Counter[str] = Counter()
-    by_source_failure_category: dict[str, Counter[str]] = {}
-    cache: dict[str, tuple[str, str]] = {}
+    unique_quarantined: dict[_UniqueKey, tuple[str, str]] = {}
+    cache: dict[str, tuple[list[tuple[bool, str]], str, str]] = {}
     for provider_name, provider in providers.items():
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
             continue
@@ -156,16 +199,23 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
                 continue
             counts["hostname_nodes"] += 1
             if server not in cache:
-                results = [probe_doh(endpoint, server) for endpoint in endpoints]
-                cache[server] = _verdict(results)
-            verdict, failure_category = cache[server]
-            dns_responses += sum(1 for _, category in results if category in ANSWER_CATEGORIES)
+                records = [
+                    _probe_hostname(endpoint, server, allow_aaaa=allow_aaaa)
+                    for endpoint in endpoints
+                ]
+                verdict, failure_category = _verdict(records)
+                # Cache the full per-endpoint evidence together with the
+                # verdict; evidence is never taken from another hostname.
+                cache[server] = (records, verdict, failure_category)
+                dns_responses += sum(1 for _, category in records if category in ANSWER_CATEGORIES)
+            _, verdict, failure_category = cache[server]
             if verdict == "resolved":
                 counts["resolved"] += 1
                 kept.append(proxy)
                 continue
             if verdict == "inconclusive":
-                # Runner transport trouble is not node evidence: keep the node.
+                # Runner transport trouble or an uncorroborated negative is
+                # not node evidence: keep the node.
                 counts["dns_inconclusive"] += 1
                 counts["resolver_disagreement"] += 1
                 kept.append(proxy)
@@ -173,11 +223,13 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
             counts["unresolved"] += 1
             counts["quarantined"] += 1
             source = _source(proxy.get("name"))
-            by_source[source] += 1
-            by_region[_region(str(provider_name))] += 1
-            by_protocol[protocol] += 1
-            by_failure_category[failure_category] += 1
-            by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
+            key: _UniqueKey = (
+                source,
+                server,
+                str(proxy.get("port", "")),
+                protocol,
+            )
+            unique_quarantined.setdefault(key, (_region(str(provider_name)), failure_category))
         if not kept:
             raise ValidationError("proxy hostname qualification would empty a provider")
         provider["payload"] = kept
@@ -187,6 +239,15 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         raise ValidationError(
             "proxy hostname qualification is inconclusive: no resolver returned a DNS response"
         )
+    by_source: Counter[str] = Counter(key[0] for key in unique_quarantined)
+    by_region: Counter[str] = Counter(region for region, _ in unique_quarantined.values())
+    by_protocol: Counter[str] = Counter(key[3] for key in unique_quarantined)
+    by_failure_category: Counter[str] = Counter(
+        category for _, category in unique_quarantined.values()
+    )
+    by_source_failure_category: dict[str, Counter[str]] = {}
+    for key, (_region_name, category) in unique_quarantined.items():
+        by_source_failure_category.setdefault(key[0], Counter())[category] += 1
     return {
         "status": "passed",
         **{
@@ -201,6 +262,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
                 "quarantined",
             )
         },
+        "unique_quarantined_nodes": len(unique_quarantined),
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),

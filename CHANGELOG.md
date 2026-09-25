@@ -23,6 +23,12 @@ All notable user-visible changes are documented here. This project follows Seman
 ### Fixed
 
 - Proxy hostname qualification no longer treats non-DoH `proxy-server-nameserver` entries (such as the `system` OS resolver used by `cn_three_net`) as DoH JSON endpoints; the runner-side preflight probes only HTTPS DoH endpoints, still requires two of them, and a malformed or failing resolver entry degrades to per-resolver transport failure instead of crashing the qualification stage.
+- The hostname qualification cache stores full per-endpoint evidence with the verdict, and evidence is never reused across hostnames (a stale-variable regression could corrupt DNS-response accounting on duplicate hostnames).
+- DNS negative verdicts now require two independent DoH endpoints to agree on NXDOMAIN/no-answer before quarantining; a single negative combined with transport failures elsewhere is inconclusive and keeps the node.
+- The RFC 8484 parser is strictly bounded by QDCOUNT/ANCOUNT — only Answer-section records of the queried type qualify (Authority/Additional records are ignored), rdlength/bounds violations are `malformed_response`, compression pointer loops fail closed, and AAAA answers qualify only when the candidate enables DNS IPv6.
+- TCP endpoint retry counts successes per attempt (a multi-address hostname cannot turn one attempt into several successes), so robust means every attempt succeeded; a Runner system-DNS failure on a hostname already qualified by stage 1 is inconclusive and keeps the node.
+- `removed_nodes` accounting is deduplicated to unique physical endpoints (source, server, port, protocol) with `runtime_entries` kept separately, and `sources_fully_removed` reports both unique-node and runtime-entry aggregates — a single-node subscription replicated across providers is no longer miscounted as multiple nodes.
+- `carrier_qualification` payloads may carry an optional `collected_at_epoch`; results older than six hours are reported as `stale` and future or malformed timestamps fail closed.
 
 ## [2.2.0] - 2026-09-08
 

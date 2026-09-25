@@ -152,3 +152,43 @@ def test_aggregate_helper_and_pipeline_entry_point_agree() -> None:
     ]
 
     assert aggregate_carrier_results(rows) == run_carrier_qualification(rows)
+
+
+def test_carrier_payload_freshness_current_and_stale() -> None:
+    payload = {
+        "schema_version": 1,
+        "collected_at_epoch": 1_000,
+        "carriers": {"mobile": {"tested": 20, "reachable": 20, "median_latency_ms": 40.0}},
+    }
+
+    current = run_carrier_qualification(payload, now_epoch=1_000 + 60)
+    assert current["status"] == "passed"
+    assert current["freshness"] == {
+        "collected_at_epoch": 1_000,
+        "age_seconds": 60,
+        "max_age_seconds": 6 * 3600,
+        "status": "current",
+    }
+
+    stale = run_carrier_qualification(payload, now_epoch=1_000 + 7 * 3600)
+    assert stale["status"] == "stale"
+    assert stale["freshness"]["status"] == "stale"
+    assert stale["aggregate"]["tested"] == 20
+
+
+def test_carrier_payload_timestamp_fails_closed() -> None:
+    future = {
+        "schema_version": 1,
+        "collected_at_epoch": 10_000,
+        "carriers": {"telecom": {"tested": 10, "reachable": 5, "median_latency_ms": 1}},
+    }
+    with pytest.raises(ValidationError, match="future"):
+        run_carrier_qualification(future, now_epoch=9_000)
+
+    malformed = {
+        "schema_version": 1,
+        "collected_at_epoch": "yesterday",
+        "carriers": {"telecom": {"tested": 10, "reachable": 5, "median_latency_ms": 1}},
+    }
+    with pytest.raises(ValidationError, match="integer epoch"):
+        run_carrier_qualification(malformed)

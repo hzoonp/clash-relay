@@ -132,11 +132,17 @@ def _carrier_report(carrier_input: Path | None) -> dict[str, Any]:
     return run_carrier_qualification(payload)
 
 
-def _source_node_counts(document: dict[str, Any]) -> dict[str, int]:
-    """Count runtime nodes per subscription source (aggregate labels only)."""
+def _source_node_counts(document: dict[str, Any], *, unique: bool = False) -> dict[str, int]:
+    """Count nodes per subscription source (aggregate labels only).
+
+    ``unique`` counts distinct physical endpoints — the same node replicated
+    into several runtime providers is one node; the default counts runtime
+    entries.
+    """
 
     providers = document.get("proxy-providers")
     counts: dict[str, int] = {}
+    seen: set[tuple[str, str, str, str]] = set()
     if not isinstance(providers, dict):
         return counts
     for provider in providers.values():
@@ -149,6 +155,16 @@ def _source_node_counts(document: dict[str, Any]) -> dict[str, int]:
             source = _source(proxy.get("name"))
             if source == "other":
                 continue
+            if unique:
+                key = (
+                    source,
+                    str(proxy.get("server")),
+                    str(proxy.get("port")),
+                    str(proxy.get("type")),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
             counts[source] = counts.get(source, 0) + 1
     return counts
 
@@ -168,6 +184,7 @@ def _removed_nodes_summary(
     host_report: dict[str, Any],
     endpoint_report: dict[str, Any],
     generated_source_counts: dict[str, int],
+    generated_unique_source_counts: dict[str, int],
     final_document: dict[str, Any],
 ) -> dict[str, Any]:
     """Aggregate-only accounting of nodes removed by qualification.
@@ -178,8 +195,10 @@ def _removed_nodes_summary(
     privacy-safe reason attached.
     """
 
-    generated_counts = generated_source_counts
-    final_counts = _source_node_counts(final_document)
+    generated_entries = generated_source_counts
+    generated_unique = generated_unique_source_counts
+    final_entries = _source_node_counts(final_document)
+    final_unique = _source_node_counts(final_document, unique=True)
     by_source_failure_category: dict[str, dict[str, int]] = {}
     for report in (host_report, endpoint_report):
         for source, categories in (report.get("by_source_failure_category") or {}).items():
@@ -187,22 +206,30 @@ def _removed_nodes_summary(
             for category, count in (categories or {}).items():
                 bucket[str(category)] = bucket.get(str(category), 0) + int(count or 0)
     sources_fully_removed = []
-    for source in sorted(set(generated_counts) | set(final_counts)):
-        generated_nodes = generated_counts.get(source, 0)
-        final_nodes = final_counts.get(source, 0)
-        if generated_nodes == 0 or final_nodes > 0:
+    for source in sorted(set(generated_unique) | set(final_unique)):
+        generated_unique_nodes = generated_unique.get(source, 0)
+        final_unique_nodes = final_unique.get(source, 0)
+        if generated_unique_nodes == 0 or final_unique_nodes > 0:
             continue
         sources_fully_removed.append(
             {
                 "source": source,
-                "generated_nodes": generated_nodes,
-                "final_nodes": final_nodes,
+                "unique_nodes": generated_unique_nodes,
+                "final_unique_nodes": final_unique_nodes,
+                "runtime_entries": generated_entries.get(source, 0),
+                "final_runtime_entries": final_entries.get(source, 0),
                 "by_failure_category": dict(
                     sorted(by_source_failure_category.get(source, {}).items())
                 ),
             }
         )
     return {
+        # Quarantine accounting is deduplicated to unique physical endpoints;
+        # runtime_entries keeps the raw entry count for the same removals.
+        "unique_nodes": int(host_report.get("unique_quarantined_nodes", 0) or 0)
+        + int(endpoint_report.get("unique_quarantined_nodes", 0) or 0),
+        "runtime_entries": int(host_report.get("quarantined", 0) or 0)
+        + int(endpoint_report.get("quarantined", 0) or 0),
         "by_source": _merged_category(host_report, endpoint_report, "by_source"),
         "by_region": _merged_category(host_report, endpoint_report, "by_region"),
         "by_protocol": _merged_category(host_report, endpoint_report, "by_protocol"),
@@ -303,6 +330,7 @@ def run_qualification_pipeline(
         raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
     # Snapshot per-source counts before preflight stages prune the payloads.
     generated_source_counts = _source_node_counts(generated_document)
+    generated_unique_source_counts = _source_node_counts(generated_document, unique=True)
     proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(
         generated_document, workers=workers
@@ -439,6 +467,7 @@ def run_qualification_pipeline(
             host_report=proxy_host_resolution,
             endpoint_report=endpoint_qualification,
             generated_source_counts=generated_source_counts,
+            generated_unique_source_counts=generated_unique_source_counts,
             final_document=final_document,
         ),
         "node_quality_tiers": _quality_tier_summary(

@@ -355,61 +355,99 @@ def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(
     assert "top-secret" not in message
 
 
-def _preflight_stubs(monkeypatch, *, drop_source: str | None = None):
-    """Stub runner preflight stages with canned aggregate reports."""
+def _preflight_stubs(monkeypatch, *, drop_source: str | None = None, host_passes: bool = False):
+    """Stub runner preflight stages; aggregate reports derive from the actual
+    payload removals so unique/runtime-entry accounting stays truthful."""
 
-    def host(document):
+    def _prune(document):
+        removed: list[tuple[str, dict]] = []
         if drop_source:
-            for provider in document["proxy-providers"].values():
-                provider["payload"] = [
-                    proxy
-                    for proxy in provider["payload"]
-                    if f"{drop_source}/" not in str(proxy.get("name", ""))
-                ]
+            for provider_name, provider in document["proxy-providers"].items():
+                kept = []
+                for proxy in provider["payload"]:
+                    if f"{drop_source}/" in str(proxy.get("name", "")):
+                        removed.append((provider_name, proxy))
+                    else:
+                        kept.append(proxy)
+                provider["payload"] = kept
+        return removed
+
+    def _account(removed, *, category, region_for):
+        source = pipeline._source(removed[0][1].get("name"))
+        unique = {
+            (
+                pipeline._source(proxy.get("name")),
+                str(proxy.get("server")),
+                str(proxy.get("port")),
+                str(proxy.get("type")),
+            )
+            for _, proxy in removed
+        }
         return {
-            "status": "passed",
-            "hostname_nodes": 2,
-            "ip_literal_nodes": 0,
-            "resolved": 0 if drop_source else 2,
-            "unresolved": 2 if drop_source else 0,
-            "dns_inconclusive": 0,
-            "resolver_disagreement": 0,
-            "quarantined": 2 if drop_source else 0,
-            "by_source": {drop_source: 2} if drop_source else {},
-            "by_region": {"jp": 2} if drop_source else {},
-            "by_protocol": {"trojan": 2} if drop_source else {},
-            "by_failure_category": {"nxdomain": 2} if drop_source else {},
-            "by_source_failure_category": ({drop_source: {"nxdomain": 2}} if drop_source else {}),
+            "quarantined": len(removed),
+            "unique_quarantined_nodes": len(unique),
+            "by_source": {source: len(unique)},
+            "by_region": {region_for: len(unique)},
+            "by_failure_category": {category: len(unique)},
+            "by_source_failure_category": {source: {category: len(unique)}},
         }
 
-    def endpoint(document, workers=12):
-        if drop_source:
-            for provider in document["proxy-providers"].values():
-                provider["payload"] = [
-                    proxy
-                    for proxy in provider["payload"]
-                    if f"{drop_source}/" not in str(proxy.get("name", ""))
-                ]
-        return {
+    def host(document):
+        removed = _prune(document) if not host_passes else []
+        report: dict = {
             "status": "passed",
-            "tcp_nodes": 1,
-            "tested": 1,
-            "reachable": 0 if drop_source else 1,
-            "unreachable": 1 if drop_source else 0,
-            "quarantined": 1 if drop_source else 0,
+            "hostname_nodes": len(removed),
+            "ip_literal_nodes": 0,
+            "resolved": 0,
+            "unresolved": len(removed),
+            "dns_inconclusive": 0,
+            "resolver_disagreement": 0,
+            "quarantined": len(removed),
+        }
+        if removed:
+            report.update(_account(removed, category="nxdomain", region_for="jp"))
+        else:
+            report.update(
+                {
+                    "resolved": 2,
+                    "unique_quarantined_nodes": 0,
+                    "by_source": {},
+                    "by_region": {},
+                    "by_failure_category": {},
+                    "by_source_failure_category": {},
+                }
+            )
+        return report
+
+    def endpoint(document, workers=12):
+        removed = _prune(document) if host_passes else []
+        report: dict = {
+            "status": "passed",
+            "tcp_nodes": len(removed) if removed else 1,
+            "tested": len(removed) if removed else 1,
+            "reachable": 0 if removed else 1,
+            "unreachable": len(removed),
             "skipped_udp_native": 0,
             "attempts": 3,
             "admission_quorum": 1,
-            "robust_endpoints": 0 if drop_source else 1,
+            "robust_endpoints": 0 if removed else 1,
             "reserve_endpoints": 0,
-            "by_source": {drop_source: 1} if drop_source else {},
-            "by_region": {"jp": 1} if drop_source else {},
-            "by_protocol": {"vless": 1} if drop_source else {},
-            "by_failure_category": {"connect_timeout": 1} if drop_source else {},
-            "by_source_failure_category": (
-                {drop_source: {"connect_timeout": 1}} if drop_source else {}
-            ),
+            "dns_inconclusive": 0,
+            "quarantined": len(removed),
         }
+        if removed:
+            report.update(_account(removed, category="connect_timeout", region_for="jp"))
+        else:
+            report.update(
+                {
+                    "unique_quarantined_nodes": 0,
+                    "by_source": {},
+                    "by_region": {},
+                    "by_failure_category": {},
+                    "by_source_failure_category": {},
+                }
+            )
+        return report
 
     monkeypatch.setattr(pipeline, "quarantine_unresolvable_proxy_hosts", host)
     monkeypatch.setattr(pipeline, "quarantine_unreachable_tcp_endpoints", endpoint)
@@ -488,18 +526,78 @@ def test_pipeline_flags_fully_removed_source_with_reasons(tmp_path: Path, monkey
     )
 
     removed = result["removed_nodes"]
-    assert removed["by_source"] == {"sub_2": 3}
-    assert removed["by_failure_category"] == {"connect_timeout": 1, "nxdomain": 2}
+    assert removed["unique_nodes"] == 2
+    assert removed["runtime_entries"] == 2
+    assert removed["by_source"] == {"sub_2": 2}
+    assert removed["by_failure_category"] == {"nxdomain": 2}
     assert removed["sources_fully_removed"] == [
         {
             "source": "sub_2",
-            "generated_nodes": 2,
-            "final_nodes": 0,
-            "by_failure_category": {"connect_timeout": 1, "nxdomain": 2},
+            "unique_nodes": 2,
+            "final_unique_nodes": 0,
+            "runtime_entries": 2,
+            "final_runtime_entries": 0,
+            "by_failure_category": {"nxdomain": 2},
         }
     ]
     # A partially surviving source is never flagged.
     assert "sub_3" not in {row["source"] for row in removed["sources_fully_removed"]}
+
+
+def test_pipeline_sources_fully_removed_report_unique_and_runtime_entries(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """One physical node replicated into several runtime providers counts once
+    as a unique node and once per provider as a runtime entry."""
+
+    _, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_browsing_jp:\n"
+        "    payload:\n"
+        "      - {name: '[BROWSING:JP] sub_2/Solo', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "  cr_general_jp:\n"
+        "    payload:\n"
+        "      - {name: '[GENERAL:ANY] sub_2/Solo', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[GENERAL:ANY] sub_2/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "proxies: []\n"
+        "proxy-groups: []\n",
+        encoding="utf-8",
+    )
+    _preflight_stubs(monkeypatch, drop_source="sub_2", host_passes=True)
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        _append(kwargs["candidate"], "browsing_stage")
+        return {"status": "qualified", "automatic_nodes": 1}
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    removed = result["removed_nodes"]
+    assert removed["runtime_entries"] == 4
+    assert removed["unique_nodes"] == 2
+    assert removed["sources_fully_removed"] == [
+        {
+            "source": "sub_2",
+            "unique_nodes": 2,
+            "final_unique_nodes": 0,
+            "runtime_entries": 4,
+            "final_runtime_entries": 0,
+            "by_failure_category": {"connect_timeout": 2},
+        }
+    ]
 
 
 def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypatch) -> None:
