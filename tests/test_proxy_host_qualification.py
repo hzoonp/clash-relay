@@ -280,8 +280,10 @@ def test_duplicate_hostname_across_providers_probes_once_and_counts_unique(
     assert len(probed) == 2
     assert report["quarantined"] == 3
     assert report["unique_quarantined_nodes"] == 1
-    assert report["by_source"] == {"sub_2": 1}
-    assert report["by_protocol"] == {"trojan": 1}
+    # by_source counts runtime entries; the unique view above deduplicates
+    # the same physical node replicated across providers.
+    assert report["by_source"] == {"sub_2": 3}
+    assert report["by_protocol"] == {"trojan": 3}
 
 
 def test_cache_evidence_is_never_reused_across_hostnames(monkeypatch) -> None:
@@ -381,3 +383,92 @@ def test_ipv6_disabled_candidate_keeps_a_only_probing(monkeypatch) -> None:
 
     assert probed == [1, 1]
     assert report["quarantined"] == 1
+
+
+def test_merge_dual_records_never_downgrades_server_failure() -> None:
+    """server_failure + no_answer must stay inconclusive — a resolver failure
+    must never be converted into DNS negative evidence."""
+
+    from clash_relay.proxy_host_qualification import (
+        _merge_dual_records,
+        _verdict,
+    )
+
+    merged = _merge_dual_records([(False, "server_failure"), (False, "no_answer")])
+    assert merged == (False, "server_failure")
+
+    # Two endpoints each reporting a resolver failure cannot quarantine.
+    results = [merged, _merge_dual_records([(False, "server_failure"), (False, "server_failure")])]
+    assert _verdict(results) == ("inconclusive", "server_failure")
+
+
+def test_merge_dual_records_transport_failure_blocks_negative(monkeypatch) -> None:
+    """An A-query NXDOMAIN combined with a failed AAAA transport stays
+    inconclusive under the strict all-definitive rule."""
+
+    from clash_relay.proxy_host_qualification import _merge_dual_records
+
+    assert _merge_dual_records([(False, "nxdomain"), (False, "connect_timeout")]) == (
+        False,
+        "connect_timeout",
+    )
+    assert _merge_dual_records([(False, "nxdomain"), (False, "no_answer")]) == (
+        False,
+        "nxdomain",
+    )
+
+
+def test_inconclusive_merged_evidence_cannot_join_negative_quorum(monkeypatch) -> None:
+    """Two endpoints whose A/AAAA merges are inconclusive never quarantine."""
+
+    sequence = {
+        "host.example": [
+            (False, "server_failure"),
+            (False, "no_answer"),
+        ]
+    }
+
+    def probe(endpoint: str, hostname: str, *, qtype: int = 1):
+        return sequence[hostname].pop(0) if qtype == 1 else (False, "server_failure")
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", probe)
+    candidate = _candidate()
+    candidate["dns"]["ipv6"] = True
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
+        {"name": "host", "type": "trojan", "server": "host.example"},
+        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+    ]
+
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+
+    assert report["quarantined"] == 0
+    assert report["dns_inconclusive"] == 1
+
+
+def test_duplicate_resolver_declaration_is_one_vote() -> None:
+    from clash_relay.proxy_host_qualification import _doh_endpoints
+
+    endpoints = _doh_endpoints(
+        [
+            "https://dns.alidns.com/dns-query",
+            "https://dns.alidns.com:443/dns-query",
+            "https://DNS.ALIDNS.com/dns-query",
+            "https://doh.pub/dns-query",
+        ]
+    )
+    assert endpoints == ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"]
+
+
+def test_duplicated_resolver_cannot_satisfy_two_resolver_quorum() -> None:
+    candidate = _candidate()
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://dns.alidns.com/dns-query",
+        "https://dns.alidns.com:443/dns-query",
+    ]
+
+    with pytest.raises(ValidationError, match="DoH proxy-server-nameserver"):
+        quarantine_unresolvable_proxy_hosts(candidate)

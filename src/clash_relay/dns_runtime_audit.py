@@ -49,6 +49,37 @@ def _proxy_server_resolver(value: object) -> bool:
     return value == "system" or _encrypted_proxy_server_resolver(value)
 
 
+def _require_distinct_resolver_authorities(resolvers: list[Any]) -> None:
+    """Fail closed when the same resolver authority is declared twice.
+
+    Reachability quorums treat each distinct authority as one vote; duplicate
+    declarations would silently inflate the required independent-resolver
+    semantics.
+    """
+
+    authorities: set[tuple[str, ...]] = set()
+    for resolver in resolvers:
+        if resolver == "system":
+            authority: tuple[str, ...] = ("system",)
+        else:
+            parsed = urlsplit(str(resolver))
+            try:
+                port = parsed.port
+            except ValueError:
+                port = None
+            authority = (
+                parsed.scheme.lower(),
+                (parsed.hostname or "").lower().rstrip("."),
+                port or 443,
+                parsed.path or "/",
+            )
+        if authority in authorities:
+            raise ValidationError(
+                "proxy-server-nameserver must declare distinct resolver authorities"
+            )
+        authorities.add(authority)
+
+
 def audit_dns_runtime_dependencies(candidate: dict[str, Any]) -> dict[str, object]:
     """Fail closed on DNS-to-routing-to-URLTest dependency cycles.
 
@@ -79,6 +110,7 @@ def audit_dns_runtime_dependencies(candidate: dict[str, Any]) -> dict[str, objec
             "proxy-server-nameserver must contain IP-literal encrypted resolvers "
             "or system/encrypted bootstrap-safe resolvers"
         )
+    _require_distinct_resolver_authorities(dns["proxy-server-nameserver"])
     policy = dns.get("nameserver-policy")
     if not isinstance(policy, dict) or not policy:
         raise ValidationError("managed DNS runtime requires nameserver-policy")

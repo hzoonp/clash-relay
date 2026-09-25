@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ from clash_relay.qualification_reliability import (
     QualificationStageRejected,
 )
 from clash_relay.service_qualification import service_qualifications
-from clash_relay.util import load_yaml_file
+from clash_relay.util import atomic_write, dump_yaml, load_yaml_file
 
 
 def _pipeline_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -537,6 +538,8 @@ def test_pipeline_flags_fully_removed_source_with_reasons(tmp_path: Path, monkey
             "final_unique_nodes": 0,
             "runtime_entries": 2,
             "final_runtime_entries": 0,
+            "removed_at_stage": "hostname",
+            "by_stage": {"hostname": 2},
             "by_failure_category": {"nxdomain": 2},
         }
     ]
@@ -595,6 +598,8 @@ def test_pipeline_sources_fully_removed_report_unique_and_runtime_entries(
             "final_unique_nodes": 0,
             "runtime_entries": 4,
             "final_runtime_entries": 0,
+            "removed_at_stage": "endpoint",
+            "by_stage": {"endpoint": 4},
             "by_failure_category": {"connect_timeout": 2},
         }
     ]
@@ -608,6 +613,7 @@ def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypat
         json.dumps(
             {
                 "schema_version": 1,
+                "collected_at_epoch": int(time.time()),
                 "carriers": {
                     "telecom": {"tested": 40, "reachable": 38, "median_latency_ms": 52.4},
                     "unicom": {"tested": 40, "reachable": 35, "median_latency_ms": 61.0},
@@ -630,6 +636,7 @@ def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypat
 
     carrier = result["reachability"]["carrier_qualification"]
     assert carrier["status"] == "passed"
+    assert carrier["freshness"]["status"] == "current"
     assert set(carrier["carriers"]) == {"telecom", "unicom"}
     assert carrier["aggregate"]["tested"] == 80
 
@@ -656,3 +663,123 @@ def test_pipeline_carrier_input_fails_closed_on_invalid_payload(
             ai_report=tmp_path / "ai.json",
             carrier_input=carrier_input,
         )
+
+
+def test_stage_attribution_covers_late_stage_removals(tmp_path: Path, monkeypatch) -> None:
+    """A source removed by the browsing stage (after preflight passed) must be
+    attributed to that stage with a non-empty aggregate failure reason."""
+
+    _, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_browsing_jp:\n"
+        "    payload:\n"
+        "      - {name: '[BROWSING:JP] sub_4/One', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_4/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "proxies: []\n"
+        "proxy-groups: []\n",
+        encoding="utf-8",
+    )
+    _preflight_stubs(monkeypatch)  # preflight passes everything
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        document = load_yaml_file(kwargs["candidate"])
+        for provider in document["proxy-providers"].values():
+            provider["payload"] = [
+                proxy for proxy in provider["payload"] if "sub_4/" not in str(proxy.get("name", ""))
+            ]
+        atomic_write(kwargs["candidate"], dump_yaml(document))
+        _append(kwargs["candidate"], "browsing_stage")
+        return {
+            "status": "qualified",
+            "automatic_nodes": 1,
+            "diagnostics": {"failed_nodes": 1},
+        }
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    removed_by_stage = result["removed_by_stage"]
+    assert set(removed_by_stage) == {
+        "hostname",
+        "endpoint",
+        "browsing",
+        "transport",
+        "ai",
+        "service_hardening",
+        "final",
+    }
+    assert removed_by_stage["hostname"]["runtime_entries"]["removed"] == 0
+    browsing_stage = removed_by_stage["browsing"]
+    assert browsing_stage["runtime_entries"]["removed"] == 2
+    assert browsing_stage["by_source"] == {"sub_4": 2}
+    assert browsing_stage["failure_category"] == {"browsing_qualification_failed": 2}
+    assert removed_by_stage["transport"]["runtime_entries"]["removed"] == 0
+
+    assert result["sources_fully_removed"] == [
+        {
+            "source": "sub_4",
+            "unique_nodes": 2,
+            "final_unique_nodes": 0,
+            "runtime_entries": 2,
+            "final_runtime_entries": 0,
+            "removed_at_stage": "browsing",
+            "by_stage": {"browsing": 2},
+            "by_failure_category": {"browsing_qualification_failed": 2},
+        }
+    ]
+    assert result["qualification_removed_runtime_entries"] == 2
+    assert result["qualification_removed_unique_nodes"] == 2
+
+
+def test_stage_accounting_never_leaks_entry_identities(tmp_path: Path, monkeypatch) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_browsing_jp:\n"
+        "    payload:\n"
+        "      - {name: '[BROWSING:JP] sub_2/Secret', type: trojan, server: secret-server.example, port: 443}\n"
+        "proxies: []\n"
+        "proxy-groups: []\n",
+        encoding="utf-8",
+    )
+    _preflight_stubs(monkeypatch, drop_source="sub_2")
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        _append(kwargs["candidate"], "browsing_stage")
+        return {"status": "qualified", "automatic_nodes": 1}
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    serialized = json.dumps(
+        {
+            "removed_by_stage": result["removed_by_stage"],
+            "sources_fully_removed": result["sources_fully_removed"],
+            "removed_nodes": result["removed_nodes"],
+        }
+    )
+    assert "secret-server.example" not in serialized
+    assert "secret" not in serialized.casefold()
+    assert "https://" not in serialized

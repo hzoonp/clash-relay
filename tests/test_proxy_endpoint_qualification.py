@@ -211,9 +211,10 @@ def test_multi_address_hostname_counts_attempts_not_addresses(monkeypatch) -> No
 
     admitted, category, successes = _probe_tcp("multi.example", 443)
 
-    # Two addresses per attempt must count as ONE successful attempt.
+    # Two addresses per attempt must count as ONE successful attempt, and the
+    # first reachable address ends the attempt immediately.
     assert (admitted, category, successes) == (True, "answered", 3)
-    assert len(connects) == 6
+    assert len(connects) == 3
 
 
 def test_multi_address_hostname_partial_attempt_success_is_reserve(monkeypatch) -> None:
@@ -248,6 +249,49 @@ def test_multi_address_hostname_partial_attempt_success_is_reserve(monkeypatch) 
     # Attempts 1 and 3 succeed (each via at least one address); attempt 2 fails.
     assert (admitted, successes) == (True, 2)
     assert _admission_tier(successes) == "reserve"
+
+
+def test_multi_address_attempt_budget_stops_extra_addresses(monkeypatch) -> None:
+    """A per-attempt time budget caps how many addresses get a connect try,
+    even when the resolver returns many addresses."""
+
+    import socket
+
+    import clash_relay.proxy_endpoint_qualification as eq
+
+    clock = {"t": 0.0}
+    connects: list[str] = []
+
+    class SlowFailingSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def settimeout(self, _timeout):
+            pass
+
+        def connect(self, _target):
+            clock["t"] += 1.0
+            connects.append("connect")
+            raise TimeoutError
+
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", (f"93.184.216.{n}", 443)) for n in range(6)
+    ]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: addresses)
+    monkeypatch.setattr(socket, "socket", lambda *_args: SlowFailingSocket())
+    monkeypatch.setattr(eq.time, "monotonic", lambda: clock["t"])
+
+    admitted, category, successes = _probe_tcp("many.example", 443)
+
+    # Each attempt starts with a fresh 2.0s budget; every failing connect
+    # costs 1.0s, so at most two addresses are tried per attempt — six
+    # addresses must never multiply into attempts * timeout of runner time.
+    assert (admitted, category, successes) == (False, "connect_timeout", 0)
+    assert len(connects) == 6  # 2 per attempt, not 6 per attempt
+    assert eq._ATTEMPT_BUDGET_SECONDS >= eq._CONNECT_TIMEOUT
 
 
 def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) -> None:

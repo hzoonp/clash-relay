@@ -137,3 +137,25 @@ def test_runtime_dns_audit_leaves_ai_probe_semantics_untouched() -> None:
         }
     )
     assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"
+
+
+def test_runtime_dns_audit_rejects_duplicate_resolver_authorities() -> None:
+    candidate = _candidate()
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://1.1.1.1/dns-query",
+        "https://1.1.1.1:443/dns-query",
+        "https://8.8.8.8/dns-query",
+    ]
+
+    with pytest.raises(ValidationError, match="distinct resolver authorities"):
+        audit_dns_runtime_dependencies(candidate)
+
+
+def test_runtime_dns_audit_accepts_distinct_authorities() -> None:
+    candidate = _candidate()
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "https://1.1.1.1/dns-query",
+        "https://1.0.0.1/dns-query",
+    ]
+
+    assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"

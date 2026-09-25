@@ -16,6 +16,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -31,6 +32,7 @@ _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
 _ATTEMPTS = 3
 _ADMISSION_QUORUM = 1
 _CONNECT_TIMEOUT = 1.5
+_ATTEMPT_BUDGET_SECONDS = 2.0
 _UNREACHABLE_ERRNOS = frozenset(
     value
     for value in (
@@ -73,23 +75,34 @@ def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
         addresses = socket.getaddrinfo(server, port, type=socket.SOCK_STREAM)
     except OSError:
         return False, "dns_failure", 0
-    public = [
-        (family, sockaddr)
-        for family, _, _, _, sockaddr in addresses
-        if _public_ip(str(sockaddr[0]))
-    ]
+    public: list[tuple[socket.AddressFamily, tuple]] = []
+    seen_addresses: set[tuple[socket.AddressFamily, tuple]] = set()
+    for family, _, _, _, sockaddr in addresses:
+        if not _public_ip(str(sockaddr[0])):
+            continue
+        marker = (family, sockaddr)
+        if marker in seen_addresses:
+            continue
+        seen_addresses.add(marker)
+        public.append(marker)
     if not public:
         return False, "dns_failure", 0
     successes = 0
     category = "connect_failure"
     for _ in range(_ATTEMPTS):
         attempt_succeeded = False
+        # One attempt carries a total time budget: many resolved addresses
+        # must never multiply into attempts * timeout of runner time.
+        deadline = time.monotonic() + _ATTEMPT_BUDGET_SECONDS
         for family, sockaddr in public:
+            if time.monotonic() >= deadline:
+                break
             try:
                 with socket.socket(family, socket.SOCK_STREAM) as connection:
                     connection.settimeout(_CONNECT_TIMEOUT)
                     connection.connect(sockaddr)
                 attempt_succeeded = True
+                break  # one reachable address ends this attempt
             except OSError as exc:
                 category = _failure_category(exc)
         if attempt_succeeded:

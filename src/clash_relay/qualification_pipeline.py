@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from .carrier_qualification import run_carrier_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
 from .proxy_endpoint_qualification import (
+    _region,
     _source,
     accelerate_client_health_checks,
     quarantine_unreachable_tcp_endpoints,
@@ -29,6 +31,12 @@ from .util import atomic_write, dump_yaml, load_yaml_file
 
 _BROWSING_STAGE_ATTEMPTS = 2
 _BROWSING_RETRY_DELAY_SECONDS = 1.0
+_STAGE_REASONS = {
+    "browsing": "browsing_qualification_failed",
+    "ai": "ai_qualification_failed",
+    "service_hardening": "service_client_path_hardening",
+}
+_PROVENANCE_STAGE_ORDER = ("hostname", "endpoint", "browsing", "ai", "service_hardening")
 _SAFE_DIAGNOSTIC_KEYS = frozenset(
     {
         "qualification_mode",
@@ -179,6 +187,239 @@ def _merged_category(
     return dict(sorted(merged.items()))
 
 
+def _entry_inventory(document: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Map runtime entry name -> aggregate attributes (privacy-safe labels)."""
+
+    providers = document.get("proxy-providers")
+    inventory: dict[str, dict[str, str]] = {}
+    if not isinstance(providers, dict):
+        return inventory
+    for provider_name, provider in providers.items():
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            continue
+        region = _region(str(provider_name))
+        for proxy in payload:
+            if not isinstance(proxy, dict):
+                continue
+            name = proxy.get("name")
+            if not isinstance(name, str):
+                continue
+            source = _source(name)
+            protocol = str(proxy.get("type", "unknown"))
+            inventory[name] = {
+                "source": source,
+                "region": region,
+                "protocol": protocol,
+                "unique": (f"{source}|{proxy.get('server')}|{proxy.get('port')}|{protocol}"),
+            }
+    return inventory
+
+
+def _stage_delta(
+    before: dict[str, dict[str, str]],
+    after: dict[str, dict[str, str]],
+    *,
+    stage: str,
+    reason: str,
+    failure_category: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Aggregate the removal delta between two stage inventories."""
+
+    removed_names = set(before) - set(after)
+    removed_rows = [before[name] for name in sorted(removed_names)]
+    before_unique = {row["unique"] for row in before.values()}
+    after_unique = {row["unique"] for row in after.values()}
+    removed_unique = len({row["unique"] for row in removed_rows})
+    by_source: Counter[str] = Counter(row["source"] for row in removed_rows)
+    by_region: Counter[str] = Counter(row["region"] for row in removed_rows)
+    by_protocol: Counter[str] = Counter(row["protocol"] for row in removed_rows)
+    categories = (
+        {str(name): int(count or 0) for name, count in (failure_category or {}).items()}
+        if failure_category
+        else ({reason: len(removed_rows)} if removed_rows else {})
+    )
+    return {
+        "stage": stage,
+        "reason": reason,
+        "unique_nodes": {
+            "before": len(before_unique),
+            "after": len(after_unique),
+            "removed": removed_unique,
+        },
+        "runtime_entries": {
+            "before": len(before),
+            "after": len(after),
+            "removed": len(removed_rows),
+        },
+        "by_source": dict(sorted(by_source.items())),
+        "by_region": dict(sorted(by_region.items())),
+        "by_protocol": dict(sorted(by_protocol.items())),
+        "failure_category": categories,
+    }
+
+
+def _transport_stage_entry(
+    browsing_summary: dict[str, Any], browsing_delta: dict[str, Any]
+) -> dict[str, Any]:
+    """Transport stage accounting: filters narrow, payload entries remain."""
+
+    after_entries = browsing_delta["runtime_entries"]["after"]
+    after_unique = browsing_delta["unique_nodes"]["after"]
+    transport_report = browsing_summary.get("transport_qualification")
+    transport_report = transport_report if isinstance(transport_report, dict) else {}
+    diagnostics = browsing_summary.get("diagnostics")
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    core_entries = int(diagnostics.get("core_quarantined_runtime_entries", 0) or 0)
+    return {
+        "stage": "transport",
+        "reason": "automatic_groups_narrowed_to_qualified_transports",
+        "unique_nodes": {"before": after_unique, "after": after_unique, "removed": 0},
+        "runtime_entries": {"before": after_entries, "after": after_entries, "removed": 0},
+        "by_source": {},
+        "by_region": {},
+        "by_protocol": {},
+        "failure_category": {},
+        "core_quarantine": {
+            "runtime_entries": core_entries,
+            "sources": diagnostics.get("core_quarantined_sources", []),
+            "proxy_types": diagnostics.get("core_quarantined_proxy_types", []),
+        },
+        "automatic_groups": {
+            "general_automatic_nodes": transport_report.get("general_automatic_nodes"),
+            "udp_automatic_nodes": transport_report.get("udp_automatic_nodes"),
+        },
+    }
+
+
+def _build_stage_accounting(
+    *,
+    preflight_inventory: dict[str, dict[str, str]],
+    post_host_inventory: dict[str, dict[str, str]],
+    post_endpoint_inventory: dict[str, dict[str, str]],
+    browsing_document: dict[str, Any],
+    browsing_summary: dict[str, Any],
+    ai_document: dict[str, Any],
+    service_document: dict[str, Any],
+    final_document: dict[str, Any],
+    host_report: dict[str, Any],
+    endpoint_report: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Per-stage removal accounting across the whole qualification chain."""
+
+    deltas: dict[str, dict[str, Any]] = {}
+    deltas["hostname"] = _stage_delta(
+        preflight_inventory,
+        post_host_inventory,
+        stage="hostname",
+        reason="dns_unresolvable",
+        failure_category=host_report.get("by_failure_category") or {},
+    )
+    deltas["endpoint"] = _stage_delta(
+        post_host_inventory,
+        post_endpoint_inventory,
+        stage="endpoint",
+        reason="tcp_endpoint_unreachable",
+        failure_category=endpoint_report.get("by_failure_category") or {},
+    )
+    deltas["browsing"] = _stage_delta(
+        post_endpoint_inventory,
+        _entry_inventory(browsing_document),
+        stage="browsing",
+        reason=_STAGE_REASONS["browsing"],
+    )
+    deltas["transport"] = _transport_stage_entry(browsing_summary, deltas["browsing"])
+    deltas["ai"] = _stage_delta(
+        _entry_inventory(browsing_document),
+        _entry_inventory(ai_document),
+        stage="ai",
+        reason=_STAGE_REASONS["ai"],
+    )
+    deltas["service_hardening"] = _stage_delta(
+        _entry_inventory(ai_document),
+        _entry_inventory(service_document),
+        stage="service_hardening",
+        reason=_STAGE_REASONS["service_hardening"],
+    )
+    deltas["final"] = _stage_delta(
+        _entry_inventory(service_document),
+        _entry_inventory(final_document),
+        stage="final",
+        reason="none",
+    )
+    return deltas
+
+
+def _sources_fully_removed(
+    *,
+    stage_deltas: dict[str, dict[str, Any]],
+    generated_entries: dict[str, int],
+    generated_unique: dict[str, int],
+    final_document: dict[str, Any],
+    host_report: dict[str, Any],
+    endpoint_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Flag sources whose entire runtime inventory was removed, with provenance.
+
+    ``removed_at_stage`` names the stage that removed the last surviving entry;
+    every flagged source carries non-empty aggregate failure reasons — an
+    unattributable removal is explicitly marked ``unattributed`` instead of
+    silently passing without explanation.
+    """
+
+    final_entries = _source_node_counts(final_document)
+    final_unique = _source_node_counts(final_document, unique=True)
+    per_stage_source = {
+        stage: stage_deltas[stage]["by_source"] for stage in _PROVENANCE_STAGE_ORDER
+    }
+    results: list[dict[str, Any]] = []
+    for source in sorted(set(generated_unique) | set(generated_entries)):
+        generated_unique_nodes = generated_unique.get(source, 0)
+        if generated_unique_nodes == 0 or final_unique.get(source, 0) > 0:
+            continue
+        remaining = generated_entries.get(source, 0)
+        removed_at_stage: str | None = None
+        by_stage: dict[str, int] = {}
+        categories: dict[str, int] = {}
+        for stage in _PROVENANCE_STAGE_ORDER:
+            removed = int(per_stage_source[stage].get(source, 0) or 0)
+            if not removed:
+                continue
+            by_stage[stage] = removed
+            remaining = max(remaining - removed, 0)
+            if stage == "hostname":
+                stage_categories = (host_report.get("by_source_failure_category") or {}).get(
+                    source, {}
+                )
+            elif stage == "endpoint":
+                stage_categories = (endpoint_report.get("by_source_failure_category") or {}).get(
+                    source, {}
+                )
+            else:
+                stage_categories = {stage_deltas[stage]["reason"]: removed}
+            for category, count in stage_categories.items():
+                categories[str(category)] = categories.get(str(category), 0) + int(count or 0)
+            if remaining == 0 and removed_at_stage is None:
+                removed_at_stage = stage
+        if removed_at_stage is None:
+            removed_at_stage = "unattributed"
+        if not categories:
+            categories = {"unattributed": generated_entries.get(source, 0)}
+        results.append(
+            {
+                "source": source,
+                "unique_nodes": generated_unique_nodes,
+                "final_unique_nodes": final_unique.get(source, 0),
+                "runtime_entries": generated_entries.get(source, 0),
+                "final_runtime_entries": final_entries.get(source, 0),
+                "removed_at_stage": removed_at_stage,
+                "by_stage": dict(sorted(by_stage.items())),
+                "by_failure_category": dict(sorted(categories.items())),
+            }
+        )
+    return results
+
+
 def _removed_nodes_summary(
     *,
     host_report: dict[str, Any],
@@ -186,46 +427,25 @@ def _removed_nodes_summary(
     generated_source_counts: dict[str, int],
     generated_unique_source_counts: dict[str, int],
     final_document: dict[str, Any],
+    stage_deltas: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Aggregate-only accounting of nodes removed by qualification.
+    """Legacy aggregate removal block (runtime-entry semantics).
 
-    Surfaces the removal dimensions (source/region/protocol/failure category)
-    and flags every subscription source whose entire runtime inventory was
-    removed, so a silently emptied subscription always has an explainable,
-    privacy-safe reason attached.
+    ``by_source``/``by_region``/``by_protocol``/``by_failure_category`` count
+    runtime entries, not physical nodes; the deduplicated physical-endpoint
+    view lives in ``unique_nodes`` and in the top-level ``removed_by_stage``
+    and ``qualification_removed_unique_nodes`` fields.
     """
 
-    generated_entries = generated_source_counts
-    generated_unique = generated_unique_source_counts
-    final_entries = _source_node_counts(final_document)
-    final_unique = _source_node_counts(final_document, unique=True)
-    by_source_failure_category: dict[str, dict[str, int]] = {}
-    for report in (host_report, endpoint_report):
-        for source, categories in (report.get("by_source_failure_category") or {}).items():
-            bucket = by_source_failure_category.setdefault(str(source), {})
-            for category, count in (categories or {}).items():
-                bucket[str(category)] = bucket.get(str(category), 0) + int(count or 0)
-    sources_fully_removed = []
-    for source in sorted(set(generated_unique) | set(final_unique)):
-        generated_unique_nodes = generated_unique.get(source, 0)
-        final_unique_nodes = final_unique.get(source, 0)
-        if generated_unique_nodes == 0 or final_unique_nodes > 0:
-            continue
-        sources_fully_removed.append(
-            {
-                "source": source,
-                "unique_nodes": generated_unique_nodes,
-                "final_unique_nodes": final_unique_nodes,
-                "runtime_entries": generated_entries.get(source, 0),
-                "final_runtime_entries": final_entries.get(source, 0),
-                "by_failure_category": dict(
-                    sorted(by_source_failure_category.get(source, {}).items())
-                ),
-            }
-        )
+    sources_fully_removed = _sources_fully_removed(
+        stage_deltas=stage_deltas,
+        generated_entries=generated_source_counts,
+        generated_unique=generated_unique_source_counts,
+        final_document=final_document,
+        host_report=host_report,
+        endpoint_report=endpoint_report,
+    )
     return {
-        # Quarantine accounting is deduplicated to unique physical endpoints;
-        # runtime_entries keeps the raw entry count for the same removals.
         "unique_nodes": int(host_report.get("unique_quarantined_nodes", 0) or 0)
         + int(endpoint_report.get("unique_quarantined_nodes", 0) or 0),
         "runtime_entries": int(host_report.get("quarantined", 0) or 0)
@@ -328,13 +548,17 @@ def run_qualification_pipeline(
     generated_document = load_yaml_file(generated)
     if not isinstance(generated_document, dict):
         raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
-    # Snapshot per-source counts before preflight stages prune the payloads.
+    # Snapshot per-source counts and the full entry inventory before preflight
+    # stages prune the payloads; the inventories feed per-stage attribution.
     generated_source_counts = _source_node_counts(generated_document)
     generated_unique_source_counts = _source_node_counts(generated_document, unique=True)
+    preflight_inventory = _entry_inventory(generated_document)
     proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
+    post_host_inventory = _entry_inventory(generated_document)
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(
         generated_document, workers=workers
     )
+    post_endpoint_inventory = _entry_inventory(generated_document)
     atomic_write(generated, dump_yaml(generated_document, header=True))
     generated_artifact = _artifact(generated, "proxy_host_qualified")
     browsing_started = time.perf_counter()
@@ -450,6 +674,40 @@ def run_qualification_pipeline(
     final_document = load_yaml_file(output)
     if not isinstance(final_document, dict):
         raise ValidationError("final qualified candidate is not a YAML mapping")
+    browsing_document = load_yaml_file(browsing)
+    if not isinstance(browsing_document, dict):
+        raise ValidationError("browsing qualified stage is not a YAML mapping")
+    ai_document = load_yaml_file(ai)
+    if not isinstance(ai_document, dict):
+        raise ValidationError("ai qualified stage is not a YAML mapping")
+    stage_deltas = _build_stage_accounting(
+        preflight_inventory=preflight_inventory,
+        post_host_inventory=post_host_inventory,
+        post_endpoint_inventory=post_endpoint_inventory,
+        browsing_document=browsing_document,
+        browsing_summary=browsing_summary,
+        ai_document=ai_document,
+        service_document=service_document,
+        final_document=final_document,
+        host_report=proxy_host_resolution,
+        endpoint_report=endpoint_qualification,
+    )
+    sources_fully_removed = _sources_fully_removed(
+        stage_deltas=stage_deltas,
+        generated_entries=generated_source_counts,
+        generated_unique=generated_unique_source_counts,
+        final_document=final_document,
+        host_report=proxy_host_resolution,
+        endpoint_report=endpoint_qualification,
+    )
+    removed_unique_total = sum(
+        stage_deltas[stage]["unique_nodes"]["removed"]
+        for stage in ("hostname", "endpoint", "browsing", "ai", "service_hardening")
+    )
+    removed_entries_total = sum(
+        stage_deltas[stage]["runtime_entries"]["removed"]
+        for stage in ("hostname", "endpoint", "browsing", "ai", "service_hardening")
+    )
     result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,
@@ -463,12 +721,17 @@ def run_qualification_pipeline(
         "browsing": browsing_block,
         "proxy_host_resolution": proxy_host_resolution,
         "endpoint_qualification": endpoint_qualification,
+        "qualification_removed_unique_nodes": removed_unique_total,
+        "qualification_removed_runtime_entries": removed_entries_total,
+        "removed_by_stage": stage_deltas,
+        "sources_fully_removed": sources_fully_removed,
         "removed_nodes": _removed_nodes_summary(
             host_report=proxy_host_resolution,
             endpoint_report=endpoint_qualification,
             generated_source_counts=generated_source_counts,
             generated_unique_source_counts=generated_unique_source_counts,
             final_document=final_document,
+            stage_deltas=stage_deltas,
         ),
         "node_quality_tiers": _quality_tier_summary(
             host_report=proxy_host_resolution,

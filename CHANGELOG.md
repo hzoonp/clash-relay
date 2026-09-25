@@ -22,6 +22,10 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ### Fixed
 
+- Qualification now reports per-stage removal provenance (`removed_by_stage` across hostname, endpoint, browsing, transport, AI, and service hardening) plus canonical totals (`qualification_removed_unique_nodes`, `qualification_removed_runtime_entries`), and `sources_fully_removed` entries carry `removed_at_stage`, `by_stage`, and non-empty failure-category reasons — a source removed by a late stage can no longer surface without an explanation.
+- The A/AAAA evidence merge never downgrades a resolver failure into DNS negative evidence: a server failure, malformed response, or transport failure keeps the merged record inconclusive, and inconclusive records cannot join the two-resolver negative quorum.
+- DoH resolver endpoints are normalized and deduplicated by authority (host, port, path), so the same resolver declared twice casts one vote; the DNS runtime audit rejects duplicate resolver authorities.
+- TCP endpoint probes stop an attempt at the first reachable address, deduplicate resolved addresses, and carry a per-attempt time budget so many resolved addresses cannot multiply into attempts × timeout of runner time.
 - Proxy hostname qualification no longer treats non-DoH `proxy-server-nameserver` entries (such as the `system` OS resolver used by `cn_three_net`) as DoH JSON endpoints; the runner-side preflight probes only HTTPS DoH endpoints, still requires two of them, and a malformed or failing resolver entry degrades to per-resolver transport failure instead of crashing the qualification stage.
 - The hostname qualification cache stores full per-endpoint evidence with the verdict, and evidence is never reused across hostnames (a stale-variable regression could corrupt DNS-response accounting on duplicate hostnames).
 - DNS negative verdicts now require two independent DoH endpoints to agree on NXDOMAIN/no-answer before quarantining; a single negative combined with transport failures elsewhere is inconclusive and keeps the node.

@@ -59,39 +59,69 @@ def _public_address(value: object) -> bool:
     )
 
 
+def _resolver_authority(endpoint: str) -> tuple[str, str, int, str] | None:
+    """Return the normalized resolver authority, or None when unusable."""
+
+    try:
+        parsed = urllib.parse.urlsplit(str(endpoint))
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme != "https" or not parsed.hostname:
+        return None
+    return (
+        parsed.scheme.lower(),
+        parsed.hostname.lower().rstrip("."),
+        port or 443,
+        parsed.path or "/",
+    )
+
+
 def _doh_endpoints(resolvers: list[Any]) -> list[str]:
-    """Keep only runner-executable DoH endpoints.
+    """Keep one endpoint per distinct resolver authority.
 
     The runner can probe HTTPS DoH endpoints only; a ``system`` entry names the
     OS resolver and other non-HTTPS entries are not DoH, so they cannot take
     part in this global preflight and are excluded instead of crashing the
-    stage. Admission stays fail-closed through the two-endpoint minimum below.
+    stage. The same resolver declared twice (same host, port, and path) is one
+    resolver with one vote — negative quorum requires distinct authorities.
     """
 
     endpoints: list[str] = []
+    seen: set[tuple[str, str, int, str]] = set()
     for resolver in resolvers:
-        try:
-            parsed = urllib.parse.urlsplit(str(resolver))
-        except ValueError:
+        authority = _resolver_authority(str(resolver))
+        if authority is None:
             continue
-        if parsed.scheme == "https" and parsed.hostname:
-            endpoints.append(str(resolver))
+        if authority in seen:
+            continue
+        seen.add(authority)
+        endpoints.append(str(resolver))
     return endpoints
 
 
 def _merge_dual_records(records: list[tuple[bool, str]]) -> tuple[bool, str]:
-    """Merge the A and AAAA probe results of one endpoint."""
+    """Merge the A and AAAA probe results of one endpoint.
+
+    A public answer wins. Otherwise the merged record is a definitive negative
+    only when every response was a definitive negative; any server failure,
+    malformed response, or transport failure stays inconclusive and must never
+    be downgraded into negative evidence.
+    """
 
     if any(answered for answered, _ in records):
         return True, "answered"
     categories = [category for _, category in records]
-    if "nxdomain" in categories:
+    if "nxdomain" in categories and all(
+        category in _DNS_CONFIRMED_CATEGORIES for category in categories
+    ):
         return False, "nxdomain"
-    responses = [category for category in categories if category in ANSWER_CATEGORIES]
-    if responses and all(category in _DNS_CONFIRMED_CATEGORIES for category in responses):
+    if categories and all(category in _DNS_CONFIRMED_CATEGORIES for category in categories):
         return False, "no_answer"
-    transports = [category for category in categories if category not in ANSWER_CATEGORIES]
-    return False, (transports[0] if transports else "no_answer")
+    non_definitive = [
+        category for category in categories if category not in _DNS_CONFIRMED_CATEGORIES
+    ]
+    return False, (non_definitive[0] if non_definitive else "no_answer")
 
 
 def _probe_hostname(endpoint: str, hostname: str, *, allow_aaaa: bool) -> tuple[bool, str]:
@@ -117,8 +147,12 @@ def _verdict(results: list[tuple[bool, str]]) -> tuple[str, str]:
     negatives = [category for _, category in results if category in _DNS_CONFIRMED_CATEGORIES]
     if len(negatives) >= _MIN_AGREEING_NEGATIVES:
         return "dns_unresolved", ("nxdomain" if "nxdomain" in negatives else "no_answer")
-    failures = [category for _, category in results if category not in ANSWER_CATEGORIES]
-    first_failure = negatives[0] if negatives else (failures[0] if failures else "transport_error")
+    non_definitive = [
+        category for _, category in results if category not in _DNS_CONFIRMED_CATEGORIES
+    ]
+    first_failure = (
+        negatives[0] if negatives else (non_definitive[0] if non_definitive else "transport_error")
+    )
     return "inconclusive", first_failure
 
 
@@ -180,6 +214,11 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
     allow_aaaa = bool(dns.get("ipv6", False)) if isinstance(dns, dict) else False
     counts: Counter[str] = Counter()
     dns_responses = 0
+    by_source: Counter[str] = Counter()
+    by_region: Counter[str] = Counter()
+    by_protocol: Counter[str] = Counter()
+    by_failure_category: Counter[str] = Counter()
+    by_source_failure_category: dict[str, Counter[str]] = {}
     unique_quarantined: dict[_UniqueKey, tuple[str, str]] = {}
     cache: dict[str, tuple[list[tuple[bool, str]], str, str]] = {}
     for provider_name, provider in providers.items():
@@ -223,6 +262,11 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
             counts["unresolved"] += 1
             counts["quarantined"] += 1
             source = _source(proxy.get("name"))
+            by_source[source] += 1
+            by_region[_region(str(provider_name))] += 1
+            by_protocol[protocol] += 1
+            by_failure_category[failure_category] += 1
+            by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
             key: _UniqueKey = (
                 source,
                 server,
@@ -239,15 +283,9 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         raise ValidationError(
             "proxy hostname qualification is inconclusive: no resolver returned a DNS response"
         )
-    by_source: Counter[str] = Counter(key[0] for key in unique_quarantined)
-    by_region: Counter[str] = Counter(region for region, _ in unique_quarantined.values())
-    by_protocol: Counter[str] = Counter(key[3] for key in unique_quarantined)
-    by_failure_category: Counter[str] = Counter(
-        category for _, category in unique_quarantined.values()
-    )
-    by_source_failure_category: dict[str, Counter[str]] = {}
-    for key, (_region_name, category) in unique_quarantined.items():
-        by_source_failure_category.setdefault(key[0], Counter())[category] += 1
+    # Aggregate dimensions are runtime-entry counts; unique_quarantined_nodes
+    # carries the deduplicated physical-endpoint view for the same removals.
+
     return {
         "status": "passed",
         **{

@@ -111,12 +111,13 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
 
         {"schema_version": 1, "collected_at_epoch": 1760000000,
          "carriers": {"telecom": {"tested": 40, "reachable": 38,
-         "median_latency_ms": 52.4}, ...}}
+         "median_latency_ms": 52.4}, ...}}  # collected_at_epoch required
 
-    ``collected_at_epoch`` is optional. Anything else — unknown carriers,
-    unknown row or payload keys, negative or non-integer counts, raw sample
-    lists, or identity-bearing fields — fails closed. Carriers are optional
-    and may cover any subset.
+    ``collected_at_epoch`` is required so stale input can never pose as
+    passed evidence. Anything else — unknown carriers, unknown row or payload
+    keys, negative or non-integer counts, raw sample lists, or
+    identity-bearing fields — fails closed. Carriers are optional and may
+    cover any subset.
     """
 
     if not isinstance(payload, Mapping):
@@ -157,6 +158,8 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
     seen = {row.carrier for row in rows}
     if len(seen) != len(rows):
         raise ValidationError("carrier qualification payload repeats a carrier")
+    if "collected_at_epoch" not in payload:
+        raise ValidationError("carrier qualification payload requires collected_at_epoch")
     if "collected_at_epoch" in payload:
         collected = payload["collected_at_epoch"]
         if not isinstance(collected, int) or isinstance(collected, bool):

@@ -69,15 +69,17 @@ def test_carrier_aggregate_rejects_raw_mapping_input() -> None:
 def test_carrier_payload_parses_self_hosted_aggregates() -> None:
     payload = {
         "schema_version": 1,
+        "collected_at_epoch": 1_000,
         "carriers": {
             "telecom": {"tested": 40, "reachable": 38, "median_latency_ms": 52.4},
             "mobile": {"tested": 40, "reachable": 39, "median_latency_ms": 48.2},
         },
     }
 
-    report = run_carrier_qualification(payload)
+    report = run_carrier_qualification(payload, now_epoch=1_000 + 30)
 
     assert report["status"] == "passed"
+    assert report["freshness"]["status"] == "current"
     assert set(report["carriers"]) == {"mobile", "telecom"}
     assert report["aggregate"]["carriers_reported"] == 2
     assert report["aggregate"]["tested"] == 80
@@ -128,10 +130,11 @@ def test_carrier_payload_rejects_invalid_or_identity_bearing_input(payload) -> N
 def test_carrier_payload_never_echoes_input_identities() -> None:
     payload = {
         "schema_version": 1,
+        "collected_at_epoch": 5_000,
         "carriers": {"unicom": {"tested": 20, "reachable": 20, "median_latency_ms": 40.0}},
     }
 
-    report = run_carrier_qualification(payload)
+    report = run_carrier_qualification(payload, now_epoch=5_000)
     serialized = json.dumps(report)
 
     assert report["status"] == "passed"
