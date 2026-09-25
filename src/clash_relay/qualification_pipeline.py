@@ -13,6 +13,7 @@ from typing import Any
 from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
 from .carrier_qualification import run_carrier_qualification
+from .classify import proxy_fingerprint
 from .errors import ValidationError
 from .policy_document import load_policy_document
 from .proxy_endpoint_qualification import (
@@ -143,14 +144,14 @@ def _carrier_report(carrier_input: Path | None) -> dict[str, Any]:
 def _source_node_counts(document: dict[str, Any], *, unique: bool = False) -> dict[str, int]:
     """Count nodes per subscription source (aggregate labels only).
 
-    ``unique`` counts distinct physical endpoints — the same node replicated
+    ``unique`` counts distinct full proxy fingerprints — the same node replicated
     into several runtime providers is one node; the default counts runtime
     entries.
     """
 
     providers = document.get("proxy-providers")
     counts: dict[str, int] = {}
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     if not isinstance(providers, dict):
         return counts
     for provider in providers.values():
@@ -161,15 +162,8 @@ def _source_node_counts(document: dict[str, Any], *, unique: bool = False) -> di
             if not isinstance(proxy, dict):
                 continue
             source = _source(proxy.get("name"))
-            if source == "other":
-                continue
             if unique:
-                key = (
-                    source,
-                    str(proxy.get("server")),
-                    str(proxy.get("port")),
-                    str(proxy.get("type")),
-                )
+                key = (source, proxy_fingerprint(proxy))
                 if key in seen:
                     continue
                 seen.add(key)
@@ -207,11 +201,14 @@ def _entry_inventory(document: dict[str, Any]) -> dict[str, dict[str, str]]:
                 continue
             source = _source(name)
             protocol = str(proxy.get("type", "unknown"))
-            inventory[name] = {
+            entry_key = f"{provider_name}\0{name}"
+            if entry_key in inventory:
+                raise ValidationError("qualification inventory has duplicate provider entries")
+            inventory[entry_key] = {
                 "source": source,
                 "region": region,
                 "protocol": protocol,
-                "unique": (f"{source}|{proxy.get('server')}|{proxy.get('port')}|{protocol}"),
+                "unique": f"{source}|{proxy_fingerprint(proxy)}",
             }
     return inventory
 
@@ -233,7 +230,14 @@ def _stage_delta(
     after_unique = {row["unique"] for row in after.values()}
     if after_unique - before_unique or (added_names and stage != "service_hardening"):
         raise ValidationError(f"{stage} qualification stage added runtime inventory")
-    removed_unique = len(before_unique - after_unique)
+    removed_unique_set = before_unique - after_unique
+    removed_unique = len(removed_unique_set)
+    unique_sources = {
+        row["unique"]: row["source"]
+        for row in before.values()
+        if row["unique"] in removed_unique_set
+    }
+    unique_by_source: Counter[str] = Counter(unique_sources.values())
     by_source: Counter[str] = Counter(row["source"] for row in removed_rows)
     by_region: Counter[str] = Counter(row["region"] for row in removed_rows)
     by_protocol: Counter[str] = Counter(row["protocol"] for row in removed_rows)
@@ -259,6 +263,10 @@ def _stage_delta(
         },
         "runtime_entries": runtime_entries,
         "by_source": dict(sorted(by_source.items())),
+        "unique_by_source": dict(sorted(unique_by_source.items())),
+        "added_by_source": dict(
+            sorted(Counter(after[name]["source"] for name in added_names).items())
+        ),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),
         "failure_category": categories,
@@ -283,6 +291,8 @@ def _transport_stage_entry(
         "unique_nodes": {"before": after_unique, "after": after_unique, "removed": 0},
         "runtime_entries": {"before": after_entries, "after": after_entries, "removed": 0},
         "by_source": {},
+        "unique_by_source": {},
+        "added_by_source": {},
         "by_region": {},
         "by_protocol": {},
         "failure_category": {},
@@ -443,7 +453,7 @@ def _removed_nodes_summary(
     """Legacy aggregate removal block (runtime-entry semantics).
 
     ``by_source``/``by_region``/``by_protocol``/``by_failure_category`` count
-    runtime entries, not physical nodes; the deduplicated physical-endpoint
+    runtime entries, not logical nodes; the full-fingerprint logical-node
     view lives in ``unique_nodes`` and in the top-level ``removed_by_stage``
     and ``qualification_removed_unique_nodes`` fields.
     """

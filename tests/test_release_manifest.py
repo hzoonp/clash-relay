@@ -46,7 +46,8 @@ def _audit() -> dict:
                 "filtered_over_multiplier": 1,
                 "post_dedup_nodes": 2,
                 "runtime_nodes": 1,
-            }
+            },
+            {"id": "subscription_4", "status": "ok"},
         ],
         "pools": [
             {
@@ -85,6 +86,17 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
             "policy_model_version": 2,
             "qualification_removed_unique_nodes": 1,
             "qualification_removed_runtime_entries": 2,
+            "removed_by_stage": {
+                "browsing": {
+                    "unique_nodes": {"before": 1, "after": 1, "removed": 0},
+                    "runtime_entries": {"before": 2, "after": 1, "removed": 1},
+                    "by_source": {"sub_4": 1},
+                    "by_region": {"jp": 1},
+                    "by_protocol": {"trojan": 1},
+                    "failure_category": {"browsing_qualification_failed": 1},
+                    "server": "secret.example.invalid",
+                },
+            },
             "sources_fully_removed": [
                 {
                     "source": "sub_4",
@@ -132,7 +144,7 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     assert manifest["config_bytes"] == len(candidate_bytes)
     assert manifest["public_config_version"] == 2
     assert manifest["runtime"] == {"groups": 1, "providers": 1, "unique_nodes": 1}
-    assert manifest["sources"]["configured"] == 1
+    assert manifest["sources"]["configured"] == 2
     assert manifest["sources"]["input_nodes"] == 5
     assert manifest["sources"]["parsed_valid_nodes"] == 4
     assert manifest["sources"]["skipped_invalid_nodes"] == 1
@@ -149,6 +161,9 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
         "policy_rulesets": 15,
     }
     assert manifest["qualification"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
+    assert manifest["qualification"]["sources_fully_removed"][0]["source"] == "subscription_4"
+    assert manifest["qualification"]["removed_by_stage"]["browsing"]["by_region"] == {"jp": 1}
+    assert manifest["qualification"]["removed_by_stage"]["browsing"]["by_protocol"] == {"trojan": 1}
     assert (
         manifest["qualification"]["ai_service_evidence"]["openai"][
             "blocked_critical_endpoint_count"

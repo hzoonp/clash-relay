@@ -6,7 +6,6 @@ import contextlib
 import json
 import math
 import os
-import re
 import signal
 import socket
 import subprocess
@@ -21,6 +20,7 @@ from typing import Any
 
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .runtime_names import parse_runtime_source_name
 from .util import atomic_write, dump_yaml, load_yaml_file, stable_json
 from .validator import validate_generated_config
 
@@ -32,7 +32,6 @@ _DEFAULT_REQUIRED_SUCCESSES = 2
 _DEFAULT_WORKERS = 12
 _MIN_STABLE_AUTO_NODES = 3
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
-_RUNTIME_SOURCE = re.compile(r"^\[[^]]+\]\s+sub_([0-9]+)/")
 _SAFE_PROXY_TYPES = frozenset(
     {
         "ss",
@@ -216,8 +215,7 @@ def _runtime_source_id(proxy: dict[str, Any]) -> str | None:
     name = proxy.get("name")
     if not isinstance(name, str):
         return None
-    match = _RUNTIME_SOURCE.match(name)
-    return f"subscription_{match.group(1)}" if match is not None else None
+    return parse_runtime_source_name(name)
 
 
 def _runtime_proxy_type(proxy: dict[str, Any]) -> str | None:

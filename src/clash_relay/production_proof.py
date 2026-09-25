@@ -25,7 +25,9 @@ def _json_mapping(value: Any, label: str) -> dict[str, Any]:
     return value
 
 
-def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
+def _safe_qualification(
+    value: dict[str, Any] | None, *, known_source_ids: list[str]
+) -> dict[str, Any] | None:
     if value is None:
         return None
     if value.get("status") != "qualified":
@@ -48,7 +50,7 @@ def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
                 safe[name] = round(float(duration), 3)
         if safe:
             result["timings_ms"] = safe
-    result.update(safe_qualification_observability(value))
+    result.update(safe_qualification_observability(value, known_source_ids=known_source_ids))
     return result
 
 
@@ -190,7 +192,14 @@ def build_production_proof(
         "validated_cores": list(validated_cores),
         "publication": publication_status,
     }
-    safe_qualification = _safe_qualification(qualification)
+    safe_qualification = _safe_qualification(
+        qualification,
+        known_source_ids=[
+            row["id"]
+            for row in audit.get("subscriptions", [])
+            if isinstance(row, dict) and isinstance(row.get("id"), str)
+        ],
+    )
     if safe_qualification is not None:
         proof["qualification_pipeline"] = safe_qualification
     safe_release = _safe_release(release)

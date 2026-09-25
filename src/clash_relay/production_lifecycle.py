@@ -48,8 +48,10 @@ from .production_release_stage import (
     run_release_candidate_stage,
 )
 from .publication import publication_gate
+from .qualification_observability import safe_qualification_observability
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
 from .release_reliability import ReleasePhase, ReleaseProgress
+from .runtime_names import valid_source_id
 from .scheduler_observation import publish_scheduler_observation
 from .slo_application import persist_operational_slo
 from .util import atomic_write
@@ -403,32 +405,72 @@ class ProductionPipeline:
 
         pre_path = self._private("production-audit.json")
         post_path = self._private("post-qualification-audit.json")
-        if not pre_path.is_file() or not post_path.is_file():
+        qualification_path = self._private("qualification-pipeline-summary.json")
+        if not any(path.is_file() for path in (pre_path, post_path, qualification_path)):
             return []
-        try:
-            pre = self._load_json(pre_path)
-            post = self._load_json(post_path)
-        except ValidationError:
-            return []
+        pre = self._load_json(pre_path)
+        post = self._load_json(post_path)
+        qualification = self._load_json(qualification_path)
 
         def rows(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raw = document.get("subscriptions", [])
             if not isinstance(raw, list):
                 return {}
-            return {
-                str(item["id"]): item
-                for item in raw
-                if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
-            }
+            result: dict[str, dict[str, Any]] = {}
+            for item in raw:
+                if not isinstance(item, dict) or not valid_source_id(item.get("id")):
+                    raise ValidationError("production source accounting has invalid source IDs")
+                source_id = item["id"]
+                if source_id in result:
+                    raise ValidationError("production source accounting has duplicate source IDs")
+                result[source_id] = item
+            return result
 
         pre_rows = rows(pre)
         post_rows = rows(post)
+        if set(pre_rows) != set(post_rows):
+            raise ValidationError("production source inventories disagree on configured sources")
+        provenance = safe_qualification_observability(qualification, known_source_ids=pre_rows)
+        stage_rows = provenance["removed_by_stage"]
+        for row in stage_rows.values():
+            if (
+                sum(row["by_source"].values()) != row["runtime_entries"]["removed"]
+                or sum(row["added_by_source"].values()) != row["runtime_entries"]["added"]
+                or sum(row["unique_by_source"].values()) != row["unique_nodes"]["removed"]
+            ):
+                raise ValidationError("production stage source accounting drifted")
+        fully_removed = {row["source"]: row for row in provenance["sources_fully_removed"]}
+        if len(fully_removed) != len(provenance["sources_fully_removed"]):
+            raise ValidationError("production source accounting has duplicate removal provenance")
         result: list[dict[str, Any]] = []
-        for source_id in sorted(set(pre_rows) | set(post_rows)):
-            before = pre_rows.get(source_id, {})
-            after = post_rows.get(source_id, {})
+        for source_id in sorted(pre_rows):
+            before = pre_rows[source_id]
+            after = post_rows[source_id]
             generated_runtime = int(before.get("runtime_nodes", 0) or 0)
             final_runtime = int(after.get("runtime_nodes", 0) or 0)
+            by_stage = {
+                stage: row["by_source"][source_id]
+                for stage, row in stage_rows.items()
+                if source_id in row["by_source"]
+            }
+            removed_runtime = sum(by_stage.values())
+            added_runtime = sum(
+                row["added_by_source"].get(source_id, 0) for row in stage_rows.values()
+            )
+            removed_unique = sum(
+                row["unique_by_source"].get(source_id, 0) for row in stage_rows.values()
+            )
+            if generated_runtime + added_runtime - removed_runtime != final_runtime:
+                raise ValidationError("production source runtime accounting drifted")
+            full_removal = fully_removed.get(source_id)
+            if full_removal is not None and (
+                full_removal["by_stage"] != by_stage
+                or full_removal["runtime_entries"] != generated_runtime
+                or full_removal["unique_nodes"] != removed_unique
+                or full_removal["final_unique_nodes"] != 0
+                or final_runtime != 0
+            ):
+                raise ValidationError("production source removal provenance drifted")
             result.append(
                 {
                     "id": source_id,
@@ -439,11 +481,24 @@ class ProductionPipeline:
                     "filtered_over_multiplier": int(before.get("filtered_over_multiplier", 0) or 0),
                     "post_filter_nodes": int(before.get("post_multiplier_filter_nodes", 0) or 0),
                     "post_dedup_nodes": int(before.get("post_dedup_nodes", 0) or 0),
-                    "generated_runtime_nodes": generated_runtime,
-                    "final_runtime_nodes": final_runtime,
-                    "qualification_removed_nodes": max(0, generated_runtime - final_runtime),
+                    "generated_runtime_entries": generated_runtime,
+                    "removed_runtime_entries": removed_runtime,
+                    "added_runtime_entries": added_runtime,
+                    "final_runtime_entries": final_runtime,
+                    "removed_unique_nodes": removed_unique,
+                    "removed_at_stage": (
+                        full_removal["removed_at_stage"] if full_removal is not None else None
+                    ),
+                    "by_stage": by_stage,
                 }
             )
+        if (
+            sum(row["removed_runtime_entries"] for row in result)
+            != provenance["qualification_removed_runtime_entries"]
+            or sum(row["removed_unique_nodes"] for row in result)
+            != provenance["qualification_removed_unique_nodes"]
+        ):
+            raise ValidationError("production source removal totals drifted")
         return result
 
     def _record_operational_slo(

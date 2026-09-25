@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from .errors import ValidationError
+from .runtime_names import valid_source_id, validate_runtime_source_labels
 
 _STAGES = ("hostname", "endpoint", "browsing", "transport", "ai", "service_hardening", "final")
-_SOURCE = re.compile(r"^(?:sub_[1-5]|other)$")
 _CATEGORY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _EVIDENCE_STATUS = {"passed", "failed", "inconclusive"}
 _EVIDENCE_SOURCE = {"live", "cache", "mixed", "none"}
+_REGION = re.compile(r"^(?:hk|tw|sg|jp|us|kr|other)$")
+_PROTOCOL = re.compile(
+    r"^(?:ss|ssr|vmess|vless|trojan|http|socks5|snell|hysteria|hysteria2|tuic|anytls|wireguard|ssh|mieru|masque|unknown)$"
+)
 
 
 def _count(value: Any) -> int:
@@ -20,19 +25,47 @@ def _count(value: Any) -> int:
     return value
 
 
-def _labels(value: Any, pattern: re.Pattern[str]) -> dict[str, int]:
+def _labels(value: Any, pattern: re.Pattern[str] | None = None) -> dict[str, int]:
     if not isinstance(value, dict):
         raise ValidationError("qualification aggregate dimension is invalid")
     result: dict[str, int] = {}
     for label, count in sorted(value.items()):
-        if not isinstance(label, str) or pattern.fullmatch(label) is None:
+        safe_label = (
+            valid_source_id(label)
+            if pattern is None
+            else isinstance(label, str) and pattern.fullmatch(label) is not None
+        )
+        if not safe_label:
             raise ValidationError("qualification aggregate label is invalid")
         result[label] = _count(count)
     return result
 
 
-def safe_qualification_observability(value: dict[str, Any]) -> dict[str, Any]:
+def safe_qualification_observability(
+    value: dict[str, Any], *, known_source_ids: Iterable[str] | None = None
+) -> dict[str, Any]:
     """Project accounting and service evidence without copying private strings."""
+    try:
+        source_map = (
+            validate_runtime_source_labels(known_source_ids)
+            if known_source_ids is not None
+            else None
+        )
+    except ValueError as exc:
+        raise ValidationError("qualification source aliases are ambiguous") from exc
+
+    def source_counts(value: Any) -> dict[str, int]:
+        labels = _labels(value)
+        if source_map is None:
+            return labels
+        result: dict[str, int] = {}
+        for label, count in labels.items():
+            if label not in source_map:
+                raise ValidationError("qualification provenance contains an unknown source")
+            canonical = source_map[label]
+            result[canonical] = result.get(canonical, 0) + count
+        return dict(sorted(result.items()))
+
     stages = value.get("removed_by_stage", {})
     sources = value.get("sources_fully_removed", [])
     if not isinstance(stages, dict) or not isinstance(sources, list):
@@ -54,7 +87,11 @@ def safe_qualification_observability(value: dict[str, Any]) -> dict[str, Any]:
                 counts[kind]["added"] = _count(values.get("added", 0))
         removed_by_stage[stage] = {
             **counts,
-            "by_source": _labels(row.get("by_source", {}), _SOURCE),
+            "by_source": source_counts(row.get("by_source", {})),
+            "unique_by_source": source_counts(row.get("unique_by_source", {})),
+            "added_by_source": source_counts(row.get("added_by_source", {})),
+            "by_region": _labels(row.get("by_region", {}), _REGION),
+            "by_protocol": _labels(row.get("by_protocol", {}), _PROTOCOL),
             "failure_category": _labels(row.get("failure_category", {}), _CATEGORY),
         }
     fully_removed: list[dict[str, Any]] = []
@@ -63,8 +100,12 @@ def safe_qualification_observability(value: dict[str, Any]) -> dict[str, Any]:
             raise ValidationError("fully removed source provenance is invalid")
         source = row.get("source")
         removal_stage = row.get("removed_at_stage")
-        if not isinstance(source, str) or _SOURCE.fullmatch(source) is None:
+        if not valid_source_id(source):
             raise ValidationError("fully removed source label is invalid")
+        if source_map is not None:
+            if source not in source_map:
+                raise ValidationError("fully removed source is unknown")
+            source = source_map[source]
         if not isinstance(removal_stage, str) or removal_stage not in (*_STAGES, "unattributed"):
             raise ValidationError("fully removed source stage is invalid")
         fully_removed.append(
@@ -137,16 +178,18 @@ def safe_qualification_observability(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def render_qualification_observability_markdown(value: dict[str, Any]) -> str:
+def render_qualification_observability_markdown(
+    value: dict[str, Any], *, known_source_ids: Iterable[str] | None = None
+) -> str:
     """Render source removal attribution and AI evidence for Actions."""
-    safe = safe_qualification_observability(value)
+    safe = safe_qualification_observability(value, known_source_ids=known_source_ids)
     lines = [
         "## Qualification provenance",
         "",
         f"Removed: **{safe['qualification_removed_unique_nodes']} unique nodes / {safe['qualification_removed_runtime_entries']} runtime entries**",
         "",
-        "| Stage | Unique nodes before / after / removed | Runtime entries before / after / removed / added | Aggregate failure reason |",
-        "| --- | ---: | ---: | --- |",
+        "| Stage | Unique nodes before / after / removed | Runtime entries before / after / removed / added | By source | By region | By protocol | Aggregate failure reason |",
+        "| --- | ---: | ---: | --- | --- | --- | --- |",
     ]
     for stage, row in safe["removed_by_stage"].items():
         unique = row["unique_nodes"]
@@ -155,8 +198,12 @@ def render_qualification_observability_markdown(value: dict[str, Any]) -> str:
             ", ".join(f"{name}: {count}" for name, count in row["failure_category"].items())
             or "none"
         )
+        dimensions = [
+            ", ".join(f"{name}: {count}" for name, count in row[key].items()) or "none"
+            for key in ("by_source", "by_region", "by_protocol")
+        ]
         lines.append(
-            f"| {stage} | {unique['before']} / {unique['after']} / {unique['removed']} | {runtime['before']} / {runtime['after']} / {runtime['removed']} / {runtime['added']} | {reason} |"
+            f"| {stage} | {unique['before']} / {unique['after']} / {unique['removed']} | {runtime['before']} / {runtime['after']} / {runtime['removed']} / {runtime['added']} | {' | '.join(dimensions)} | {reason} |"
         )
     lines.extend(
         [

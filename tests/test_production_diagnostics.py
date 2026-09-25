@@ -174,7 +174,7 @@ def test_qualification_core_rejection_drops_unknown_diagnostics() -> None:
         retryable=False,
         diagnostics={
             "core_rejection_isolation": "private-token",
-            "core_rejection_sources": ["private-source"],
+            "core_rejection_sources": ["https://private.example/token"],
             "core_rejection_proxy_types": ["private-type"],
         },
     )

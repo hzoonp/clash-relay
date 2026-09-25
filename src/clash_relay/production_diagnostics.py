@@ -8,7 +8,6 @@ behavior.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
@@ -26,6 +25,7 @@ from .errors import (
     ValidationError,
 )
 from .qualification_reliability import QualificationStageRejected
+from .runtime_names import valid_source_id
 
 
 class ProductionFailureCategory(StrEnum):
@@ -44,7 +44,6 @@ class ProductionFailureCategory(StrEnum):
     UNKNOWN = "unknown"
 
 
-_SAFE_RUNTIME_SOURCE_ID = re.compile(r"^subscription_[0-9]+$")
 _SAFE_CORE_REJECTION_ISOLATIONS = frozenset({"isolated", "combined", "unavailable"})
 _SAFE_PROXY_TYPES = frozenset(
     {
@@ -252,13 +251,7 @@ def _safe_qualification_diagnostics(
 
     sources = diagnostics.get("core_rejection_sources")
     if isinstance(sources, list):
-        safe_sources = sorted(
-            {
-                value
-                for value in sources
-                if isinstance(value, str) and _SAFE_RUNTIME_SOURCE_ID.fullmatch(value)
-            }
-        )
+        safe_sources = sorted({value for value in sources if valid_source_id(value)})
         if safe_sources:
             result["core_rejection_sources"] = safe_sources
 

@@ -32,7 +32,6 @@ from typing import Any
 _STATUS_OUTCOME_PREFIX = "status_"
 _MIN_BLOCKED_REGIONS = 2
 _MIN_CONTROL_REGIONS = 2
-_DOMINANT_OUTCOME_RATIO = 0.8
 
 
 def select_sentinels(
@@ -100,6 +99,8 @@ def evaluate_endpoint_blockage(
             continue
         if not set(failing_regions) <= set(control_ok_regions):
             continue  # control coverage must span every verdict region
+        if len(control_ok_regions) < _MIN_CONTROL_REGIONS:
+            continue  # control evidence itself must span at least two regions
         blocked.append(endpoint)
     systemic = bool(blocked)
     if systemic:

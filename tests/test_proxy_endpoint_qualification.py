@@ -17,19 +17,19 @@ def _candidate() -> dict:
             "cr_browsing_jp": {
                 "payload": [
                     {
-                        "name": "[BROWSING:JP] sub_2/Good",
+                        "name": "[BROWSING:JP] sub_2/Good #0000000000",
                         "type": "trojan",
                         "server": "good.example",
                         "port": 443,
                     },
                     {
-                        "name": "[BROWSING:JP] sub_2/Dead",
+                        "name": "[BROWSING:JP] sub_2/Dead #0000000000",
                         "type": "vless",
                         "server": "dead.example",
                         "port": 443,
                     },
                     {
-                        "name": "[BROWSING:JP] sub_2/UDP",
+                        "name": "[BROWSING:JP] sub_2/UDP #0000000000",
                         "type": "hysteria2",
                         "server": "udp.example",
                         "port": 443,
@@ -117,19 +117,19 @@ def test_transient_endpoint_failures_admit_as_reserve(monkeypatch) -> None:
     candidate = _candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
         {
-            "name": "[BROWSING:JP] sub_2/Good",
+            "name": "[BROWSING:JP] sub_2/Good #0000000000",
             "type": "trojan",
             "server": "good.example",
             "port": 443,
         },
         {
-            "name": "[BROWSING:JP] sub_2/Flaky",
+            "name": "[BROWSING:JP] sub_2/Flaky #0000000000",
             "type": "vless",
             "server": "flaky.example",
             "port": 443,
         },
         {
-            "name": "[BROWSING:JP] sub_2/Dead",
+            "name": "[BROWSING:JP] sub_2/Dead #0000000000",
             "type": "vmess",
             "server": "dead.example",
             "port": 443,
@@ -164,12 +164,17 @@ def test_runner_dns_failure_keeps_stage_qualified_hostname(monkeypatch) -> None:
     candidate = _candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
         {
-            "name": "[BROWSING:JP] sub_2/Dead",
+            "name": "[BROWSING:JP] sub_2/Dead #0000000000",
             "type": "vless",
             "server": "dead.example",
             "port": 443,
         },
-        {"name": "[BROWSING:JP] sub_2/Alive", "type": "ss", "server": "8.8.4.4", "port": 443},
+        {
+            "name": "[BROWSING:JP] sub_2/Alive #0000000000",
+            "type": "ss",
+            "server": "8.8.4.4",
+            "port": 443,
+        },
     ]
     report = quarantine_unreachable_tcp_endpoints(candidate)
 
@@ -306,6 +311,42 @@ def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) 
     with pytest.raises(ValidationError, match="empty a proxy provider"):
         quarantine_unreachable_tcp_endpoints(candidate)
     assert len(candidate["proxy-providers"]["cr_browsing_jp"]["payload"]) == 2
+
+
+def test_one_tcp_endpoint_can_contain_two_distinct_logical_nodes(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "clash_relay.proxy_endpoint_qualification._probe_tcp",
+        lambda server, _port: (server == "8.8.4.4", "refused", 1 if server == "8.8.4.4" else 0),
+    )
+    candidate = _candidate()
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
+        {
+            "name": "[BROWSING:JP] provider_a/First #0000000001",
+            "type": "trojan",
+            "server": "shared.example",
+            "port": 443,
+            "password": "first",
+        },
+        {
+            "name": "[BROWSING:JP] provider_a/Second #0000000002",
+            "type": "trojan",
+            "server": "shared.example",
+            "port": 443,
+            "password": "second",
+        },
+        {
+            "name": "[BROWSING:JP] provider_a/Alive #0000000003",
+            "type": "trojan",
+            "server": "8.8.4.4",
+            "port": 443,
+            "password": "alive",
+        },
+    ]
+    report = quarantine_unreachable_tcp_endpoints(candidate)
+    assert report["quarantined"] == 2
+    assert report["unique_quarantined_nodes"] == 2
+    assert report["unique_quarantined_endpoints"] == 1
+    assert report["by_source"] == {"provider_a": 2}
 
 
 def test_client_health_retries_are_bounded_without_touching_ai() -> None:

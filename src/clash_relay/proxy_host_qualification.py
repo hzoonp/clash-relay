@@ -21,27 +21,27 @@ Failure semantics are deliberately anti-false-kill:
   the inventory.
 
 Probe evidence is cached per hostname (never reused across hostnames), and
-quarantine accounting is deduplicated to unique physical endpoints
-(source, server, port, protocol); the same node replicated across providers is
-one unique node with multiple runtime entries.
+quarantine accounting deduplicates logical nodes by the full proxy fingerprint.
+Hostname probes are cached per hostname, while provider copies remain separate
+runtime entries.
 """
 
 from __future__ import annotations
 
 import ipaddress
-import re
 import urllib.parse
 from collections import Counter
 from typing import Any
 
+from .classify import proxy_fingerprint
 from .dns_wire import ANSWER_CATEGORIES, probe_doh
 from .errors import ValidationError
+from .runtime_names import parse_runtime_source_name
 
-_SOURCE_NAME = re.compile(r"\b(sub_[1-5])/", re.ASCII)
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
 _DNS_CONFIRMED_CATEGORIES = frozenset({"nxdomain", "no_answer"})
 _MIN_AGREEING_NEGATIVES = 2
-_UniqueKey = tuple[str, str, str, str]
+_UniqueKey = tuple[str, str]
 
 
 def _public_address(value: object) -> bool:
@@ -157,8 +157,10 @@ def _verdict(results: list[tuple[bool, str]]) -> tuple[str, str]:
 
 
 def _source(name: object) -> str:
-    match = _SOURCE_NAME.search(name) if isinstance(name, str) else None
-    return match.group(1) if match else "other"
+    source = parse_runtime_source_name(name)
+    if source is None:
+        raise ValidationError("proxy hostname qualification found an invalid runtime source name")
+    return source
 
 
 def _region(provider_name: str) -> str:
@@ -177,6 +179,7 @@ def _empty_report() -> dict[str, Any]:
         "resolver_disagreement": 0,
         "quarantined": 0,
         "unique_quarantined_nodes": 0,
+        "unique_quarantined_hostnames": 0,
         "by_source": {},
         "by_region": {},
         "by_protocol": {},
@@ -220,6 +223,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
     by_failure_category: Counter[str] = Counter()
     by_source_failure_category: dict[str, Counter[str]] = {}
     unique_quarantined: dict[_UniqueKey, tuple[str, str]] = {}
+    quarantined_hostnames: set[str] = set()
     cache: dict[str, tuple[list[tuple[bool, str]], str, str]] = {}
     for provider_name, provider in providers.items():
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
@@ -267,13 +271,9 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
             by_protocol[protocol] += 1
             by_failure_category[failure_category] += 1
             by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
-            key: _UniqueKey = (
-                source,
-                server,
-                str(proxy.get("port", "")),
-                protocol,
-            )
+            key: _UniqueKey = (source, proxy_fingerprint(proxy))
             unique_quarantined.setdefault(key, (_region(str(provider_name)), failure_category))
+            quarantined_hostnames.add(server)
         if not kept:
             raise ValidationError("proxy hostname qualification would empty a provider")
         provider["payload"] = kept
@@ -284,7 +284,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
             "proxy hostname qualification is inconclusive: no resolver returned a DNS response"
         )
     # Aggregate dimensions are runtime-entry counts; unique_quarantined_nodes
-    # carries the deduplicated physical-endpoint view for the same removals.
+    # carries the full-fingerprint logical-node view for the same removals.
 
     return {
         "status": "passed",
@@ -301,6 +301,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
             )
         },
         "unique_quarantined_nodes": len(unique_quarantined),
+        "unique_quarantined_hostnames": len(quarantined_hostnames),
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),

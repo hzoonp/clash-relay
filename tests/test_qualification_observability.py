@@ -106,6 +106,19 @@ def test_projection_rejects_identity_bearing_labels() -> None:
         safe_qualification_observability(private)
 
 
+def test_public_projection_maps_known_aliases_and_rejects_conflicts() -> None:
+    private = _private_summary()
+    private["removed_by_stage"]["browsing"]["by_region"] = {"jp": 1}
+    private["removed_by_stage"]["browsing"]["by_protocol"] = {"trojan": 1}
+    safe = safe_qualification_observability(private, known_source_ids=["subscription_4"])
+    assert safe["removed_by_stage"]["browsing"]["by_source"] == {"subscription_4": 1}
+    assert safe["removed_by_stage"]["browsing"]["by_region"] == {"jp": 1}
+    assert safe["removed_by_stage"]["browsing"]["by_protocol"] == {"trojan": 1}
+    assert safe["sources_fully_removed"][0]["source"] == "subscription_4"
+    with pytest.raises(ValidationError, match="aliases are ambiguous"):
+        safe_qualification_observability(private, known_source_ids=["subscription_4", "sub_4"])
+
+
 def test_projection_keeps_runtime_clone_additions_separate_from_removals() -> None:
     private = _private_summary()
     private["removed_by_stage"]["service_hardening"] = {

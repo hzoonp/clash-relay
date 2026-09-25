@@ -460,9 +460,9 @@ def _candidate_with_source_nodes(tmp_path: Path) -> Path:
         "proxy-providers:\n"
         "  cr_browsing_jp:\n"
         "    payload:\n"
-        "      - {name: '[BROWSING:JP] sub_2/One', type: trojan, server: a.example, port: 443}\n"
-        "      - {name: '[BROWSING:JP] sub_2/Two', type: vless, server: b.example, port: 443}\n"
-        "      - {name: '[BROWSING:JP] sub_3/One', type: trojan, server: c.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/One #0000000000', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Two #0000000000', type: vless, server: b.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_3/One #0000000000', type: trojan, server: c.example, port: 443}\n"
         "proxies: []\n"
         "proxy-groups: []\n",
         encoding="utf-8",
@@ -559,12 +559,12 @@ def test_pipeline_sources_fully_removed_report_unique_and_runtime_entries(
         "proxy-providers:\n"
         "  cr_browsing_jp:\n"
         "    payload:\n"
-        "      - {name: '[BROWSING:JP] sub_2/Solo', type: trojan, server: a.example, port: 443}\n"
-        "      - {name: '[BROWSING:JP] sub_2/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Solo #0000000000', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Ip #0000000000', type: ss, server: 8.8.4.4, port: 443}\n"
         "  cr_general_jp:\n"
         "    payload:\n"
-        "      - {name: '[GENERAL:ANY] sub_2/Solo', type: trojan, server: a.example, port: 443}\n"
-        "      - {name: '[GENERAL:ANY] sub_2/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "      - {name: '[GENERAL:ANY] sub_2/Solo #0000000000', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[GENERAL:ANY] sub_2/Ip #0000000000', type: ss, server: 8.8.4.4, port: 443}\n"
         "proxies: []\n"
         "proxy-groups: []\n",
         encoding="utf-8",
@@ -675,8 +675,8 @@ def test_stage_attribution_covers_late_stage_removals(tmp_path: Path, monkeypatc
         "proxy-providers:\n"
         "  cr_browsing_jp:\n"
         "    payload:\n"
-        "      - {name: '[BROWSING:JP] sub_4/One', type: trojan, server: a.example, port: 443}\n"
-        "      - {name: '[BROWSING:JP] sub_4/Ip', type: ss, server: 8.8.4.4, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_4/One #0000000000', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_4/Ip #0000000000', type: ss, server: 8.8.4.4, port: 443}\n"
         "proxies: []\n"
         "proxy-groups: []\n",
         encoding="utf-8",
@@ -749,7 +749,7 @@ def test_stage_accounting_never_leaks_entry_identities(tmp_path: Path, monkeypat
         "proxy-providers:\n"
         "  cr_browsing_jp:\n"
         "    payload:\n"
-        "      - {name: '[BROWSING:JP] sub_2/Secret', type: trojan, server: secret-server.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Secret #0000000000', type: trojan, server: secret-server.example, port: 443}\n"
         "proxies: []\n"
         "proxy-groups: []\n",
         encoding="utf-8",
@@ -809,6 +809,38 @@ def test_duplicate_runtime_entries_only_remove_unique_after_last_copy() -> None:
         assert unique["before"] == unique["after"] + unique["removed"]
 
 
+def test_same_endpoint_with_different_credentials_remains_two_logical_nodes() -> None:
+    document = {
+        "proxy-providers": {
+            "cr_browsing_jp": {
+                "payload": [
+                    {
+                        "name": "[BROWSING:JP] provider_a/First #0000000001",
+                        "type": "trojan",
+                        "server": "shared.example",
+                        "port": 443,
+                        "password": "first",
+                    },
+                    {
+                        "name": "[BROWSING:JP] provider_a/Second #0000000002",
+                        "type": "trojan",
+                        "server": "shared.example",
+                        "port": 443,
+                        "password": "second",
+                    },
+                ]
+            }
+        }
+    }
+    before = pipeline._entry_inventory(document)
+    delta = pipeline._stage_delta(
+        before, {}, stage="browsing", reason="browsing_qualification_failed"
+    )
+    assert delta["unique_nodes"] == {"before": 2, "after": 0, "removed": 2}
+    assert delta["unique_by_source"] == {"provider_a": 2}
+    assert delta["runtime_entries"]["removed"] == 2
+
+
 @pytest.mark.parametrize("keep_general", [True, False])
 def test_pipeline_duplicate_copies_across_stages_keep_unique_accounting_exact(
     tmp_path: Path, monkeypatch, keep_general: bool
@@ -818,10 +850,10 @@ def test_pipeline_duplicate_copies_across_stages_keep_unique_accounting_exact(
         "proxy-providers:\n"
         "  cr_browsing_jp:\n"
         "    payload:\n"
-        "      - {name: '[BROWSING:JP] sub_4/Solo', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_4/Solo #0000000000', type: trojan, server: a.example, port: 443}\n"
         "  cr_general_jp:\n"
         "    payload:\n"
-        "      - {name: '[GENERAL:ANY] sub_4/Solo', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[GENERAL:ANY] sub_4/Solo #0000000000', type: trojan, server: a.example, port: 443}\n"
         "proxies: []\nproxy-groups: []\n",
         encoding="utf-8",
     )
@@ -869,19 +901,12 @@ def test_pipeline_duplicate_copies_across_stages_keep_unique_accounting_exact(
 
 
 def test_final_stage_runtime_drift_fails_closed() -> None:
-    row = {
-        "source": "sub_4",
-        "region": "jp",
-        "protocol": "trojan",
-        "unique": "sub_4|server|443|trojan",
-    }
-    inventory = {"[BROWSING:JP] sub_4/One": row}
     document = {
         "proxy-providers": {
             "cr_browsing_jp": {
                 "payload": [
                     {
-                        "name": "[BROWSING:JP] sub_4/One",
+                        "name": "[BROWSING:JP] sub_4/One #0000000000",
                         "type": "trojan",
                         "server": "server",
                         "port": 443,
@@ -890,6 +915,7 @@ def test_final_stage_runtime_drift_fails_closed() -> None:
             }
         }
     }
+    inventory = pipeline._entry_inventory(document)
     with pytest.raises(
         ValidationError, match="final qualification stage removed runtime inventory"
     ):
@@ -935,7 +961,7 @@ def test_service_hardening_runtime_clone_is_not_a_removal(tmp_path: Path, monkey
         "proxy-providers:\n"
         "  cr_ai_jp:\n"
         "    payload:\n"
-        "      - {name: '[AI:JP] sub_1/Solo', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[AI:JP] sub_1/Solo #0000000000', type: trojan, server: a.example, port: 443}\n"
         "proxies: []\nproxy-groups: []\n",
         encoding="utf-8",
     )
@@ -946,7 +972,7 @@ def test_service_hardening_runtime_clone_is_not_a_removal(tmp_path: Path, monkey
         document = load_yaml_file(candidate)
         original = document["proxy-providers"]["cr_ai_jp"]["payload"][0]
         document["proxy-providers"]["cr_openai_runtime_jp"] = {
-            "payload": [{**original, "name": original["name"] + " [OAI:1234]"}],
+            "payload": [{**original, "name": original["name"] + " [OAI:12345678]"}],
         }
         atomic_write(candidate, dump_yaml(document))
         return {"status": "passed", "hardened_services": 1, "services": {"openai": {}}}

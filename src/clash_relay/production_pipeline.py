@@ -262,7 +262,14 @@ def run_production_pipeline(
         markdown += "\n" + render_qualification_summary_markdown(
             browsing, ai, qualification.get("endpoint_qualification")
         )
-        markdown += "\n" + render_qualification_observability_markdown(qualification)
+        markdown += "\n" + render_qualification_observability_markdown(
+            qualification,
+            known_source_ids=(
+                row["id"]
+                for row in pre_audit.get("subscriptions", [])
+                if isinstance(row, dict) and isinstance(row.get("id"), str)
+            ),
+        )
         atomic_write(outputs.summary_markdown, markdown)
 
     # Deliberately aggregate-only. The detailed stage reports remain private files.

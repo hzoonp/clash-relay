@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from typing import Any
 
 from .config_loader import ProjectDefinition
 from .errors import ValidationError
 from .runtime_graph import RuntimeGraph
-from .runtime_names import canonical_source_id
+from .runtime_names import canonical_source_id, parse_runtime_source_name
 from .util import safe_identifier
 
-_RUNTIME_SOURCE = re.compile(r"^\[[^\]]+\]\s+([^/]+)/")
 _DEFAULT_SOURCE_USE = "general"
 
 
@@ -28,13 +26,13 @@ def _runtime_source_id(
         raise ValidationError(
             f"production audit found a proxy without a runtime name in provider {provider_name!r}"
         )
-    match = _RUNTIME_SOURCE.match(name)
-    if match is None:
+    runtime_label = parse_runtime_source_name(name)
+    if runtime_label is None:
         raise ValidationError(
             f"production audit could not recover source identity in provider {provider_name!r}"
         )
     try:
-        return canonical_source_id(match.group(1), known_source_ids)
+        return canonical_source_id(runtime_label, known_source_ids)
     except ValueError as exc:
         raise ValidationError("production audit found ambiguous runtime source labels") from exc
 
@@ -326,7 +324,9 @@ def audit_production_candidate(
         }
 
     _, runtime_sources = _runtime_source_maps(graph, known_source_ids=set(subscriptions))
-    runtime_source_counts = Counter(runtime_sources.values())
+    runtime_source_counts = Counter(
+        runtime_sources[name] for names in graph.provider_proxies.values() for name in names
+    )
 
     subscription_rows: list[dict[str, Any]] = []
     for spec in sorted(subscriptions.values(), key=lambda item: (item.ingest_order, item.id)):

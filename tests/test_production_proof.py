@@ -14,6 +14,7 @@ def _inputs(candidate_path: Path) -> dict:
         "candidate_path": candidate_path,
         "audit": {
             "status": "passed",
+            "subscriptions": [{"id": "subscription_4"}],
             "reachability": {
                 "status": "passed",
                 "groups_checked": 30,
@@ -77,6 +78,17 @@ def _inputs(candidate_path: Path) -> dict:
             "timings_ms": {"ai": 1, "secret.example.invalid": 2},
             "qualification_removed_unique_nodes": 1,
             "qualification_removed_runtime_entries": 2,
+            "removed_by_stage": {
+                "browsing": {
+                    "unique_nodes": {"before": 1, "after": 1, "removed": 0},
+                    "runtime_entries": {"before": 2, "after": 1, "removed": 1},
+                    "by_source": {"sub_4": 1},
+                    "by_region": {"jp": 1},
+                    "by_protocol": {"trojan": 1},
+                    "failure_category": {"browsing_qualification_failed": 1},
+                    "server": "SHOULD-NOT-LEAK",
+                },
+            },
             "sources_fully_removed": [
                 {
                     "source": "sub_4",
@@ -162,13 +174,21 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "runtime_nodes": 3,
     }
     assert proof["qualification_pipeline"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
+    assert proof["qualification_pipeline"]["sources_fully_removed"][0]["source"] == "subscription_4"
+    assert proof["qualification_pipeline"]["removed_by_stage"]["browsing"]["by_source"] == {
+        "subscription_4": 1
+    }
+    assert proof["qualification_pipeline"]["removed_by_stage"]["browsing"]["by_region"] == {"jp": 1}
+    assert proof["qualification_pipeline"]["removed_by_stage"]["browsing"]["by_protocol"] == {
+        "trojan": 1
+    }
     assert (
         proof["qualification_pipeline"]["ai_service_evidence"]["openai"][
             "blocked_critical_endpoint_count"
         ]
         == 1
     )
-    assert "| sub_4 | ai | 1 | 2 |" in markdown
+    assert "| subscription_4 | ai | 1 | 2 |" in markdown
     assert "secret.example.invalid" not in markdown
     assert "| openai | inconclusive | cache | true | true | 2 / 0 / 0 / 2 | 1 |" in markdown
     assert "OpenAI App-ready live nodes | 3" in markdown

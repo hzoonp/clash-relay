@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +9,7 @@ from .config_loader import ProjectDefinition
 from .errors import ValidationError
 from .production_audit import audit_production_candidate
 from .runtime_graph import RuntimeGraph
+from .runtime_names import parse_runtime_source_name
 from .service_qualification import service_qualifications
 from .util import safe_identifier
 
@@ -30,18 +30,15 @@ class ServiceAvailabilityCount:
     qualified_regions_by_service: dict[str, int]
 
 
-_RUNTIME_SOURCE = re.compile(r"^\[[^\]]+\]\s+([^/]+)/")
-
-
 def _provider_name(pool_id: str, region: str) -> str:
     return f"cr_{safe_identifier(pool_id)}_{safe_identifier(region)}"
 
 
 def _historical_source_label(runtime_name: str) -> str:
-    match = _RUNTIME_SOURCE.match(runtime_name)
-    if match is None:
+    label = parse_runtime_source_name(runtime_name)
+    if label is None:
         raise ValidationError("promotion baseline contains an invalid runtime source label")
-    return match.group(1)
+    return label
 
 
 def collect_inventory(project: ProjectDefinition, candidate: dict[str, Any]) -> InventoryCount:

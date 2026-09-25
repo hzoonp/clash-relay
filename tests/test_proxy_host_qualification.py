@@ -21,8 +21,16 @@ def _candidate() -> dict:
         "proxy-providers": {
             "cr_browsing_jp": {
                 "payload": [
-                    {"name": "host", "type": "trojan", "server": "broken.example"},
-                    {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+                    {
+                        "name": "[BROWSING:JP] provider_a/host #0000000000",
+                        "type": "trojan",
+                        "server": "broken.example",
+                    },
+                    {
+                        "name": "[BROWSING:JP] provider_a/ip #0000000000",
+                        "type": "ss",
+                        "server": "8.8.4.4",
+                    },
                 ]
             }
         },
@@ -53,6 +61,41 @@ def _patch_probes(monkeypatch, results):
     return probed
 
 
+def test_one_unresolvable_hostname_can_contain_two_logical_nodes(monkeypatch) -> None:
+    _patch_probes(
+        monkeypatch,
+        [(False, "nxdomain"), (False, "nxdomain"), (False, "nxdomain")],
+    )
+    candidate = _candidate()
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
+        {
+            "name": "[BROWSING:JP] provider_a/First #0000000001",
+            "type": "trojan",
+            "server": "shared.example",
+            "port": 443,
+            "password": "first",
+        },
+        {
+            "name": "[BROWSING:JP] provider_a/Second #0000000002",
+            "type": "trojan",
+            "server": "shared.example",
+            "port": 443,
+            "password": "second",
+        },
+        {
+            "name": "[BROWSING:JP] provider_a/Alive #0000000003",
+            "type": "ss",
+            "server": "8.8.4.4",
+            "port": 443,
+        },
+    ]
+    report = quarantine_unresolvable_proxy_hosts(candidate)
+    assert report["quarantined"] == 2
+    assert report["unique_quarantined_nodes"] == 2
+    assert report["unique_quarantined_hostnames"] == 1
+    assert report["by_source"] == {"provider_a": 2}
+
+
 def test_unresolved_hostname_is_quarantined_without_emptying_provider(monkeypatch) -> None:
     probed = _patch_probes(
         monkeypatch, [(False, "nxdomain"), (False, "nxdomain"), (False, "nxdomain")]
@@ -63,9 +106,9 @@ def test_unresolved_hostname_is_quarantined_without_emptying_provider(monkeypatc
     assert report["quarantined"] == 1
     assert report["ip_literal_nodes"] == 1
     assert [node["name"] for node in candidate["proxy-providers"]["cr_browsing_jp"]["payload"]] == [
-        "ip"
+        "[BROWSING:JP] provider_a/ip #0000000000"
     ]
-    assert report["by_source"] == {"other": 1}
+    assert report["by_source"] == {"provider_a": 1}
     assert report["by_region"] == {"jp": 1}
     assert report["by_protocol"] == {"trojan": 1}
     assert report["by_failure_category"] == {"nxdomain": 1}
@@ -127,9 +170,17 @@ def test_runner_transport_failure_never_quarantines(monkeypatch) -> None:
     )
     candidate = _candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "host", "type": "trojan", "server": "healthy.example"},
-        {"name": "flaky-host", "type": "trojan", "server": "timingout.example"},
-        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+        {
+            "name": "[BROWSING:JP] provider_a/host #0000000000",
+            "type": "trojan",
+            "server": "healthy.example",
+        },
+        {
+            "name": "[BROWSING:JP] provider_a/flaky-host #0000000000",
+            "type": "trojan",
+            "server": "timingout.example",
+        },
+        {"name": "[BROWSING:JP] provider_a/ip #0000000000", "type": "ss", "server": "8.8.4.4"},
     ]
     report = quarantine_unresolvable_proxy_hosts(candidate)
 
@@ -167,7 +218,11 @@ def test_entirely_inconclusive_stage_fails_closed(monkeypatch) -> None:
     _patch_probes(monkeypatch, [(False, "connect_timeout"), (False, "connect_timeout")])
     candidate = _cn_three_net_candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "host", "type": "trojan", "server": "broken.example"}
+        {
+            "name": "[BROWSING:JP] provider_a/host #0000000000",
+            "type": "trojan",
+            "server": "broken.example",
+        }
     ]
 
     with pytest.raises(ValidationError, match="inconclusive"):
@@ -181,9 +236,13 @@ def test_source_failure_categories_are_reported_per_source(monkeypatch) -> None:
     )
     candidate = _cn_three_net_candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "[BROWSING:JP] sub_2/Dead", "type": "vless", "server": "dead.example"},
-        {"name": "[BROWSING:JP] sub_2/Dead2", "type": "trojan", "server": "dead2.example"},
-        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+        {"name": "[BROWSING:JP] sub_2/Dead #0000000000", "type": "vless", "server": "dead.example"},
+        {
+            "name": "[BROWSING:JP] sub_2/Dead2 #0000000000",
+            "type": "trojan",
+            "server": "dead2.example",
+        },
+        {"name": "[BROWSING:JP] provider_a/ip #0000000000", "type": "ss", "server": "8.8.4.4"},
     ]
 
     report = quarantine_unresolvable_proxy_hosts(candidate)
@@ -256,20 +315,32 @@ def test_duplicate_hostname_across_providers_probes_once_and_counts_unique(
     candidate["proxy-providers"] = {
         "cr_browsing_jp": {
             "payload": [
-                {"name": "[BROWSING:JP] sub_2/One", "type": "trojan", "server": "dead.example"},
-                {"name": "[BROWSING:JP] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+                {
+                    "name": "[BROWSING:JP] sub_2/One #0000000000",
+                    "type": "trojan",
+                    "server": "dead.example",
+                },
+                {"name": "[BROWSING:JP] sub_2/IP #0000000000", "type": "ss", "server": "8.8.4.4"},
             ]
         },
         "cr_general_jp": {
             "payload": [
-                {"name": "[GENERAL:ANY] sub_2/One", "type": "trojan", "server": "dead.example"},
-                {"name": "[GENERAL:ANY] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+                {
+                    "name": "[GENERAL:ANY] sub_2/One #0000000000",
+                    "type": "trojan",
+                    "server": "dead.example",
+                },
+                {"name": "[GENERAL:ANY] sub_2/IP #0000000000", "type": "ss", "server": "8.8.4.4"},
             ]
         },
         "cr_ai_jp": {
             "payload": [
-                {"name": "[AI:JP] sub_2/One", "type": "trojan", "server": "dead.example"},
-                {"name": "[AI:JP] sub_2/IP", "type": "ss", "server": "8.8.4.4"},
+                {
+                    "name": "[AI:JP] sub_2/One #0000000000",
+                    "type": "trojan",
+                    "server": "dead.example",
+                },
+                {"name": "[AI:JP] sub_2/IP #0000000000", "type": "ss", "server": "8.8.4.4"},
             ]
         },
     }
@@ -309,8 +380,16 @@ def test_cache_evidence_is_never_reused_across_hostnames(monkeypatch) -> None:
     candidate["proxy-providers"] = {
         "cr_browsing_jp": {
             "payload": [
-                {"name": "[BROWSING:JP] sub_2/Dead", "type": "trojan", "server": "dead.example"},
-                {"name": "[BROWSING:JP] sub_2/Flaky", "type": "vless", "server": "flaky.example"},
+                {
+                    "name": "[BROWSING:JP] sub_2/Dead #0000000000",
+                    "type": "trojan",
+                    "server": "dead.example",
+                },
+                {
+                    "name": "[BROWSING:JP] sub_2/Flaky #0000000000",
+                    "type": "vless",
+                    "server": "flaky.example",
+                },
             ]
         }
     }
@@ -350,7 +429,11 @@ def test_ipv6_enabled_candidate_qualifies_through_aaaa(monkeypatch) -> None:
         "https://doh.pub/dns-query",
     ]
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "host", "type": "trojan", "server": "v6only.example"}
+        {
+            "name": "[BROWSING:JP] provider_a/host #0000000000",
+            "type": "trojan",
+            "server": "v6only.example",
+        }
     ]
 
     report = quarantine_unresolvable_proxy_hosts(candidate)
@@ -375,8 +458,12 @@ def test_ipv6_disabled_candidate_keeps_a_only_probing(monkeypatch) -> None:
         "https://doh.pub/dns-query",
     ]
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "host", "type": "trojan", "server": "a-only.example"},
-        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+        {
+            "name": "[BROWSING:JP] provider_a/host #0000000000",
+            "type": "trojan",
+            "server": "a-only.example",
+        },
+        {"name": "[BROWSING:JP] provider_a/ip #0000000000", "type": "ss", "server": "8.8.4.4"},
     ]
 
     report = quarantine_unresolvable_proxy_hosts(candidate)
@@ -439,8 +526,12 @@ def test_inconclusive_merged_evidence_cannot_join_negative_quorum(monkeypatch) -
         "https://doh.pub/dns-query",
     ]
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = [
-        {"name": "host", "type": "trojan", "server": "host.example"},
-        {"name": "ip", "type": "ss", "server": "8.8.4.4"},
+        {
+            "name": "[BROWSING:JP] provider_a/host #0000000000",
+            "type": "trojan",
+            "server": "host.example",
+        },
+        {"name": "[BROWSING:JP] provider_a/ip #0000000000", "type": "ss", "server": "8.8.4.4"},
     ]
 
     report = quarantine_unresolvable_proxy_hosts(candidate)

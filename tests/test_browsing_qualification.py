@@ -330,7 +330,7 @@ def test_core_rejection_candidate_proxies_intersect_source_and_type() -> None:
 
     result = _core_rejection_candidate_proxies(
         payloads,
-        rejected_sources={"subscription_5"},
+        rejected_sources={"sub_5"},
         rejected_types={"vless"},
     )
 

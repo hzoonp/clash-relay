@@ -173,7 +173,14 @@ def build_release_manifest(
                 qualification.get("policy_model_version", policy_model_version)
                 or policy_model_version
             ),
-            **safe_qualification_observability(qualification),
+            **safe_qualification_observability(
+                qualification,
+                known_source_ids=[
+                    row["id"]
+                    for row in audit.get("subscriptions", [])
+                    if isinstance(row, dict) and isinstance(row.get("id"), str)
+                ],
+            ),
         },
         "promotion_guard": {
             "status": str(promotion.get("status", "not_applicable")),

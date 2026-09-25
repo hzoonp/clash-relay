@@ -14,20 +14,20 @@ runtime probes.
 from __future__ import annotations
 
 import ipaddress
-import re
 import socket
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from .classify import proxy_fingerprint
 from .errors import ValidationError
+from .runtime_names import parse_runtime_source_name
 
 _TCP_TYPES = frozenset(
     {"ss", "ssr", "vmess", "vless", "trojan", "http", "socks5", "snell", "anytls", "ssh", "mieru"}
 )
 _UDP_NATIVE_TYPES = frozenset({"hysteria", "hysteria2", "tuic", "wireguard", "masque"})
-_SOURCE_NAME = re.compile(r"\b(sub_[1-5])/", re.ASCII)
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
 _ATTEMPTS = 3
 _ADMISSION_QUORUM = 1
@@ -120,8 +120,10 @@ def _admission_tier(successes: int) -> str:
 
 
 def _source(name: object) -> str:
-    match = _SOURCE_NAME.search(name) if isinstance(name, str) else None
-    return match.group(1) if match else "other"
+    source = parse_runtime_source_name(name)
+    if source is None:
+        raise ValidationError("endpoint qualification found an invalid runtime source name")
+    return source
 
 
 def _region(provider_name: str) -> str:
@@ -168,6 +170,7 @@ def quarantine_unreachable_tcp_endpoints(
             "reserve_endpoints": 0,
             "dns_inconclusive": 0,
             "unique_quarantined_nodes": 0,
+            "unique_quarantined_endpoints": 0,
             "by_source": {},
             "by_region": {},
             "by_protocol": {},
@@ -182,7 +185,13 @@ def quarantine_unreachable_tcp_endpoints(
         )
     counts: Counter[str] = Counter()
     tiers: Counter[str] = Counter()
-    unique_quarantined: dict[tuple[str, str, str, str], tuple[str, str]] = {}
+    unique_quarantined: set[tuple[str, str]] = set()
+    quarantined_endpoints: set[tuple[str, str]] = set()
+    by_source: Counter[str] = Counter()
+    by_region: Counter[str] = Counter()
+    by_protocol: Counter[str] = Counter()
+    by_failure_category: Counter[str] = Counter()
+    by_source_failure_category: dict[str, Counter[str]] = {}
     replacements: dict[str, list[dict[str, Any]]] = {}
     for provider_name, provider in providers.items():
         payload = provider.get("payload") if isinstance(provider, dict) else None
@@ -226,15 +235,13 @@ def quarantine_unreachable_tcp_endpoints(
             counts["quarantined"] += 1
             tiers["quarantined"] += 1
             source = _source(proxy.get("name"))
-            unique_key = (
-                source,
-                str(server),
-                str(port),
-                str(kind),
-            )
-            unique_quarantined.setdefault(
-                unique_key, (_region(str(provider_name)), failure_category)
-            )
+            unique_quarantined.add((source, proxy_fingerprint(proxy)))
+            quarantined_endpoints.add((str(server), str(port)))
+            by_source[source] += 1
+            by_region[_region(str(provider_name))] += 1
+            by_protocol[str(kind)] += 1
+            by_failure_category[failure_category] += 1
+            by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
         if payload and not kept:
             raise ValidationError("endpoint qualification would empty a proxy provider")
         replacements[str(provider_name)] = kept
@@ -242,15 +249,6 @@ def quarantine_unreachable_tcp_endpoints(
         provider = providers[provider_name]
         if isinstance(provider, dict):
             provider["payload"] = kept
-    by_source: Counter[str] = Counter(key[0] for key in unique_quarantined)
-    by_region: Counter[str] = Counter(region for region, _ in unique_quarantined.values())
-    by_protocol: Counter[str] = Counter(key[3] for key in unique_quarantined)
-    by_failure_category: Counter[str] = Counter(
-        category for _, category in unique_quarantined.values()
-    )
-    by_source_failure_category: dict[str, Counter[str]] = {}
-    for unique_key, (_region_name, category) in unique_quarantined.items():
-        by_source_failure_category.setdefault(unique_key[0], Counter())[category] += 1
     return {
         "status": "passed",
         **{
@@ -270,6 +268,7 @@ def quarantine_unreachable_tcp_endpoints(
         "reserve_endpoints": int(tiers["reserve"]),
         "dns_inconclusive": int(counts["dns_inconclusive"]),
         "unique_quarantined_nodes": len(unique_quarantined),
+        "unique_quarantined_endpoints": len(quarantined_endpoints),
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),

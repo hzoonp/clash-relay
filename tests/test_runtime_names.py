@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from clash_relay.generator import _runtime_name
 from clash_relay.models import Node
 from clash_relay.runtime_names import (
     canonical_source_id,
+    parse_runtime_source_name,
     runtime_source_label,
+    valid_source_id,
     validate_runtime_source_labels,
 )
 
@@ -30,6 +34,10 @@ def _node(source_id: str) -> Node:
 def test_numbered_subscription_ids_are_shortened_for_runtime_display() -> None:
     assert runtime_source_label("subscription_1") == "sub_1"
     assert runtime_source_label("subscription_27") == "sub_27"
+    assert runtime_source_label("subscription_6") == "sub_6"
+    assert runtime_source_label("subscription_20") == "sub_20"
+    assert runtime_source_label("provider_a") == "provider_a"
+    assert runtime_source_label("premium-jp") == "premium-jp"
     assert runtime_source_label("primary") == "primary"
     assert runtime_source_label("subscription_alpha") == "subscription_alpha"
 
@@ -43,7 +51,29 @@ def test_runtime_name_uses_short_label_but_keeps_original_name_and_digest() -> N
 def test_short_label_resolves_back_to_canonical_source_id() -> None:
     known = {"subscription_1", "subscription_2"}
     assert canonical_source_id("sub_2", known) == "subscription_2"
-    assert canonical_source_id("other", known) == "other"
+    with pytest.raises(ValueError, match="unknown"):
+        canonical_source_id("other", known)
+
+
+@pytest.mark.parametrize(
+    "source_id",
+    [
+        "subscription_1",
+        "subscription_5",
+        "subscription_6",
+        "subscription_20",
+        "provider_a",
+        "premium-jp",
+    ],
+)
+def test_runtime_source_round_trip_and_original_name_spoofing(source_id: str) -> None:
+    node = replace(_node(source_id), original_name="Visible sub_2/fake node")
+    name = _runtime_name(node, "GENERAL:ANY")
+    label = parse_runtime_source_name(name)
+    assert label == runtime_source_label(source_id)
+    assert canonical_source_id(label, {source_id}) == source_id
+    assert valid_source_id(source_id)
+    assert parse_runtime_source_name("[GENERAL:ANY] sub_2/fake #not-a-digest") is None
 
 
 def test_ambiguous_short_label_is_rejected_fail_closed() -> None:

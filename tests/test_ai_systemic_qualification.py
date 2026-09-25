@@ -185,6 +185,13 @@ def test_endpoint_blockage_requires_two_regions_and_control_coverage() -> None:
         control_ok_regions={"jp"},
     )
     assert partial["systemic"] is False
+    # Control evidence itself must span at least two regions.
+    thin = evaluate_endpoint_blockage(
+        critical_endpoints=critical,
+        region_endpoint_stats=stats,
+        control_ok_regions={"jp", "sg", "tw"},
+    )
+    assert thin["systemic"] is True
 
     # Any HTTP response on the endpoint proves it is reachable.
     reached = evaluate_endpoint_blockage(

@@ -9,7 +9,7 @@ def test_runtime_source_id_recovers_canonical_subscription_id() -> None:
         "type": "vless",
     }
 
-    assert _runtime_source_id(proxy) == "subscription_3"
+    assert _runtime_source_id(proxy) == "sub_3"
 
 
 def test_runtime_source_id_rejects_noncanonical_runtime_name() -> None:

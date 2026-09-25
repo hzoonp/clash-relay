@@ -8,6 +8,7 @@ import pytest
 
 from clash_relay.errors import ValidationError
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
+from clash_relay.runtime_names import runtime_source_label
 
 
 def _pipeline(tmp_path: Path, *, publish: bool = False) -> ProductionPipeline:
@@ -202,6 +203,31 @@ def test_source_stage_accounting_is_safe_and_qualification_aware(tmp_path: Path)
         pipeline._private("post-qualification-audit.json"),
         {"subscriptions": [{"id": "subscription_4", "runtime_nodes": 2}]},
     )
+    pipeline._write_json(
+        pipeline._private("qualification-pipeline-summary.json"),
+        {
+            "qualification_removed_unique_nodes": 4,
+            "qualification_removed_runtime_entries": 5,
+            "removed_by_stage": {
+                "browsing": {
+                    "unique_nodes": {"before": 6, "after": 3, "removed": 3},
+                    "runtime_entries": {"before": 6, "after": 2, "removed": 4},
+                    "by_source": {"sub_4": 4},
+                    "unique_by_source": {"sub_4": 3},
+                    "failure_category": {"browsing_qualification_failed": 4},
+                },
+                "service_hardening": {
+                    "unique_nodes": {"before": 3, "after": 2, "removed": 1},
+                    "runtime_entries": {"before": 2, "after": 2, "removed": 1, "added": 1},
+                    "by_source": {"sub_4": 1},
+                    "unique_by_source": {"sub_4": 1},
+                    "added_by_source": {"sub_4": 1},
+                    "failure_category": {"service_client_path_hardening": 1},
+                },
+            },
+            "sources_fully_removed": [],
+        },
+    )
 
     assert pipeline._source_stage_accounting() == [
         {
@@ -213,12 +239,65 @@ def test_source_stage_accounting_is_safe_and_qualification_aware(tmp_path: Path)
             "filtered_over_multiplier": 1,
             "post_filter_nodes": 8,
             "post_dedup_nodes": 7,
-            "generated_runtime_nodes": 6,
-            "final_runtime_nodes": 2,
-            "qualification_removed_nodes": 4,
+            "generated_runtime_entries": 6,
+            "removed_runtime_entries": 5,
+            "added_runtime_entries": 1,
+            "final_runtime_entries": 2,
+            "removed_unique_nodes": 4,
+            "removed_at_stage": None,
+            "by_stage": {"browsing": 4, "service_hardening": 1},
         }
     ]
     assert "private.example" not in repr(pipeline._source_stage_accounting())
+
+
+@pytest.mark.parametrize("source_id", ["subscription_20", "premium-jp"])
+def test_fully_removed_source_uses_canonical_id_and_stage(tmp_path: Path, source_id: str) -> None:
+    pipeline = _pipeline(tmp_path)
+    pipeline.paths.private_dir.mkdir(parents=True)
+    label = runtime_source_label(source_id)
+    pipeline._write_json(
+        pipeline._private("production-audit.json"),
+        {"subscriptions": [{"id": source_id, "runtime_nodes": 2}]},
+    )
+    pipeline._write_json(
+        pipeline._private("post-qualification-audit.json"),
+        {"subscriptions": [{"id": source_id, "runtime_nodes": 0}]},
+    )
+    pipeline._write_json(
+        pipeline._private("qualification-pipeline-summary.json"),
+        {
+            "qualification_removed_unique_nodes": 1,
+            "qualification_removed_runtime_entries": 2,
+            "removed_by_stage": {
+                "browsing": {
+                    "unique_nodes": {"before": 1, "after": 0, "removed": 1},
+                    "runtime_entries": {"before": 2, "after": 0, "removed": 2},
+                    "by_source": {label: 2},
+                    "unique_by_source": {label: 1},
+                    "failure_category": {"browsing_qualification_failed": 2},
+                }
+            },
+            "sources_fully_removed": [
+                {
+                    "source": label,
+                    "unique_nodes": 1,
+                    "final_unique_nodes": 0,
+                    "runtime_entries": 2,
+                    "final_runtime_entries": 0,
+                    "removed_at_stage": "browsing",
+                    "by_stage": {"browsing": 2},
+                    "by_failure_category": {"browsing_qualification_failed": 2},
+                }
+            ],
+        },
+    )
+    result = pipeline._source_stage_accounting()
+    assert result[0]["id"] == source_id
+    assert result[0]["removed_at_stage"] == "browsing"
+    assert result[0]["removed_unique_nodes"] == 1
+    assert result[0]["removed_runtime_entries"] == 2
+    assert result[0]["by_stage"] == {"browsing": 2}
 
 
 def test_dry_run_operational_slo_does_not_touch_external_state(tmp_path: Path) -> None:

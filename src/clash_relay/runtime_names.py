@@ -6,10 +6,22 @@ import re
 from collections.abc import Iterable
 
 _LONG_SOURCE = re.compile(r"^subscription_([0-9]+)$")
+_SOURCE_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_RUNTIME_NAME = re.compile(
+    r"^\[[A-Z][A-Z0-9:_-]*\] (?P<source>[a-z][a-z0-9_-]{0,63})/.+ #[0-9a-f]{10}"
+    r"(?: \[OAI:[0-9a-f]{8}\])?$"
+)
+
+
+def valid_source_id(value: object) -> bool:
+    """Whether a source ID matches the subscription schema's public identifier."""
+    return isinstance(value, str) and _SOURCE_ID.fullmatch(value) is not None
 
 
 def runtime_source_label(source_id: str) -> str:
     """Shorten canonical numbered subscription ids without changing policy identity."""
+    if not valid_source_id(source_id):
+        raise ValueError("invalid subscription source id")
     match = _LONG_SOURCE.fullmatch(source_id)
     return f"sub_{match.group(1)}" if match is not None else source_id
 
@@ -30,4 +42,18 @@ def validate_runtime_source_labels(source_ids: Iterable[str]) -> dict[str, str]:
 
 def canonical_source_id(runtime_label: str, known_source_ids: Iterable[str]) -> str:
     """Resolve a generated display alias back to the canonical subscription id."""
-    return validate_runtime_source_labels(known_source_ids).get(runtime_label, runtime_label)
+    if not valid_source_id(runtime_label):
+        raise ValueError("invalid runtime source label")
+    mapping = validate_runtime_source_labels(known_source_ids)
+    try:
+        return mapping[runtime_label]
+    except KeyError as exc:
+        raise ValueError("unknown runtime source label") from exc
+
+
+def parse_runtime_source_name(name: object) -> str | None:
+    """Read only the source slot in a generated runtime proxy name."""
+    if not isinstance(name, str):
+        return None
+    match = _RUNTIME_NAME.fullmatch(name)
+    return match.group("source") if match is not None else None

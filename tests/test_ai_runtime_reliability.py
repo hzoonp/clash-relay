@@ -206,7 +206,25 @@ def test_openai_runtime_hardening_is_idempotent() -> None:
 
 
 def test_real_openai_client_path_clones_are_accounted_as_added_entries() -> None:
-    config = _service_qualified()
+    config = _config()
+    names = {
+        "sg-openai": "[AI:SG] sub_1/sg-openai #0000000001",
+        "sg-gemini": "[AI:SG] sub_1/sg-gemini #0000000002",
+        "us-openai": "[AI:US] sub_1/us-openai #0000000003",
+        "us-claude": "[AI:US] sub_1/us-claude #0000000004",
+    }
+    for provider in config["proxy-providers"].values():
+        for proxy in provider["payload"]:
+            proxy["name"] = names[proxy["name"]]
+    apply_ai_service_qualification(
+        config,
+        {
+            "ai_openai": {names["sg-openai"], names["us-openai"]},
+            "ai_claude": {names["us-claude"]},
+            "ai_gemini": {names["sg-gemini"]},
+        },
+        preferred_regions=("US", "SG"),
+    )
     before = _entry_inventory(config)
     report = apply_openai_client_path_hardening(config)
     delta = _stage_delta(
