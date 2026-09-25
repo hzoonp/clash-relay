@@ -29,11 +29,11 @@ def _public_address(value: object) -> bool:
 
 def _resolve(endpoint: str, hostname: str, timeout: float = 3.0) -> tuple[bool, bool]:
     """Return (answered, transport_failed), without retaining DNS payloads."""
-    query = urllib.parse.urlencode({"name": hostname, "type": "A"})
-    request = urllib.request.Request(
-        f"{endpoint}?{query}", headers={"Accept": "application/dns-json"}
-    )
     try:
+        query = urllib.parse.urlencode({"name": hostname, "type": "A"})
+        request = urllib.request.Request(
+            f"{endpoint}?{query}", headers={"Accept": "application/dns-json"}
+        )
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.load(response)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -43,6 +43,26 @@ def _resolve(endpoint: str, hostname: str, timeout: float = 3.0) -> tuple[bool, 
         isinstance(row, dict) and row.get("type") in {1, 28} and _public_address(row.get("data"))
         for row in answers
     ), False
+
+
+def _doh_endpoints(resolvers: list[Any]) -> list[str]:
+    """Keep only runner-executable DoH JSON endpoints.
+
+    The runner can probe HTTPS DoH endpoints only; a ``system`` entry names the
+    OS resolver and other non-HTTPS entries are not DoH, so they cannot take
+    part in this global preflight and are excluded instead of crashing the
+    stage. Admission stays fail-closed through the two-endpoint minimum below.
+    """
+
+    endpoints: list[str] = []
+    for resolver in resolvers:
+        try:
+            parsed = urllib.parse.urlsplit(str(resolver))
+        except ValueError:
+            continue
+        if parsed.scheme == "https" and parsed.hostname:
+            endpoints.append(str(resolver))
+    return endpoints
 
 
 def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any]:
@@ -73,9 +93,14 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         }
     dns = config.get("dns")
     resolvers = dns.get("proxy-server-nameserver") if isinstance(dns, dict) else None
-    if not isinstance(resolvers, list) or len(resolvers) < 2:
+    if not isinstance(resolvers, list):
         raise ValidationError(
-            "proxy hostname qualification requires multiple proxy-server-nameserver resolvers"
+            "proxy hostname qualification requires proxy-server-nameserver resolvers"
+        )
+    endpoints = _doh_endpoints(resolvers)
+    if len(endpoints) < 2:
+        raise ValidationError(
+            "proxy hostname qualification requires multiple DoH proxy-server-nameserver resolvers"
         )
     counts = Counter()
     dimensions: dict[str, Counter[str]] = {
@@ -101,7 +126,7 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
                 continue
             counts["hostname_nodes"] += 1
             if server not in cache:
-                results = [_resolve(str(endpoint), server) for endpoint in resolvers]
+                results = [_resolve(endpoint, server) for endpoint in endpoints]
                 cache[server] = (
                     any(answered for answered, _ in results),
                     any(answered for answered, _ in results)

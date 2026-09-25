@@ -14,6 +14,10 @@ All notable user-visible changes are documented here. This project follows Seman
 - Under `cn_three_net`, regional country `url-test` groups widen their switch tolerance to 120ms (US keeps 150ms) while keeping the 300s interval and 8000ms timeout, so client-side measurements decide node quality without carrier-name hardcoding. The default profile keeps the previous tolerance values byte-for-byte.
 - The DNS runtime audit accepts `system` and hostname DoH entries in `proxy-server-nameserver` (bootstrap-safe through the IP-literal `default-nameserver` pool required for every profile); the default profile still requires IP-literal encrypted proxy-server resolvers at the declaration layer, and TUN profiles remain fail-closed through the DNS leak audit.
 
+### Fixed
+
+- Proxy hostname qualification no longer treats non-DoH `proxy-server-nameserver` entries (such as the `system` OS resolver used by `cn_three_net`) as DoH JSON endpoints; the runner-side preflight probes only HTTPS DoH endpoints, still requires two of them, and a malformed or failing resolver entry degrades to per-resolver transport failure instead of crashing the qualification stage.
+
 ## [2.2.0] - 2026-09-08
 
 ### Added
