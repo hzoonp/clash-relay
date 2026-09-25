@@ -80,7 +80,43 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
         candidate=_candidate(),
         candidate_bytes=candidate_bytes,
         audit=_audit(),
-        qualification={"status": "passed", "policy_model_version": 2},
+        qualification={
+            "status": "passed",
+            "policy_model_version": 2,
+            "qualification_removed_unique_nodes": 1,
+            "qualification_removed_runtime_entries": 2,
+            "sources_fully_removed": [
+                {
+                    "source": "sub_4",
+                    "unique_nodes": 1,
+                    "final_unique_nodes": 0,
+                    "runtime_entries": 2,
+                    "final_runtime_entries": 0,
+                    "removed_at_stage": "ai",
+                    "by_stage": {"browsing": 1, "ai": 1},
+                    "by_failure_category": {
+                        "browsing_qualification_failed": 1,
+                        "ai_qualification_failed": 1,
+                    },
+                    "server": "secret.example.invalid",
+                }
+            ],
+            "ai": {
+                "service_evidence": {
+                    "openai": {
+                        "evidence_status": "passed",
+                        "evidence_source": "live",
+                        "systemic_failure_detected": False,
+                        "lkg_fresh": False,
+                        "live_tested": 2,
+                        "live_passed": 2,
+                        "live_failed": 0,
+                        "inconclusive": 0,
+                        "blocked_critical_endpoints": ["secret.example.invalid"],
+                    }
+                }
+            },
+        },
         promotion_guard={"status": "skipped", "reason": "dry_run"},
         matrix=_matrix(),
         release=None,
@@ -112,7 +148,16 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
         "routing_policy": "acl4ssr",
         "policy_rulesets": 15,
     }
+    assert manifest["qualification"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
+    assert (
+        manifest["qualification"]["ai_service_evidence"]["openai"][
+            "blocked_critical_endpoint_count"
+        ]
+        == 1
+    )
     encoded = json.dumps(manifest, ensure_ascii=False)
+    markdown = render_release_manifest_markdown(manifest)
+    assert "| openai | passed | live | false | false | 2 / 2 / 0 / 0 | 1 |" in markdown
     for secret in ("subscription_1", "sub_1", "secret-node", "secret.example", "do-not-leak"):
         assert secret not in encoded
 

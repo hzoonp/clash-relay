@@ -139,10 +139,10 @@ def test_run_production_pipeline_owns_stage_order_and_aggregate_summary(
     assert json.loads(outputs.pre_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.post_audit.read_text(encoding="utf-8"))["status"] == "passed"
     assert json.loads(outputs.qualification.read_text(encoding="utf-8"))["status"] == "qualified"
-    assert (
-        outputs.summary_markdown.read_text(encoding="utf-8")
-        == "PRODUCTION\n\nSOURCE ACCOUNTING\n\nQUALIFICATION\n"
-    )
+    summary = outputs.summary_markdown.read_text(encoding="utf-8")
+    assert summary.startswith("PRODUCTION\n\nSOURCE ACCOUNTING\n\nQUALIFICATION\n")
+    assert "## Qualification provenance" in summary
+    assert "Removed: **0 unique nodes / 0 runtime entries**" in summary
 
 
 @pytest.mark.parametrize(

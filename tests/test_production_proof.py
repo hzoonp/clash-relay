@@ -71,6 +71,44 @@ def _inputs(candidate_path: Path) -> dict:
         },
         "validated_cores": ("v1.19.30", "v1.19.29"),
         "publication_status": "published",
+        "qualification": {
+            "status": "qualified",
+            "stages": [],
+            "timings_ms": {"ai": 1, "secret.example.invalid": 2},
+            "qualification_removed_unique_nodes": 1,
+            "qualification_removed_runtime_entries": 2,
+            "sources_fully_removed": [
+                {
+                    "source": "sub_4",
+                    "unique_nodes": 1,
+                    "final_unique_nodes": 0,
+                    "runtime_entries": 2,
+                    "final_runtime_entries": 0,
+                    "removed_at_stage": "ai",
+                    "by_stage": {"browsing": 1, "ai": 1},
+                    "by_failure_category": {
+                        "browsing_qualification_failed": 1,
+                        "ai_qualification_failed": 1,
+                    },
+                    "server": "SHOULD-NOT-LEAK",
+                }
+            ],
+            "ai": {
+                "service_evidence": {
+                    "openai": {
+                        "evidence_status": "inconclusive",
+                        "evidence_source": "cache",
+                        "systemic_failure_detected": True,
+                        "lkg_fresh": True,
+                        "live_tested": 2,
+                        "live_passed": 0,
+                        "live_failed": 0,
+                        "inconclusive": 2,
+                        "blocked_critical_endpoints": ["SHOULD-NOT-LEAK"],
+                    }
+                }
+            },
+        },
     }
 
 
@@ -123,6 +161,16 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "runtime_providers": 2,
         "runtime_nodes": 3,
     }
+    assert proof["qualification_pipeline"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
+    assert (
+        proof["qualification_pipeline"]["ai_service_evidence"]["openai"][
+            "blocked_critical_endpoint_count"
+        ]
+        == 1
+    )
+    assert "| sub_4 | ai | 1 | 2 |" in markdown
+    assert "secret.example.invalid" not in markdown
+    assert "| openai | inconclusive | cache | true | true | 2 / 0 / 0 / 2 | 1 |" in markdown
     assert "OpenAI App-ready live nodes | 3" in markdown
     assert "OpenAI critical TLS / DNS / timeout failures | 2 / 1 / 3" in markdown
     assert "OpenAI client-path selection | stable_first_fallback" in markdown

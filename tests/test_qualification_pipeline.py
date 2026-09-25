@@ -783,3 +783,147 @@ def test_stage_accounting_never_leaks_entry_identities(tmp_path: Path, monkeypat
     assert "secret-server.example" not in serialized
     assert "secret" not in serialized.casefold()
     assert "https://" not in serialized
+
+
+def test_duplicate_runtime_entries_only_remove_unique_after_last_copy() -> None:
+    first = {
+        "source": "sub_4",
+        "region": "jp",
+        "protocol": "trojan",
+        "unique": "sub_4|server|443|trojan",
+    }
+    before = {"browsing-copy": first, "general-copy": first}
+    partial = {"general-copy": first}
+    browsing = pipeline._stage_delta(
+        before, partial, stage="browsing", reason="browsing_qualification_failed"
+    )
+    ai = pipeline._stage_delta(partial, {}, stage="ai", reason="ai_qualification_failed")
+
+    assert browsing["unique_nodes"] == {"before": 1, "after": 1, "removed": 0}
+    assert browsing["runtime_entries"] == {"before": 2, "after": 1, "removed": 1}
+    assert ai["unique_nodes"] == {"before": 1, "after": 0, "removed": 1}
+    assert ai["runtime_entries"]["removed"] == 1
+    assert len({row["unique"] for row in before.values()} - set()) == 1
+    for delta in (browsing, ai):
+        unique = delta["unique_nodes"]
+        assert unique["before"] == unique["after"] + unique["removed"]
+
+
+@pytest.mark.parametrize("keep_general", [True, False])
+def test_pipeline_duplicate_copies_across_stages_keep_unique_accounting_exact(
+    tmp_path: Path, monkeypatch, keep_general: bool
+) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_browsing_jp:\n"
+        "    payload:\n"
+        "      - {name: '[BROWSING:JP] sub_4/Solo', type: trojan, server: a.example, port: 443}\n"
+        "  cr_general_jp:\n"
+        "    payload:\n"
+        "      - {name: '[GENERAL:ANY] sub_4/Solo', type: trojan, server: a.example, port: 443}\n"
+        "proxies: []\nproxy-groups: []\n",
+        encoding="utf-8",
+    )
+    _preflight_stubs(monkeypatch)
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        document = load_yaml_file(kwargs["candidate"])
+        document["proxy-providers"]["cr_browsing_jp"]["payload"] = []
+        atomic_write(kwargs["candidate"], dump_yaml(document))
+        return {"status": "qualified", "automatic_nodes": 1}
+
+    def ai(**kwargs):
+        if not keep_general:
+            document = load_yaml_file(kwargs["candidate"])
+            document["proxy-providers"]["cr_general_jp"]["payload"] = []
+            atomic_write(kwargs["candidate"], dump_yaml(document))
+        return _ai_summary()
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+    monkeypatch.setattr(pipeline, "run_ai_qualification", ai)
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+    browsing_delta = result["removed_by_stage"]["browsing"]
+    ai_delta = result["removed_by_stage"]["ai"]
+    assert browsing_delta["unique_nodes"] == {"before": 1, "after": 1, "removed": 0}
+    assert browsing_delta["runtime_entries"]["removed"] == 1
+    assert ai_delta["unique_nodes"]["removed"] == (0 if keep_general else 1)
+    assert result["qualification_removed_unique_nodes"] == (0 if keep_general else 1)
+    assert result["qualification_removed_runtime_entries"] == (1 if keep_general else 2)
+    if keep_general:
+        assert result["sources_fully_removed"] == []
+    else:
+        source = result["sources_fully_removed"][0]
+        assert source["removed_at_stage"] == "ai"
+        assert source["by_stage"] == {"ai": 1, "browsing": 1}
+        assert source["runtime_entries"] == 2
+
+
+def test_final_stage_runtime_drift_fails_closed() -> None:
+    row = {
+        "source": "sub_4",
+        "region": "jp",
+        "protocol": "trojan",
+        "unique": "sub_4|server|443|trojan",
+    }
+    inventory = {"[BROWSING:JP] sub_4/One": row}
+    document = {
+        "proxy-providers": {
+            "cr_browsing_jp": {
+                "payload": [
+                    {
+                        "name": "[BROWSING:JP] sub_4/One",
+                        "type": "trojan",
+                        "server": "server",
+                        "port": 443,
+                    }
+                ]
+            }
+        }
+    }
+    with pytest.raises(
+        ValidationError, match="final qualification stage removed runtime inventory"
+    ):
+        pipeline._build_stage_accounting(
+            preflight_inventory=inventory,
+            post_host_inventory=inventory,
+            post_endpoint_inventory=inventory,
+            browsing_document=document,
+            browsing_summary={},
+            ai_document=document,
+            service_document=document,
+            final_document={"proxy-providers": {}},
+            host_report={},
+            endpoint_report={},
+        )
+
+
+def test_pipeline_rejects_unattributed_source_removal(tmp_path: Path, monkeypatch) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    _success_services(monkeypatch)
+    monkeypatch.setattr(
+        pipeline,
+        "_sources_fully_removed",
+        lambda **_kwargs: [
+            {"removed_at_stage": "unattributed", "by_failure_category": {"unattributed": 1}}
+        ],
+    )
+    with pytest.raises(ValidationError, match="lacks stage provenance"):
+        pipeline.run_qualification_pipeline(
+            candidate=candidate,
+            output=tmp_path / "final.yaml",
+            policies=policies,
+            mihomo_bin=mihomo,
+            stage_dir=tmp_path / "stages",
+            browsing_report=tmp_path / "browsing.json",
+            ai_report=tmp_path / "ai.json",
+        )

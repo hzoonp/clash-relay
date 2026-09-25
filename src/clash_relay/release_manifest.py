@@ -9,6 +9,10 @@ from typing import Any
 
 from . import __version__
 from .errors import ValidationError
+from .qualification_observability import (
+    render_qualification_observability_markdown,
+    safe_qualification_observability,
+)
 from .runtime_graph import RuntimeGraph
 
 PUBLIC_CONFIG_VERSION = 2
@@ -169,6 +173,7 @@ def build_release_manifest(
                 qualification.get("policy_model_version", policy_model_version)
                 or policy_model_version
             ),
+            **safe_qualification_observability(qualification),
         },
         "promotion_guard": {
             "status": str(promotion.get("status", "not_applicable")),
@@ -224,6 +229,8 @@ def render_release_manifest_markdown(manifest: dict[str, Any]) -> str:
         f"Promotion Guard: **{promotion.get('status', 'not_applicable')}**  ",
         f"Mihomo cores: **{core_text}**  ",
         f"DNS leak audit: **{dns_security.get('leak_audit', 'not_applicable')}** / policy sets: **{int(dns_security.get('policy_rulesets', 0) or 0)}**",
+        "",
+        render_qualification_observability_markdown(manifest.get("qualification", {})),
         "",
         "This manifest is aggregate-only and excludes node names, servers, ports, credentials, subscription URLs, and probe endpoints.",
         "",

@@ -23,6 +23,7 @@ from .production_audit import (
     render_production_summary_markdown,
     render_source_stage_delta_markdown,
 )
+from .qualification_observability import render_qualification_observability_markdown
 from .qualification_pipeline import run_qualification_pipeline
 from .routing_v2_audit import audit_routing_v2
 from .util import atomic_write
@@ -261,6 +262,7 @@ def run_production_pipeline(
         markdown += "\n" + render_qualification_summary_markdown(
             browsing, ai, qualification.get("endpoint_qualification")
         )
+        markdown += "\n" + render_qualification_observability_markdown(qualification)
         atomic_write(outputs.summary_markdown, markdown)
 
     # Deliberately aggregate-only. The detailed stage reports remain private files.

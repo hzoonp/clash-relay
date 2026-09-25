@@ -8,10 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .qualification_observability import (
+    render_qualification_observability_markdown,
+    safe_qualification_observability,
+)
 from .util import load_yaml_file
 
 _ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "preflight", "published"})
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
+_QUALIFICATION_TIMINGS = frozenset({"browsing_transport", "ai", "service_client_path", "total"})
 
 
 def _json_mapping(value: Any, label: str) -> dict[str, Any]:
@@ -35,7 +40,7 @@ def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
         safe: dict[str, float] = {}
         for name, duration in sorted(timings.items()):
             if (
-                isinstance(name, str)
+                name in _QUALIFICATION_TIMINGS
                 and isinstance(duration, (int, float))
                 and not isinstance(duration, bool)
                 and 0 <= float(duration) <= 24 * 60 * 60 * 1000
@@ -43,6 +48,7 @@ def _safe_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
                 safe[name] = round(float(duration), 3)
         if safe:
             result["timings_ms"] = safe
+    result.update(safe_qualification_observability(value))
     return result
 
 
@@ -263,6 +269,8 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
         if isinstance(timings, dict):
             for name, duration in sorted(timings.items()):
                 lines.append(f"| Qualification `{name}` | {duration} ms |")
+        lines.append("")
+        lines.append(render_qualification_observability_markdown(qualification))
     release = proof.get("release")
     if isinstance(release, dict):
         lines.append(f"| Release transaction | {release.get('status')} |")

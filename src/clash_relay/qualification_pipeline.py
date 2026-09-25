@@ -230,7 +230,9 @@ def _stage_delta(
     removed_rows = [before[name] for name in sorted(removed_names)]
     before_unique = {row["unique"] for row in before.values()}
     after_unique = {row["unique"] for row in after.values()}
-    removed_unique = len({row["unique"] for row in removed_rows})
+    if after_unique - before_unique or set(after) - set(before):
+        raise ValidationError(f"{stage} qualification stage added runtime inventory")
+    removed_unique = len(before_unique - after_unique)
     by_source: Counter[str] = Counter(row["source"] for row in removed_rows)
     by_region: Counter[str] = Counter(row["region"] for row in removed_rows)
     by_protocol: Counter[str] = Counter(row["protocol"] for row in removed_rows)
@@ -347,6 +349,11 @@ def _build_stage_accounting(
         stage="final",
         reason="none",
     )
+    if (
+        deltas["final"]["unique_nodes"]["removed"] > 0
+        or deltas["final"]["runtime_entries"]["removed"] > 0
+    ):
+        raise ValidationError("final qualification stage removed runtime inventory")
     return deltas
 
 
@@ -700,14 +707,17 @@ def run_qualification_pipeline(
         host_report=proxy_host_resolution,
         endpoint_report=endpoint_qualification,
     )
-    removed_unique_total = sum(
-        stage_deltas[stage]["unique_nodes"]["removed"]
-        for stage in ("hostname", "endpoint", "browsing", "ai", "service_hardening")
+    if any(
+        row["removed_at_stage"] == "unattributed" or "unattributed" in row["by_failure_category"]
+        for row in sources_fully_removed
+    ):
+        raise ValidationError("qualification removal lacks stage provenance")
+    final_inventory = _entry_inventory(final_document)
+    removed_unique_total = len(
+        {row["unique"] for row in preflight_inventory.values()}
+        - {row["unique"] for row in final_inventory.values()}
     )
-    removed_entries_total = sum(
-        stage_deltas[stage]["runtime_entries"]["removed"]
-        for stage in ("hostname", "endpoint", "browsing", "ai", "service_hardening")
-    )
+    removed_entries_total = len(preflight_inventory) - len(final_inventory)
     result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,
