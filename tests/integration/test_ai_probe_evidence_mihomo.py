@@ -73,11 +73,13 @@ def _candidate(
         "allow-lan": False,
         "mode": "rule",
         "log-level": "warning",
-        # Pin probe hosts to loopback so mihomo never has to resolve the
-        # synthetic names and never substitutes its own gateway errors.
+        # Pin the reachable probe host to loopback. The blocked host maps to
+        # TEST-NET-3 (203.0.113.0/24, never routed): connects hang until the
+        # client times out, so every platform sees a deterministic network
+        # failure instead of mihomo's own gateway error response.
         "hosts": {
             "ai-probe.invalid": "127.0.0.1",
-            "ai-blocked.invalid": "127.0.0.1",
+            "ai-blocked.invalid": "203.0.113.1",
         },
         "proxy-providers": providers,
         "proxy-groups": [
