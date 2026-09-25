@@ -625,7 +625,7 @@ def test_openai_recovery_reenters_live_qualification(
     )
     before = json.loads((tmp_path / "next-cache.json").read_text(encoding="utf-8"))
     openai_records = [
-        services["ai_openai"] if "ai_openai" in services else None
+        services.get("ai_openai")
         for services in (record.get("services", {}) for record in before["nodes"].values())
     ]
     assert all(entry is None for entry in openai_records)
