@@ -176,6 +176,7 @@ def test_probe_names_removes_temporary_filtered_candidate(
         *,
         workers: int,
         diagnostics: dict[str, object],
+        provider_regions: dict[str, str] | None = None,
     ) -> set[str]:
         seen["binary"] = binary
         seen["target"] = candidate

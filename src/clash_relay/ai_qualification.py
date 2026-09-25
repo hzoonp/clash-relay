@@ -19,7 +19,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from .ai_probe_environment import extract_region
 from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
@@ -368,21 +367,32 @@ def _new_diagnostics(probes: tuple[dict[str, Any], ...]) -> dict[str, Any]:
 
 def _record_region_results(
     diagnostics: dict[str, Any],
-    provider_name: str,
+    *,
+    region: str,
     payload: tuple[dict[str, Any], ...],
     qualified: set[str],
+    node_results: dict[str, tuple[dict[str, Any], ...]],
 ) -> None:
-    """Aggregate per-region node counts (no identities beyond region labels)."""
+    """Aggregate per-region node and per-endpoint outcome counts.
 
-    del provider_name  # region derives from the runtime scope token
+    The region comes from canonical provider metadata (never runtime-name
+    parsing); no identities beyond aggregate region labels are recorded.
+    """
+
     regions = diagnostics.setdefault("regions", {})
     for proxy in payload:
         name = str(proxy["name"])
-        region = extract_region(name)
-        row = regions.setdefault(region, {"tested": 0, "qualified": 0})
+        row = regions.setdefault(region, {"tested": 0, "qualified": 0, "endpoints": {}})
         row["tested"] += 1
         if name in qualified:
             row["qualified"] += 1
+        for result in node_results.get(name, ()):
+            endpoint = str(result["probe"])
+            endpoint_stats = row["endpoints"].setdefault(endpoint, {"probed": 0, "outcomes": {}})
+            endpoint_stats["probed"] += 1
+            outcome = str(result["outcome"])
+            outcomes = endpoint_stats.setdefault("outcomes", {})
+            outcomes[outcome] = int(outcomes.get(outcome, 0)) + 1
 
 
 def _record_probe_results(diagnostics: dict[str, Any], results: tuple[dict[str, Any], ...]) -> None:
@@ -421,6 +431,8 @@ def _qualify_shard(
     provider_name: str,
     payload: tuple[dict[str, Any], ...],
     probes: tuple[dict[str, Any], ...],
+    *,
+    region: str = "other",
 ) -> tuple[set[str], dict[str, Any]]:
     diagnostics = _new_diagnostics(probes)
     diagnostics["tested_nodes"] = len(payload)
@@ -471,6 +483,7 @@ def _qualify_shard(
             expected_names = {str(proxy["name"]) for proxy in payload}
             _wait_for_selector_members(process, controller_port, secret, expected_names)
             qualified: set[str] = set()
+            node_results: dict[str, tuple[dict[str, Any], ...]] = {}
             for proxy in payload:
                 name = str(proxy["name"])
                 if process.poll() is not None:
@@ -480,10 +493,17 @@ def _qualify_shard(
                     continue
                 passed, results = _selected_node_results(mixed_port, probes)
                 _record_probe_results(diagnostics, results)
+                node_results[name] = results
                 if passed:
                     qualified.add(name)
             diagnostics["qualified_nodes"] = len(qualified)
-            _record_region_results(diagnostics, provider_name, payload, qualified)
+            _record_region_results(
+                diagnostics,
+                region=region,
+                payload=payload,
+                qualified=qualified,
+                node_results=node_results,
+            )
             return qualified, diagnostics
         finally:
             if process.poll() is None:
@@ -504,6 +524,7 @@ def probe_ai_nodes(
     *,
     workers: int = _DEFAULT_WORKERS,
     diagnostics: dict[str, Any] | None = None,
+    provider_regions: dict[str, str] | None = None,
 ) -> set[str]:
     """Return runtime proxy names that pass every configured live AI service probe."""
     binary = binary.resolve()
@@ -521,10 +542,11 @@ def probe_ai_nodes(
         if probe.get("method") != "HEAD":
             raise ValidationError("AI qualification runtime probes must use HEAD")
 
-    shards: list[tuple[str, tuple[dict[str, Any], ...]]] = []
+    shards: list[tuple[str, tuple[dict[str, Any], ...], str]] = []
     for provider_name, payload in provider_payloads.items():
+        region = (provider_regions or {}).get(provider_name, "other")
         for start in range(0, len(payload), _SHARD_SIZE):
-            shards.append((provider_name, payload[start : start + _SHARD_SIZE]))
+            shards.append((provider_name, payload[start : start + _SHARD_SIZE], region))
 
     aggregate = _new_diagnostics(probes)
     qualified: set[str] = set()
@@ -538,8 +560,9 @@ def probe_ai_nodes(
                 provider_name,
                 payload,
                 probes,
+                region=region,
             ): (provider_name, index)
-            for index, (provider_name, payload) in enumerate(shards)
+            for index, (provider_name, payload, region) in enumerate(shards)
         }
         for future in as_completed(futures):
             shard_qualified, shard_diagnostics = future.result()

@@ -8,7 +8,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .ai_probe_environment import detect_systemic_failure, select_sentinels
+from .ai_probe_environment import (
+    evaluate_endpoint_blockage,
+    select_sentinels,
+)
 from .ai_qualification import AI_PROVIDER_PREFIX, load_ai_probe_specs, probe_ai_nodes
 from .ai_qualification_cache import (
     ai_cache_summary,
@@ -20,6 +23,7 @@ from .ai_qualification_cache import (
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
 from .errors import CandidateValidationStageError, ConfigurationError, ValidationError
+from .generator import _internal_names
 from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
 from .scheduler_policy import load_scheduler_policy
@@ -146,99 +150,137 @@ def _sentinel_control_probe(policies: Path) -> dict[str, Any] | None:
     return specs[0] if specs else None
 
 
+def _ai_provider_regions(
+    policies_document: dict[str, Any], candidate_config: dict[str, Any]
+) -> dict[str, str]:
+    """Map candidate AI provider names to canonical regions.
+
+    The mapping is derived through the generator's own naming function
+    (``_internal_names``) applied to the declared Policy Model pools, so
+    provider identity and region never depend on runtime-name string parsing.
+    """
+
+    providers = candidate_config.get("proxy-providers") or {}
+    mapping: dict[str, str] = {}
+    for pool in policies_document.get("pools", []):
+        if not isinstance(pool, dict):
+            continue
+        for region in pool.get("regions", []):
+            provider_name, _ = _internal_names(str(pool["id"]), str(region))
+            if provider_name in providers and str(provider_name).startswith(AI_PROVIDER_PREFIX):
+                mapping[provider_name] = str(region).upper()
+    return mapping
+
+
+def _node_regions(
+    candidate_config: dict[str, Any], provider_regions: dict[str, str]
+) -> dict[str, str]:
+    """Map every AI runtime node to its provider's canonical region."""
+
+    node_regions: dict[str, str] = {}
+    providers = candidate_config.get("proxy-providers") or {}
+    for provider_name, region in provider_regions.items():
+        provider = providers.get(provider_name)
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            continue
+        for proxy in payload:
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str):
+                node_regions[str(proxy["name"])] = region
+    return node_regions
+
+
 def _run_sentinel_gate(
     *,
-    policies: Path,
     candidate: Path,
     mihomo_bin: Path,
     qualification_probes: tuple[dict[str, Any], ...],
-    live_names: set[str] | None,
-    candidate_config: dict[str, Any],
+    control_probe: dict[str, Any] | None,
+    node_regions: dict[str, str],
+    provider_regions: dict[str, str],
     workers: int,
 ) -> dict[str, Any]:
-    """Run the bounded sentinel probe for one systemic-capable service.
+    """Run the bounded sentinel sweep for one systemic-capable service.
 
-    The sentinel set is deterministic and spans distinct regions. It probes the
-    service's critical endpoints plus a connectivity control through the same
-    nodes; a systemic verdict requires every sentinel to fail the service while
-    the control succeeds through the same environment. Sentinels are anonymous
-    and diagnostic-only: their results never enter the qualification cache.
+    One sentinel per distinct candidate region is selected from the complete
+    AI inventory (cache coverage cannot shrink region representation) and
+    probed against the service's critical endpoints plus a connectivity
+    control through the same nodes. Sentinels are diagnostic-only: their
+    outcomes never enter the qualification cache.
     """
 
     report: dict[str, Any] = {
         "ran": False,
         "systemic": False,
         "dominant_failure_category": None,
+        "blocked_critical_endpoints": [],
         "sentinel_count": 0,
-        "tested_regions": 0,
-        "failed_regions": 0,
-        "control_passed": False,
+        "sentinel_regions": [],
+        "control_tested": 0,
+        "control_ok_regions": [],
+        "region_endpoint_stats": {},
     }
-    control_probe = _sentinel_control_probe(policies)
-    if control_probe is None:
+    if control_probe is None or not node_regions:
         return report
-    probeable = live_names
-    if probeable is None:
-        probeable = _candidate_ai_names(candidate_config)
-    if not probeable:
-        return report
-    sentinels = select_sentinels(probeable)
-    if not sentinels:
+    sentinels = select_sentinels(node_regions=node_regions)
+    if len(sentinels) < 2:
+        # A single-region inventory cannot evidence environment scope.
         return report
     report["ran"] = True
     report["sentinel_count"] = len(sentinels)
+    report["sentinel_regions"] = sorted({node_regions[name] for name in sentinels})
+    report["control_tested"] = len(sentinels)
 
     try:
-        openai_qualified, openai_diagnostics = _probe_names(
+        _openai_qualified, openai_diagnostics = _probe_names(
             binary=mihomo_bin,
             candidate=candidate,
             names=set(sentinels),
             probes=qualification_probes,
             workers=workers,
+            provider_regions=provider_regions,
         )
-        control_qualified, _control_diagnostics = _probe_names(
+        _control_qualified, control_diagnostics = _probe_names(
             binary=mihomo_bin,
             candidate=candidate,
             names=set(sentinels),
             probes=(control_probe,),
             workers=workers,
+            provider_regions=provider_regions,
         )
     except ValidationError as exc:
         raise CandidateValidationStageError("ai_service_probe") from exc
 
-    regions = openai_diagnostics.get("regions") or {}
-    tested_regions = len(regions)
-    failed_regions = sum(
-        1
-        for row in regions.values()
-        if isinstance(row, dict) and int(row.get("qualified", 0)) < int(row.get("tested", 0))
-    )
-    outcome_counts: dict[str, int] = {}
-    for probe_spec in qualification_probes:
-        summary = openai_diagnostics.get("probes", {}).get(str(probe_spec["name"]), {})
-        outcomes = summary.get("outcomes", {}) if isinstance(summary, dict) else {}
-        for outcome, count in (outcomes or {}).items():
-            outcome_counts[str(outcome)] = outcome_counts.get(str(outcome), 0) + int(count)
+    control_endpoint = str(control_probe["name"])
+    region_stats = {
+        region: row.get("endpoints", {})
+        for region, row in (openai_diagnostics.get("regions") or {}).items()
+    }
+    control_ok_regions = {
+        region
+        for region, row in (control_diagnostics.get("regions") or {}).items()
+        if any(
+            str(outcome).startswith("status_2")
+            for outcome in (
+                (row.get("endpoints") or {}).get(control_endpoint, {}).get("outcomes") or {}
+            )
+        )
+    }
+    report["control_ok_regions"] = sorted(control_ok_regions)
+    report["region_endpoint_stats"] = region_stats
 
+    verdict = evaluate_endpoint_blockage(
+        critical_endpoints=[str(probe["name"]) for probe in qualification_probes],
+        region_endpoint_stats=region_stats,
+        control_ok_regions=control_ok_regions,
+    )
     report.update(
         {
-            "tested_regions": tested_regions,
-            "failed_regions": failed_regions,
-            "openai_passed": len(openai_qualified),
-            "control_passed": len(control_qualified) > 0,
-            "outcome_counts": dict(sorted(outcome_counts.items())),
+            "systemic": verdict["systemic"],
+            "blocked_critical_endpoints": verdict["blocked_critical_endpoints"],
+            "dominant_failure_category": verdict["dominant_failure_category"],
         }
     )
-    systemic, dominant = detect_systemic_failure(
-        live_tested=len(sentinels),
-        qualified_nodes=len(openai_qualified),
-        tested_regions=tested_regions,
-        failed_regions=failed_regions,
-        outcome_counts=outcome_counts,
-        control_passed=bool(control_qualified),
-    )
-    report["systemic"] = systemic
-    report["dominant_failure_category"] = dominant
     return report
 
 
@@ -259,6 +301,7 @@ def _probe_names(
     names: set[str] | None,
     probes: tuple[dict[str, Any], ...],
     workers: int,
+    provider_regions: dict[str, str] | None = None,
 ) -> tuple[set[str], dict[str, Any]]:
     diagnostics: dict[str, Any] = {}
     temporary: Path | None = None
@@ -275,6 +318,7 @@ def _probe_names(
             probes,
             workers=workers,
             diagnostics=diagnostics,
+            provider_regions=provider_regions,
         )
         return qualified, diagnostics
     finally:
@@ -323,6 +367,13 @@ def run_ai_qualification(
 
     qualified_by_probe: dict[str, set[str]] = {}
     service_evidence: dict[str, dict[str, Any]] = {}
+    provider_regions = _ai_provider_regions(policies_document, candidate_config)
+    node_regions = _node_regions(candidate_config, provider_regions)
+    control_probe = (
+        _sentinel_control_probe(policies)
+        if any(service.supports_systemic_failure_detection for service in service_qualifications())
+        else None
+    )
     expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
     total_live = 0
     total_cache_pass = 0
@@ -347,27 +398,28 @@ def run_ai_qualification(
 
         # Systemic-capable services (OpenAI) gate their full live sweep behind
         # a bounded deterministic sentinel probe: a probe-environment blackout
-        # must never be recorded as per-node failure evidence.
-        sentinel_gate: dict[str, Any] = {
-            "ran": False,
-            "systemic": False,
-            "dominant_failure_category": None,
-        }
+        # must never be recorded as per-node failure evidence. Sentinels span
+        # the complete AI candidate inventory; the post-sweep check re-evaluates
+        # the sweep with the same endpoint-blockage model.
+        sentinel_gate: dict[str, Any] = {"ran": False, "systemic": False}
         if service.supports_systemic_failure_detection:
             sentinel_gate = _run_sentinel_gate(
-                policies=policies,
                 candidate=candidate,
                 mihomo_bin=mihomo_bin,
                 qualification_probes=qualification_probes,
-                live_names=live_names,
-                candidate_config=candidate_config,
+                control_probe=control_probe,
+                node_regions=node_regions,
+                provider_regions=provider_regions,
                 workers=workers,
             )
         systemic: bool = bool(sentinel_gate.get("systemic"))
         dominant_failure: str | None = (
             sentinel_gate.get("dominant_failure_category") if systemic else None
         )
-        post_dominant: str | None = None
+        blocked_critical_endpoints: list[str] = list(
+            sentinel_gate.get("blocked_critical_endpoints", [])
+        )
+        systemic_trigger: str | None = "sentinel_gate" if systemic else None
         live_qualified: set[str] = set()
         probe_diagnostics: dict[str, Any] = {}
         live_tested = 0
@@ -383,6 +435,7 @@ def run_ai_qualification(
                     names=live_names,
                     probes=qualification_probes,
                     workers=workers,
+                    provider_regions=provider_regions,
                 )
             except ValidationError as exc:
                 raise CandidateValidationStageError("ai_service_probe") from exc
@@ -398,24 +451,20 @@ def run_ai_qualification(
                 live_tested = len(live_names)
                 live_names_for_cache = live_names
 
-            post_systemic, post_dominant = detect_systemic_failure(
-                live_tested=live_tested,
-                qualified_nodes=len(live_qualified),
-                tested_regions=len(probe_diagnostics.get("regions") or {}),
-                failed_regions=sum(
-                    1
-                    for row in (probe_diagnostics.get("regions") or {}).values()
-                    if isinstance(row, dict)
-                    and int(row.get("qualified", 0)) < int(row.get("tested", 0))
-                ),
-                outcome_counts=probe_diagnostics.get("probes", {})
-                .get(name, {})
-                .get("outcomes", {}),
-                control_passed=bool(sentinel_gate.get("control_passed", False)),
+            # Post-sweep re-check with the identical endpoint-blockage model.
+            post_verdict = evaluate_endpoint_blockage(
+                critical_endpoints=[str(probe["name"]) for probe in qualification_probes],
+                region_endpoint_stats={
+                    region: row.get("endpoints", {})
+                    for region, row in (probe_diagnostics.get("regions") or {}).items()
+                },
+                control_ok_regions=set(sentinel_gate.get("control_ok_regions", [])),
             )
-            if post_systemic:
+            if post_verdict["systemic"]:
                 systemic = True
-                dominant_failure = post_dominant
+                systemic_trigger = "post_sweep"
+                dominant_failure = post_verdict["dominant_failure_category"]
+                blocked_critical_endpoints = post_verdict["blocked_critical_endpoints"]
 
         qualified = cached_pass | live_qualified
         if systemic:
@@ -500,9 +549,15 @@ def run_ai_qualification(
             "inconclusive": live_tested if systemic else 0,
             "cache_pass_hits": len(cached_pass),
             "systemic_failure_detected": systemic,
+            "systemic_trigger": systemic_trigger if systemic else None,
+            "blocked_critical_endpoints": blocked_critical_endpoints if systemic else [],
             "dominant_failure_category": dominant_failure,
             "evidence_source": evidence_source,
             "lkg_fresh": bool(cached_pass),
+            "sentinel_count": int(sentinel_gate.get("sentinel_count", 0)),
+            "sentinel_regions": list(sentinel_gate.get("sentinel_regions", [])),
+            "control_tested": int(sentinel_gate.get("control_tested", 0)),
+            "control_ok_regions": list(sentinel_gate.get("control_ok_regions", [])),
         }
         total_live += live_tested
         total_cache_pass += len(cached_pass)
