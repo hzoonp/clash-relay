@@ -5,7 +5,12 @@ import copy
 import pytest
 
 import clash_relay.ai_qualification as ai_qualification
-from clash_relay.ai_qualification import apply_ai_qualification, load_ai_probe_specs
+from clash_relay.ai_qualification import (
+    _new_diagnostics,
+    _record_region_results,
+    apply_ai_qualification,
+    load_ai_probe_specs,
+)
 from clash_relay.errors import ValidationError
 
 
@@ -188,3 +193,131 @@ def test_ai_probe_detaches_production_dns_rule_set_policy() -> None:
     )
 
     assert "nameserver-policy" not in probe["dns"]
+
+
+def test_record_region_results_writes_explicit_endpoint_evidence() -> None:
+    """Explicit passed/failed/reached counters are judged by the probe's own
+    expected_status: a status_200 against expected 204 is reached but failed."""
+
+    diagnostics = _new_diagnostics(
+        ({"name": "connectivity", "method": "HEAD", "expected_status": "204"},)
+    )
+    payload = ({"name": "node-a"}, {"name": "node-b"})
+    node_results = {
+        "node-a": ({"probe": "connectivity", "passed": False, "outcome": "status_200"},),
+        "node-b": ({"probe": "connectivity", "passed": True, "outcome": "status_204"},),
+    }
+
+    _record_region_results(
+        diagnostics,
+        region="JP",
+        payload=payload,
+        qualified={"node-b"},
+        node_results=node_results,
+    )
+
+    row = diagnostics["regions"]["JP"]
+    assert row["tested"] == 2
+    assert row["qualified"] == 1
+    endpoint = row["endpoints"]["connectivity"]
+    assert endpoint == {
+        "probed": 2,
+        "passed": 1,
+        "failed": 1,
+        "reached": 2,
+        "network_failure": 0,
+        "outcomes": {"status_200": 1, "status_204": 1},
+    }
+
+
+def test_record_region_results_counts_network_failures() -> None:
+    diagnostics = _new_diagnostics(
+        ({"name": "ai_openai", "method": "HEAD", "expected_status": "200-399"},)
+    )
+
+    _record_region_results(
+        diagnostics,
+        region="SG",
+        payload=({"name": "node-c"},),
+        qualified=set(),
+        node_results={
+            "node-c": ({"probe": "ai_openai", "passed": False, "outcome": "connection_error"},)
+        },
+    )
+
+    endpoint = diagnostics["regions"]["SG"]["endpoints"]["ai_openai"]
+    assert endpoint["reached"] == 0
+    assert endpoint["network_failure"] == 1
+    assert endpoint["passed"] == 0
+    assert endpoint["failed"] == 1
+
+
+def test_merge_diagnostics_preserves_endpoint_evidence_across_shards() -> None:
+    """P0 regression: shard merge must aggregate region endpoint evidence
+    (probed/passed/failed/reached/network_failure/outcomes) instead of
+    dropping it."""
+
+    from clash_relay.ai_qualification import _merge_diagnostics
+
+    target = _new_diagnostics(
+        ({"name": "ai_openai", "method": "HEAD", "expected_status": "200-399"},)
+    )
+    target["regions"]["JP"] = {
+        "tested": 1,
+        "qualified": 0,
+        "endpoints": {
+            "ai_openai": {
+                "probed": 1,
+                "passed": 0,
+                "failed": 1,
+                "reached": 0,
+                "network_failure": 1,
+                "outcomes": {"timeout": 1},
+            }
+        },
+    }
+    source = _new_diagnostics(
+        ({"name": "ai_openai", "method": "HEAD", "expected_status": "200-399"},)
+    )
+    source["regions"]["JP"] = {
+        "tested": 1,
+        "qualified": 1,
+        "endpoints": {
+            "ai_openai": {
+                "probed": 1,
+                "passed": 1,
+                "failed": 0,
+                "reached": 1,
+                "network_failure": 0,
+                "outcomes": {"status_204": 1},
+            }
+        },
+    }
+    source["regions"]["SG"] = {
+        "tested": 1,
+        "qualified": 1,
+        "endpoints": {
+            "ai_openai": {
+                "probed": 1,
+                "passed": 1,
+                "failed": 0,
+                "reached": 1,
+                "network_failure": 0,
+                "outcomes": {"status_200": 1},
+            }
+        },
+    }
+
+    _merge_diagnostics(target, source)
+
+    jp = target["regions"]["JP"]
+    assert jp["tested"] == 2
+    assert jp["qualified"] == 1
+    assert jp["endpoints"]["ai_openai"]["probed"] == 2
+    assert jp["endpoints"]["ai_openai"]["passed"] == 1
+    assert jp["endpoints"]["ai_openai"]["failed"] == 1
+    assert jp["endpoints"]["ai_openai"]["reached"] == 1
+    assert jp["endpoints"]["ai_openai"]["network_failure"] == 1
+    assert jp["endpoints"]["ai_openai"]["outcomes"] == {"timeout": 1, "status_204": 1}
+    # A region present only in the merged shard is carried over whole.
+    assert target["regions"]["SG"]["endpoints"]["ai_openai"]["reached"] == 1
