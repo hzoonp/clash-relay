@@ -746,6 +746,7 @@ def run_qualification_pipeline(
             )
             if isinstance(ai_summary.get("diagnostics"), dict)
             else "unknown",
+            "service_evidence": ai_summary.get("service_evidence", {}),
             "services": aggregate_service_results,
             "client_path_status": runtime_summary.get("status"),
             "client_path_hardened_services": runtime_summary.get("hardened_services", 0),

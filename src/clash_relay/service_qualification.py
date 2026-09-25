@@ -27,6 +27,13 @@ class ServiceQualification:
     def cache_key(self) -> str:
         return self.probe_name
 
+    @property
+    def supports_systemic_failure_detection(self) -> bool:
+        """Whether live failures may be reclassified as probe-environment
+        inconclusive by the aggregate systemic detector (OpenAI only)."""
+
+        return False
+
     def cache_ttls(self, policy: AICachePolicy) -> tuple[int, int]:
         return policy.pass_ttl_seconds, policy.failure_ttl_seconds
 
@@ -84,6 +91,10 @@ class OpenAIQualification(ServiceQualification):
     probe_name: str = "ai_openai"
     label: str = "openai"
     target_group: str = "__CR_AI_SERVICE_OPENAI"
+
+    @property
+    def supports_systemic_failure_detection(self) -> bool:
+        return True
 
     def cache_key(self) -> str:
         from .openai_app_contract import cache_service_key

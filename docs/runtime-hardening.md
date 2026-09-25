@@ -96,6 +96,37 @@ The qualification summary classifies evidence into three tiers per evidence unit
 - **reserve** — endpoint admitted with some failed attempts (1-of-3 quorum), hostname probes inconclusive because of runner transport trouble, or browsing Reserve (2/3). Reserve feeds fallback scheduling: same-region Reserve is evaluated before any next region, and the client URLTest continuously re-selects.
 - **quarantined** — DNS-proven unresolvable hostnames (two agreeing distinct DoH authorities), 0-of-3 TCP endpoints, browsing nodes below the 2/3 threshold, and core-incompatible nodes. Every stage boundary carries aggregate delta accounting (`removed_by_stage`: unique nodes and runtime entries before/after/removed, by source/region/protocol, with the stage failure reason), so removals are attributable to `hostname`, `endpoint`, `browsing`, `ai`, or `service_hardening`. Any source whose entire runtime inventory was removed is flagged under `sources_fully_removed` with `removed_at_stage`, both unique-node and runtime-entry aggregates, and non-empty failure-category reasons — an unexplainable removal is explicitly marked `unattributed` rather than passing silently. The legacy `removed_nodes` block is kept for compatibility and its per-source dimensions count runtime entries.
 
+## OpenAI systemic probe-environment isolation
+
+OpenAI live qualification carries a three-state evidence contract: `passed`, `failed`, and
+`inconclusive` — with two aggregate states reserved for OpenAI (`probe_environment_blocked`,
+`systemic_failure_detected`). "Cannot verify" never equals "verified failed".
+
+Two aggregate mechanisms isolate an OpenAI probe-environment blackout:
+
+1. **Bounded deterministic sentinel probing** — before the full sweep, up to three anonymous
+   sentinels are selected deterministically (sorted names, round-robin over sorted region
+   labels) and probed against the OpenAI critical endpoints plus a connectivity control
+   through the same nodes. If every sentinel fails OpenAI with network-dominated outcomes
+   while the control succeeds through the same environment, the full sweep is skipped —
+   Claude, Gemini, general, and browsing qualifications are unaffected.
+2. **Post-probe systemic detector** — re-checks the full sweep with the same aggregate rule
+   (no qualified node, a multi-region sample, network-dominated outcomes, control passed).
+
+Under a systemic verdict the qualification writes **nothing** to the cache: no negative
+entries, and previously cached passes keep their `checked_epoch` (they age out through the
+7200s OpenAI pass TTL naturally). Routing falls back to the fresh pass cache (last known
+good); without one, the service is held on its full unverified pool instead of collapsing
+to REJECT. The promotion guard distinguishes the three outcomes: a confirmed collapse (no
+systemic evidence) blocks exactly as before; an inconclusive verdict with a fresh LKG
+passes with `evidence_source=cache` (the client runtime URLTest remains the actual routing
+authority); an inconclusive verdict without an LKG blocks with reason
+`probe_environment_hold` — the release is held, the previous verified production version is
+preserved, and OpenAI runtime routing is never rewritten to REJECT. Per-service aggregate
+evidence (`evidence_status`, `live_tested`, `live_passed`, `live_failed`, `inconclusive`,
+`cache_pass_hits`, `systemic_failure_detected`, `dominant_failure_category`,
+`evidence_source`) is published under `ai.service_evidence` with no node identities.
+
 ## Reachability report authorities
 
 The qualification summary reports reachability evidence under three separate authorities so no single number is over-read:

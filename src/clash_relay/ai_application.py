@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .ai_probe_environment import detect_systemic_failure, select_sentinels
 from .ai_qualification import AI_PROVIDER_PREFIX, load_ai_probe_specs, probe_ai_nodes
 from .ai_qualification_cache import (
     ai_cache_summary,
@@ -18,7 +19,7 @@ from .ai_qualification_cache import (
     update_ai_cache_service,
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
-from .errors import CandidateValidationStageError, ValidationError
+from .errors import CandidateValidationStageError, ConfigurationError, ValidationError
 from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
 from .scheduler_policy import load_scheduler_policy
@@ -113,6 +114,134 @@ def _filtered_candidate(candidate: Path, live_names: set[str]) -> Path:
         return Path(handle.name)
 
 
+def _candidate_ai_names(candidate_config: dict[str, Any]) -> set[str]:
+    """Runtime names of every AI candidate node (aggregate-safe labels only)."""
+
+    names: set[str] = set()
+    providers = candidate_config.get("proxy-providers")
+    if isinstance(providers, dict):
+        for provider_name, provider in providers.items():
+            if not str(provider_name).startswith(AI_PROVIDER_PREFIX):
+                continue
+            payload = provider.get("payload") if isinstance(provider, dict) else None
+            if not isinstance(payload, list):
+                continue
+            names.update(
+                str(proxy["name"])
+                for proxy in payload
+                if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+            )
+    return names
+
+
+def _sentinel_control_probe(policies: Path) -> dict[str, Any] | None:
+    """Load the connectivity probe used as the sentinel control, if declared."""
+
+    try:
+        specs = load_ai_probe_specs(
+            policy_fragment_path(policies, "scheduling"), names=("connectivity",)
+        )
+    except (ValidationError, ConfigurationError):
+        return None
+    return specs[0] if specs else None
+
+
+def _run_sentinel_gate(
+    *,
+    policies: Path,
+    candidate: Path,
+    mihomo_bin: Path,
+    qualification_probes: tuple[dict[str, Any], ...],
+    live_names: set[str] | None,
+    candidate_config: dict[str, Any],
+    workers: int,
+) -> dict[str, Any]:
+    """Run the bounded sentinel probe for one systemic-capable service.
+
+    The sentinel set is deterministic and spans distinct regions. It probes the
+    service's critical endpoints plus a connectivity control through the same
+    nodes; a systemic verdict requires every sentinel to fail the service while
+    the control succeeds through the same environment. Sentinels are anonymous
+    and diagnostic-only: their results never enter the qualification cache.
+    """
+
+    report: dict[str, Any] = {
+        "ran": False,
+        "systemic": False,
+        "dominant_failure_category": None,
+        "sentinel_count": 0,
+        "tested_regions": 0,
+        "failed_regions": 0,
+        "control_passed": False,
+    }
+    control_probe = _sentinel_control_probe(policies)
+    if control_probe is None:
+        return report
+    probeable = live_names
+    if probeable is None:
+        probeable = _candidate_ai_names(candidate_config)
+    if not probeable:
+        return report
+    sentinels = select_sentinels(probeable)
+    if not sentinels:
+        return report
+    report["ran"] = True
+    report["sentinel_count"] = len(sentinels)
+
+    try:
+        openai_qualified, openai_diagnostics = _probe_names(
+            binary=mihomo_bin,
+            candidate=candidate,
+            names=set(sentinels),
+            probes=qualification_probes,
+            workers=workers,
+        )
+        control_qualified, _control_diagnostics = _probe_names(
+            binary=mihomo_bin,
+            candidate=candidate,
+            names=set(sentinels),
+            probes=(control_probe,),
+            workers=workers,
+        )
+    except ValidationError as exc:
+        raise CandidateValidationStageError("ai_service_probe") from exc
+
+    regions = openai_diagnostics.get("regions") or {}
+    tested_regions = len(regions)
+    failed_regions = sum(
+        1
+        for row in regions.values()
+        if isinstance(row, dict) and int(row.get("qualified", 0)) < int(row.get("tested", 0))
+    )
+    outcome_counts: dict[str, int] = {}
+    for probe_spec in qualification_probes:
+        summary = openai_diagnostics.get("probes", {}).get(str(probe_spec["name"]), {})
+        outcomes = summary.get("outcomes", {}) if isinstance(summary, dict) else {}
+        for outcome, count in (outcomes or {}).items():
+            outcome_counts[str(outcome)] = outcome_counts.get(str(outcome), 0) + int(count)
+
+    report.update(
+        {
+            "tested_regions": tested_regions,
+            "failed_regions": failed_regions,
+            "openai_passed": len(openai_qualified),
+            "control_passed": len(control_qualified) > 0,
+            "outcome_counts": dict(sorted(outcome_counts.items())),
+        }
+    )
+    systemic, dominant = detect_systemic_failure(
+        live_tested=len(sentinels),
+        qualified_nodes=len(openai_qualified),
+        tested_regions=tested_regions,
+        failed_regions=failed_regions,
+        outcome_counts=outcome_counts,
+        control_passed=bool(control_qualified),
+    )
+    report["systemic"] = systemic
+    report["dominant_failure_category"] = dominant
+    return report
+
+
 def _empty_probe_summary(probe: dict[str, object]) -> dict[str, object]:
     return {
         "method": str(probe["method"]),
@@ -193,6 +322,7 @@ def run_ai_qualification(
         diagnostics["tested_nodes"] = len(fingerprints)
 
     qualified_by_probe: dict[str, set[str]] = {}
+    service_evidence: dict[str, dict[str, Any]] = {}
     expected_candidate_nodes: int | None = len(fingerprints) if fingerprints is not None else None
     total_live = 0
     total_cache_pass = 0
@@ -215,30 +345,88 @@ def run_ai_qualification(
                 failure_ttl_seconds=failure_ttl_seconds,
             )
 
-        try:
-            live_qualified, probe_diagnostics = _probe_names(
-                binary=mihomo_bin,
+        # Systemic-capable services (OpenAI) gate their full live sweep behind
+        # a bounded deterministic sentinel probe: a probe-environment blackout
+        # must never be recorded as per-node failure evidence.
+        sentinel_gate: dict[str, Any] = {
+            "ran": False,
+            "systemic": False,
+            "dominant_failure_category": None,
+        }
+        if service.supports_systemic_failure_detection:
+            sentinel_gate = _run_sentinel_gate(
+                policies=policies,
                 candidate=candidate,
-                names=live_names,
-                probes=qualification_probes,
+                mihomo_bin=mihomo_bin,
+                qualification_probes=qualification_probes,
+                live_names=live_names,
+                candidate_config=candidate_config,
                 workers=workers,
             )
-        except ValidationError as exc:
-            raise CandidateValidationStageError("ai_service_probe") from exc
+        systemic: bool = bool(sentinel_gate.get("systemic"))
+        dominant_failure: str | None = (
+            sentinel_gate.get("dominant_failure_category") if systemic else None
+        )
+        post_dominant: str | None = None
+        live_qualified: set[str] = set()
+        probe_diagnostics: dict[str, Any] = {}
+        live_tested = 0
+        live_names_for_cache: set[str] = set()
 
-        if live_names is None:
-            live_tested = int(probe_diagnostics.get("tested_nodes", 0))
-            if expected_candidate_nodes is None:
-                expected_candidate_nodes = live_tested
-                diagnostics["tested_nodes"] = live_tested
-            elif live_tested != expected_candidate_nodes:
-                raise CandidateValidationStageError("ai_service_probe")
-            live_names_for_cache: set[str] = set()
+        if systemic:
+            live_tested = int(sentinel_gate.get("sentinel_count", 0))
         else:
-            live_tested = len(live_names)
-            live_names_for_cache = live_names
+            try:
+                live_qualified, probe_diagnostics = _probe_names(
+                    binary=mihomo_bin,
+                    candidate=candidate,
+                    names=live_names,
+                    probes=qualification_probes,
+                    workers=workers,
+                )
+            except ValidationError as exc:
+                raise CandidateValidationStageError("ai_service_probe") from exc
+
+            if live_names is None:
+                live_tested = int(probe_diagnostics.get("tested_nodes", 0))
+                if expected_candidate_nodes is None:
+                    expected_candidate_nodes = live_tested
+                    diagnostics["tested_nodes"] = live_tested
+                elif live_tested != expected_candidate_nodes:
+                    raise CandidateValidationStageError("ai_service_probe")
+            else:
+                live_tested = len(live_names)
+                live_names_for_cache = live_names
+
+            post_systemic, post_dominant = detect_systemic_failure(
+                live_tested=live_tested,
+                qualified_nodes=len(live_qualified),
+                tested_regions=len(probe_diagnostics.get("regions") or {}),
+                failed_regions=sum(
+                    1
+                    for row in (probe_diagnostics.get("regions") or {}).values()
+                    if isinstance(row, dict)
+                    and int(row.get("qualified", 0)) < int(row.get("tested", 0))
+                ),
+                outcome_counts=probe_diagnostics.get("probes", {})
+                .get(name, {})
+                .get("outcomes", {}),
+                control_passed=bool(sentinel_gate.get("control_passed", False)),
+            )
+            if post_systemic:
+                systemic = True
+                dominant_failure = post_dominant
+
         qualified = cached_pass | live_qualified
-        qualified_by_probe[name] = qualified
+        if systemic:
+            # Inconclusive evidence never routes as failure: fall back to the
+            # fresh pass cache (LKG) and, without one, hold the service on its
+            # full unverified pool instead of collapsing it to REJECT.
+            qualified_by_probe[name] = (
+                cached_pass if cached_pass else _candidate_ai_names(candidate_config)
+            )
+        else:
+            qualified_by_probe[name] = qualified
 
         selector_failures = diagnostics["selector_failures"]
         if not isinstance(selector_failures, int) or isinstance(selector_failures, bool):
@@ -291,6 +479,31 @@ def run_ai_qualification(
         probes_diagnostics = diagnostics["probes"]
         assert isinstance(probes_diagnostics, dict)
         probes_diagnostics[name] = probe_summary
+        if systemic:
+            evidence_status = "inconclusive"
+            evidence_source = "cache" if cached_pass else "none"
+        else:
+            evidence_status = "passed" if qualified else "failed"
+            if live_tested and cached_pass:
+                evidence_source = "mixed"
+            elif live_tested:
+                evidence_source = "live"
+            elif cached_pass:
+                evidence_source = "cache"
+            else:
+                evidence_source = "none"
+        service_evidence[service.label] = {
+            "evidence_status": evidence_status,
+            "live_tested": live_tested,
+            "live_passed": len(live_qualified) if not systemic else 0,
+            "live_failed": (live_tested - len(live_qualified)) if not systemic else 0,
+            "inconclusive": live_tested if systemic else 0,
+            "cache_pass_hits": len(cached_pass),
+            "systemic_failure_detected": systemic,
+            "dominant_failure_category": dominant_failure,
+            "evidence_source": evidence_source,
+            "lkg_fresh": bool(cached_pass),
+        }
         total_live += live_tested
         total_cache_pass += len(cached_pass)
         total_cache_fail += len(cached_fail)
@@ -348,6 +561,7 @@ def run_ai_qualification(
     return {
         "status": "qualified",
         "diagnostics": diagnostics,
+        "service_evidence": service_evidence,
         "qualification_cache": cache_report,
         **service_postprocessing,
         **report,

@@ -128,11 +128,14 @@ def _absolute_violations(
 def _service_violations(
     availability: ServiceAvailabilityCount,
     policy: PromotionGuardPolicy,
+    *,
+    skip_services: frozenset[str] = frozenset(),
 ) -> list[str]:
     violations: list[str] = []
-    required_services = set(policy.minimum_qualified_nodes_by_service) | set(
-        policy.minimum_qualified_regions_by_service
-    )
+    required_services = (
+        set(policy.minimum_qualified_nodes_by_service)
+        | set(policy.minimum_qualified_regions_by_service)
+    ) - skip_services
     for service in sorted(required_services):
         qualified_nodes = availability.qualified_nodes_by_service.get(service, 0)
         qualified_regions = availability.qualified_regions_by_service.get(service, 0)
@@ -143,6 +146,36 @@ def _service_violations(
         if qualified_regions < minimum_regions:
             violations.append(f"minimum_qualified_regions:{service}")
     return violations
+
+
+def _systemic_service_states(
+    qualification: dict[str, Any] | None,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Split systemic-inconclusive services into cache-backed and held sets.
+
+    A service whose live evidence was reclassified as probe-environment
+    inconclusive never counts as confirmed failure: with a fresh pass cache it
+    continues under ``evidence_source=cache``; without one the release is held.
+    """
+
+    ai = qualification.get("ai") if isinstance(qualification, dict) else None
+    evidence = ai.get("service_evidence") if isinstance(ai, dict) else None
+    if not isinstance(evidence, dict):
+        return frozenset(), frozenset()
+    cache_backed: set[str] = set()
+    held: set[str] = set()
+    for service, row in evidence.items():
+        if not isinstance(row, dict):
+            continue
+        if row.get("evidence_status") != "inconclusive":
+            continue
+        if not row.get("systemic_failure_detected"):
+            continue
+        if row.get("lkg_fresh"):
+            cache_backed.add(str(service))
+        else:
+            held.add(str(service))
+    return frozenset(cache_backed), frozenset(held)
 
 
 def _use_ratio_row(
@@ -190,13 +223,29 @@ def assess_promotion(
 
     candidate_inventory = collect_inventory(project, candidate)
     service_availability = collect_service_availability(qualification)
+    cache_backed_services, held_services = _systemic_service_states(qualification)
     violations = _absolute_violations(candidate_inventory, policy)
-    violations.extend(_service_violations(service_availability, policy))
+    violations.extend(
+        _service_violations(
+            service_availability,
+            policy,
+            skip_services=cache_backed_services | held_services,
+        )
+    )
+    violations.extend(f"probe_environment_hold:{service}" for service in sorted(held_services))
     candidate_summary = _candidate_inventory_summary(candidate_inventory, service_availability)
     if baseline is None:
         return {
             "status": "blocked" if violations else "passed",
-            "reason": "availability_contract" if violations else "first_release",
+            "reason": (
+                "probe_environment_hold"
+                if held_services
+                else ("availability_contract" if violations else "first_release")
+            ),
+            "probe_environment": {
+                "cache_backed_services": sorted(cache_backed_services),
+                "held_services": sorted(held_services),
+            },
             "candidate": candidate_summary,
             "thresholds": _absolute_thresholds(policy),
             "violations": violations,
@@ -220,9 +269,19 @@ def assess_promotion(
             violations.append(f"source_ratio:{source_use}")
         use_ratios[source_use] = row
 
+    blocked_reason = "degraded" if violations else "within_thresholds"
+    if held_services and not (
+        set(violations) - {f"probe_environment_hold:{service}" for service in held_services}
+    ):
+        blocked_reason = "probe_environment_hold"
+
     return {
         "status": "blocked" if violations else "passed",
-        "reason": "degraded" if violations else "within_thresholds",
+        "reason": blocked_reason,
+        "probe_environment": {
+            "cache_backed_services": sorted(cache_backed_services),
+            "held_services": sorted(held_services),
+        },
         "candidate": candidate_summary,
         "baseline": safe_inventory(baseline_inventory),
         "ratios": {

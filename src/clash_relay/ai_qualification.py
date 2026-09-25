@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from .ai_probe_environment import extract_region
 from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
@@ -351,6 +352,7 @@ def _new_diagnostics(probes: tuple[dict[str, Any], ...]) -> dict[str, Any]:
         "tested_nodes": 0,
         "qualified_nodes": 0,
         "selector_failures": 0,
+        "regions": {},
         "probes": {
             str(probe["name"]): {
                 "method": str(probe["method"]),
@@ -362,6 +364,25 @@ def _new_diagnostics(probes: tuple[dict[str, Any], ...]) -> dict[str, Any]:
             for probe in probes
         },
     }
+
+
+def _record_region_results(
+    diagnostics: dict[str, Any],
+    provider_name: str,
+    payload: tuple[dict[str, Any], ...],
+    qualified: set[str],
+) -> None:
+    """Aggregate per-region node counts (no identities beyond region labels)."""
+
+    del provider_name  # region derives from the runtime scope token
+    regions = diagnostics.setdefault("regions", {})
+    for proxy in payload:
+        name = str(proxy["name"])
+        region = extract_region(name)
+        row = regions.setdefault(region, {"tested": 0, "qualified": 0})
+        row["tested"] += 1
+        if name in qualified:
+            row["qualified"] += 1
 
 
 def _record_probe_results(diagnostics: dict[str, Any], results: tuple[dict[str, Any], ...]) -> None:
@@ -378,6 +399,12 @@ def _merge_diagnostics(target: dict[str, Any], source: dict[str, Any]) -> None:
     target["tested_nodes"] += int(source["tested_nodes"])
     target["qualified_nodes"] += int(source["qualified_nodes"])
     target["selector_failures"] += int(source["selector_failures"])
+    for region, row in (source.get("regions") or {}).items():
+        target_row = target.setdefault("regions", {}).setdefault(
+            str(region), {"tested": 0, "qualified": 0}
+        )
+        target_row["tested"] += int(row.get("tested", 0))
+        target_row["qualified"] += int(row.get("qualified", 0))
     for name, source_probe in source["probes"].items():
         target_probe = target["probes"][name]
         target_probe["passed"] += int(source_probe["passed"])
@@ -456,6 +483,7 @@ def _qualify_shard(
                 if passed:
                     qualified.add(name)
             diagnostics["qualified_nodes"] = len(qualified)
+            _record_region_results(diagnostics, provider_name, payload, qualified)
             return qualified, diagnostics
         finally:
             if process.poll() is None:
