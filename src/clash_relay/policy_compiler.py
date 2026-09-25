@@ -15,6 +15,7 @@ from .acl4ssr_policy import apply_acl4ssr_group_semantics
 from .browsing_runtime import harden_browsing_runtime, validate_browsing_public_surface
 from .generator import generate_config
 from .models import Node
+from .network_profile import apply_network_profile_urltest
 from .routing_policy import apply_acl4ssr_source_exclusions
 from .runtime_graph import RuntimeGraph
 
@@ -115,6 +116,14 @@ def compile_runtime_graph(
     # must therefore run for forks that disable external ACL groups as well.
     browsing_runtime = harden_browsing_runtime(output, policies)
     validate_browsing_public_surface(output)
+    # Network-profile tuning is the last topology pass so it observes the
+    # final group graph; it never changes topology, only tuning fields.
+    urltest_profile = apply_network_profile_urltest(
+        output,
+        config=config,
+        policies=policies,
+        group_specs=group_specs,
+    )
 
     report: dict[str, Any] = dict(base_report)
     if group_semantics:
@@ -125,5 +134,7 @@ def compile_runtime_graph(
         report["manual_provider_exposure"] = manual_exposure
     if browsing_runtime.get("status") != "not_applicable":
         report["browsing_runtime"] = browsing_runtime
+    if urltest_profile.get("status") != "not_applicable":
+        report["network_profile_urltest"] = urltest_profile
 
     return CompiledRuntime(graph=RuntimeGraph.from_candidate(output), report=report)

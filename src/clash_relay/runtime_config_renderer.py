@@ -1,4 +1,10 @@
-"""Render client-facing Mihomo runtime settings from the public config model."""
+"""Render client-facing Mihomo runtime settings from the public config model.
+
+This projection is network-profile agnostic: the network-profile compilation
+layer merges profile resolver pools into the config model before rendering,
+so this module renders whatever effective DNS declaration it receives and must
+never branch on profile names.
+"""
 
 from __future__ import annotations
 

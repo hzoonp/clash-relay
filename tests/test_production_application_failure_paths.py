@@ -28,6 +28,7 @@ def _project(root: Path) -> ProjectDefinition:
         subscriptions=(),
         policies={},
         acl4ssr=None,
+        network_profile={"profile": "default", "status": "not_applicable"},
     )
 
 

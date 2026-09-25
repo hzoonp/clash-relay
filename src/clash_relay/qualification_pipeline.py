@@ -11,6 +11,7 @@ from typing import Any
 
 from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
+from .carrier_qualification import run_carrier_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
 from .proxy_endpoint_qualification import (
@@ -258,6 +259,28 @@ def run_qualification_pipeline(
     )
     services = runtime_summary.get("services")
     hardened_service_names = sorted(services) if isinstance(services, dict) else []
+    browsing_block = {
+        "status": browsing_summary.get("status"),
+        "automatic_nodes": browsing_summary.get("automatic_nodes", 0),
+        "stage_attempts": browsing_attempts_used,
+        "recovered_by_retry": recovered_failure_category is not None,
+        "recovered_failure_category": recovered_failure_category,
+        "core_quarantine_status": browsing_summary.get("diagnostics", {}).get(
+            "core_quarantine_status", "not_needed"
+        )
+        if isinstance(browsing_summary.get("diagnostics"), dict)
+        else "not_needed",
+        "core_quarantined_nodes": int(
+            browsing_summary.get("diagnostics", {}).get("core_quarantined_nodes", 0) or 0
+        )
+        if isinstance(browsing_summary.get("diagnostics"), dict)
+        else 0,
+        "core_quarantined_runtime_entries": int(
+            browsing_summary.get("diagnostics", {}).get("core_quarantined_runtime_entries", 0) or 0
+        )
+        if isinstance(browsing_summary.get("diagnostics"), dict)
+        else 0,
+    }
     result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,
@@ -268,29 +291,7 @@ def run_qualification_pipeline(
             "service_client_path": runtime_elapsed_ms,
             "total": _elapsed_ms(pipeline_started),
         },
-        "browsing": {
-            "status": browsing_summary.get("status"),
-            "automatic_nodes": browsing_summary.get("automatic_nodes", 0),
-            "stage_attempts": browsing_attempts_used,
-            "recovered_by_retry": recovered_failure_category is not None,
-            "recovered_failure_category": recovered_failure_category,
-            "core_quarantine_status": browsing_summary.get("diagnostics", {}).get(
-                "core_quarantine_status", "not_needed"
-            )
-            if isinstance(browsing_summary.get("diagnostics"), dict)
-            else "not_needed",
-            "core_quarantined_nodes": int(
-                browsing_summary.get("diagnostics", {}).get("core_quarantined_nodes", 0) or 0
-            )
-            if isinstance(browsing_summary.get("diagnostics"), dict)
-            else 0,
-            "core_quarantined_runtime_entries": int(
-                browsing_summary.get("diagnostics", {}).get("core_quarantined_runtime_entries", 0)
-                or 0
-            )
-            if isinstance(browsing_summary.get("diagnostics"), dict)
-            else 0,
-        },
+        "browsing": browsing_block,
         "proxy_host_resolution": proxy_host_resolution,
         "endpoint_qualification": endpoint_qualification,
         "accelerated_health_check_groups": accelerated_groups,
@@ -305,6 +306,23 @@ def run_qualification_pipeline(
             "client_path_status": runtime_summary.get("status"),
             "client_path_hardened_services": runtime_summary.get("hardened_services", 0),
             "client_path_services": hardened_service_names,
+        },
+        # Reachability evidence is reported in three separate authorities.
+        # `global_preflight_reachable` is GitHub-Runner-side TCP endpoint
+        # admission that only filters obviously dead endpoints; it must never
+        # be read as China Telecom / Unicom / Mobile quality. Real carrier
+        # quality is reserved for self-hosted carrier probes.
+        "reachability": {
+            "global_preflight_reachable": endpoint_qualification,
+            "client_runtime_health": {
+                "authority": "client_local_urltest",
+                "probe_url": "https://cp.cloudflare.com/generate_204",
+                "max_failed_times": {"browsing": 1, "regional_and_other": 2},
+                "browsing": browsing_block,
+                "ai_status": ai_summary.get("status"),
+                "accelerated_health_check_groups": accelerated_groups,
+            },
+            "carrier_qualification": run_carrier_qualification(),
         },
     }
     return QualificationPipelineResult.from_mapping(result).as_dict()

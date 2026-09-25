@@ -4,6 +4,16 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+### Added
+
+- `runtime.network_profile` selects a network-profile compilation layer with two profiles: `default` (declared DNS untouched) and `cn_three_net`, which adapts resolver pools and client URLTest tuning to China Telecom / Unicom / Mobile access networks. The layer keeps profile decisions out of the renderer, generator, and routing code, preserves the ACL4SSR rule-set `nameserver-policy` and the exact `stun.l.google.com` override, and fail-closes when scheduling declarations or compiled groups drift from the profile contract.
+- The qualification summary now separates reachability evidence into `global_preflight_reachable` (GitHub Runner TCP endpoint admission), `client_runtime_health` (client-side URLTest contract plus browsing/AI qualification outcomes), and a reserved `carrier_qualification` extension point for future self-hosted Telecom / Unicom / Mobile probes that publishes aggregate-only results.
+
+### Changed
+
+- Under `cn_three_net`, regional country `url-test` groups widen their switch tolerance to 120ms (US keeps 150ms) while keeping the 300s interval and 8000ms timeout, so client-side measurements decide node quality without carrier-name hardcoding. The default profile keeps the previous tolerance values byte-for-byte.
+- The DNS runtime audit accepts `system` and hostname DoH entries in `proxy-server-nameserver` (bootstrap-safe through the IP-literal `default-nameserver` pool required for every profile); the default profile still requires IP-literal encrypted proxy-server resolvers at the declaration layer, and TUN profiles remain fail-closed through the DNS leak audit.
+
 ## [2.2.0] - 2026-09-08
 
 ### Added

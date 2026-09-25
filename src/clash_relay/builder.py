@@ -346,6 +346,7 @@ def build_candidate(
     report: dict[str, Any] = {
         "schema_version": 1,
         "candidate_sha256": sha256_text(yaml_text),
+        "network_profile": project.network_profile,
         "subscriptions": source_reports,
         "successful_subscriptions": successful,
         "parsed_nodes": len(nodes),

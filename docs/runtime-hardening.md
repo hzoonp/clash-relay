@@ -75,6 +75,14 @@ Pre-publication browsing qualification and the published browsing runtime use th
 
 `scheduler.browsing.region_switch_interval` controls cross-region re-evaluation and is intentionally no shorter than the node-level browsing probe interval. The canonical value is 300 seconds, while the current browsing probe interval is 180 seconds.
 
+## Reachability report authorities
+
+The qualification summary reports reachability evidence under three separate authorities so no single number is over-read:
+
+- `global_preflight_reachable` — the GitHub Runner TCP endpoint admission (the aggregate `endpoint_qualification` block). It filters obviously dead TCP endpoints from a data-center vantage point before qualification. It is never a measure of China Telecom / Unicom / Mobile quality.
+- `client_runtime_health` — the client-side URLTest contract plus the browsing/AI qualification outcomes measured through real Mihomo probes: canonical `https://cp.cloudflare.com/generate_204`, browsing `max-failed-times: 1`, regional and other non-AI automatic groups `2`.
+- `carrier_qualification` — a reserved extension point (`src/clash_relay/carrier_qualification.py`). Future self-hosted Telecom / Unicom / Mobile probe stages submit `CarrierProbeResult` rows and only the aggregate reduction (per-carrier tested/reachable/median latency) crosses into reports; the boundary never emits endpoints or raw samples. Without probes the stage reports `not_configured`.
+
 ## Scheduler history
 
 Historical stability remains subordinate to live qualification. History can demote a current Stable node only within that node's region. A demoted node remains current-qualified and moves to the same region's Reserve tier. History cannot promote a live Reserve or failed node into Stable and cannot move a node into another region.

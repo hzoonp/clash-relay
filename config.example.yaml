@@ -9,6 +9,9 @@ runtime:
   ipv6: false
   unified_delay: true
   tcp_concurrent: true
+  # cn_three_net adapts resolver pools and client URLTest tuning to China
+  # Telecom / Unicom / Mobile access networks; see src/clash_relay/network_profile.py.
+  network_profile: cn_three_net
   profile:
     store_selected: true
     store_fake_ip: true

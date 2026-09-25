@@ -37,6 +37,7 @@ def test_dns_policy_reuses_routing_scenarios_and_rule_providers() -> None:
     assert report == {
         "status": "compiled",
         "mode": "acl4ssr",
+        "network_profile": "default",
         "direct_rulesets": 1,
         "proxy_rulesets": 1,
         "total_rulesets": 2,

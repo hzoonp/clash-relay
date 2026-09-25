@@ -20,7 +20,9 @@ def apply_dns_routing_policy(
 
     The DNS policy deliberately reuses the same source scenarios that feed the
     main routing compiler. It does not maintain a second domain classification
-    list.
+    list. Resolver pools are read from the effective config model: the
+    network-profile layer merges its overrides before this pass runs, so
+    rule-set bindings always match the rendered resolver pools.
     """
 
     dns_decl = config["runtime"]["dns"]
@@ -94,6 +96,7 @@ def apply_dns_routing_policy(
     return {
         "status": "compiled",
         "mode": "acl4ssr",
+        "network_profile": str(config["runtime"].get("network_profile", "default")),
         "direct_rulesets": direct_rulesets,
         "proxy_rulesets": proxy_rulesets,
         "total_rulesets": direct_rulesets + proxy_rulesets,

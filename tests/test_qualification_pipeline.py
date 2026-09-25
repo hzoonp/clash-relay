@@ -108,6 +108,46 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatc
     assert ai_report.exists()
 
 
+def test_pipeline_reports_reachability_in_three_separate_authorities(
+    tmp_path: Path, monkeypatch
+) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    _success_services(monkeypatch)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    reachability = result["reachability"]
+    assert set(reachability) == {
+        "global_preflight_reachable",
+        "client_runtime_health",
+        "carrier_qualification",
+    }
+    # The runner-side endpoint admission and the client runtime contract stay
+    # distinct: preflight results must never be read as carrier quality.
+    assert reachability["global_preflight_reachable"] == result["endpoint_qualification"]
+    client_health = reachability["client_runtime_health"]
+    assert client_health["authority"] == "client_local_urltest"
+    assert client_health["probe_url"] == "https://cp.cloudflare.com/generate_204"
+    assert client_health["max_failed_times"] == {"browsing": 1, "regional_and_other": 2}
+    assert client_health["browsing"] == result["browsing"]
+    assert client_health["ai_status"] == "qualified"
+    assert (
+        client_health["accelerated_health_check_groups"]
+        == (result["accelerated_health_check_groups"])
+    )
+    carrier = reachability["carrier_qualification"]
+    assert carrier["status"] == "not_configured"
+    assert carrier["carriers"] == {}
+
+
 def test_browsing_failover_threshold_survives_later_qualification_stages(
     tmp_path: Path, monkeypatch
 ) -> None:

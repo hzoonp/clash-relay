@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .errors import ConfigurationError
 from .models import SubscriptionSpec
+from .network_profile import apply_network_profile
 from .policy_document import load_policy_document
 from .schema import load_and_validate
 from .status import parse_expected_status
@@ -23,6 +26,7 @@ class ProjectDefinition:
     subscriptions: tuple[SubscriptionSpec, ...]
     policies: dict[str, Any]
     acl4ssr: dict[str, Any] | None
+    network_profile: dict[str, Any]
 
 
 def _ensure_unique(items: list[dict[str, Any]], field: str, label: str) -> None:
@@ -85,11 +89,35 @@ def _sniffer_semantics(config: dict[str, Any]) -> None:
                 )
 
 
+def _ip_literal_encrypted_resolver(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"https", "tls", "quic"} or not parsed.hostname:
+        return False
+    try:
+        ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        return False
+    return True
+
+
 def _dns_tun_semantics(config: dict[str, Any]) -> None:
     runtime = config["runtime"]
     dns = runtime["dns"]
     dns_mode = str(dns.get("mode", "managed"))
     routing_policy = str(dns.get("routing_policy", "none"))
+
+    if runtime.get("network_profile", "default") == "default":
+        # The default profile keeps the IP-literal encrypted proxy-server
+        # guarantee at the declaration layer; system or hostname entries must
+        # be adopted through an explicit network profile instead.
+        for resolver in dns.get("proxy_server_nameservers", []):
+            if not _ip_literal_encrypted_resolver(resolver):
+                raise ConfigurationError(
+                    "runtime.dns.proxy_server_nameservers must contain IP-literal encrypted "
+                    "resolvers under the default network profile"
+                )
 
     if routing_policy == "acl4ssr":
         if dns_mode != "managed" or dns.get("enabled") is not True:
@@ -169,6 +197,7 @@ def load_project(
 ) -> ProjectDefinition:
     config = load_and_validate(config_path, "config.schema.json")
     _sniffer_semantics(config)
+    network_profile = apply_network_profile(config)
     _dns_tun_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
     policy_document = load_policy_document(policies_path)
@@ -403,4 +432,5 @@ def load_project(
         subscriptions=tuple(specs),
         policies=policies,
         acl4ssr=acl4ssr,
+        network_profile=network_profile,
     )

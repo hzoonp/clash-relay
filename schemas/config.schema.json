@@ -19,6 +19,7 @@
         "ipv6": {"type": "boolean"},
         "unified_delay": {"type": "boolean"},
         "tcp_concurrent": {"type": "boolean"},
+        "network_profile": {"enum": ["default", "cn_three_net"]},
         "profile": {
           "type": "object",
           "additionalProperties": false,

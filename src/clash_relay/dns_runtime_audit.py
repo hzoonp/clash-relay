@@ -28,6 +28,27 @@ def _ip_literal_resolver(value: object, *, encrypted_required: bool) -> bool:
     return True
 
 
+def _encrypted_proxy_server_resolver(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlsplit(value)
+    return parsed.scheme in {"https", "tls", "quic"} and bool(parsed.hostname)
+
+
+def _proxy_server_resolver(value: object) -> bool:
+    """Accept the two resolver shapes that cannot recurse into proxy routing.
+
+    An IP-literal encrypted resolver needs no DNS bootstrap at all. The OS
+    ``system`` resolver lives entirely outside Mihomo routing, and a hostname
+    encrypted resolver bootstraps through ``default-nameserver``, which the
+    audit independently requires to be IP-literal. TUN-owned profiles are
+    separately fail-closed by the DNS leak audit, which still requires
+    IP-literal encrypted proxy-server resolvers when a TUN is present.
+    """
+
+    return value == "system" or _encrypted_proxy_server_resolver(value)
+
+
 def audit_dns_runtime_dependencies(candidate: dict[str, Any]) -> dict[str, object]:
     """Fail closed on DNS-to-routing-to-URLTest dependency cycles.
 
@@ -49,12 +70,15 @@ def audit_dns_runtime_dependencies(candidate: dict[str, Any]) -> dict[str, objec
         resolvers = dns.get(field)
         if not isinstance(resolvers, list) or not resolvers:
             raise ValidationError(f"managed DNS runtime requires non-empty {field}")
-        encrypted_required = field == "proxy-server-nameserver"
-        if not all(
-            _ip_literal_resolver(item, encrypted_required=encrypted_required) for item in resolvers
-        ):
-            suffix = " encrypted" if encrypted_required else ""
-            raise ValidationError(f"{field} must contain IP-literal{suffix} resolvers")
+    if not all(
+        _ip_literal_resolver(item, encrypted_required=False) for item in dns["default-nameserver"]
+    ):
+        raise ValidationError("default-nameserver must contain IP-literal resolvers")
+    if not all(_proxy_server_resolver(item) for item in dns["proxy-server-nameserver"]):
+        raise ValidationError(
+            "proxy-server-nameserver must contain IP-literal encrypted resolvers "
+            "or system/encrypted bootstrap-safe resolvers"
+        )
     policy = dns.get("nameserver-policy")
     if not isinstance(policy, dict) or not policy:
         raise ValidationError("managed DNS runtime requires nameserver-policy")

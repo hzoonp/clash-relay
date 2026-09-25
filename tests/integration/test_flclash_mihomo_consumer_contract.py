@@ -4,7 +4,6 @@ import os
 import shutil
 from ipaddress import ip_address
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -163,14 +162,14 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     )
     for resolver in dns["default-nameserver"]:
         assert ip_address(str(resolver))
-    for field in ("proxy-server-nameserver",):
-        resolvers = dns[field]
-        assert resolvers
-        for resolver in resolvers:
-            parsed = urlsplit(str(resolver))
-            assert parsed.scheme == "https"
-            assert parsed.hostname is not None
-            ip_address(parsed.hostname)
+    # The canonical cn_three_net profile resolves proxy-server names through
+    # the OS resolver plus domestic hostname DoH; bootstrap safety comes from
+    # the IP-literal default-nameserver pool asserted above.
+    assert dns["proxy-server-nameserver"] == [
+        "system",
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
     urltest_groups = [
         group for group in document["proxy-groups"] if group.get("type") == "url-test"
     ]

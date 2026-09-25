@@ -56,7 +56,8 @@ def test_runtime_dns_audit_accepts_domestic_plain_ip_bootstrap_and_eight_second_
     [
         ("respect-rules", True, "must not respect"),
         ("direct-nameserver-follow-policy", True, "must bypass"),
-        ("proxy-server-nameserver", ["https://dns.google/dns-query"], "IP-literal"),
+        ("proxy-server-nameserver", ["223.5.5.5"], "bootstrap-safe"),
+        ("proxy-server-nameserver", ["udp://dns.google/dns-query"], "bootstrap-safe"),
     ],
 )
 def test_runtime_dns_audit_rejects_resolver_dependency_cycles(
@@ -66,6 +67,34 @@ def test_runtime_dns_audit_rejects_resolver_dependency_cycles(
     candidate["dns"][field] = value
 
     with pytest.raises(ValidationError, match=message):
+        audit_dns_runtime_dependencies(candidate)
+
+
+def test_runtime_dns_audit_accepts_system_and_hostname_doh_proxy_resolvers() -> None:
+    """The China three-network shape: OS resolver plus domestic hostname DoH.
+
+    The OS resolver is outside Mihomo routing, and hostname DoH bootstraps
+    through the IP-literal default-nameserver pool, so neither entry can
+    recurse into proxy routing.
+    """
+
+    candidate = _candidate()
+    candidate["dns"]["default-nameserver"] = ["223.5.5.5", "119.29.29.29"]
+    candidate["dns"]["proxy-server-nameserver"] = [
+        "system",
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+
+    assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"
+
+
+def test_runtime_dns_audit_hostname_proxy_resolver_still_requires_ip_bootstrap() -> None:
+    candidate = _candidate()
+    candidate["dns"]["default-nameserver"] = ["dns.google"]
+    candidate["dns"]["proxy-server-nameserver"] = ["https://dns.alidns.com/dns-query"]
+
+    with pytest.raises(ValidationError, match="IP-literal"):
         audit_dns_runtime_dependencies(candidate)
 
 
