@@ -15,6 +15,7 @@ from .carrier_qualification import run_carrier_qualification
 from .errors import ValidationError
 from .policy_document import load_policy_document
 from .proxy_endpoint_qualification import (
+    _source,
     accelerate_client_health_checks,
     quarantine_unreachable_tcp_endpoints,
 )
@@ -115,6 +116,140 @@ def _qualification_policy_input(policies: Path) -> tuple[Path, int]:
     return policies, policy_document.model_version
 
 
+def _carrier_report(carrier_input: Path | None) -> dict[str, Any]:
+    """Aggregate-only carrier report; pluggable via a self-hosted payload file."""
+
+    if carrier_input is None:
+        return run_carrier_qualification()
+    try:
+        payload = json.loads(carrier_input.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValidationError(
+            f"carrier qualification input {carrier_input.name!r} could not be read"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValidationError("carrier qualification input must be an object")
+    return run_carrier_qualification(payload)
+
+
+def _source_node_counts(document: dict[str, Any]) -> dict[str, int]:
+    """Count runtime nodes per subscription source (aggregate labels only)."""
+
+    providers = document.get("proxy-providers")
+    counts: dict[str, int] = {}
+    if not isinstance(providers, dict):
+        return counts
+    for provider in providers.values():
+        payload = provider.get("payload") if isinstance(provider, dict) else None
+        if not isinstance(payload, list):
+            continue
+        for proxy in payload:
+            if not isinstance(proxy, dict):
+                continue
+            source = _source(proxy.get("name"))
+            if source == "other":
+                continue
+            counts[source] = counts.get(source, 0) + 1
+    return counts
+
+
+def _merged_category(
+    host_report: dict[str, Any], endpoint_report: dict[str, Any], key: str
+) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for report in (host_report, endpoint_report):
+        for name, count in (report.get(key) or {}).items():
+            merged[str(name)] = merged.get(str(name), 0) + int(count or 0)
+    return dict(sorted(merged.items()))
+
+
+def _removed_nodes_summary(
+    *,
+    host_report: dict[str, Any],
+    endpoint_report: dict[str, Any],
+    generated_source_counts: dict[str, int],
+    final_document: dict[str, Any],
+) -> dict[str, Any]:
+    """Aggregate-only accounting of nodes removed by qualification.
+
+    Surfaces the removal dimensions (source/region/protocol/failure category)
+    and flags every subscription source whose entire runtime inventory was
+    removed, so a silently emptied subscription always has an explainable,
+    privacy-safe reason attached.
+    """
+
+    generated_counts = generated_source_counts
+    final_counts = _source_node_counts(final_document)
+    by_source_failure_category: dict[str, dict[str, int]] = {}
+    for report in (host_report, endpoint_report):
+        for source, categories in (report.get("by_source_failure_category") or {}).items():
+            bucket = by_source_failure_category.setdefault(str(source), {})
+            for category, count in (categories or {}).items():
+                bucket[str(category)] = bucket.get(str(category), 0) + int(count or 0)
+    sources_fully_removed = []
+    for source in sorted(set(generated_counts) | set(final_counts)):
+        generated_nodes = generated_counts.get(source, 0)
+        final_nodes = final_counts.get(source, 0)
+        if generated_nodes == 0 or final_nodes > 0:
+            continue
+        sources_fully_removed.append(
+            {
+                "source": source,
+                "generated_nodes": generated_nodes,
+                "final_nodes": final_nodes,
+                "by_failure_category": dict(
+                    sorted(by_source_failure_category.get(source, {}).items())
+                ),
+            }
+        )
+    return {
+        "by_source": _merged_category(host_report, endpoint_report, "by_source"),
+        "by_region": _merged_category(host_report, endpoint_report, "by_region"),
+        "by_protocol": _merged_category(host_report, endpoint_report, "by_protocol"),
+        "by_failure_category": _merged_category(
+            host_report, endpoint_report, "by_failure_category"
+        ),
+        "sources_fully_removed": sources_fully_removed,
+    }
+
+
+def _quality_tier_summary(
+    *,
+    host_report: dict[str, Any],
+    endpoint_report: dict[str, Any],
+    browsing_summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Aggregate robust/reserve/quarantined evidence per qualification unit.
+
+    The browsing tiers map onto scheduling directly (Stable group first, its
+    Reserve group as fallback); runner endpoint/hostname evidence is admission
+    evidence only. Client runtime URLTest remains the scheduling authority for
+    the general inventory.
+    """
+
+    browsing_diagnostics = browsing_summary.get("diagnostics")
+    if not isinstance(browsing_diagnostics, dict):
+        browsing_diagnostics = {}
+    return {
+        "authority": "runner_preflight_evidence_plus_client_urltest",
+        "runner_endpoint_evidence": {
+            "robust": int(endpoint_report.get("robust_endpoints", 0) or 0),
+            "reserve": int(endpoint_report.get("reserve_endpoints", 0) or 0),
+            "quarantined": int(endpoint_report.get("quarantined", 0) or 0),
+        },
+        "runner_hostname_evidence": {
+            "robust": int(host_report.get("resolved", 0) or 0),
+            "reserve": int(host_report.get("dns_inconclusive", 0) or 0),
+            "quarantined": int(host_report.get("quarantined", 0) or 0),
+        },
+        "browsing_node_evidence": {
+            "robust": int(browsing_summary.get("stable_nodes", 0) or 0),
+            "reserve": int(browsing_summary.get("reserve_nodes", 0) or 0),
+            "quarantined": int(browsing_diagnostics.get("failed_nodes", 0) or 0),
+        },
+    }
+
+
 def run_qualification_pipeline(
     *,
     candidate: Path,
@@ -131,6 +266,7 @@ def run_qualification_pipeline(
     cache: Path | None = None,
     cache_key: Path | None = None,
     next_cache: Path | None = None,
+    carrier_input: Path | None = None,
 ) -> dict[str, Any]:
     """Run immutable browsing, AI admission, and declared service hardening stages."""
 
@@ -165,6 +301,8 @@ def run_qualification_pipeline(
     generated_document = load_yaml_file(generated)
     if not isinstance(generated_document, dict):
         raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
+    # Snapshot per-source counts before preflight stages prune the payloads.
+    generated_source_counts = _source_node_counts(generated_document)
     proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(
         generated_document, workers=workers
@@ -281,6 +419,9 @@ def run_qualification_pipeline(
         if isinstance(browsing_summary.get("diagnostics"), dict)
         else 0,
     }
+    final_document = load_yaml_file(output)
+    if not isinstance(final_document, dict):
+        raise ValidationError("final qualified candidate is not a YAML mapping")
     result = {
         "status": "qualified",
         "policy_model_version": policy_model_version,
@@ -294,6 +435,17 @@ def run_qualification_pipeline(
         "browsing": browsing_block,
         "proxy_host_resolution": proxy_host_resolution,
         "endpoint_qualification": endpoint_qualification,
+        "removed_nodes": _removed_nodes_summary(
+            host_report=proxy_host_resolution,
+            endpoint_report=endpoint_qualification,
+            generated_source_counts=generated_source_counts,
+            final_document=final_document,
+        ),
+        "node_quality_tiers": _quality_tier_summary(
+            host_report=proxy_host_resolution,
+            endpoint_report=endpoint_qualification,
+            browsing_summary=browsing_summary,
+        ),
         "accelerated_health_check_groups": accelerated_groups,
         "ai": {
             "status": ai_summary.get("status"),
@@ -322,7 +474,7 @@ def run_qualification_pipeline(
                 "ai_status": ai_summary.get("status"),
                 "accelerated_health_check_groups": accelerated_groups,
             },
-            "carrier_qualification": run_carrier_qualification(),
+            "carrier_qualification": _carrier_report(carrier_input),
         },
     }
     return QualificationPipelineResult.from_mapping(result).as_dict()

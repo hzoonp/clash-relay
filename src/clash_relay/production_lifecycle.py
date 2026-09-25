@@ -231,6 +231,13 @@ class ProductionPipeline:
                 cache=self._private("ai-qualification-cache.json"),
                 cache_key=self._private("ai-qualification-cache.key"),
                 next_cache=self._private("ai-qualification-cache-next.json"),
+                # Optional self-hosted aggregate payload; absent file keeps the
+                # carrier report at not_configured.
+                carrier_input=(
+                    self._private("carrier-qualification.json")
+                    if self._private("carrier-qualification.json").is_file()
+                    else None
+                ),
             ),
             outputs=ProductionPipelineOutputs(
                 pre_audit=self._private("production-audit.json"),

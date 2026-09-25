@@ -75,19 +75,40 @@ Pre-publication browsing qualification and the published browsing runtime use th
 
 `scheduler.browsing.region_switch_interval` controls cross-region re-evaluation and is intentionally no shorter than the node-level browsing probe interval. The canonical value is 300 seconds, while the current browsing probe interval is 180 seconds.
 
+## Qualification data flow and authorities
+
+The qualification chain runs in one direction, and every layer owns exactly one authority:
+
+1. `proxy_host_qualification` (Runner) — resolves every proxy hostname through the candidate's DoH `proxy-server-nameserver` endpoints using RFC 8484 `application/dns-message` wireformat. Authority: *DNS resolvability from a data-center vantage point*. It quarantines a hostname only when every responding resolver agrees there is no public A/AAAA record; runner transport failures are inconclusive and keep the node, and a stage where no resolver returned any DNS response fails closed instead of mass-quarantining. At least two DoH endpoints are required; `system` and non-HTTPS entries cannot take part in the runner probe.
+2. `proxy_endpoint_qualification` (Runner) — bounded-retry TCP connect (3 attempts, 1.5s timeout, 12 workers). Authority: *TCP reachability from a data-center vantage point*. Admission quorum is 1-of-3, so a transient timeout never permanently quarantines an endpoint on its own; only 0-of-3 marks it clearly dead. Failures are classified (`dns_failure`, `connect_timeout`, `refused`, `network_unreachable`, `connect_failure`). UDP-native transports remain owned by Mihomo runtime probes.
+3. `browsing qualification` (Runner + real Mihomo cores) — per-node live probing. Authority: *pre-publication node admission measured through real Mihomo*. 3/3 successful probes → Stable, 2/3 → Reserve, below → removed from the browsing inventory.
+4. `AI qualification` (Runner + real Mihomo cores) — per-service live admission with cache policy. Authority: *service reachability measured through real Mihomo*.
+5. `client runtime URLTest` (user device) — the continuous authority after publication. Authority: *the only layer that observes the actual carrier access network*. Browsing groups switch after one failed probe (`max-failed-times: 1`), regional and other non-AI automatic groups after two; all non-AI probes use the canonical `https://cp.cloudflare.com/generate_204`.
+6. `carrier_qualification` (optional self-hosted probes) — the only future authority for China Telecom / Unicom / Mobile quality.
+
+No Runner-layer result may be interpreted as carrier quality; the summary keeps the three reachability authorities separate.
+
+## Node quality tiers
+
+The qualification summary classifies evidence into three tiers per evidence unit (`node_quality_tiers`); no node identities are emitted:
+
+- **robust** — endpoint admitted on every attempt, hostname answered by the configured DoH resolvers, or browsing Stable (3/3). Browsing Stable feeds the region-first automatic scheduling directly (Stable group first).
+- **reserve** — endpoint admitted with some failed attempts (1-of-3 quorum), hostname probes inconclusive because of runner transport trouble, or browsing Reserve (2/3). Reserve feeds fallback scheduling: same-region Reserve is evaluated before any next region, and the client URLTest continuously re-selects.
+- **quarantined** — DNS-proven unresolvable hostnames, 0-of-3 TCP endpoints, browsing nodes below the 2/3 threshold, and core-incompatible nodes. Removal is always accompanied by aggregate `removed_nodes` diagnostics (`by_source`, `by_region`, `by_protocol`, `by_failure_category`) and any source whose entire runtime inventory was removed is flagged under `sources_fully_removed` with its failure-category reasons.
+
 ## Reachability report authorities
 
 The qualification summary reports reachability evidence under three separate authorities so no single number is over-read:
 
 - `global_preflight_reachable` — the GitHub Runner TCP endpoint admission (the aggregate `endpoint_qualification` block). It filters obviously dead TCP endpoints from a data-center vantage point before qualification. It is never a measure of China Telecom / Unicom / Mobile quality.
 - `client_runtime_health` — the client-side URLTest contract plus the browsing/AI qualification outcomes measured through real Mihomo probes: canonical `https://cp.cloudflare.com/generate_204`, browsing `max-failed-times: 1`, regional and other non-AI automatic groups `2`.
-- `carrier_qualification` — a reserved extension point (`src/clash_relay/carrier_qualification.py`). Future self-hosted Telecom / Unicom / Mobile probe stages submit `CarrierProbeResult` rows and only the aggregate reduction (per-carrier tested/reachable/median latency) crosses into reports; the boundary never emits endpoints or raw samples. Without probes the stage reports `not_configured`.
+- `carrier_qualification` — an optional, pluggable data boundary (`src/clash_relay/carrier_qualification.py`). The repository ships no real probes: a CI job or self-hosted probe operator drops an aggregate-only payload into the lifecycle's private `carrier-qualification.json` (or submits `CarrierProbeResult` rows in-process). Accepted shape: `{"schema_version": 1, "carriers": {"telecom" | "unicom" | "mobile": {"tested", "reachable", "median_latency_ms"}}}` — validation rejects unknown carriers, unknown fields, and anything identity-bearing, and only the aggregate reduction (per-carrier tested/reachable/median latency) is published. Without an input the report stays `not_configured`.
 
 ## Scheduler history
 
-Historical stability remains subordinate to live qualification. History can demote a current Stable node only within that node's region. A demoted node remains current-qualified and moves to the same region's Reserve tier. History cannot promote a live Reserve or failed node into Stable and cannot move a node into another region.
+Historical stability remains subordinate to live qualification. History can demote a current Stable node only within that node's region. A demoted node remains current-qualified and moves to the same region's Reserve tier. History cannot promote a live Reserve or failed node into Stable and cannot move a node into another region. A single transient failed run is debounced; demotion requires repeated failures, and recovery back into the preferred set requires a stronger threshold plus a clean current run, so short-term client jitter cannot cause selection churn.
 
-The privacy boundary is unchanged: persistent history stores anonymous HMAC fingerprints and aggregate stability data, not node names, endpoints, credentials, subscription URLs, or traffic records.
+The privacy boundary is unchanged: persistent history stores anonymous HMAC fingerprints and aggregate stability data (success EMA, consecutive failures, cohort latency EMA), not node names, endpoints, credentials, subscription URLs, or traffic records.
 
 ## Regression gates
 

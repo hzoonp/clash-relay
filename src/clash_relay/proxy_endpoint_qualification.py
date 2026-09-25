@@ -1,4 +1,15 @@
-"""Pre-publish TCP endpoint admission with aggregate-only diagnostics."""
+"""Pre-publish TCP endpoint admission with aggregate-only diagnostics.
+
+Authority boundary: this stage only filters obviously dead TCP endpoints from
+a GitHub Runner vantage point. It is never evidence of China Telecom /
+Unicom / Mobile quality. A transient timeout never permanently quarantines an
+endpoint on its own: every endpoint gets ``_ATTEMPTS`` bounded attempts and is
+quarantined only when none of them succeeds (0-of-N quorum). Endpoints that
+succeed on every attempt carry robust evidence; endpoints admitted with some
+failed attempts carry reserve evidence and rely on the client runtime URLTest
+for continuous re-selection. UDP-native transports remain owned by the Mihomo
+runtime probes.
+"""
 
 from __future__ import annotations
 
@@ -17,8 +28,17 @@ _TCP_TYPES = frozenset(
 _UDP_NATIVE_TYPES = frozenset({"hysteria", "hysteria2", "tuic", "wireguard", "masque"})
 _SOURCE_NAME = re.compile(r"\b(sub_[1-5])/", re.ASCII)
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
-_ATTEMPTS = 2
+_ATTEMPTS = 3
+_ADMISSION_QUORUM = 1
 _CONNECT_TIMEOUT = 1.5
+_UNREACHABLE_ERRNOS = frozenset(
+    value
+    for value in (
+        getattr(socket, name, None)
+        for name in ("EHOSTUNREACH", "ENETUNREACH", "ENETDOWN", "ENETRESET")
+    )
+    if value is not None
+)
 
 
 def _public_ip(value: str) -> bool:
@@ -29,29 +49,56 @@ def _public_ip(value: str) -> bool:
     return address.is_global
 
 
-def _probe_tcp(server: str, port: int) -> bool:
-    """Test a public address twice; do not send application data or log the target."""
+def _failure_category(error: OSError) -> str:
+    if isinstance(error, (socket.timeout, TimeoutError)):
+        return "connect_timeout"
+    if isinstance(error, ConnectionRefusedError):
+        return "refused"
+    if error.errno in _UNREACHABLE_ERRNOS:
+        return "network_unreachable"
+    return "connect_failure"
+
+
+def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
+    """Bounded-retry TCP probe: (admitted, last_failure_category, successes).
+
+    All attempts run so robustness (success on every attempt) is observable
+    even for endpoints that never fail. Do not send application data or log
+    the target.
+    """
+
     try:
         addresses = socket.getaddrinfo(server, port, type=socket.SOCK_STREAM)
     except OSError:
-        return False
+        return False, "dns_failure", 0
     public = [
         (family, sockaddr)
         for family, _, _, _, sockaddr in addresses
         if _public_ip(str(sockaddr[0]))
     ]
     if not public:
-        return False
+        return False, "dns_failure", 0
+    successes = 0
+    category = "connect_failure"
     for _ in range(_ATTEMPTS):
         for family, sockaddr in public:
             try:
                 with socket.socket(family, socket.SOCK_STREAM) as connection:
                     connection.settimeout(_CONNECT_TIMEOUT)
                     connection.connect(sockaddr)
-                return True
-            except OSError:
-                continue
-    return False
+                successes += 1
+            except OSError as exc:
+                category = _failure_category(exc)
+    admitted = successes >= _ADMISSION_QUORUM
+    return admitted, ("answered" if admitted else category), successes
+
+
+def _admission_tier(successes: int) -> str:
+    if successes >= _ATTEMPTS:
+        return "robust"
+    if successes >= _ADMISSION_QUORUM:
+        return "reserve"
+    return "quarantined"
 
 
 def _source(name: object) -> str:
@@ -97,9 +144,14 @@ def quarantine_unreachable_tcp_endpoints(
             "unreachable": 0,
             "quarantined": 0,
             "skipped_udp_native": skipped_udp,
+            "attempts": _ATTEMPTS,
+            "admission_quorum": _ADMISSION_QUORUM,
+            "robust_endpoints": 0,
+            "reserve_endpoints": 0,
             "by_source": {},
             "by_region": {},
             "by_protocol": {},
+            "by_failure_category": {},
         }
     if workers < 1:
         raise ValidationError("endpoint qualification requires positive workers")
@@ -109,9 +161,12 @@ def quarantine_unreachable_tcp_endpoints(
             zip(ordered, executor.map(lambda endpoint: _probe_tcp(*endpoint), ordered), strict=True)
         )
     counts: Counter[str] = Counter()
+    tiers: Counter[str] = Counter()
     by_source: Counter[str] = Counter()
     by_region: Counter[str] = Counter()
     by_protocol: Counter[str] = Counter()
+    by_failure_category: Counter[str] = Counter()
+    by_source_failure_category: dict[str, Counter[str]] = {}
     replacements: dict[str, list[dict[str, Any]]] = {}
     for provider_name, provider in providers.items():
         payload = provider.get("payload") if isinstance(provider, dict) else None
@@ -133,15 +188,25 @@ def quarantine_unreachable_tcp_endpoints(
             counts["tested"] += 1
             server, port = proxy.get("server"), proxy.get("port")
             key = (server, port) if isinstance(server, str) and isinstance(port, int) else None
-            if key is not None and results.get(key, False):
+            admitted, failure_category, successes = (
+                results[key]
+                if key is not None and key in results
+                else (False, "connect_failure", 0)
+            )
+            if admitted:
                 counts["reachable"] += 1
+                tiers[_admission_tier(successes)] += 1
                 kept.append(proxy)
                 continue
             counts["unreachable"] += 1
             counts["quarantined"] += 1
-            by_source[_source(proxy.get("name"))] += 1
+            tiers["quarantined"] += 1
+            source = _source(proxy.get("name"))
+            by_source[source] += 1
             by_region[_region(str(provider_name))] += 1
             by_protocol[str(kind)] += 1
+            by_failure_category[failure_category] += 1
+            by_source_failure_category.setdefault(source, Counter())[failure_category] += 1
         if payload and not kept:
             raise ValidationError("endpoint qualification would empty a proxy provider")
         replacements[str(provider_name)] = kept
@@ -162,9 +227,18 @@ def quarantine_unreachable_tcp_endpoints(
                 "skipped_udp_native",
             )
         },
+        "attempts": _ATTEMPTS,
+        "admission_quorum": _ADMISSION_QUORUM,
+        "robust_endpoints": int(tiers["robust"]),
+        "reserve_endpoints": int(tiers["reserve"]),
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),
+        "by_failure_category": dict(sorted(by_failure_category.items())),
+        "by_source_failure_category": {
+            source: dict(sorted(categories.items()))
+            for source, categories in sorted(by_source_failure_category.items())
+        },
     }
 
 

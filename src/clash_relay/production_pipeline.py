@@ -56,6 +56,9 @@ class QualificationPaths:
     cache: Path | None = None
     cache_key: Path | None = None
     next_cache: Path | None = None
+    # Optional self-hosted carrier-qualification aggregate payload. Absent by
+    # default: the carrier report stays not_configured without real probes.
+    carrier_input: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +236,7 @@ def run_production_pipeline(
             cache=qualification_paths.cache,
             cache_key=qualification_paths.cache_key,
             next_cache=qualification_paths.next_cache,
+            carrier_input=qualification_paths.carrier_input,
         )
     except CandidateValidationStageError:
         raise

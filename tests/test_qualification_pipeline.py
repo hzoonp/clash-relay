@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -352,3 +353,208 @@ def test_pipeline_surfaces_only_aggregate_rejection_diagnostics(
     assert '"udp_qualified_nodes":0' in message
     assert "private.example" not in message
     assert "top-secret" not in message
+
+
+def _preflight_stubs(monkeypatch, *, drop_source: str | None = None):
+    """Stub runner preflight stages with canned aggregate reports."""
+
+    def host(document):
+        if drop_source:
+            for provider in document["proxy-providers"].values():
+                provider["payload"] = [
+                    proxy
+                    for proxy in provider["payload"]
+                    if f"{drop_source}/" not in str(proxy.get("name", ""))
+                ]
+        return {
+            "status": "passed",
+            "hostname_nodes": 2,
+            "ip_literal_nodes": 0,
+            "resolved": 0 if drop_source else 2,
+            "unresolved": 2 if drop_source else 0,
+            "dns_inconclusive": 0,
+            "resolver_disagreement": 0,
+            "quarantined": 2 if drop_source else 0,
+            "by_source": {drop_source: 2} if drop_source else {},
+            "by_region": {"jp": 2} if drop_source else {},
+            "by_protocol": {"trojan": 2} if drop_source else {},
+            "by_failure_category": {"nxdomain": 2} if drop_source else {},
+            "by_source_failure_category": ({drop_source: {"nxdomain": 2}} if drop_source else {}),
+        }
+
+    def endpoint(document, workers=12):
+        if drop_source:
+            for provider in document["proxy-providers"].values():
+                provider["payload"] = [
+                    proxy
+                    for proxy in provider["payload"]
+                    if f"{drop_source}/" not in str(proxy.get("name", ""))
+                ]
+        return {
+            "status": "passed",
+            "tcp_nodes": 1,
+            "tested": 1,
+            "reachable": 0 if drop_source else 1,
+            "unreachable": 1 if drop_source else 0,
+            "quarantined": 1 if drop_source else 0,
+            "skipped_udp_native": 0,
+            "attempts": 3,
+            "admission_quorum": 1,
+            "robust_endpoints": 0 if drop_source else 1,
+            "reserve_endpoints": 0,
+            "by_source": {drop_source: 1} if drop_source else {},
+            "by_region": {"jp": 1} if drop_source else {},
+            "by_protocol": {"vless": 1} if drop_source else {},
+            "by_failure_category": {"connect_timeout": 1} if drop_source else {},
+            "by_source_failure_category": (
+                {drop_source: {"connect_timeout": 1}} if drop_source else {}
+            ),
+        }
+
+    monkeypatch.setattr(pipeline, "quarantine_unresolvable_proxy_hosts", host)
+    monkeypatch.setattr(pipeline, "quarantine_unreachable_tcp_endpoints", endpoint)
+
+
+def _candidate_with_source_nodes(tmp_path: Path) -> Path:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text(
+        "proxy-providers:\n"
+        "  cr_browsing_jp:\n"
+        "    payload:\n"
+        "      - {name: '[BROWSING:JP] sub_2/One', type: trojan, server: a.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_2/Two', type: vless, server: b.example, port: 443}\n"
+        "      - {name: '[BROWSING:JP] sub_3/One', type: trojan, server: c.example, port: 443}\n"
+        "proxies: []\n"
+        "proxy-groups: []\n",
+        encoding="utf-8",
+    )
+    return candidate
+
+
+def test_pipeline_reports_node_quality_tiers(tmp_path: Path, monkeypatch) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    _preflight_stubs(monkeypatch)
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        _append(kwargs["candidate"], "browsing_stage")
+        return {
+            "status": "qualified",
+            "automatic_nodes": 3,
+            "stable_nodes": 2,
+            "reserve_nodes": 1,
+            "diagnostics": {"tested_nodes": 3, "qualified_nodes": 3, "failed_nodes": 1},
+        }
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    tiers = result["node_quality_tiers"]
+    assert tiers["authority"] == "runner_preflight_evidence_plus_client_urltest"
+    assert tiers["runner_endpoint_evidence"] == {"robust": 1, "reserve": 0, "quarantined": 0}
+    assert tiers["runner_hostname_evidence"] == {"robust": 2, "reserve": 0, "quarantined": 0}
+    assert tiers["browsing_node_evidence"] == {"robust": 2, "reserve": 1, "quarantined": 1}
+
+
+def test_pipeline_flags_fully_removed_source_with_reasons(tmp_path: Path, monkeypatch) -> None:
+    _, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate = _candidate_with_source_nodes(tmp_path)
+    _preflight_stubs(monkeypatch, drop_source="sub_2")
+    _success_services_tail(monkeypatch)
+
+    def browsing(**kwargs):
+        _append(kwargs["candidate"], "browsing_stage")
+        return {"status": "qualified", "automatic_nodes": 1}
+
+    monkeypatch.setattr(pipeline, "run_browsing_qualification", browsing)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+
+    removed = result["removed_nodes"]
+    assert removed["by_source"] == {"sub_2": 3}
+    assert removed["by_failure_category"] == {"connect_timeout": 1, "nxdomain": 2}
+    assert removed["sources_fully_removed"] == [
+        {
+            "source": "sub_2",
+            "generated_nodes": 2,
+            "final_nodes": 0,
+            "by_failure_category": {"connect_timeout": 1, "nxdomain": 2},
+        }
+    ]
+    # A partially surviving source is never flagged.
+    assert "sub_3" not in {row["source"] for row in removed["sources_fully_removed"]}
+
+
+def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypatch) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    _success_services(monkeypatch)
+    carrier_input = tmp_path / "carrier-qualification.json"
+    carrier_input.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "carriers": {
+                    "telecom": {"tested": 40, "reachable": 38, "median_latency_ms": 52.4},
+                    "unicom": {"tested": 40, "reachable": 35, "median_latency_ms": 61.0},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+        carrier_input=carrier_input,
+    )
+
+    carrier = result["reachability"]["carrier_qualification"]
+    assert carrier["status"] == "passed"
+    assert set(carrier["carriers"]) == {"telecom", "unicom"}
+    assert carrier["aggregate"]["tested"] == 80
+
+
+def test_pipeline_carrier_input_fails_closed_on_invalid_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    _success_services(monkeypatch)
+    carrier_input = tmp_path / "carrier-qualification.json"
+    carrier_input.write_text(
+        json.dumps({"schema_version": 1, "carriers": {}, "endpoints": ["1.2.3.4"]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="unknown fields"):
+        pipeline.run_qualification_pipeline(
+            candidate=candidate,
+            output=tmp_path / "final.yaml",
+            policies=policies,
+            mihomo_bin=mihomo,
+            stage_dir=tmp_path / "stages",
+            browsing_report=tmp_path / "browsing.json",
+            ai_report=tmp_path / "ai.json",
+            carrier_input=carrier_input,
+        )

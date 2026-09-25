@@ -200,3 +200,64 @@ def test_history_preference_keeps_current_stable_filter_when_pool_is_too_small(
     candidate.write_text(original, encoding="utf-8")
     assert apply_history_preference(candidate, {"stable-a", "stable-b"}) == 0
     assert candidate.read_text(encoding="utf-8") == original
+
+
+def test_history_cannot_promote_a_node_live_qualification_failed_today() -> None:
+    """History ranks today's Stable set; it can never pull in a failed node."""
+
+    key = derive_fingerprint_key("token")
+    # "star" has a flawless long history but live qualification failed it
+    # today, so it is absent from the stable set entirely.
+    stable = {"stable-now"}
+    history = {
+        "version": 3,
+        "cohort": {"runs": 9, "latency_ema_ms": 120.0, "last_seen_epoch": 100},
+        "nodes": {
+            fingerprint_runtime_name("star", key): {
+                "runs": 9,
+                "success_ema": 1.0,
+                "consecutive_failed_runs": 0,
+                "last_seen_epoch": 100,
+                "historically_preferred": True,
+            }
+        },
+    }
+    assert preferred_stable_names(stable, history, key, now_epoch=120) == {"stable-now"}
+
+
+def test_demoted_node_with_perfect_ema_cannot_recover_while_recently_failed() -> None:
+    key = derive_fingerprint_key("token")
+    history = {
+        "version": 3,
+        "cohort": {"runs": 6, "latency_ema_ms": 140.0, "last_seen_epoch": 100},
+        "nodes": {
+            fingerprint_runtime_name("recovering", key): {
+                "runs": 6,
+                # EMA above the recovery threshold, but the previous run failed.
+                "success_ema": 0.95,
+                "consecutive_failed_runs": 1,
+                "last_seen_epoch": 100,
+                "historically_preferred": False,
+            }
+        },
+    }
+    assert preferred_stable_names({"recovering"}, history, key, now_epoch=120) == set()
+
+
+def test_single_transient_failure_does_not_demote_immediately() -> None:
+    key = derive_fingerprint_key("token")
+    history = {
+        "version": 3,
+        "cohort": {"runs": 5, "latency_ema_ms": 150.0, "last_seen_epoch": 100},
+        "nodes": {
+            fingerprint_runtime_name("shaky", key): {
+                "runs": 5,
+                "success_ema": 0.9,
+                "consecutive_failed_runs": 1,
+                "last_seen_epoch": 100,
+                "historically_preferred": True,
+            }
+        },
+    }
+    # One transient failed run is debounced: no churn from short-term jitter.
+    assert preferred_stable_names({"shaky"}, history, key, now_epoch=120) == {"shaky"}
