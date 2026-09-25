@@ -11,6 +11,7 @@ from clash_relay.qualification_reliability import (
     QualificationStageRejected,
 )
 from clash_relay.service_qualification import service_qualifications
+from clash_relay.util import load_yaml_file
 
 
 def _pipeline_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -105,6 +106,40 @@ def test_pipeline_uses_private_sequential_stage_files(tmp_path: Path, monkeypatc
     assert set(result["ai"]["services"]) == {service.label for service in service_qualifications()}
     assert browsing_report.exists()
     assert ai_report.exists()
+
+
+def test_browsing_failover_threshold_survives_later_qualification_stages(
+    tmp_path: Path, monkeypatch
+) -> None:
+    candidate, policies, mihomo = _pipeline_inputs(tmp_path)
+    candidate.write_text(
+        "proxy-providers: {}\nproxies: []\nproxy-groups:\n"
+        "  - {name: '网页 · 日本', type: fallback, url: 'https://example.invalid/204'}\n"
+        "  - {name: '__CR_BROWSING_JP_STABLE_AUTO', type: url-test, url: 'https://example.invalid/204'}\n"
+        "  - {name: '自动选择', type: url-test, url: 'https://example.invalid/204'}\n"
+        "  - {name: 'AI · 日本', type: url-test, url: 'https://example.invalid/204'}\n",
+        encoding="utf-8",
+    )
+    _success_services(monkeypatch)
+
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+    )
+    groups = {
+        group["name"]: group for group in load_yaml_file(tmp_path / "final.yaml")["proxy-groups"]
+    }
+
+    assert groups["网页 · 日本"]["max-failed-times"] == 1
+    assert groups["__CR_BROWSING_JP_STABLE_AUTO"]["max-failed-times"] == 1
+    assert groups["自动选择"]["max-failed-times"] == 2
+    assert "max-failed-times" not in groups["AI · 日本"]
+    assert result["accelerated_health_check_groups"] == 3
 
 
 def test_pipeline_retries_only_typed_transient_from_immutable_candidate(

@@ -168,7 +168,6 @@ def run_qualification_pipeline(
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(
         generated_document, workers=workers
     )
-    accelerated_groups = accelerate_client_health_checks(generated_document)
     atomic_write(generated, dump_yaml(generated_document, header=True))
     generated_artifact = _artifact(generated, "proxy_host_qualified")
     browsing_started = time.perf_counter()
@@ -232,6 +231,11 @@ def run_qualification_pipeline(
         candidate=service_runtime,
         policies=qualification_policies,
     )
+    service_document = load_yaml_file(service_runtime)
+    if not isinstance(service_document, dict):
+        raise ValidationError("qualified runtime candidate is not a YAML mapping")
+    accelerated_groups = accelerate_client_health_checks(service_document)
+    atomic_write(service_runtime, dump_yaml(service_document, header=True))
     runtime_artifact = _artifact(service_runtime, "service_client_path_hardened")
     runtime_elapsed_ms = _elapsed_ms(runtime_started)
 

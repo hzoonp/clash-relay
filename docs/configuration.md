@@ -39,6 +39,8 @@ Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, 
 
 `runtime.dns.routing_policy: acl4ssr` compiles `nameserver-policy` from the same pinned ACL4SSR rule-provider scenarios used by Routing V2. It does not maintain a second domain list: rule providers declared as `scenario: direct` resolve through `direct_nameservers`; every other rule-provider scenario uses the normal encrypted resolver pool. `direct_nameserver_follow_policy: false` keeps that DIRECT resolver transport outside a second policy lookup. DNS compilation also preserves configured exact-domain overrides and rejects wildcard overrides. DNS compilation never introduces a subscription-specific proxy group.
 
+Generated profile health-check URLs are Mihomo provider/group probe settings. FlClash's global app `Test URL` is a separate persisted application preference; clash-relay neither renders nor migrates it. Browsing groups use `max-failed-times: 1` for faster local failure response, while other non-AI automatic groups retain `2`.
+
 Canonical FlClash production sets `runtime.tun.mode: client`. The generated profile therefore omits `tun:` entirely and leaves TUN/VPN ownership to FlClash instead of partially overriding the client with profile-level `strict-route` or interface-routing state. Managed TUN remains a supported Public Config V2 capability for standalone Mihomo profiles, where the generated-config leak audit requires Fake-IP, encrypted resolver pools, strict routing, and both UDP/TCP port-53 hijacking.
 
 For FlClash, DNS and TUN intentionally have different ownership boundaries: the profile keeps managed Fake-IP DNS, while the app owns TUN/VPN. The supported FlClash runtime contract is therefore:

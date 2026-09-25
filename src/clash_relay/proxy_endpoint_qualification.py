@@ -169,7 +169,7 @@ def quarantine_unreachable_tcp_endpoints(
 
 
 def accelerate_client_health_checks(config: dict[str, Any]) -> int:
-    """Bound retries for browsing/general probes without changing AI groups."""
+    """Switch browsing groups after one failed probe; keep other non-AI at two."""
     groups = config.get("proxy-groups")
     if not isinstance(groups, list):
         return 0
@@ -182,6 +182,15 @@ def accelerate_client_health_checks(config: dict[str, Any]) -> int:
             continue
         if not isinstance(group.get("url"), str):
             continue
-        group["max-failed-times"] = 2
+        uses = group.get("use")
+        browsing = (
+            name == "网页自动"
+            or name.startswith(("网页 · ", "__CR_BROWSING_"))
+            or (
+                isinstance(uses, list)
+                and any(str(provider).startswith("cr_browsing_") for provider in uses)
+            )
+        )
+        group["max-failed-times"] = 1 if browsing else 2
         changed += 1
     return changed

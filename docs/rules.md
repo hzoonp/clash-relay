@@ -123,6 +123,8 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 
+Browsing Stable, Reserve, regional fallback, and the browsing auto group use `max-failed-times: 1` so one failed local connection starts health re-evaluation promptly. Other non-AI automatic groups keep a threshold of 2; AI runtime health checks remain owned by their existing qualification/client-path contract.
+
 General-pool country `url-test` groups declare `on_empty: omit`. The compiler counts leaves after the group filter against the resolved general inventory, omits a region with no matching general node, and removes that group from every upper selector. Browsing groups continue to use the separate browsing inventory, so a subscription-1-only country remains available under `网页浏览` without entering general, media, messaging, or downloads. All automatic groups are checked again against their final provider/group expansion before serialization.
 
 ## Media, messaging, and download

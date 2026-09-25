@@ -43,7 +43,19 @@ def _candidate() -> dict:
                 "type": "fallback",
                 "url": "https://www.gstatic.com/generate_204",
             },
+            {
+                "name": "__CR_BROWSING_JP_STABLE_AUTO",
+                "type": "url-test",
+                "url": "https://www.gstatic.com/generate_204",
+            },
+            {
+                "name": "__CR_AUTO_BROWSING_KR",
+                "type": "url-test",
+                "url": "https://www.gstatic.com/generate_204",
+                "use": ["cr_browsing_kr"],
+            },
             {"name": "AI · 日本", "type": "fallback", "url": "https://chatgpt.com/"},
+            {"name": "自动选择", "type": "url-test", "url": "https://www.gstatic.com/generate_204"},
         ],
     }
 
@@ -88,9 +100,14 @@ def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) 
 
 def test_client_health_retries_are_bounded_without_touching_ai() -> None:
     candidate = _candidate()
-    assert accelerate_client_health_checks(candidate) == 2
-    groups = candidate["proxy-groups"]
-    assert [group.get("max-failed-times") for group in groups] == [2, 2, None]
+    assert accelerate_client_health_checks(candidate) == 5
+    groups = {group["name"]: group for group in candidate["proxy-groups"]}
+    assert groups["日本节点"]["max-failed-times"] == 2
+    assert groups["网页 · 日本"]["max-failed-times"] == 1
+    assert groups["__CR_BROWSING_JP_STABLE_AUTO"]["max-failed-times"] == 1
+    assert groups["__CR_AUTO_BROWSING_KR"]["max-failed-times"] == 1
+    assert groups["自动选择"]["max-failed-times"] == 2
+    assert "max-failed-times" not in groups["AI · 日本"]
 
 
 def test_udp_only_inventory_is_reported_without_tcp_probe(monkeypatch) -> None:
