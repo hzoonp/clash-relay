@@ -12,18 +12,11 @@ import json
 import os
 import shutil
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
-from .carrier_observation_receipt import (
-    RECEIPT_FILENAME,
-    build_carrier_observation_receipt,
-)
-from .carrier_probe import verify_carrier_candidate_binding_from_env
-from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .config_loader import ProjectDefinition
 from .errors import CandidateValidationStageError, ClashRelayError, ValidationError
 from .mihomo import load_candidate
@@ -76,12 +69,9 @@ class ProductionLifecyclePaths:
     private_dir: Path
     public_dir: Path
     bin_dir: Path
-    carrier_qualification_input: Path | None = None
 
     @classmethod
-    def canonical(
-        cls, root: Path, *, carrier_qualification_input: Path | None = None
-    ) -> ProductionLifecyclePaths:
+    def canonical(cls, root: Path) -> ProductionLifecyclePaths:
         root = root.resolve()
         work = root / ".work"
         return cls(
@@ -95,7 +85,6 @@ class ProductionLifecyclePaths:
             private_dir=work / "private",
             public_dir=work / "public",
             bin_dir=work / "bin",
-            carrier_qualification_input=carrier_qualification_input,
         )
 
 
@@ -122,9 +111,6 @@ class ProductionPipeline:
         self.workers = workers
         self.warnings: list[str] = []
         self.timings_ms: dict[str, float] = {}
-        self._carrier_input_snapshot: Path | None = None
-        self._carrier_binding_passed = False
-        self._carrier_receipt_enabled = False
 
     def _private(self, name: str) -> Path:
         return self.paths.private_dir / name
@@ -169,59 +155,11 @@ class ProductionPipeline:
         self.timings_ms[name] = round((time.perf_counter() - started) * 1000.0, 3)
 
     def _prepare_dirs(self) -> None:
-        root = self.paths.root.resolve()
-        for target in (self.paths.private_dir, self.paths.public_dir):
-            resolved = target.resolve()
-            if resolved == root or not resolved.is_relative_to(root):
-                raise ValidationError("production work directory escapes the project root")
-        external = self.paths.carrier_qualification_input
-        if external is not None:
-            try:
-                resolved_input = external.resolve(strict=True)
-            except OSError as exc:
-                raise ValidationError("carrier qualification input could not be read") from exc
-            if (
-                not resolved_input.is_file()
-                or resolved_input.is_relative_to(self.paths.private_dir.resolve())
-                or resolved_input.is_relative_to(self.paths.public_dir.resolve())
-            ):
-                raise ValidationError(
-                    "carrier qualification input must be outside private/public work dirs"
-                )
-        # A receipt present after this run was therefore issued by this run:
-        # stale receipts from earlier lifecycles can never be committed.
-        self._clear_carrier_receipt()
         shutil.rmtree(self.paths.private_dir, ignore_errors=True)
         shutil.rmtree(self.paths.public_dir, ignore_errors=True)
         self.paths.private_dir.mkdir(parents=True, exist_ok=True)
         self.paths.public_dir.mkdir(parents=True, exist_ok=True)
         self.paths.bin_dir.mkdir(parents=True, exist_ok=True)
-
-    def _stage_carrier_input(self) -> None:
-        self._carrier_binding_passed = False
-        external = self.paths.carrier_qualification_input
-        if external is None:
-            self._carrier_input_snapshot = None
-            return
-        try:
-            resolved_input = external.resolve(strict=True)
-            if (
-                not resolved_input.is_file()
-                or resolved_input.is_relative_to(self.paths.private_dir.resolve())
-                or resolved_input.is_relative_to(self.paths.public_dir.resolve())
-            ):
-                raise ValidationError(
-                    "carrier qualification input must be outside private/public work dirs"
-                )
-            if resolved_input.stat().st_size > 16 * 1024:
-                raise ValidationError("carrier qualification input exceeds aggregate size limit")
-            payload = parse_carrier_json_text(resolved_input.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError) as exc:
-            raise ValidationError("carrier qualification input could not be read") from exc
-        run_carrier_qualification(payload)
-        snapshot = self._private("carrier-qualification.json")
-        atomic_write(snapshot, json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
-        self._carrier_input_snapshot = snapshot
 
     def _generate(self) -> dict[str, Any]:
         result = build_candidate(
@@ -230,8 +168,6 @@ class ProductionPipeline:
             policies_path=self.paths.policies,
             env=os.environ,
         )
-        if self._carrier_input_snapshot is not None:
-            self._verify_carrier_candidate(result.config)
         atomic_write(self._private("generated.yaml"), result.yaml_text)
         self._write_json(self._private("build-report.json"), result.report)
         summary = {
@@ -248,76 +184,6 @@ class ProductionPipeline:
         }
         self._write_json(self._private("generation-summary.json"), summary)
         return summary
-
-    def _verify_carrier_candidate(self, candidate: Mapping[str, Any]) -> None:
-        """Bind staged advisory evidence to this exact generated inventory."""
-        snapshot = self._carrier_input_snapshot
-        if snapshot is None:
-            return
-        payload = self._load_json(snapshot)
-        try:
-            verify_carrier_candidate_binding_from_env(candidate, payload, env=os.environ)
-        except ValidationError:
-            self._carrier_binding_passed = False
-            # Local diagnostic and Actions summary only; never history.
-            self._note_carrier_binding_failure()
-            raise
-        self._carrier_binding_passed = True
-
-    def _note_carrier_binding_failure(self) -> None:
-        """Record an unbound-campaign diagnostic locally and in the Actions summary.
-
-        Binding failure never touches carrier-observation history; the only
-        artifacts are this run's private diagnostics and the step summary.
-        """
-        if self._carrier_input_snapshot is None or self._carrier_binding_passed:
-            return
-        diagnostic = {"status": "binding_failed", "reason": "candidate_binding_not_verified"}
-        try:
-            self._write_json(self._private("carrier-binding-failure.json"), diagnostic)
-            summary = self._private("carrier-binding-failure.md")
-            atomic_write(
-                summary,
-                "## Carrier evidence binding failure\n\n"
-                "The staged carrier aggregate does not bind to the regenerated candidate; "
-                "it stays a local diagnostic and never enters observation history.\n",
-            )
-            self._append_summary(summary)
-        except (OSError, ValidationError):
-            # The original binding failure must keep propagating unchanged.
-            pass
-
-    def _carrier_receipt_path(self) -> Path:
-        return self.paths.work_dir / RECEIPT_FILENAME
-
-    def _clear_carrier_receipt(self) -> None:
-        receipt = self._carrier_receipt_path()
-        if not receipt.parent.resolve().is_relative_to(self.paths.root.resolve()):
-            raise ValidationError("carrier receipt path escapes project root")
-        try:
-            receipt.unlink(missing_ok=True)
-        except OSError as exc:
-            raise ValidationError("stale carrier receipt could not be removed") from exc
-
-    def _finalize_carrier_observation(self, project: ProjectDefinition) -> dict[str, Any]:
-        """Issue a local receipt after the full gate; explicit CLI owns commit."""
-        snapshot = self._carrier_input_snapshot
-        if snapshot is None:
-            return {"status": "not_configured"}
-        if not self._carrier_binding_passed:
-            return {"status": "skipped", "reason": "candidate_binding_not_verified"}
-        if not self.publish and not self._carrier_receipt_enabled:
-            return {"status": "skipped", "reason": "dry_run"}
-        receipt = build_carrier_observation_receipt(
-            aggregate=self._load_json(snapshot),
-            validated_sha=os.environ.get("GITHUB_SHA", "").strip(),
-            env=os.environ,
-        )
-        atomic_write(
-            self._carrier_receipt_path(),
-            json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n",
-        )
-        return {"status": "receipt_issued", "receipt": RECEIPT_FILENAME}
 
     def _load_derived_state(self, project: ProjectDefinition) -> None:
         scheduler = load_scheduler_history_state(
@@ -367,7 +233,13 @@ class ProductionPipeline:
                 cache=self._private("ai-qualification-cache.json"),
                 cache_key=self._private("ai-qualification-cache.key"),
                 next_cache=self._private("ai-qualification-cache-next.json"),
-                carrier_input=self._carrier_input_snapshot,
+                # Optional self-hosted aggregate payload; absent file keeps the
+                # carrier report at not_configured.
+                carrier_input=(
+                    self._private("carrier-qualification.json")
+                    if self._private("carrier-qualification.json").is_file()
+                    else None
+                ),
             ),
             outputs=ProductionPipelineOutputs(
                 pre_audit=self._private("production-audit.json"),
@@ -749,7 +621,6 @@ class ProductionPipeline:
         )
 
     def run(self) -> dict[str, Any]:
-        self._clear_carrier_receipt()
         if (
             not self.paths.config.is_file()
             or not self.paths.subscriptions.is_file()
@@ -766,7 +637,6 @@ class ProductionPipeline:
         lifecycle_started = time.perf_counter()
         project: ProjectDefinition | None = None
         try:
-            self._stage_carrier_input()
             project = ProjectPaths(
                 config=self.paths.config,
                 subscriptions=self.paths.subscriptions,
@@ -846,25 +716,6 @@ class ProductionPipeline:
                 lifecycle_started=lifecycle_started,
             )
 
-            # Receipt issuance follows every preflight gate, proof, and manifest.
-            # History commit is a separate, optional workflow step.
-            if (
-                self._carrier_input_snapshot is not None
-                and not self.publish
-                and progress.phase != ReleasePhase.VERIFIED.value
-            ):
-                raise ValidationError("carrier observation receipt requires verified preflight")
-            started = time.perf_counter()
-            carrier_observation = (
-                self._best_effort_state(
-                    "issue_carrier_observation_receipt",
-                    lambda: self._finalize_carrier_observation(project),
-                )
-                if self.publish
-                else self._finalize_carrier_observation(project)
-            )
-            self._record_timing("carrier_observation", started)
-
             if self.warnings:
                 print(
                     "::warning title=Post-release state/observability::Production release is valid, "
@@ -902,7 +753,6 @@ class ProductionPipeline:
                 "derived_state": derived_state.get("status"),
                 "production_metrics": metrics.get("status"),
                 "scheduler_observation": scheduler_observation.get("status"),
-                "carrier_observation_history": carrier_observation,
                 "operational_slo": slo.get("status"),
                 "source_stage_accounting": self._source_stage_accounting(),
                 "regional_group_counts": generation.get("regional_group_counts", {}),

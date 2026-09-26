@@ -36,7 +36,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manual-publish")
     parser.add_argument("--schedule-publish")
     parser.add_argument("--workers", type=int, default=12)
-    parser.add_argument("--carrier-qualification-input", type=Path)
     return parser
 
 
@@ -78,16 +77,12 @@ def main(argv: list[str] | None = None) -> int:
         _enforce_validated_ci_sha(publish=publish)
         pipeline = (
             ProductionPreflightPipeline(
-                ProductionLifecyclePaths.canonical(
-                    args.root, carrier_qualification_input=args.carrier_qualification_input
-                ),
+                ProductionLifecyclePaths.canonical(args.root),
                 workers=args.workers,
             )
             if preflight
             else ProductionPipeline(
-                ProductionLifecyclePaths.canonical(
-                    args.root, carrier_qualification_input=args.carrier_qualification_input
-                ),
+                ProductionLifecyclePaths.canonical(args.root),
                 publish=publish,
                 workers=args.workers,
             )

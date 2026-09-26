@@ -6,7 +6,6 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from .carrier_qualification import run_carrier_qualification, safe_carrier_report
 from .errors import ValidationError
 from .runtime_names import valid_source_id, validate_runtime_source_labels
 
@@ -166,12 +165,6 @@ def safe_qualification_observability(
             },
             "blocked_critical_endpoint_count": blocked_count,
         }
-    reachability = value.get("reachability")
-    carrier = value.get("carrier_qualification")
-    if carrier is None and isinstance(reachability, dict):
-        carrier = reachability.get("carrier_qualification")
-    if carrier is None:
-        carrier = run_carrier_qualification()
     return {
         "qualification_removed_unique_nodes": _count(
             value.get("qualification_removed_unique_nodes", 0)
@@ -182,7 +175,6 @@ def safe_qualification_observability(
         "removed_by_stage": removed_by_stage,
         "sources_fully_removed": sorted(fully_removed, key=lambda row: row["source"]),
         "ai_service_evidence": safe_evidence,
-        "carrier_qualification": safe_carrier_report(carrier),
     }
 
 
@@ -239,31 +231,5 @@ def render_qualification_observability_markdown(
         lines.append(
             f"| {service} | {row['evidence_status']} | {row['evidence_source']} | {str(row['systemic_failure_detected']).lower()} | {str(row['lkg_fresh']).lower()} | {counts} | {row['blocked_critical_endpoint_count']} |"
         )
-    carrier = safe["carrier_qualification"]
-    lines.extend(
-        [
-            "",
-            "## Carrier qualification (advisory)",
-            "",
-            f"Authority: **{carrier['authority']}**  ",
-            f"Coverage: **{carrier['coverage']}**",
-        ]
-    )
-    if "aggregate" in carrier:
-        aggregate = carrier["aggregate"]
-        lines.extend(
-            [
-                f"Freshness: **{carrier['freshness']['status']}**  ",
-                f"Evidence: **{carrier['evidence']['status']}**  ",
-                f"Aggregate tested / reachable / ratio: **{aggregate['tested']} / {aggregate['reachable']} / {aggregate['reachable_ratio']}**",
-                "",
-                "| Carrier | Tested | Reachable | Median latency (ms) |",
-                "| --- | ---: | ---: | ---: |",
-            ]
-        )
-        for name, row in carrier["carriers"].items():
-            lines.append(
-                f"| {name} | {row['tested']} | {row['reachable']} | {row['median_latency_ms']} |"
-            )
     lines.append("")
     return "\n".join(lines)

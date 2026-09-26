@@ -180,7 +180,7 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert guard < matrix < release
     assert "qualification_path=paths.qualification" in release_stage[:matrix]
 
-    assert lifecycle.count("self._best_effort_state(") == 5
+    assert lifecycle.count("self._best_effort_state(") == 4
     assert "persist_ai_qualification_cache" in lifecycle
     assert "persist_scheduler_history" in lifecycle
     assert "persist_production_metrics" in lifecycle

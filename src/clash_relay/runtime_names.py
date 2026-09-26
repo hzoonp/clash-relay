@@ -8,7 +8,7 @@ from collections.abc import Iterable
 _LONG_SOURCE = re.compile(r"^subscription_([0-9]+)$")
 _SOURCE_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _RUNTIME_NAME = re.compile(
-    r"^\[(?P<scope>[A-Z][A-Z0-9:_-]*)\] (?P<source>[a-z][a-z0-9_-]{0,63})/.+ #[0-9a-f]{10}"
+    r"^\[[A-Z][A-Z0-9:_-]*\] (?P<source>[a-z][a-z0-9_-]{0,63})/.+ #[0-9a-f]{10}"
     r"(?: \[OAI:[0-9a-f]{8}\])?$"
 )
 
@@ -57,20 +57,3 @@ def parse_runtime_source_name(name: object) -> str | None:
         return None
     match = _RUNTIME_NAME.fullmatch(name)
     return match.group("source") if match is not None else None
-
-
-def parse_runtime_name_region(name: object) -> str | None:
-    """Region label from a runtime name's scope suffix (``[AI_JP:JP]`` -> ``JP``).
-
-    The scope grammar is owned by the generator; this accessor reads the region
-    segment after the last colon without any second parsing convention. Pool
-    scopes without a region segment (e.g. chains) project their scope token.
-    """
-
-    if not isinstance(name, str):
-        return None
-    match = _RUNTIME_NAME.fullmatch(name)
-    if match is None:
-        return None
-    scope = match.group("scope")
-    return scope.split(":", 1)[-1] if ":" in scope else scope

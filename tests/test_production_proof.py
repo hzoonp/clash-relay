@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from clash_relay.carrier_qualification import run_carrier_qualification
 from clash_relay.errors import ValidationError
 from clash_relay.production_proof import build_production_proof, render_production_proof_markdown
 
@@ -143,22 +142,7 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     )
     candidate.write_bytes(content)
 
-    inputs = _inputs(candidate)
-    inputs["qualification"]["reachability"] = {
-        "carrier_qualification": run_carrier_qualification(
-            {
-                "schema_version": 1,
-                "collected_at_epoch": 1_000,
-                "carriers": {
-                    name: {"tested": 2, "reachable": 2, "median_latency_ms": 50}
-                    for name in ("telecom", "unicom", "mobile")
-                },
-            },
-            now_epoch=1_000,
-        ),
-        "probe_url": "SHOULD-NOT-LEAK",
-    }
-    proof = build_production_proof(**inputs)
+    proof = build_production_proof(**_inputs(candidate))
     markdown = render_production_proof_markdown(proof)
 
     assert proof["status"] == "passed"
@@ -205,9 +189,6 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         == 1
     )
     assert "| subscription_4 | ai | 1 | 2 |" in markdown
-    assert proof["qualification_pipeline"]["carrier_qualification"]["status"] == "full"
-    assert "Carrier qualification (advisory)" in markdown
-    assert "external_self_hosted_advisory" in markdown
     assert "secret.example.invalid" not in markdown
     assert "| openai | inconclusive | cache | true | true | 2 / 0 / 0 / 2 | 1 |" in markdown
     assert "OpenAI App-ready live nodes | 3" in markdown
@@ -236,18 +217,6 @@ def test_production_proof_rejects_failed_reachability_audit(tmp_path: Path) -> N
 
     with pytest.raises(ValidationError, match="passed source reachability audit"):
         build_production_proof(**inputs)
-
-
-def test_proof_without_carrier_input_is_explicitly_not_configured(tmp_path: Path) -> None:
-    candidate = tmp_path / "config.yaml"
-    candidate.write_text("proxy-providers: {}\nproxy-groups: []\nrule-providers: {}\nrules: []\n")
-    proof = build_production_proof(**_inputs(candidate))
-    assert proof["qualification_pipeline"]["carrier_qualification"] == {
-        "status": "not_configured",
-        "coverage": "not_configured",
-        "authority": "external_self_hosted_advisory",
-        "carriers": {},
-    }
 
 
 def test_production_proof_rejects_duplicate_core_versions(tmp_path: Path) -> None:

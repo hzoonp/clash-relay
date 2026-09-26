@@ -268,21 +268,3 @@ def test_dry_run_decision_rejects_publication_side_effect_evidence(
 
     with pytest.raises(ValidationError, match=message):
         audit_production_event_result(result, decision)
-
-
-def test_dry_run_accepts_non_writing_carrier_observation_statuses() -> None:
-    decision = resolve_publication_decision(event_name="push")
-    for status in ("not_configured", "receipt_issued", "skipped"):
-        audit_production_event_result(
-            _passed_result(carrier_observation_history={"status": status}), decision
-        )
-
-
-def test_dry_run_audit_rejects_carrier_history_write_evidence() -> None:
-    decision = resolve_publication_decision(event_name="push")
-    result = _passed_result(
-        carrier_observation_history={"status": "published"},
-    )
-
-    with pytest.raises(ValidationError, match="must never persist carrier observation history"):
-        audit_production_event_result(result, decision)

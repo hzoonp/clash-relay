@@ -26,7 +26,6 @@ class ProductionPreflightPipeline(ProductionPipeline):
         workers: int = 12,
     ) -> None:
         super().__init__(paths, publish=False, workers=workers)
-        self._carrier_receipt_enabled = True
 
     def _release_candidate_stage(self, project: ProjectDefinition, binary):
         result = run_release_candidate_stage(
