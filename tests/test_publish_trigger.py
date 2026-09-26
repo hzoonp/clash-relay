@@ -21,8 +21,21 @@ def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
     assert "  workflow_dispatch:\n" in text
     assert "      publish:\n" in text
     assert "        default: false\n" in text
-    assert "clash-relay-publish-${{ github.ref }}" in text
+    assert "clash-relay-publish-${{ github.ref }}" not in text
+    assert "clash-relay-production-preflight-{0}" in text
+    assert "clash-relay-production-commit-{0}" in text
+    assert "clash-relay-production-dry-run-{0}" in text
     assert "github.ref == 'refs/heads/main'" in text
+
+
+def test_concurrency_domains_separate_read_only_and_writer_runs() -> None:
+    text = WORKFLOW.read_text()
+    assert "cancel-in-progress: ${{ github.event_name == 'push' }}" in text
+    assert "github.event_name == 'workflow_dispatch' && inputs.publish == true" in text
+    assert "github.event_name == 'schedule'" in text
+    assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true'" in text
+    assert "github.repository == 'hzoonp/clash-relay'" in text
+    assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == ''" in text
 
 
 def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
