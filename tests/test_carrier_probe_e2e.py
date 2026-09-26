@@ -62,16 +62,25 @@ def payload(
     return {
         "schema_version": 1,
         "sample_set_id": sample_id,
+        "inventory_set_id": "b" * 32,
+        "probe_plan_id": "c" * 32,
+        "sampler_version": 2,
         "collected_at_epoch": timestamp,
         "carriers": {
             carrier: {
                 "sampled": sampled,
+                "sampled_tcp_endpoints": sampled,
                 "tested": tested,
                 "reachable": 0,
                 "skipped_unsupported": 2,
+                "skipped_udp_native_endpoints": 2,
+                "geographic_regions_sampled": 1,
+                "protocols_sampled": 1,
+                "sources_sampled": 1 if sampled < 5 else 2,
+                "strata_sampled": 1 if sampled < 5 else 2,
                 "median_latency_ms": None,
                 "p90_latency_ms": None,
-                "sufficient_evidence": sampled >= 5 and tested >= 5,
+                "sufficient_evidence": sampled >= 5 and tested == sampled,
             }
         },
     }
@@ -132,6 +141,51 @@ def test_insufficient_stale_and_zero_reachable_are_advisory() -> None:
         collect_carrier_probes(inputs, now_epoch=1000 + 7 * 3600)
 
 
+def test_inventory_plan_and_sampler_drift_fail_closed() -> None:
+    baseline = [payload(carrier) for carrier in ("telecom", "unicom", "mobile")]
+    inventory_drift = [*baseline[:2], payload("mobile")]
+    inventory_drift[2]["inventory_set_id"] = "d" * 32
+    with pytest.raises(ValidationError, match="inventories differ"):
+        collect_carrier_probes(inventory_drift, now_epoch=1001)
+    plan_drift = [*baseline[:2], payload("mobile")]
+    plan_drift[2]["probe_plan_id"] = "d" * 32
+    with pytest.raises(ValidationError, match="probe plans differ"):
+        collect_carrier_probes(plan_drift, now_epoch=1001)
+    version_drift = [*baseline[:2], payload("mobile")]
+    version_drift[2]["sampler_version"] = 3
+    with pytest.raises(ValidationError, match="sampler version"):
+        collect_carrier_probes(version_drift, now_epoch=1001)
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"reachable": 1, "median_latency_ms": None},
+        {"reachable": 1, "median_latency_ms": 50, "p90_latency_ms": 49},
+        {"sampled": 49, "sampled_tcp_endpoints": 49, "tested": 49},
+        {"sampled": 5, "sampled_tcp_endpoints": 5, "tested": 6},
+        {"skipped_unsupported": 100_001, "skipped_udp_native_endpoints": 100_001},
+        {"geographic_regions_sampled": 8},
+    ],
+)
+def test_malformed_carrier_aggregate_fails_closed(update: dict) -> None:
+    candidate_payload = payload("telecom")
+    candidate_payload["carriers"]["telecom"].update(update)
+    with pytest.raises(ValidationError):
+        run_carrier_qualification(candidate_payload, now_epoch=1001)
+
+
+def test_single_repeated_stratum_is_insufficient_despite_five_samples() -> None:
+    candidate_payload = payload("telecom")
+    row = candidate_payload["carriers"]["telecom"]
+    row["sources_sampled"] = 1
+    row["strata_sampled"] = 1
+    row["sufficient_evidence"] = False
+    report = run_carrier_qualification(candidate_payload, now_epoch=1001)
+    assert report["coverage"] == "partial"
+    assert report["evidence"]["status"] == "insufficient"
+
+
 def test_udp_native_skipped_and_producer_privacy() -> None:
     sample = sample_probe_targets(candidate=candidate(), key=KEY, repository=REPO)
     outcomes = {
@@ -156,7 +210,15 @@ def test_udp_native_skipped_and_producer_privacy() -> None:
         "password",
     ):
         assert forbidden not in serialized
-    assert set(aggregate) == {"schema_version", "collected_at_epoch", "sample_set_id", "carriers"}
+    assert set(aggregate) == {
+        "schema_version",
+        "collected_at_epoch",
+        "sample_set_id",
+        "inventory_set_id",
+        "probe_plan_id",
+        "sampler_version",
+        "carriers",
+    }
 
 
 def test_runner_gate_rejects_github_hosted_and_wrong_carrier() -> None:
@@ -170,6 +232,7 @@ def test_runner_gate_rejects_github_hosted_and_wrong_carrier() -> None:
     with pytest.raises(ValidationError):
         assert_self_hosted_probe_environment(env, "telecom")
     env["RUNNER_ENVIRONMENT"] = "self-hosted"
+    env.pop("RUNNER_LABELS")  # labels are selected by workflow, not attested here
     assert_self_hosted_probe_environment(env, "telecom")
     with pytest.raises(ValidationError):
         assert_self_hosted_probe_environment(env, "unicom")

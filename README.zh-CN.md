@@ -28,11 +28,11 @@ Fork
 
 ## 可选的 self-hosted 三网探测
 
-独立的 **Self-hosted three-carrier probe** workflow 仅在 `main` 上手动触发、且仓库变量 `CLASH_RELAY_CARRIER_PROBE_ENABLED=true` 时运行。分别在电信、联通、移动网络部署 Linux self-hosted runner，并配置专属标签 `carrier-probe-telecom`、`carrier-probe-unicom`、`carrier-probe-mobile`。设置 `CLASH_RELAY_SUBSCRIPTIONS` 和本仓库专用 Secret `CLASH_RELAY_CARRIER_HMAC_KEY`；三台 runner 使用相同的密钥和订阅输入。没有三网基础设施时，carrier evidence 保持 `not_configured`，正常生产发布独立运行。
+独立的 **Self-hosted three-carrier probe** workflow 仅在 `main` 上手动触发、且仓库变量 `CLASH_RELAY_CARRIER_PROBE_ENABLED=true` 时运行。它先复用完整的 `ci.yml` 门禁并取得 `validated_sha`；三个运营商 job 和 collector 均检出该精确提交，在安装或运行仓库代码前确认 `GITHUB_SHA`、检出的 `HEAD` 与 `validated_sha` 一致。CI 门禁失败时，带 Secret 的 probe job 不会启动。分别在电信、联通、移动网络部署 Linux self-hosted runner，并配置专属标签 `carrier-probe-telecom`、`carrier-probe-unicom`、`carrier-probe-mobile`。为三个 job 配置限制分支的受保护 environment `carrier-probe-telecom`、`carrier-probe-unicom`、`carrier-probe-mobile`，并提供 `CLASH_RELAY_SUBSCRIPTIONS` 与本仓库专用 Secret `CLASH_RELAY_CARRIER_HMAC_KEY`；三台 runner 使用相同的密钥和订阅输入。workflow 调度器的 `runs-on` 标签和受保护 environment 才是 runner 与 Secret 的信任边界。应用层环境变量（包括调用者提供的标签字符串）不能独立证明 runner 身份。GitHub-hosted runner 不运行 carrier producer。没有三网基础设施时，carrier evidence 保持 `not_configured`，正常生产发布独立运行。
 
 各 runner 在私有环境构建候选节点，并探测同一确定性、有数量上限的 endpoint 样本。TCP-native 节点执行 DNS 解析和有界 TCP 连接；UDP-native 节点计为 skipped。候选配置、目标、endpoint、凭据和原始样本留在私有 runner，仅匿名聚合 JSON 跨 job 传递。collector 校验三份聚合结果后，将 `carrier-qualification.json` 送入 canonical production preflight；不上传 probe artifact，也不发布配置。carrier evidence 仍为 `external_self_hosted_advisory`，客户端 URLTest 仍是本地最终判断。
 
-采样用绑定本仓库的 HMAC 身份去重和生成 sample-set ID，再按地域、协议、订阅来源平衡，TCP 目标上限为 12。collector 要求每个运营商恰好一份结果、相同 sample-set ID 和采样数，时间戳相差不超过五分钟。coverage（`partial`/`full`）与证据质量（`sufficient`/`insufficient`/`stale`）分开：每网至少采样并完成五个 TCP 目标，且整批样本均已测试。证据始终仅供参考，不删节点，也不改变 Promotion Guard 或调度。
+采样用绑定本仓库的 HMAC 身份去重，并分别生成选中样本、完整 eligible inventory 和 probe plan 的匿名 ID。按规范地域、协议、订阅来源平衡，TCP 目标上限为 12；`ANY` 和 `CHAIN` 属于非地域 scope，同一 endpoint 的地域标签冲突时拒绝。collector 要求三网 sample、inventory、plan ID、采样数、sampler 版本一致，时间戳相差不超过五分钟。coverage（`partial`/`full`）与证据质量（`sufficient`/`insufficient`/`stale`）分开：每网至少完成五个 TCP 目标，且覆盖至少两个不同 strata；只公开地域、协议、来源和 strata 的汇总数量。纯 UDP endpoint 计为 skipped；同时有 TCP occurrence 的 endpoint 不重复计入 skipped。证据始终仅供参考，不删节点，也不改变 Promotion Guard 或调度。
 
 ## Public Config v2
 

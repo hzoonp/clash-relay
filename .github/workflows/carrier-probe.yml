@@ -11,8 +11,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  telecom:
+  validate:
+    name: Validate carrier probe executor SHA
     if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  telecom:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true' && needs.validate.outputs.validated_sha == github.sha
     runs-on: [self-hosted, linux, carrier-probe-telecom]
     timeout-minutes: 15
     environment: carrier-probe-telecom
@@ -21,7 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.validate.outputs.validated_sha }}
           persist-credentials: false
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -43,7 +59,6 @@ jobs:
           CLASH_RELAY_CARRIER_PROBE_ENABLED: "true"
           CLASH_RELAY_CARRIER_PROBE_NETWORK: telecom
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          RUNNER_LABELS: self-hosted,linux,carrier-probe-telecom
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/telecom-carrier-aggregate.json"
@@ -58,7 +73,8 @@ jobs:
           PY
 
   unicom:
-    if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true'
+    needs: validate
+    if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true' && needs.validate.outputs.validated_sha == github.sha
     runs-on: [self-hosted, linux, carrier-probe-unicom]
     timeout-minutes: 15
     environment: carrier-probe-unicom
@@ -67,7 +83,15 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.validate.outputs.validated_sha }}
           persist-credentials: false
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -89,7 +113,6 @@ jobs:
           CLASH_RELAY_CARRIER_PROBE_ENABLED: "true"
           CLASH_RELAY_CARRIER_PROBE_NETWORK: unicom
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          RUNNER_LABELS: self-hosted,linux,carrier-probe-unicom
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/unicom-carrier-aggregate.json"
@@ -104,7 +127,8 @@ jobs:
           PY
 
   mobile:
-    if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true'
+    needs: validate
+    if: github.ref == 'refs/heads/main' && vars.CLASH_RELAY_CARRIER_PROBE_ENABLED == 'true' && needs.validate.outputs.validated_sha == github.sha
     runs-on: [self-hosted, linux, carrier-probe-mobile]
     timeout-minutes: 15
     environment: carrier-probe-mobile
@@ -113,7 +137,15 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.validate.outputs.validated_sha }}
           persist-credentials: false
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -135,7 +167,6 @@ jobs:
           CLASH_RELAY_CARRIER_PROBE_ENABLED: "true"
           CLASH_RELAY_CARRIER_PROBE_NETWORK: mobile
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          RUNNER_LABELS: self-hosted,linux,carrier-probe-mobile
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/mobile-carrier-aggregate.json"
@@ -150,14 +181,22 @@ jobs:
           PY
 
   collect:
-    needs: [telecom, unicom, mobile]
-    if: needs.telecom.result == 'success' && needs.unicom.result == 'success' && needs.mobile.result == 'success'
+    needs: [validate, telecom, unicom, mobile]
+    if: needs.validate.outputs.validated_sha == github.sha && needs.telecom.result == 'success' && needs.unicom.result == 'success' && needs.mobile.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ needs.validate.outputs.validated_sha }}
           persist-credentials: false
+      - name: Verify validated checkout identity
+        env:
+          VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          test "$VALIDATED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"

@@ -36,6 +36,11 @@ RISK_COVERAGE_FLOORS: dict[str, float] = {
     "src/clash_relay/ai_qualification.py": 55.0,
     "src/clash_relay/production_application.py": 75.0,
     "src/clash_relay/runtime_identity.py": 95.0,
+    # Main-branch baseline: producer 82%, collector 89%, consumer 89%.
+    # Leave a small margin for the trust-boundary/schema hardening in this change.
+    "src/clash_relay/carrier_probe.py": 78.0,
+    "src/clash_relay/carrier_collector.py": 85.0,
+    "src/clash_relay/carrier_qualification.py": 85.0,
 }
 
 

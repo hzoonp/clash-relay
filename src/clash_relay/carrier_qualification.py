@@ -21,13 +21,23 @@ import math
 import re
 import time
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from .errors import ValidationError
 
 _CARRIERS = frozenset({"telecom", "unicom", "mobile"})
 _PAYLOAD_SCHEMA_VERSION = 1
-_PAYLOAD_KEYS = frozenset({"schema_version", "carriers", "collected_at_epoch", "sample_set_id"})
+_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version",
+        "carriers",
+        "collected_at_epoch",
+        "sample_set_id",
+        "inventory_set_id",
+        "probe_plan_id",
+        "sampler_version",
+    }
+)
 _ROW_KEYS = frozenset(
     {
         "tested",
@@ -37,11 +47,21 @@ _ROW_KEYS = frozenset(
         "skipped_unsupported",
         "p90_latency_ms",
         "sufficient_evidence",
+        "sampled_tcp_endpoints",
+        "skipped_udp_native_endpoints",
+        "geographic_regions_sampled",
+        "protocols_sampled",
+        "sources_sampled",
+        "strata_sampled",
     }
 )
 _MAX_RESULT_AGE_SECONDS = 6 * 3600
 _MIN_SAMPLES_PER_CARRIER = 5
 MIN_SAMPLES_PER_CARRIER = _MIN_SAMPLES_PER_CARRIER
+SAMPLER_VERSION = 2
+MAX_CARRIER_SAMPLES = 48
+MAX_UDP_NATIVE_ENDPOINTS = 100_000
+MAX_LATENCY_MS = 60_000
 _SAMPLE_SET_ID_PATTERN = re.compile(r"^[0-9a-f]{16,64}$")
 _AUTHORITY = "external_self_hosted_advisory"
 
@@ -76,11 +96,17 @@ class CarrierProbeResult:
 
     __slots__ = (
         "carrier",
+        "geographic_regions_sampled",
         "median_latency_ms",
         "p90_latency_ms",
+        "protocols_sampled",
         "reachable",
         "sampled",
+        "sampled_tcp_endpoints",
+        "skipped_udp_native_endpoints",
         "skipped_unsupported",
+        "sources_sampled",
+        "strata_sampled",
         "sufficient",
         "tested",
     )
@@ -95,6 +121,12 @@ class CarrierProbeResult:
         sampled: object = None,
         skipped_unsupported: object = None,
         p90_latency_ms: object = None,
+        sampled_tcp_endpoints: object = None,
+        skipped_udp_native_endpoints: object = None,
+        geographic_regions_sampled: object = None,
+        protocols_sampled: object = None,
+        sources_sampled: object = None,
+        strata_sampled: object = None,
     ) -> None:
         if carrier not in _CARRIERS:
             raise ValidationError(
@@ -103,7 +135,7 @@ class CarrierProbeResult:
         if (
             not isinstance(tested, int)
             or isinstance(tested, bool)
-            or tested < (0 if sampled is not None else 1)
+            or not (0 if sampled is not None else 1) <= tested <= MAX_CARRIER_SAMPLES
         ):
             raise ValidationError("carrier qualification requires a positive sample count")
         if (
@@ -119,17 +151,20 @@ class CarrierProbeResult:
             or isinstance(median_latency_ms, bool)
             or not math.isfinite(median_latency_ms)
             or median_latency_ms < 0
+            or median_latency_ms > MAX_LATENCY_MS
             or reachable == 0
         ):
             raise ValidationError("carrier qualification requires a numeric median latency")
         if sampled is not None and (
-            not isinstance(sampled, int) or isinstance(sampled, bool) or sampled < tested
+            not isinstance(sampled, int)
+            or isinstance(sampled, bool)
+            or not tested <= sampled <= MAX_CARRIER_SAMPLES
         ):
             raise ValidationError("carrier qualification sampled count is invalid")
         if skipped_unsupported is not None and (
             not isinstance(skipped_unsupported, int)
             or isinstance(skipped_unsupported, bool)
-            or skipped_unsupported < 0
+            or not 0 <= skipped_unsupported <= MAX_UDP_NATIVE_ENDPOINTS
         ):
             raise ValidationError("carrier qualification skipped count is invalid")
         if p90_latency_ms is not None and (
@@ -137,9 +172,50 @@ class CarrierProbeResult:
             or isinstance(p90_latency_ms, bool)
             or not math.isfinite(p90_latency_ms)
             or p90_latency_ms < 0
+            or p90_latency_ms > MAX_LATENCY_MS
             or reachable == 0
+            or (isinstance(median_latency_ms, (int, float)) and p90_latency_ms < median_latency_ms)
         ):
             raise ValidationError("carrier qualification p90 latency is invalid")
+        if sampled_tcp_endpoints is not None and (
+            not isinstance(sampled_tcp_endpoints, int)
+            or isinstance(sampled_tcp_endpoints, bool)
+            or sampled_tcp_endpoints != sampled
+        ):
+            raise ValidationError("carrier qualification sampled TCP count drifted")
+        if skipped_udp_native_endpoints is not None and (
+            not isinstance(skipped_udp_native_endpoints, int)
+            or isinstance(skipped_udp_native_endpoints, bool)
+            or not 0 <= skipped_udp_native_endpoints <= MAX_UDP_NATIVE_ENDPOINTS
+            or (
+                skipped_unsupported is not None
+                and skipped_udp_native_endpoints != skipped_unsupported
+            )
+        ):
+            raise ValidationError("carrier qualification UDP skip count drifted")
+        diversity_values = (
+            geographic_regions_sampled,
+            protocols_sampled,
+            sources_sampled,
+            strata_sampled,
+        )
+        if any(value is not None for value in diversity_values):
+            if sampled is None or any(
+                not isinstance(value, int) or isinstance(value, bool) for value in diversity_values
+            ):
+                raise ValidationError("carrier qualification diversity counts are incomplete")
+            geographic, protocols, sources, strata = (
+                cast(int, value) for value in diversity_values
+            )
+            sampled_count = int(sampled)
+            if (
+                not 0 <= geographic <= min(7, sampled_count)
+                or not (1 if sampled_count else 0) <= protocols <= sampled_count
+                or not (1 if sampled_count else 0) <= sources <= sampled_count
+                or not (1 if sampled_count else 0) <= strata <= sampled_count
+                or strata < max(geographic, protocols, sources)
+            ):
+                raise ValidationError("carrier qualification diversity counts are invalid")
         self.carrier = carrier
         self.tested = int(tested)
         self.reachable = int(reachable)
@@ -149,10 +225,29 @@ class CarrierProbeResult:
             int(skipped_unsupported) if skipped_unsupported is not None else None
         )
         self.p90_latency_ms = float(p90_latency_ms) if p90_latency_ms is not None else None
+        self.sampled_tcp_endpoints = sampled_tcp_endpoints
+        self.skipped_udp_native_endpoints = skipped_udp_native_endpoints
+        self.geographic_regions_sampled = (
+            cast(int, geographic_regions_sampled)
+            if geographic_regions_sampled is not None
+            else None
+        )
+        self.protocols_sampled = (
+            cast(int, protocols_sampled) if protocols_sampled is not None else None
+        )
+        self.sources_sampled = cast(int, sources_sampled) if sources_sampled is not None else None
+        self.strata_sampled = cast(int, strata_sampled) if strata_sampled is not None else None
         self.sufficient = (
             self.sampled is not None
             and self.sampled >= _MIN_SAMPLES_PER_CARRIER
             and self.tested == self.sampled
+            and self.sampled_tcp_endpoints == self.sampled
+            and self.skipped_udp_native_endpoints is not None
+            and self.geographic_regions_sampled is not None
+            and self.protocols_sampled is not None
+            and self.sources_sampled is not None
+            and self.strata_sampled is not None
+            and self.strata_sampled >= 2
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -171,6 +266,17 @@ class CarrierProbeResult:
             row["skipped_unsupported"] = self.skipped_unsupported
         if self.p90_latency_ms is not None:
             row["p90_latency_ms"] = round(self.p90_latency_ms, 3)
+        for name in (
+            "sampled_tcp_endpoints",
+            "skipped_udp_native_endpoints",
+            "geographic_regions_sampled",
+            "protocols_sampled",
+            "sources_sampled",
+            "strata_sampled",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                row[name] = value
         return row
 
 
@@ -259,6 +365,12 @@ def parse_carrier_aggregate_payload(
                 sampled=row.get("sampled"),
                 skipped_unsupported=row.get("skipped_unsupported"),
                 p90_latency_ms=row.get("p90_latency_ms"),
+                sampled_tcp_endpoints=row.get("sampled_tcp_endpoints"),
+                skipped_udp_native_endpoints=row.get("skipped_udp_native_endpoints"),
+                geographic_regions_sampled=row.get("geographic_regions_sampled"),
+                protocols_sampled=row.get("protocols_sampled"),
+                sources_sampled=row.get("sources_sampled"),
+                strata_sampled=row.get("strata_sampled"),
             )
         )
     seen = {row.carrier for row in rows}
@@ -277,6 +389,29 @@ def parse_carrier_aggregate_payload(
         raise ValidationError(
             "carrier qualification sample_set_id must be 16-64 lowercase hex digits"
         )
+    for identity_field in ("inventory_set_id", "probe_plan_id"):
+        identity = payload.get(identity_field)
+        if identity is not None and (
+            not isinstance(identity, str) or _SAMPLE_SET_ID_PATTERN.fullmatch(identity) is None
+        ):
+            raise ValidationError(f"carrier qualification {identity_field} is invalid")
+    sampler_version = payload.get("sampler_version")
+    if sampler_version is not None and (
+        not isinstance(sampler_version, int)
+        or isinstance(sampler_version, bool)
+        or sampler_version != SAMPLER_VERSION
+    ):
+        raise ValidationError("carrier qualification sampler version is invalid")
+    plan_fields = (
+        sample_set_id,
+        payload.get("inventory_set_id"),
+        payload.get("probe_plan_id"),
+        sampler_version,
+    )
+    if any(value is not None for value in plan_fields[1:]) and any(
+        value is None for value in plan_fields
+    ):
+        raise ValidationError("carrier qualification probe plan metadata is incomplete")
     # Producer-declared sufficiency must agree with the sample counts; drift
     # means the payload was hand-edited and fails closed.
     for carrier, row in carriers.items():
@@ -284,12 +419,8 @@ def parse_carrier_aggregate_payload(
         sampled = row.get("sampled")
         if claimed is None and sampled is None:
             continue  # legacy aggregate is accepted but insufficient
-        expected = (
-            isinstance(sampled, int)
-            and not isinstance(sampled, bool)
-            and sampled >= _MIN_SAMPLES_PER_CARRIER
-            and row.get("tested") == sampled
-        )
+        verified = next(item for item in rows if item.carrier == carrier)
+        expected = verified.sufficient
         if not isinstance(claimed, bool) or claimed != expected:
             raise ValidationError(
                 f"carrier qualification sufficiency evidence drifted for {carrier!r}"
@@ -340,6 +471,9 @@ def run_carrier_qualification(
         report = aggregate_carrier_results(rows)
         if sample_set_id is not None:
             report["sample_set_id"] = sample_set_id
+        for name in ("inventory_set_id", "probe_plan_id", "sampler_version"):
+            if name in results:
+                report[name] = results[name]
         evidence = _evidence_block(rows)
         report["evidence"] = evidence
         if isinstance(collected, int) and not isinstance(collected, bool):
@@ -391,6 +525,29 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
         or _SAMPLE_SET_ID_PATTERN.fullmatch(raw_sample_set_id) is None
     ):
         raise ValidationError("carrier qualification sample_set_id is invalid")
+    for name in ("inventory_set_id", "probe_plan_id"):
+        identity = value.get(name)
+        if identity is not None and (
+            not isinstance(identity, str) or _SAMPLE_SET_ID_PATTERN.fullmatch(identity) is None
+        ):
+            raise ValidationError(f"carrier qualification {name} is invalid")
+    raw_sampler_version = value.get("sampler_version")
+    if raw_sampler_version is not None and (
+        not isinstance(raw_sampler_version, int)
+        or isinstance(raw_sampler_version, bool)
+        or raw_sampler_version != SAMPLER_VERSION
+    ):
+        raise ValidationError("carrier qualification sampler version is invalid")
+    projected_plan_fields = (
+        raw_sample_set_id,
+        value.get("inventory_set_id"),
+        value.get("probe_plan_id"),
+        raw_sampler_version,
+    )
+    if any(item is not None for item in projected_plan_fields[1:]) and any(
+        item is None for item in projected_plan_fields
+    ):
+        raise ValidationError("carrier qualification probe plan metadata is incomplete")
     carriers: dict[str, dict[str, Any]] = {}
     for carrier, row in sorted(raw_carriers.items()):
         if carrier not in _CARRIERS or not isinstance(row, Mapping):
@@ -403,6 +560,12 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
             sampled=row.get("sampled"),
             skipped_unsupported=row.get("skipped_unsupported"),
             p90_latency_ms=row.get("p90_latency_ms"),
+            sampled_tcp_endpoints=row.get("sampled_tcp_endpoints"),
+            skipped_udp_native_endpoints=row.get("skipped_udp_native_endpoints"),
+            geographic_regions_sampled=row.get("geographic_regions_sampled"),
+            protocols_sampled=row.get("protocols_sampled"),
+            sources_sampled=row.get("sources_sampled"),
+            strata_sampled=row.get("strata_sampled"),
         )
         carrier_row: dict[str, Any] = {
             "tested": verified.tested,
@@ -418,6 +581,17 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
             carrier_row["skipped_unsupported"] = verified.skipped_unsupported
         if verified.p90_latency_ms is not None:
             carrier_row["p90_latency_ms"] = round(verified.p90_latency_ms, 3)
+        for name in (
+            "sampled_tcp_endpoints",
+            "skipped_udp_native_endpoints",
+            "geographic_regions_sampled",
+            "protocols_sampled",
+            "sources_sampled",
+            "strata_sampled",
+        ):
+            measured = getattr(verified, name)
+            if measured is not None:
+                carrier_row[name] = measured
         carriers[carrier] = carrier_row
     safe: dict[str, Any] = {
         "status": status,
@@ -426,6 +600,9 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
     }
     if raw_sample_set_id is not None:
         safe["sample_set_id"] = raw_sample_set_id
+    for name in ("inventory_set_id", "probe_plan_id", "sampler_version"):
+        if name in value:
+            safe[name] = value[name]
     if status == "not_configured":
         if carriers:
             raise ValidationError("unconfigured carrier evidence contains rows")

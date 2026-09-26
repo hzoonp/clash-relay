@@ -16,12 +16,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .carrier_qualification import MIN_SAMPLES_PER_CARRIER
+from .carrier_qualification import MIN_SAMPLES_PER_CARRIER, SAMPLER_VERSION
+from .classify import proxy_fingerprint
 from .errors import ValidationError
 from .proxy_endpoint_qualification import _TCP_TYPES, _UDP_NATIVE_TYPES
 from .runtime_names import parse_runtime_name_region, parse_runtime_source_name
 
 CARRIERS = frozenset({"telecom", "unicom", "mobile"})
+GEOGRAPHIC_REGIONS = frozenset({"HK", "TW", "SG", "JP", "US", "KR", "OTHER"})
+UNKNOWN_REGION = "UNKNOWN"
 DEFAULT_MAX_TARGETS = 12
 MAX_TARGETS = 48
 CONNECT_TIMEOUT_SECONDS = 2.0
@@ -30,22 +33,18 @@ ATTEMPTS = 2
 
 
 def assert_self_hosted_probe_environment(env: Mapping[str, str], carrier: str) -> None:
-    """Require an explicit carrier opt-in and a carrier-specific self-hosted label."""
+    """Defense-in-depth gate; workflow scheduling and environment provide trust."""
     if carrier not in CARRIERS:
         raise ValidationError("carrier probe requires a known carrier")
-    labels = set(env.get("RUNNER_LABELS", "").split(","))
     if (
-        env.get("CLASH_RELAY_CARRIER_PROBE_ENABLED") != "true"
-        or env.get("CLASH_RELAY_CARRIER_PROBE_NETWORK") != carrier
+        env.get("GITHUB_ACTIONS") != "true"
         or env.get("RUNNER_ENVIRONMENT") != "self-hosted"
-        or "self-hosted" not in labels
-        or f"carrier-probe-{carrier}" not in labels
+        or env.get("CLASH_RELAY_CARRIER_PROBE_ENABLED") != "true"
+        or env.get("CLASH_RELAY_CARRIER_PROBE_NETWORK") != carrier
     ):
         raise ValidationError(
             "carrier probe requires an explicitly configured carrier self-hosted runner"
         )
-    if env.get("GITHUB_ACTIONS") == "true" and env.get("RUNNER_ENVIRONMENT") != "self-hosted":
-        raise ValidationError("GitHub-hosted runners cannot produce carrier evidence")
 
 
 def _keyed_id(key: bytes, repository: str, domain: str, value: str) -> str:
@@ -70,10 +69,28 @@ class CarrierProbeSample:
     targets: tuple[ProbeTarget, ...]
     skipped_unsupported: int
     sample_set_id: str
+    inventory_set_id: str
+    probe_plan_id: str
+    sampler_version: int = SAMPLER_VERSION
 
     @property
     def sampled(self) -> int:
         return len(self.targets)
+
+    @property
+    def sampled_tcp_endpoints(self) -> int:
+        return self.sampled
+
+    @property
+    def skipped_udp_native_endpoints(self) -> int:
+        return self.skipped_unsupported
+
+
+def _canonical_region(name: str) -> str:
+    scope_region = parse_runtime_name_region(name)
+    if scope_region is None:
+        raise ValidationError("carrier probe candidate has invalid runtime identity")
+    return scope_region if scope_region in GEOGRAPHIC_REGIONS else UNKNOWN_REGION
 
 
 def sample_probe_targets(
@@ -89,8 +106,9 @@ def sample_probe_targets(
     providers = candidate.get("proxy-providers")
     if not isinstance(providers, Mapping):
         raise ValidationError("carrier probe candidate lacks proxy providers")
-    by_identity: dict[str, ProbeTarget] = {}
+    occurrences: dict[str, list[ProbeTarget]] = {}
     udp_identities: set[str] = set()
+    inventory_entries: set[str] = set()
     for provider in providers.values():
         payload = provider.get("payload") if isinstance(provider, Mapping) else None
         if not isinstance(payload, list):
@@ -108,23 +126,45 @@ def sample_probe_targets(
             ):
                 continue
             identity = _keyed_id(key, repository, "endpoint", f"{server.lower()}\0{port}")
+            if protocol not in _TCP_TYPES and protocol not in _UDP_NATIVE_TYPES:
+                continue
+            if not isinstance(name, str):
+                raise ValidationError("carrier probe candidate has invalid runtime identity")
+            region = _canonical_region(name)
+            source = parse_runtime_source_name(name)
+            if source is None:
+                raise ValidationError("carrier probe candidate has invalid runtime identity")
+            fingerprint = proxy_fingerprint(dict(proxy))
+            inventory_entries.add(
+                _keyed_id(
+                    key,
+                    repository,
+                    "inventory-entry",
+                    f"{identity}\0{protocol}\0{source}\0{region}\0{fingerprint}",
+                )
+            )
             if protocol in _UDP_NATIVE_TYPES:
                 udp_identities.add(identity)
                 continue
-            if protocol not in _TCP_TYPES or not isinstance(name, str):
-                continue
-            region = parse_runtime_name_region(name)
-            source = parse_runtime_source_name(name)
-            if region is None or source is None:
-                raise ValidationError("carrier probe candidate has invalid runtime identity")
-            target = ProbeTarget(region.upper(), str(protocol), source, server, port, identity)
-            previous = by_identity.get(identity)
-            if previous is None or (target.region, target.protocol, target.source) < (
-                previous.region,
-                previous.protocol,
-                previous.source,
-            ):
-                by_identity[identity] = target
+            target = ProbeTarget(region, str(protocol), source, server, port, identity)
+            occurrences.setdefault(identity, []).append(target)
+    by_identity: dict[str, ProbeTarget] = {}
+    for identity, variants in occurrences.items():
+        geographic = {variant.region for variant in variants if variant.region != UNKNOWN_REGION}
+        if len(geographic) > 1:
+            raise ValidationError("carrier probe endpoint has conflicting geographic regions")
+        selected_region = next(iter(geographic), UNKNOWN_REGION)
+        preferred = [variant for variant in variants if variant.region == selected_region]
+        # Keyed tie-breaking avoids systematically favoring the first source ID.
+        by_identity[identity] = min(
+            preferred,
+            key=lambda variant: _keyed_id(
+                key,
+                repository,
+                "occurrence-rank",
+                f"{identity}\0{variant.protocol}\0{variant.source}",
+            ),
+        )
     remaining = sorted(by_identity.values(), key=lambda t: t.identity)
     selected: list[ProbeTarget] = []
     regions: Counter[str] = Counter()
@@ -151,7 +191,19 @@ def sample_probe_targets(
     set_id = _keyed_id(
         key, repository, "sample-set", "\0".join(sorted(t.identity for t in selected))
     )
-    return CarrierProbeSample(tuple(selected), len(udp_identities), set_id)
+    inventory_set_id = _keyed_id(
+        key, repository, "inventory-set", "\0".join(sorted(inventory_entries))
+    )
+    plan_items = [
+        f"{target.identity}\0{target.region}\0{target.protocol}\0{target.source}"
+        for target in selected
+    ]
+    probe_plan_id = _keyed_id(key, repository, "probe-plan", "\0".join(sorted(plan_items)))
+    # A UDP occurrence on a probed TCP endpoint is one endpoint, not a skip.
+    udp_only = udp_identities - set(by_identity)
+    return CarrierProbeSample(
+        tuple(selected), len(udp_only), set_id, inventory_set_id, probe_plan_id
+    )
 
 
 def _resolve_bounded(hostname: str, port: int, timeout: float) -> list[tuple[Any, ...]]:
@@ -243,13 +295,27 @@ def build_carrier_probe_payload(
             reachable += 1
             latencies.append(float(latency))
     latencies.sort()
+    geographic_regions = {t.region for t in sample.targets if t.region in GEOGRAPHIC_REGIONS}
+    protocols = {t.protocol for t in sample.targets}
+    sources = {t.source for t in sample.targets}
+    strata = {(t.region, t.protocol, t.source) for t in sample.targets}
+    sufficient = (
+        sample.sampled >= MIN_SAMPLES_PER_CARRIER
+        and len(outcomes) == sample.sampled
+        and len(strata) >= 2
+    )
     row = {
         "sampled": sample.sampled,
+        "sampled_tcp_endpoints": sample.sampled_tcp_endpoints,
         "tested": len(outcomes),
         "reachable": reachable,
         "skipped_unsupported": sample.skipped_unsupported,
-        "sufficient_evidence": sample.sampled >= MIN_SAMPLES_PER_CARRIER
-        and len(outcomes) == sample.sampled,
+        "skipped_udp_native_endpoints": sample.skipped_udp_native_endpoints,
+        "geographic_regions_sampled": len(geographic_regions),
+        "protocols_sampled": len(protocols),
+        "sources_sampled": len(sources),
+        "strata_sampled": len(strata),
+        "sufficient_evidence": sufficient,
         "median_latency_ms": round(statistics.median(latencies), 3) if latencies else None,
         "p90_latency_ms": round(latencies[math.ceil(0.9 * len(latencies)) - 1], 3)
         if latencies
@@ -259,6 +325,9 @@ def build_carrier_probe_payload(
         "schema_version": 1,
         "collected_at_epoch": collected_at_epoch,
         "sample_set_id": sample.sample_set_id,
+        "inventory_set_id": sample.inventory_set_id,
+        "probe_plan_id": sample.probe_plan_id,
+        "sampler_version": sample.sampler_version,
         "carriers": {carrier: row},
     }
 
