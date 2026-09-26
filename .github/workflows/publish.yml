@@ -34,8 +34,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: clash-relay-publish-${{ github.ref }}
-  cancel-in-progress: false
+  group: >-
+    ${{ github.event_name == 'push'
+      && format('clash-relay-production-preflight-{0}', github.ref)
+      || (
+        (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+        || (
+          github.event_name == 'schedule'
+          && (
+            vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true'
+            || (
+              github.repository == 'hzoonp/clash-relay'
+              && vars.CLASH_RELAY_SCHEDULE_PUBLISH == ''
+            )
+          )
+        )
+      )
+      && format('clash-relay-production-commit-{0}', github.ref)
+      || format('clash-relay-production-dry-run-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   validate:
