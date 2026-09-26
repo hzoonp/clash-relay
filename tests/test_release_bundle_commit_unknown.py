@@ -168,7 +168,7 @@ def test_definite_update_rejection_runs_verified_compensation(monkeypatch) -> No
 
     assert kv.values[key] == first
     assert parse_release_pointer(kv.values[keys.current_pointer]) == first_id
-    assert parse_release_pointer(kv.values[keys.previous_pointer]) == first_id
+    assert parse_release_pointer(kv.values[keys.previous_pointer]) is None
     assert kv.writes.count((key, second)) == 1
     assert kv.writes.count((key, first)) == 2
 
