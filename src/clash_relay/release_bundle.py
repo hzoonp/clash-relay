@@ -231,7 +231,7 @@ def _restore_after_failed_commit(
         ) from exc
     except PublicationError:
         errors.append("current-pointer")
-    restore_previous = previous_pointer_before or previous_release_id
+    restore_previous = previous_pointer_before
     try:
         _restore_pointer(factory, keys.previous_pointer, restore_previous)
     except CommitUnknownError as exc:
