@@ -22,10 +22,37 @@ def test_collector_verifies_candidate_with_protected_repository_key() -> None:
     assert 'test "$VALIDATED_SHA" = "$GITHUB_SHA"' in collector["steps"][1]["run"]
     assert 'test "$(git rev-parse HEAD)" = "$VALIDATED_SHA"' in collector["steps"][1]["run"]
 
-    preflight = collector["steps"][-1]
+    preflight = collector["steps"][4]
+    assert preflight["name"] == "Validate, merge, and preflight aggregate evidence"
     assert preflight["env"]["CLASH_RELAY_CARRIER_HMAC_KEY"] == HMAC_SECRET
     assert preflight["env"]["CLASH_RELAY_SUBSCRIPTIONS"] == SUBSCRIPTIONS_SECRET
+    assert preflight["env"]["CLASH_RELAY_VALIDATED_SHA"] == VALIDATED_SHA
     assert '--carrier-qualification-input "$merged"' in preflight["run"]
+    assert 'receipt=".work/carrier-observation-receipt.json"' in preflight["run"]
+    assert 'test -s "$receipt"' in preflight["run"]
+    assert "set -euo pipefail" in preflight["run"]
+    # The canonical preflight reads production state with Cloudflare credentials,
+    # while the lifecycle enforces zero writes before the explicit commit step.
+    assert preflight["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+    assert "persist_carrier_observation.py" not in preflight["run"]
+
+    commit = collector["steps"][5]
+    assert commit["name"] == "Persist carrier observation history"
+    assert commit["if"] == "success()"
+    assert commit["env"]["CLOUDFLARE_API_TOKEN"] == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+    assert commit["env"]["CLASH_RELAY_CARRIER_HMAC_KEY"] == HMAC_SECRET
+    assert commit["env"]["CLASH_RELAY_VALIDATED_SHA"] == VALIDATED_SHA
+    assert "set -euo pipefail" in commit["run"]
+    assert (
+        "persist_carrier_observation.py --root . --receipt .work/carrier-observation-receipt.json"
+        in commit["run"]
+    )
+    # Phase B authenticates the receipt without needing raw subscriptions.
+    assert "CLASH_RELAY_SUBSCRIPTIONS" not in commit["env"]
+    cleanup = collector["steps"][6]
+    assert cleanup["if"] == "always()"
+    assert "carrier-observation-receipt.json" in cleanup["run"]
+    assert len(collector["steps"]) == 7
 
     for carrier in ("telecom", "unicom", "mobile"):
         job = jobs[carrier]

@@ -201,12 +201,13 @@ def test_lifecycle_owns_metrics_independently_after_release_commit() -> None:
     metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
     observation = lifecycle.index("scheduler_observation = self._publish_scheduler_observation(")
 
-    assert release_stage < persist < proof < metrics < observation
+    carrier = lifecycle.index("lambda: self._finalize_carrier_observation(project)")
+    assert release_stage < persist < proof < metrics < observation < carrier
     assert '"persist_scheduler_history",' in lifecycle
     assert '"persist_ai_qualification_cache",' in lifecycle
     assert '"persist_production_metrics",' in lifecycle
     assert '"publish_scheduler_observation",' in lifecycle
-    assert lifecycle.count("self._best_effort_state(") == 6
+    assert lifecycle.count("self._best_effort_state(") == 5
     assert "production_metrics" not in scheduler_publisher
     assert "build_metrics_run" not in scheduler_publisher
     assert "persist_production_metrics" in metrics_publisher

@@ -2,6 +2,33 @@
 
 This state is deliberately independent of scheduler and AI cache state. It
 contains no probe plan IDs, endpoint identities, source names, or samples.
+
+Commit boundary (fail closed): only campaigns that already passed candidate
+binding may enter this state. The application layer accepts observation input
+exclusively from a validated carrier-observation receipt issued by a fully
+successful production preflight, so unbound evidence can never be persisted
+and ``binding_failed`` is not a representable status.
+
+Statuses are outcomes of a bound campaign:
+``valid`` / ``stale`` / ``partial`` / ``insufficient`` describe qualifying
+dimensions; ``invalid`` is reserved for a bound campaign whose aggregate
+semantics are internally inconsistent.
+
+Counter semantics (explicit, not rolling):
+- ``recent_campaign_count`` counts recorded campaigns inside the trailing
+  ``window_days`` (30-day) bounded window. It is reaped on every recorded
+  campaign and again when state is read, so it never counts older campaigns.
+- ``status_counts_lifetime`` and each carrier's ``campaign_runs_lifetime`` are
+  saturating lifetime counters capped at ``MAX_CAMPAIGNS``. They are NOT
+  rolling 30-day values. A carrier row (including its run counter) resets only
+  after ``window_days`` without a bound valid campaign for that carrier or on
+  a full state reset; status counts reset only on a full state reset.
+- ``latency_sample_runs`` counts the subset of a carrier's lifetime campaigns
+  that actually contributed latency samples (``reachable > 0``), and
+  ``last_latency_epoch`` is the epoch of the most recent such campaign. When
+  no reachable endpoint was sampled, latency EMAs keep their previous values
+  and ``last_latency_epoch`` shows they are not current evidence; latency is
+  never rewritten to zero.
 """
 
 from __future__ import annotations
@@ -11,7 +38,7 @@ import math
 from collections.abc import Mapping
 from typing import Any, cast
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_AGE_SECONDS = 30 * 24 * 3600
 MAX_CAMPAIGNS = 64
 MAX_STATE_BYTES = 16_384
@@ -25,24 +52,25 @@ OUTCOMES = (
     "tcp_connected",
 )
 STATUSES = (
-    "binding_failed",
     "insufficient",
     "invalid",
-    "not_configured",
     "partial",
     "stale",
     "valid",
 )
+WINDOW_DAYS = 30
 
 
 def _empty_carrier() -> dict[str, Any]:
     return {
-        "campaign_runs": 0,
+        "campaign_runs_lifetime": 0,
+        "latency_sample_runs": 0,
         "reachable_ratio_ema": None,
         "median_latency_ms_ema": None,
         "p90_latency_ms_ema": None,
         "outcome_ratio_ema": dict.fromkeys(OUTCOMES),
         "last_seen_epoch": None,
+        "last_latency_epoch": None,
     }
 
 
@@ -50,12 +78,13 @@ def empty_history() -> dict[str, Any]:
     """Return a fresh versioned state with only fixed aggregate keys."""
     return {
         "schema_version": SCHEMA_VERSION,
+        "window_days": WINDOW_DAYS,
         "last_updated_epoch": None,
         "last_campaign_epoch": None,
         "recent_campaign_epochs": [],
         "recent_campaign_count": 0,
         "consecutive_valid_campaigns": 0,
-        "status_counts": dict.fromkeys(STATUSES, 0),
+        "status_counts_lifetime": dict.fromkeys(STATUSES, 0),
         "carriers": {carrier: _empty_carrier() for carrier in CARRIERS},
     }
 
@@ -77,7 +106,7 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
     template = empty_history()
     if not isinstance(value, Mapping) or set(value) != set(template):
         return False
-    if value.get("schema_version") != SCHEMA_VERSION:
+    if value.get("schema_version") != SCHEMA_VERSION or value.get("window_days") != WINDOW_DAYS:
         return False
     updated = value.get("last_updated_epoch")
     if updated is not None and (
@@ -106,7 +135,7 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
         or (updated is not None and any(epoch > updated for epoch in recent))
     ):
         return False
-    statuses = value.get("status_counts")
+    statuses = value.get("status_counts_lifetime")
     if (
         not isinstance(statuses, Mapping)
         or set(statuses) != set(STATUSES)
@@ -123,14 +152,27 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
     for row in carriers.values():
         if not isinstance(row, Mapping) or set(row) != set(_empty_carrier()):
             return False
-        runs = row.get("campaign_runs")
-        if not _count(runs):
+        runs = row.get("campaign_runs_lifetime")
+        latency_runs = row.get("latency_sample_runs")
+        if (
+            not _count(runs)
+            or not _count(latency_runs)
+            or cast(int, latency_runs) > cast(int, runs)
+        ):
             return False
         last = row.get("last_seen_epoch")
-        if last is not None and (
-            not _count(last, maximum=2**53)
-            or (now_epoch is not None and last > now_epoch)
-            or (updated is not None and last > updated)
+        last_latency = row.get("last_latency_epoch")
+        for epoch in (last, last_latency):
+            if epoch is not None and (
+                not _count(epoch, maximum=2**53)
+                or (now_epoch is not None and epoch > now_epoch)
+                or (updated is not None and epoch > updated)
+            ):
+                return False
+        if (
+            last is not None
+            and last_latency is not None
+            and cast(int, last_latency) > cast(int, last)
         ):
             return False
         for name, maximum in (
@@ -146,26 +188,61 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
             return False
         if any(v is not None and not _metric(v) for v in outcomes.values()):
             return False
-        if runs == 0 and (
-            last is not None
-            or any(
-                row[name] is not None
-                for name in ("reachable_ratio_ema", "median_latency_ms_ema", "p90_latency_ms_ema")
-            )
-            or any(v is not None for v in outcomes.values())
-        ):
-            return False
-        if cast(int, runs) > 0 and (
-            last is None
-            or row["reachable_ratio_ema"] is None
-            or any(value is None for value in outcomes.values())
-        ):
-            return False
+        if runs == 0:
+            if (
+                last is not None
+                or latency_runs != 0
+                or last_latency is not None
+                or any(
+                    row[name] is not None
+                    for name in (
+                        "reachable_ratio_ema",
+                        "median_latency_ms_ema",
+                        "p90_latency_ms_ema",
+                    )
+                )
+                or any(v is not None for v in outcomes.values())
+            ):
+                return False
+        else:
+            if (
+                last is None
+                or row["reachable_ratio_ema"] is None
+                or any(value is None for value in outcomes.values())
+            ):
+                return False
+            # Latency evidence must agree with its own sample counter: a
+            # carrier with latency samples has a last_latency_epoch and EMA
+            # values; without samples the latency EMAs must stay unset.
+            if (cast(int, latency_runs) > 0) != (
+                last_latency is not None and row["median_latency_ms_ema"] is not None
+            ):
+                return False
+            if latency_runs == 0 and row["p90_latency_ms_ema"] is not None:
+                return False
     return True
 
 
+def _reap_window(history: dict[str, Any], now_epoch: int) -> dict[str, Any]:
+    """Drop campaigns and carrier rows that left the bounded window."""
+    history["recent_campaign_epochs"] = [
+        epoch for epoch in history["recent_campaign_epochs"] if now_epoch - epoch <= MAX_AGE_SECONDS
+    ]
+    history["recent_campaign_count"] = len(history["recent_campaign_epochs"])
+    for carrier in CARRIERS:
+        row = history["carriers"][carrier]
+        last_seen = row["last_seen_epoch"]
+        if last_seen is not None and now_epoch - last_seen > MAX_AGE_SECONDS:
+            history["carriers"][carrier] = _empty_carrier()
+    return history
+
+
 def parse_history_bytes(data: bytes | None, *, now_epoch: int) -> dict[str, Any]:
-    """Safely reset expired, malformed, oversized, or identity-bearing state."""
+    """Safely reset expired, malformed, oversized, or identity-bearing state.
+
+    A successfully parsed state is reaped against ``now_epoch`` so the trailing
+    window counters never report campaigns that already left the window.
+    """
     if not data or len(data) > MAX_STATE_BYTES:
         return empty_history()
 
@@ -181,19 +258,15 @@ def parse_history_bytes(data: bytes | None, *, now_epoch: int) -> dict[str, Any]
         value = json.loads(data.decode("utf-8"), object_pairs_hook=unique)
     except (UnicodeError, ValueError, TypeError):
         return empty_history()
-    return value if _valid_history(value, now_epoch) else empty_history()
+    if not _valid_history(value, now_epoch):
+        return empty_history()
+    return _reap_window(cast(dict[str, Any], value), now_epoch)
 
 
-def _campaign_status(report: Mapping[str, Any] | None, binding_passed: bool) -> str:
-    if not binding_passed:
-        return "binding_failed"
-    if report is None:
-        return "not_configured"
+def _campaign_status(report: Mapping[str, Any]) -> str:
     coverage = report.get("coverage", report.get("status"))
     freshness = report.get("freshness")
     evidence = report.get("evidence")
-    if coverage == "not_configured":
-        return "not_configured"
     if (
         coverage not in {"partial", "full"}
         or not isinstance(freshness, Mapping)
@@ -256,21 +329,26 @@ def _ema(previous: float | None, current: float) -> float:
 
 def observe_campaign(
     history: Mapping[str, Any],
-    report: Mapping[str, Any] | None,
+    report: Mapping[str, Any],
     *,
-    binding_passed: bool,
     now_epoch: int,
+    binding_passed: bool = True,
 ) -> dict[str, Any]:
-    """Record campaign status; update quality only for a bound, valid campaign."""
+    """Record one already-bound campaign; update quality only when valid.
+
+    ``report`` must come from a validated receipt commit path; unbound or
+    unconfigured evidence has no representable status here.
+    """
+    if binding_passed is not True:
+        raise ValueError("unbound carrier campaign must not enter observation history")
+    if not isinstance(report, Mapping) or not report:
+        raise ValueError("carrier observation requires a bound aggregate report")
     state = (
         json.loads(serialize_history(history))
         if _valid_history(history, now_epoch)
         else empty_history()
     )
-    for carrier in CARRIERS:
-        last_seen = state["carriers"][carrier]["last_seen_epoch"]
-        if last_seen is not None and now_epoch - last_seen > MAX_AGE_SECONDS:
-            state["carriers"][carrier] = _empty_carrier()
+    state = _reap_window(state, now_epoch)
     freshness = report.get("freshness") if isinstance(report, Mapping) else None
     collected = freshness.get("collected_at_epoch") if isinstance(freshness, Mapping) else None
     campaign_epoch = (
@@ -282,7 +360,7 @@ def observe_campaign(
     )
     if state["last_campaign_epoch"] is not None and campaign_epoch <= state["last_campaign_epoch"]:
         return state
-    status = _campaign_status(report, binding_passed)
+    status = _campaign_status(report)
     state["last_updated_epoch"] = now_epoch
     state["last_campaign_epoch"] = campaign_epoch
     recent = [
@@ -292,24 +370,31 @@ def observe_campaign(
         recent.append(campaign_epoch)
     state["recent_campaign_epochs"] = recent[-MAX_CAMPAIGNS:]
     state["recent_campaign_count"] = len(state["recent_campaign_epochs"])
-    state["status_counts"][status] = min(MAX_CAMPAIGNS, state["status_counts"][status] + 1)
+    state["status_counts_lifetime"][status] = min(
+        MAX_CAMPAIGNS, state["status_counts_lifetime"][status] + 1
+    )
     state["consecutive_valid_campaigns"] = (
         min(MAX_CAMPAIGNS, state["consecutive_valid_campaigns"] + 1) if status == "valid" else 0
     )
-    if status != "valid" or report is None:
+    if status != "valid":
         return state
     for carrier in CARRIERS:
         measured = report["carriers"][carrier]
         row = state["carriers"][carrier]
         tested = measured["tested"]
         reachable = measured["reachable"]
-        row["campaign_runs"] = min(MAX_CAMPAIGNS, row["campaign_runs"] + 1)
+        row["campaign_runs_lifetime"] = min(MAX_CAMPAIGNS, row["campaign_runs_lifetime"] + 1)
         row["reachable_ratio_ema"] = _ema(row["reachable_ratio_ema"], reachable / tested)
-        for field in ("median_latency_ms", "p90_latency_ms"):
-            value = measured.get(field)
-            if value is not None:
-                target = f"{field}_ema"
-                row[target] = _ema(row[target], value)
+        if reachable > 0:
+            # Only campaigns that actually sampled a reachable endpoint move
+            # latency evidence; a zero-reachable campaign never fakes latency 0.
+            row["latency_sample_runs"] = min(MAX_CAMPAIGNS, row["latency_sample_runs"] + 1)
+            for field in ("median_latency_ms", "p90_latency_ms"):
+                value = measured.get(field)
+                if value is not None:
+                    target = f"{field}_ema"
+                    row[target] = _ema(row[target], value)
+            row["last_latency_epoch"] = campaign_epoch
         for outcome in OUTCOMES:
             previous = row["outcome_ratio_ema"][outcome]
             row["outcome_ratio_ema"][outcome] = _ema(

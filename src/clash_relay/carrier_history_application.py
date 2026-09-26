@@ -1,4 +1,9 @@
-"""Persist observe-only carrier history in an independent aggregate KV key."""
+"""Persist observe-only carrier history in an independent aggregate KV key.
+
+The only sanctioned way to reach this module's write path is through a
+validated carrier-observation receipt (see ``carrier_observation_receipt``).
+Campaigns that never passed candidate binding have no representation here.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from typing import Any
 
 from .carrier_history import (
     SCHEMA_VERSION,
+    WINDOW_DAYS,
     observe_campaign,
     parse_history_bytes,
     safe_history_summary,
@@ -39,7 +45,6 @@ def persist_carrier_observation(
     *,
     project: ProjectDefinition,
     report: Mapping[str, Any],
-    binding_passed: bool = True,
     env: Mapping[str, str] | None = None,
     now_epoch: int | None = None,
 ) -> dict[str, Any]:
@@ -55,7 +60,7 @@ def persist_carrier_observation(
     except PublicationError:
         return {"status": "unavailable", "reason": "history_read_failed"}
     history = parse_history_bytes(previous, now_epoch=now)
-    observed = observe_campaign(history, report, binding_passed=binding_passed, now_epoch=now)
+    observed = observe_campaign(history, report, now_epoch=now)
     summary = safe_history_summary(observed)
     if observed == history and previous is not None:
         return {"status": "unchanged", "state_version": SCHEMA_VERSION, "history": summary}
@@ -75,19 +80,24 @@ def persist_carrier_observation(
 
 def render_carrier_history_markdown(result: Mapping[str, Any]) -> str:
     """Actions summary with numeric aggregates only; no trend verdict."""
-    lines = ["## Carrier observation history (advisory)", ""]
-    lines.append(f"State: **{result.get('status', 'unavailable')}**")
+    lines = [
+        "## Carrier observation history (advisory)",
+        "",
+        f"State: **{result.get('status', 'unavailable')}**",
+    ]
     raw = result.get("history")
     if not isinstance(raw, Mapping):
         return "\n".join([*lines, ""])
     history = safe_history_summary(raw)
     lines.extend(
         [
-            f"Recent campaigns: **{history['recent_campaign_count']}**  ",
-            f"Consecutive valid campaigns: **{history['consecutive_valid_campaigns']}**",
+            f"Recent campaigns (trailing {history['window_days']}-day window): "
+            f"**{history['recent_campaign_count']}**  ",
+            f"Consecutive valid campaigns: **{history['consecutive_valid_campaigns']}**  ",
+            "Lifetime counters below are saturating caps, not rolling window values.",
             "",
-            "| Carrier | Campaigns | Reachable ratio EMA | Median / p90 latency EMA (ms) | DNS / timeout / refused / connect failure / connected ratio EMA |",
-            "| --- | ---: | ---: | ---: | ---: |",
+            "| Carrier | Campaign runs (lifetime) | Reachable ratio EMA | Latency samples (lifetime) | Median / p90 latency EMA (ms) | DNS / timeout / refused / connect failure / connected ratio EMA |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for carrier, row in history["carriers"].items():
@@ -103,8 +113,17 @@ def render_carrier_history_markdown(result: Mapping[str, Any]) -> str:
             )
         )
         lines.append(
-            f"| {carrier} | {row['campaign_runs']} | {row['reachable_ratio_ema']} | "
-            f"{row['median_latency_ms_ema']} / {row['p90_latency_ms_ema']} | {categories} |"
+            f"| {carrier} | {row['campaign_runs_lifetime']} | {row['reachable_ratio_ema']} | "
+            f"{row['latency_sample_runs']} | {row['median_latency_ms_ema']} / {row['p90_latency_ms_ema']} | "
+            f"{categories} |"
         )
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            f"Latency EMAs only reflect campaigns with reachable samples "
+            f"(``latency_sample_runs``); a zero-reachable campaign never reads as latency 0. "
+            f"History window: **{WINDOW_DAYS} days**.",
+            "",
+        ]
+    )
     return "\n".join(lines)

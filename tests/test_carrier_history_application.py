@@ -36,8 +36,8 @@ def _report(
         "strata_sampled": 2,
         "eligible_tcp_endpoints": 5,
         "sufficient_evidence": True,
-        "median_latency_ms": 42.0,
-        "p90_latency_ms": 55.0,
+        "median_latency_ms": 42.0 if reachable else None,
+        "p90_latency_ms": 55.0 if reachable else None,
         "outcomes": {
             "dns_failure": 5 - reachable,
             "connect_timeout": 0,
@@ -113,7 +113,8 @@ def test_valid_history_persists_in_separate_aggregate_key_and_retry_is_idempoten
     ):
         assert forbidden not in persisted
     markdown = render_carrier_history_markdown(first)
-    assert "Recent campaigns: **1**" in markdown
+    assert "Recent campaigns" in markdown
+    assert "saturating caps" in markdown
     for verdict in ("improving", "stable", "degrading"):
         assert verdict not in markdown
 
@@ -130,7 +131,7 @@ def test_stale_and_partial_campaigns_do_not_change_quality(memory_kv):
         now_epoch=1100 + 7 * 3600,
     )["history"]
     assert stale["carriers"] == first["carriers"]
-    assert stale["status_counts"]["stale"] == 1
+    assert stale["status_counts_lifetime"]["stale"] == 1
     assert stale["consecutive_valid_campaigns"] == 0
     partial = persist_carrier_observation(
         project=_project(),
@@ -141,22 +142,25 @@ def test_stale_and_partial_campaigns_do_not_change_quality(memory_kv):
         now_epoch=1100 + 7 * 3600 + 1,
     )["history"]
     assert partial["carriers"] == first["carriers"]
-    assert partial["status_counts"]["partial"] == 1
+    assert partial["status_counts_lifetime"]["partial"] == 1
 
 
-def test_binding_failure_counts_campaign_without_quality_ema(memory_kv):
-    result = persist_carrier_observation(
+def test_zero_reachable_campaign_does_not_fake_latency(memory_kv):
+    first = persist_carrier_observation(
+        project=_project(), report=_report(collected=999, now=1000), env=ENV, now_epoch=1000
+    )["history"]
+    dead = persist_carrier_observation(
         project=_project(),
-        report=_report(collected=999, now=1000),
-        binding_passed=False,
+        report=_report(collected=1100, now=1100, reachable=0),
         env=ENV,
-        now_epoch=1000,
-    )
-    history = result["history"]
-    assert history["status_counts"]["binding_failed"] == 1
-    assert history["recent_campaign_count"] == 1
-    assert history["consecutive_valid_campaigns"] == 0
-    assert all(row["campaign_runs"] == 0 for row in history["carriers"].values())
+        now_epoch=1100,
+    )["history"]
+    row = dead["carriers"]["telecom"]
+    assert row["median_latency_ms_ema"] == first["carriers"]["telecom"]["median_latency_ms_ema"]
+    assert row["latency_sample_runs"] == 1
+    assert row["last_latency_epoch"] == 999
+    assert row["last_seen_epoch"] == 1100
+    assert row["reachable_ratio_ema"] < first["carriers"]["telecom"]["reachable_ratio_ema"]
 
 
 def test_malformed_previous_state_recovers_without_identity_leak(memory_kv):

@@ -375,6 +375,36 @@ def test_workflow_keeps_probes_off_github_hosted_publish_path() -> None:
     assert "--production-preflight --carrier-qualification-input" in workflow
     assert "carrier_qualification_json" not in publish
     assert "--carrier-qualification-input" not in publish
+    assert "persist_carrier_observation.py" not in publish
+
+
+def test_workflow_persists_history_only_after_successful_preflight() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/carrier-probe.yml").read_text(encoding="utf-8")
+    preflight_position = workflow.index("--production-preflight")
+    commit_position = workflow.index("scripts/persist_carrier_observation.py")
+    assert preflight_position < commit_position
+    # The commit step is explicit, guarded, and independently fail-closed.
+    commit_header = workflow.index("Persist carrier observation history")
+    commit_step = workflow[commit_header:]
+    assert "\n        if: success()\n" in commit_step
+    assert "set -euo pipefail" in commit_step
+    for secret in (
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE",
+    ):
+        assert secret in commit_step
+    # Preflight keeps Cloudflare credentials for read-only production baseline
+    # checks; lifecycle code enforces zero writes until the explicit commit.
+    preflight_step = workflow[workflow.index("Validate, merge, and preflight") : commit_header]
+    for secret in (
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE",
+    ):
+        assert secret in preflight_step
+    assert "scripts/persist_carrier_observation.py" not in preflight_step
 
 
 def test_collector_cli_writes_only_merged_aggregate(tmp_path: Path) -> None:

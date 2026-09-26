@@ -139,8 +139,9 @@ def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     persist = text.index("derived_state = self._persist_derived_state(project)")
     metrics = text.index("metrics = self._persist_production_metrics(project)")
     observation = text.index("scheduler_observation = self._publish_scheduler_observation(")
-    assert release < persist < metrics < observation
-    assert text.count("self._best_effort_state(") == 6
+    carrier = text.index("lambda: self._finalize_carrier_observation(project)")
+    assert release < persist < metrics < observation < carrier
+    assert text.count("self._best_effort_state(") == 5
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
     dry_run_guard = (

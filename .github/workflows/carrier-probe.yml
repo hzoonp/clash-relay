@@ -207,13 +207,14 @@ jobs:
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements.lock
           python -m pip install --no-build-isolation --no-deps --editable .
-      - name: Validate, merge, and ingest aggregate evidence
+      - name: Validate, merge, and preflight aggregate evidence
         env:
           TELECOM_AGGREGATE: ${{ needs.telecom.outputs.aggregate }}
           UNICOM_AGGREGATE: ${{ needs.unicom.outputs.aggregate }}
           MOBILE_AGGREGATE: ${{ needs.mobile.outputs.aggregate }}
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
           CLASH_RELAY_CARRIER_HMAC_KEY: ${{ secrets.CLASH_RELAY_CARRIER_HMAC_KEY }}
+          CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
           GITHUB_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -224,9 +225,29 @@ jobs:
           unicom="$RUNNER_TEMP/unicom.json"
           mobile="$RUNNER_TEMP/mobile.json"
           merged="$RUNNER_TEMP/carrier-qualification.json"
+          receipt=".work/carrier-observation-receipt.json"
           trap 'rm -f "$telecom" "$unicom" "$mobile" "$merged"' EXIT
           printf '%s' "$TELECOM_AGGREGATE" > "$telecom"
           printf '%s' "$UNICOM_AGGREGATE" > "$unicom"
           printf '%s' "$MOBILE_AGGREGATE" > "$mobile"
           python scripts/collect_carrier_probes.py --input "$telecom" --input "$unicom" --input "$mobile" --output "$merged"
           python scripts/run_production_release.py --production-preflight --carrier-qualification-input "$merged"
+          test -s "$receipt"
+
+      - name: Persist carrier observation history
+        if: success()
+        env:
+          CLASH_RELAY_CARRIER_HMAC_KEY: ${{ secrets.CLASH_RELAY_CARRIER_HMAC_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
+          CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          python scripts/persist_carrier_observation.py --root . --receipt .work/carrier-observation-receipt.json
+
+      - name: Remove local carrier evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f .work/carrier-observation-receipt.json
