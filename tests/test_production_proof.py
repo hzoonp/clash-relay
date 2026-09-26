@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from clash_relay.errors import ValidationError
-from clash_relay.production_proof import build_production_proof, render_production_proof_markdown
+from clash_relay.production_proof import (
+    _safe_release,
+    build_production_proof,
+    render_production_proof_markdown,
+)
 
 
 def _inputs(candidate_path: Path) -> dict:
@@ -207,6 +211,51 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         assert secret not in markdown
     assert "v1.19.30" in markdown
     assert "v1.19.29" in markdown
+
+
+def test_final_link_smoke_summary_keeps_only_pass_and_bounded_attempt_count() -> None:
+    release_id = "a" * 64
+    safe = _safe_release(
+        {
+            "status": "published",
+            "release_id": release_id,
+            "final_link_smoke": {
+                "status": "passed",
+                "https": "passed",
+                "yaml": "passed",
+                "mihomo": "passed",
+                "digest": "matched",
+                "attempts": 2,
+                "url": "https://private.invalid/token" + "?key=" + "do-not-leak",
+            },
+        }
+    )
+    assert safe == {
+        "status": "published",
+        "release_id": release_id,
+        "production_changed": False,
+        "final_link_smoke": "passed",
+        "smoke_attempts": 2,
+    }
+
+
+@pytest.mark.parametrize("attempts", [0, -1, 7, True, "2"])
+def test_final_link_smoke_summary_omits_invalid_attempt_counts(attempts) -> None:
+    safe = _safe_release(
+        {
+            "status": "published",
+            "release_id": "b" * 64,
+            "final_link_smoke": {
+                "status": "passed",
+                "https": "passed",
+                "yaml": "passed",
+                "mihomo": "passed",
+                "digest": "matched",
+                "attempts": attempts,
+            },
+        }
+    )
+    assert "final_link_smoke" not in safe
 
 
 def test_production_proof_rejects_failed_reachability_audit(tmp_path: Path) -> None:

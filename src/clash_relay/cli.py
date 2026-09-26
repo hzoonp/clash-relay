@@ -14,15 +14,15 @@ from . import __version__
 from .builder import build_candidate
 from .config_loader import load_project
 from .doctor import run_doctor
-from .errors import ClashRelayError, PublicationError, ValidationError
+from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
 from .production_application import (
     apply_production_release_retention,
     plan_production_release_retention,
+    publish_production_release,
     reconcile_production_release,
 )
 from .publication import ACKNOWLEDGEMENT, publication_gate
-from .publishers.cloudflare_kv import CloudflareKVPublisher
 from .publishers.gist import GistPublisher
 from .util import atomic_write
 from .validator import validate_generated_config
@@ -162,25 +162,20 @@ def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
         subscriptions_path=args.subscriptions,
         policies_path=args.policies,
     )
-    publication_gate(project.config, "cloudflare_kv")
-    candidate = load_candidate(args.candidate)
-    validate_generated_config(candidate)
-    try:
-        content = args.candidate.read_bytes()
-    except OSError as exc:
-        raise PublicationError("failed to read candidate for Cloudflare KV publication") from exc
-
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
-    account_id = args.account_id or os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
-    namespace_title = args.namespace_title or os.environ.get("CLOUDFLARE_KV_NAMESPACE_TITLE", "")
-    key_name = args.key or project.config["publishing"]["cloudflare_kv"]["key"]
-    result = CloudflareKVPublisher(
-        token=token,
-        account_id=account_id,
-        namespace_title=namespace_title,
-        key_name=key_name,
-    ).publish(content=content)
-    print(_json_text({"status": "published", **result}), end="")
+    environment = dict(os.environ)
+    if args.account_id:
+        environment["CLOUDFLARE_ACCOUNT_ID"] = args.account_id
+    if args.namespace_title:
+        environment["CLOUDFLARE_KV_NAMESPACE_TITLE"] = args.namespace_title
+    if args.key:
+        project.config["publishing"]["cloudflare_kv"]["key"] = args.key
+    result = publish_production_release(
+        project=project,
+        candidate_path=args.candidate,
+        env=environment,
+        mihomo_binary=args.mihomo_bin,
+    )
+    print(_json_text(result), end="")
     return 0
 
 
@@ -347,6 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     cloudflare.add_argument("--namespace-title")
     cloudflare.add_argument("--key")
     cloudflare.set_defaults(handler=_command_publish_cloudflare_kv)
+    cloudflare.add_argument("--mihomo-bin", type=_path, required=True)
 
     gist = subparsers.add_parser("publish-gist", help="Publish a validated candidate to a Gist.")
     _add_project_args(gist)

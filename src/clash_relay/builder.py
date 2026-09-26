@@ -6,6 +6,7 @@ import socket
 import ssl
 import urllib.error
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,26 @@ from .util import dump_yaml, sha256_text
 from .validator import validate_generated_config
 
 Fetcher = Callable[..., str]
+
+# Bound simultaneous upstream requests without changing deterministic ingestion.
+_SUBSCRIPTION_FETCH_WORKERS = 4
+
+
+def _fetch_source(
+    spec: SubscriptionSpec,
+    urls: Mapping[str, str],
+    generation: Mapping[str, Any],
+    fetcher: Fetcher,
+) -> str:
+    options: dict[str, Any] = {
+        "timeout": generation["fetch_timeout_seconds"],
+        "max_bytes": generation["max_subscription_bytes"],
+        "allow_http": generation["allow_http_subscription_urls"],
+        "allow_file": generation["allow_file_subscription_urls"],
+    }
+    if spec.client_profile != "default":
+        options["client_profile"] = spec.client_profile
+    return fetcher(urls[spec.id], **options)
 
 
 def _failure_is_fatal(spec: SubscriptionSpec, project: ProjectDefinition) -> bool:
@@ -202,88 +223,91 @@ def build_candidate(
     successful = 0
     name_filtered_nodes = 0
     multiplier_filtered_nodes = 0
-    for spec in sorted(enabled_specs, key=lambda item: (item.ingest_order, item.id)):
-        try:
-            fetch_options: dict[str, Any] = {
-                "timeout": generation["fetch_timeout_seconds"],
-                "max_bytes": generation["max_subscription_bytes"],
-                "allow_http": generation["allow_http_subscription_urls"],
-                "allow_file": generation["allow_file_subscription_urls"],
-            }
-            if spec.client_profile != "default":
-                fetch_options["client_profile"] = spec.client_profile
-            text = fetcher(urls[spec.id], **fetch_options)
-            parsed = parse_subscription(
-                text,
-                invalid_policy=generation["invalid_proxy_policy"],
-                reject_private_hosts=generation["reject_private_proxy_hosts"],
-            )
-            if not parsed.proxies:
-                empty_source_report: dict[str, Any] = {
+    ordered_specs = sorted(enabled_specs, key=lambda item: (item.ingest_order, item.id))
+    executor = ThreadPoolExecutor(max_workers=_SUBSCRIPTION_FETCH_WORKERS)
+    try:
+        pending = [
+            (spec, executor.submit(_fetch_source, spec, urls, generation, fetcher))
+            for spec in ordered_specs
+        ]
+        # Consume in source order: completion timing must never select dedup winners
+        # or change source reports. Exceptions still pass through the same policy.
+        for spec, future in pending:
+            try:
+                text = future.result()
+                parsed = parse_subscription(
+                    text,
+                    invalid_policy=generation["invalid_proxy_policy"],
+                    reject_private_hosts=generation["reject_private_proxy_hosts"],
+                )
+                if not parsed.proxies:
+                    empty_source_report: dict[str, Any] = {
+                        "id": spec.id,
+                        "display_name": spec.display_name,
+                        "status": "failed",
+                        "failure_category": "subscription_parse",
+                        "failure_reason": _empty_subscription_failure_reason(parsed),
+                        "input_nodes": parsed.skipped_items,
+                        "parsed_valid_nodes": 0,
+                        "skipped_invalid_nodes": parsed.skipped_items,
+                        "post_name_filter_nodes": 0,
+                        "post_multiplier_filter_nodes": 0,
+                        "post_dedup_nodes": 0,
+                    }
+                    if parsed.empty_payload_shape is not None:
+                        empty_source_report["empty_payload_shape"] = parsed.empty_payload_shape
+                    source_reports.append(empty_source_report)
+                    if _failure_is_fatal(spec, project):
+                        raise GenerationError(
+                            f"subscription {spec.id!r} failed: subscription contains no usable proxies"
+                        )
+                    continue
+
+                admitted_by_name, rejected_name = filter_proxies_by_name_patterns(
+                    parsed.proxies,
+                    deny_patterns=spec.deny_name_patterns,
+                )
+                admitted, rejected_multiplier = filter_proxies_by_multiplier(
+                    admitted_by_name,
+                    max_multiplier=spec.max_node_multiplier,
+                )
+                classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
+                nodes.extend(classified)
+                successful += 1
+                name_filtered_nodes += rejected_name
+                multiplier_filtered_nodes += rejected_multiplier
+
+                source_report: dict[str, Any] = {
                     "id": spec.id,
                     "display_name": spec.display_name,
-                    "status": "failed",
-                    "failure_category": "subscription_parse",
-                    "failure_reason": _empty_subscription_failure_reason(parsed),
-                    "input_nodes": parsed.skipped_items,
-                    "parsed_valid_nodes": 0,
+                    "status": "ok",
+                    "input_nodes": len(parsed.proxies) + parsed.skipped_items,
+                    "parsed_valid_nodes": len(parsed.proxies),
                     "skipped_invalid_nodes": parsed.skipped_items,
-                    "post_name_filter_nodes": 0,
-                    "post_multiplier_filter_nodes": 0,
-                    "post_dedup_nodes": 0,
+                    "post_name_filter_nodes": len(admitted_by_name),
+                    "filtered_by_name": rejected_name,
+                    "post_multiplier_filter_nodes": len(classified),
+                    "filtered_over_multiplier": rejected_multiplier,
+                    "nodes": len(classified),
                 }
-                if parsed.empty_payload_shape is not None:
-                    empty_source_report["empty_payload_shape"] = parsed.empty_payload_shape
-                source_reports.append(empty_source_report)
+                if spec.max_node_multiplier is not None:
+                    source_report["max_node_multiplier"] = spec.max_node_multiplier
+                source_reports.append(source_report)
+            except (FetchError, SubscriptionError, OSError, ValueError) as exc:
+                safe_error = redact_text(str(exc), secret_values)
+                source_reports.append(
+                    {
+                        "id": spec.id,
+                        "display_name": spec.display_name,
+                        "status": "failed",
+                        **_source_failure_diagnostic(exc),
+                        "error": safe_error,
+                    }
+                )
                 if _failure_is_fatal(spec, project):
-                    raise GenerationError(
-                        f"subscription {spec.id!r} failed: subscription contains no usable proxies"
-                    )
-                continue
-
-            admitted_by_name, rejected_name = filter_proxies_by_name_patterns(
-                parsed.proxies,
-                deny_patterns=spec.deny_name_patterns,
-            )
-            admitted, rejected_multiplier = filter_proxies_by_multiplier(
-                admitted_by_name,
-                max_multiplier=spec.max_node_multiplier,
-            )
-            classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
-            nodes.extend(classified)
-            successful += 1
-            name_filtered_nodes += rejected_name
-            multiplier_filtered_nodes += rejected_multiplier
-
-            source_report: dict[str, Any] = {
-                "id": spec.id,
-                "display_name": spec.display_name,
-                "status": "ok",
-                "input_nodes": len(parsed.proxies) + parsed.skipped_items,
-                "parsed_valid_nodes": len(parsed.proxies),
-                "skipped_invalid_nodes": parsed.skipped_items,
-                "post_name_filter_nodes": len(admitted_by_name),
-                "filtered_by_name": rejected_name,
-                "post_multiplier_filter_nodes": len(classified),
-                "filtered_over_multiplier": rejected_multiplier,
-                "nodes": len(classified),
-            }
-            if spec.max_node_multiplier is not None:
-                source_report["max_node_multiplier"] = spec.max_node_multiplier
-            source_reports.append(source_report)
-        except (FetchError, SubscriptionError, OSError, ValueError) as exc:
-            safe_error = redact_text(str(exc), secret_values)
-            source_reports.append(
-                {
-                    "id": spec.id,
-                    "display_name": spec.display_name,
-                    "status": "failed",
-                    **_source_failure_diagnostic(exc),
-                    "error": safe_error,
-                }
-            )
-            if _failure_is_fatal(spec, project):
-                raise GenerationError(f"subscription {spec.id!r} failed: {safe_error}") from exc
+                    raise GenerationError(f"subscription {spec.id!r} failed: {safe_error}") from exc
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
     if successful < generation["minimum_successful_subscriptions"]:
         raise GenerationError(

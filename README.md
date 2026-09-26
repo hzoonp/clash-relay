@@ -113,13 +113,7 @@ Intentional deviations are explicit and audited:
 
 ## Qualification and scheduling
 
-Browsing qualification is region-aware. Automatic preference is:
-
-```text
-US -> SG -> JP -> TW -> KR -> HK -> OTHER
-```
-
-Manual region selection never silently crosses countries. Automatic mode crosses regions only when the preferred region is unavailable. Private anonymous scheduler history may demote unstable live-qualified nodes but never expands source admission.
+Browsing qualification remains regional. `网页自动` uses cross-region `url-test` on the client's real network, with a 300-second interval and 150 ms switching tolerance. Each region retains Stable-to-Reserve recovery. Manual region selection never silently crosses countries. Private anonymous scheduler history may demote unstable live-qualified nodes but never expands source admission.
 
 AI services qualify through the generic `ServiceQualification` registry. OpenAI, Claude, and Gemini are registered implementations; the main qualification pipeline contains no provider-specific branch. Provider-specific critical/supporting probes, cache TTLs, route post-processing, and optional client-path hardening remain inside the implementation.
 

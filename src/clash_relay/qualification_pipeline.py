@@ -20,6 +20,7 @@ from .proxy_endpoint_qualification import (
     _region,
     _source,
     accelerate_client_health_checks,
+    cap_endpoint_reserve_pools,
     quarantine_unreachable_tcp_endpoints,
 )
 from .proxy_host_qualification import quarantine_unresolvable_proxy_hosts
@@ -489,10 +490,9 @@ def _quality_tier_summary(
 ) -> dict[str, Any]:
     """Aggregate robust/reserve/quarantined evidence per qualification unit.
 
-    The browsing tiers map onto scheduling directly (Stable group first, its
-    Reserve group as fallback); runner endpoint/hostname evidence is admission
-    evidence only. Client runtime URLTest remains the scheduling authority for
-    the general inventory.
+    Browsing Stable pools and general preferred pools exclude endpoint reserve
+    evidence; Reserve pools remain eligible for failover. Client URLTest still
+    chooses among each pool's qualified nodes on the user's actual network.
     """
 
     browsing_diagnostics = browsing_summary.get("diagnostics")
@@ -576,8 +576,9 @@ def run_qualification_pipeline(
     preflight_inventory = _entry_inventory(generated_document)
     proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
     post_host_inventory = _entry_inventory(generated_document)
+    endpoint_reserve_names: set[str] = set()
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(
-        generated_document, workers=workers
+        generated_document, workers=workers, reserve_names=endpoint_reserve_names
     )
     post_endpoint_inventory = _entry_inventory(generated_document)
     atomic_write(generated, dump_yaml(generated_document, header=True))
@@ -646,6 +647,7 @@ def run_qualification_pipeline(
     service_document = load_yaml_file(service_runtime)
     if not isinstance(service_document, dict):
         raise ValidationError("qualified runtime candidate is not a YAML mapping")
+    cap_endpoint_reserve_pools(service_document, endpoint_reserve_names)
     accelerated_groups = accelerate_client_health_checks(service_document)
     atomic_write(service_runtime, dump_yaml(service_document, header=True))
     runtime_artifact = _artifact(service_runtime, "service_client_path_hardened")

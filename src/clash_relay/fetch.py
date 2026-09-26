@@ -373,3 +373,44 @@ def fetch_subscription(
         return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError as exc:
         raise FetchError("subscription is not valid UTF-8") from exc
+
+
+def fetch_https_bytes(url: str, *, timeout: int, max_bytes: int) -> bytes:
+    """Read an exact HTTPS entity for release verification, without text normalization.
+
+    Redirects are rejected: the configured client entry must itself serve the
+    configuration, and its bearer URL must never be forwarded to another origin.
+    Reuse pinned public destinations, TLS verification and bounded reads.
+    """
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise FetchError("final entry redirected")
+
+    deadline = _Deadline(timeout)
+    validate_subscription_url(url, allow_http=False, allow_file=False)
+    _validate_resolved_destination(url, deadline=deadline)
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": _CLIENT_USER_AGENTS["mihomo"],
+            "Accept-Encoding": "gzip",
+            "Cache-Control": "no-cache",
+        },
+        method="GET",
+    )
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        NoRedirect(),
+        _PinnedHTTPSHandler(context=ssl.create_default_context(), deadline=deadline),
+    )
+    with opener.open(request, timeout=deadline.remaining()) as response:
+        if response.status != 200:
+            raise FetchError("final entry did not return HTTP 200")
+        raw = _read_bounded(response, max_bytes, deadline=deadline)
+        encoding = response.headers.get("Content-Encoding", "").lower()
+        if encoding == "gzip":
+            raw = _decompress_gzip_bounded(raw, max_bytes, deadline=deadline)
+        elif encoding not in {"", "identity"}:
+            raise FetchError("final entry returned an unsupported content encoding")
+        return raw

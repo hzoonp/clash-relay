@@ -33,6 +33,43 @@ def test_validate_project_command(project_paths, capsys) -> None:
     assert output["enabled_subscriptions"] == 3
 
 
+def test_cloudflare_cli_uses_smoke_and_compensating_release_adapter(
+    project_paths, monkeypatch, tmp_path, capsys
+):
+    calls = []
+
+    def publish(**kwargs):
+        calls.append(kwargs)
+        return {"status": "unchanged", "final_link_smoke": {"status": "passed"}}
+
+    monkeypatch.setattr(cli, "publish_production_release", publish)
+    candidate, binary = tmp_path / "candidate.yaml", tmp_path / "mihomo"
+    assert (
+        cli.main(
+            [
+                "publish-cloudflare-kv",
+                *_project_args(project_paths),
+                "--candidate",
+                str(candidate),
+                "--mihomo-bin",
+                str(binary),
+                "--account-id",
+                "account-override",
+                "--namespace-title",
+                "namespace-override",
+                "--key",
+                "custom-config",
+            ]
+        )
+        == 0
+    )
+    assert calls[0]["mihomo_binary"] == binary
+    assert calls[0]["env"]["CLOUDFLARE_ACCOUNT_ID"] == "account-override"
+    assert calls[0]["env"]["CLOUDFLARE_KV_NAMESPACE_TITLE"] == "namespace-override"
+    assert calls[0]["project"].config["publishing"]["cloudflare_kv"]["key"] == "custom-config"
+    assert json.loads(capsys.readouterr().out)["status"] == "unchanged"
+
+
 def test_generate_and_check_commands(
     project_paths, fixture_env, monkeypatch, tmp_path: Path, capsys
 ) -> None:

@@ -123,6 +123,30 @@ def _audit_general_scheduler(groups: dict[str, dict[str, Any]], *, name: str, pu
     scheduler = groups.get(name)
     if not isinstance(scheduler, dict) or scheduler.get("hidden") is not True:
         raise ValidationError(f"Routing V2 {purpose} scheduler must be hidden")
+    if scheduler.get("type") == "fallback":
+        from .proxy_endpoint_qualification import endpoint_tier_group_name
+
+        robust = endpoint_tier_group_name(name, "ROBUST")
+        reserve = endpoint_tier_group_name(name, "RESERVE")
+        children = scheduler.get("proxies")
+        if scheduler.get("use") or children not in ([robust, reserve], [reserve]):
+            raise ValidationError(f"Routing V2 {purpose} endpoint tiers are invalid")
+        expected_uses = None
+        for child_name in children:
+            child = groups.get(child_name, {})
+            uses = child.get("use")
+            if (
+                child.get("type") != "url-test"
+                or child.get("hidden") is not True
+                or not uses
+                or not child.get("filter")
+                or child.get("proxies")
+                or not all(str(key).startswith("cr_general_") for key in uses)
+                or (expected_uses is not None and uses != expected_uses)
+            ):
+                raise ValidationError(f"Routing V2 {purpose} endpoint tier is invalid")
+            expected_uses = uses
+        return
     if scheduler.get("type") != "url-test" or not scheduler.get("use"):
         raise ValidationError(f"Routing V2 {purpose} scheduler must be provider-backed url-test")
 

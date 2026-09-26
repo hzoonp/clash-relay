@@ -1,6 +1,4 @@
 name: Generate, validate, and publish
-# one-shot publication trigger: DNS/TUN production 2026-09-21
-
 on:
   push:
     branches:
@@ -75,15 +73,17 @@ jobs:
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements.lock
           python -m pip install --no-build-isolation --no-deps --editable .
 
-      - name: Mask individual subscription URLs
+      - name: Mask subscription and client-entry URLs
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
+          CLASH_RELAY_PROFILE_URL: ${{ secrets.CLASH_RELAY_PROFILE_URL }}
         run: python scripts/mask_subscription_secrets.py
 
       - name: Run production pipeline
         env:
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
           CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}
+          CLASH_RELAY_PROFILE_URL: ${{ secrets.CLASH_RELAY_PROFILE_URL }}
           CLASH_RELAY_SCHEDULE_PUBLISH: ${{ github.event_name == 'schedule' && (vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true' || (github.repository == 'hzoonp/clash-relay' && vars.CLASH_RELAY_SCHEDULE_PUBLISH == '')) }}
           CLASH_RELAY_VALIDATED_SHA: ${{ needs.validate.outputs.validated_sha }}
           GITHUB_TOKEN: ${{ github.token }}

@@ -7,7 +7,7 @@ from clash_relay.policy_document import load_policy_document
 from clash_relay.util import load_yaml_file
 
 
-def test_canonical_browsing_policy_is_region_first_and_independent_from_ai(
+def test_canonical_browsing_display_order_is_independent_from_ai(
     repo_root: Path,
 ) -> None:
     policies = load_policy_document(repo_root / "policies.yaml").document

@@ -63,11 +63,17 @@ CLASH_RELAY_SUBSCRIPTIONS
 
 ```text
 Secret:   CLOUDFLARE_API_TOKEN
+Secret:   CLASH_RELAY_PROFILE_URL
 Variable: CLOUDFLARE_ACCOUNT_ID
 Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
 Token 只授予 Workflow 所需的最小 Workers KV 权限。Namespace title 必须唯一解析到一个 namespace。
+
+`CLASH_RELAY_PROFILE_URL` 填入客户端实际使用的完整 HTTPS 订阅链接，仅保存为 Secret。
+发布和回滚会从该入口核对配置原始字节、YAML 和 Mihomo 加载结果；缺失时阻止写入。
+入口须直接读取固定 production key、返回 HTTP 200，且不重写 YAML 或跳转其他 URL。
+详见 [最终入口 smoke 与补偿语义](publishing.md#final-client-entry-smoke)。
 
 ## 4. 正式运行前先执行 doctor
 

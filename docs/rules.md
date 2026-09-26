@@ -112,14 +112,7 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 ## Browsing scheduling
 
-`ProxyLite -> 网页浏览` uses the browsing inventory and preserves the canonical regional order:
-
-```text
-网页自动
-  US Stable -> US Reserve
-  -> SG Stable -> SG Reserve
-  -> JP -> TW -> KR -> HK -> OTHER
-```
+`ProxyLite -> 网页浏览` uses the browsing inventory. `网页自动` compares regional candidates with `url-test` on the client network, using a 300-second interval and the browsing probe tolerance (150 ms). Policy ordering controls display and initial candidates rather than forcing US-first selection. Each regional candidate retains Stable-to-Reserve fallback.
 
 Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 

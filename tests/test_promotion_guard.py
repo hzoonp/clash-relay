@@ -15,6 +15,7 @@ from clash_relay.promotion_guard import (
     assess_promotion,
     load_promotion_guard_policy,
 )
+from clash_relay.runtime_names import parse_runtime_source_name
 from clash_relay.service_qualification import service_qualifications
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,8 @@ def test_canonical_promotion_guard_requires_all_public_scenario_uses() -> None:
 
     assert set(policy.minimum_source_ratio_by_use) == required
     assert set(policy.minimum_sources_by_use) == required
+    assert policy.minimum_sources_by_use == {"general": 2, "browsing": 2, "ai": 1}
+    assert policy.minimum_source_ratio_by_use == dict.fromkeys(required, 0.5)
     assert set(policy.minimum_nodes_by_use) == required
     assert set(policy.minimum_regions_by_use) == required
     assert set(policy.minimum_qualified_nodes_by_service) == services
@@ -79,6 +82,30 @@ def test_promotion_guard_allows_first_release(built_candidate, project_paths) ->
     assert report["status"] == "passed"
     assert report["reason"] == "first_release"
     assert all(item["regions"] >= 1 for item in report["candidate"]["uses"].values())
+
+
+@pytest.mark.parametrize("with_baseline", [False, True])
+def test_absolute_two_sources_rejects_repeated_nodes_from_one_source(
+    built_candidate, project_paths, with_baseline
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    selected_source = next(
+        parse_runtime_source_name(proxy["name"])
+        for provider in candidate["proxy-providers"].values()
+        for proxy in provider["payload"]
+    )
+    for provider in candidate["proxy-providers"].values():
+        provider["payload"] = [
+            proxy
+            for proxy in provider["payload"]
+            if parse_runtime_source_name(proxy["name"]) == selected_source
+        ]
+    policy = replace(_fixture_policy(), minimum_sources_by_use={"general": 2})
+    report = assess_promotion(
+        _project(project_paths), candidate, candidate if with_baseline else None, policy
+    )
+    assert report["status"] == "blocked"
+    assert "minimum_sources:general" in report["violations"]
 
 
 def test_promotion_guard_blocks_first_release_without_required_availability(

@@ -57,11 +57,18 @@ Configure:
 
 ```text
 Secret:   CLOUDFLARE_API_TOKEN
+Secret:   CLASH_RELAY_PROFILE_URL
 Variable: CLOUDFLARE_ACCOUNT_ID
 Variable: CLOUDFLARE_KV_NAMESPACE_TITLE
 ```
 
 The token needs the minimum Workers KV permissions required by the workflow. The namespace title must resolve to exactly one namespace.
+
+Set `CLASH_RELAY_PROFILE_URL` to the complete HTTPS subscription URL used by
+clients, stored only as a Secret. Publication and rollback require it to check
+exact bytes, YAML and real Mihomo loading. The entry must serve the fixed
+production key with HTTP 200, without YAML rewriting or redirects. See
+[final-entry smoke and compensation](publishing.md#final-client-entry-smoke).
 
 ## 4. Run doctor before production
 

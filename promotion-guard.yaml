@@ -7,8 +7,8 @@ minimum_source_ratio_by_use:
   browsing: 0.50
   ai: 0.50
 minimum_sources_by_use:
-  general: 1
-  browsing: 1
+  general: 2
+  browsing: 2
   ai: 1
 minimum_nodes_by_use:
   general: 1

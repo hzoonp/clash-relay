@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import signal
 import socket
 import subprocess
@@ -22,6 +23,7 @@ from clash_relay.browsing_regions import (
     region_stable_group,
 )
 from clash_relay.browsing_runtime import BROWSING_AUTO_GROUP, BROWSING_PUBLIC_GROUP
+from clash_relay.proxy_endpoint_qualification import cap_endpoint_reserve_pools
 
 pytestmark = pytest.mark.integration
 
@@ -189,7 +191,8 @@ def _regional_candidate(
             },
             {
                 "name": BROWSING_AUTO_GROUP,
-                "type": "fallback",
+                "type": "url-test",
+                "tolerance": 50,
                 "hidden": True,
                 "proxies": [region_display_name("US"), region_display_name("JP")],
                 "url": probe_url,
@@ -219,8 +222,9 @@ def _run_and_wait(
     candidate: dict,
     controller_port: int,
     secret: str,
-    expected_auto: str,
+    expected_auto: str | None,
     expected_us_tier: str | None,
+    capped: bool = False,
 ) -> None:
     path = tmp_path / "browsing-regional-runtime.yaml"
     path.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
@@ -263,12 +267,12 @@ def _run_and_wait(
             last_us = _api(controller_port, secret, region_display_name("US"))
             last_jp = _api(controller_port, secret, region_display_name("JP"))
             us_ok = expected_us_tier is None or last_us.get("now") == expected_us_tier
-            if last_auto.get("now") == expected_auto and us_ok:
+            if (expected_auto is None or last_auto.get("now") == expected_auto) and us_ok:
                 break
             time.sleep(0.2)
 
         assert last_auto.get("all") == [region_display_name("US"), region_display_name("JP")]
-        assert last_auto.get("now") == expected_auto, {
+        assert expected_auto is None or last_auto.get("now") == expected_auto, {
             "auto": last_auto,
             "us": last_us,
             "jp": last_jp,
@@ -277,22 +281,49 @@ def _run_and_wait(
         assert region_display_name("JP") not in last_us.get("all", [])
         if expected_us_tier is not None:
             assert last_us.get("now") == expected_us_tier
+        if capped:
+            for region in ("US", "JP"):
+                stable = _api(controller_port, secret, region_stable_group(region))
+                assert stable["all"] == ["REJECT"]
+            general = _api(controller_port, secret, "General Auto")
+            assert general["type"] == "Fallback"
+            children = [_api(controller_port, secret, name) for name in general["all"]]
+            assert [child["all"] for child in children] == [["General Robust"], ["General Reserve"]]
     finally:
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
+            process.terminate() if os.name == "nt" else os.killpg(process.pid, signal.SIGTERM)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
+                process.kill() if os.name == "nt" else os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
 
 
-def _probe_server() -> tuple[ThreadingHTTPServer, threading.Thread]:
+def _probe_server(delay: float = 0) -> tuple[ThreadingHTTPServer, threading.Thread]:
     class Handler(BaseHTTPRequestHandler):
         def _ok(self) -> None:
+            time.sleep(delay)
             self.send_response(204)
             self.send_header("Content-Length", "0")
             self.end_headers()
+
+        def do_CONNECT(self) -> None:
+            host, port = self.path.rsplit(":", 1)
+            with socket.create_connection((host, int(port)), timeout=2) as upstream:
+                time.sleep(delay)
+                self.send_response(200)
+                self.end_headers()
+                peers = [self.connection, upstream]
+                while True:
+                    ready, _, _ = select.select(peers, [], [], 2)
+                    if not ready:
+                        return
+                    for source in ready:
+                        data = source.recv(65536)
+                        if not data:
+                            return
+                        target = upstream if source is self.connection else self.connection
+                        target.sendall(data)
 
         do_HEAD = _ok
         do_GET = _ok
@@ -306,7 +337,7 @@ def _probe_server() -> tuple[ThreadingHTTPServer, threading.Thread]:
     return server, thread
 
 
-def test_real_mihomo_prefers_same_region_reserve_before_next_region(tmp_path: Path) -> None:
+def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_path: Path) -> None:
     probe_server, _ = _probe_server()
     controller_port = _port()
     secret = "regional-browsing-same-region-reserve"
@@ -322,7 +353,7 @@ def test_real_mihomo_prefers_same_region_reserve_before_next_region(tmp_path: Pa
             candidate=candidate,
             controller_port=controller_port,
             secret=secret,
-            expected_auto=region_display_name("US"),
+            expected_auto=None,
             expected_us_tier=region_reserve_group("US"),
         )
     finally:
@@ -330,7 +361,7 @@ def test_real_mihomo_prefers_same_region_reserve_before_next_region(tmp_path: Pa
         probe_server.server_close()
 
 
-def test_real_mihomo_crosses_region_only_when_preferred_region_is_unavailable(
+def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
     tmp_path: Path,
 ) -> None:
     probe_server, _ = _probe_server()
@@ -350,6 +381,100 @@ def test_real_mihomo_crosses_region_only_when_preferred_region_is_unavailable(
             secret=secret,
             expected_auto=region_display_name("JP"),
             expected_us_tier=None,
+        )
+    finally:
+        probe_server.shutdown()
+        probe_server.server_close()
+
+
+def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Path) -> None:
+    probe_server, _ = _probe_server()
+    slow_proxy, _ = _probe_server(delay=0.35)
+    controller_port = _port()
+    secret = "regional-browsing-client-latency"
+    try:
+        candidate = _regional_candidate(
+            controller_port=controller_port,
+            secret=secret,
+            probe_url=f"http://127.0.0.1:{probe_server.server_port}/generate_204",
+            us_reserve_direct=True,
+        )
+        # A local HTTP proxy fixture returns the probe response after 350 ms.
+        # US remains usable, but JP exceeds the 50 ms switching tolerance.
+        candidate["proxy-providers"]["cr_browsing_us"]["payload"][1].update(
+            type="http",
+            server="127.0.0.1",
+            port=slow_proxy.server_port,
+        )
+        _run_and_wait(
+            tmp_path,
+            candidate=candidate,
+            controller_port=controller_port,
+            secret=secret,
+            expected_auto=region_display_name("JP"),
+            expected_us_tier=region_reserve_group("US"),
+        )
+    finally:
+        probe_server.shutdown()
+        probe_server.server_close()
+        slow_proxy.shutdown()
+        slow_proxy.server_close()
+
+
+def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path: Path) -> None:
+    probe_server, _ = _probe_server()
+    controller_port = _port()
+    secret = "endpoint-reserve-runtime"
+    try:
+        probe_url = f"http://127.0.0.1:{probe_server.server_port}/generate_204"
+        candidate = _regional_candidate(
+            controller_port=controller_port,
+            secret=secret,
+            probe_url=probe_url,
+            us_reserve_direct=True,
+        )
+        candidate["proxy-providers"]["cr_general_us"] = {
+            "type": "inline",
+            "payload": [
+                {"name": "General Robust", "type": "direct"},
+                {"name": "General Reserve", "type": "direct"},
+            ],
+        }
+        candidate["proxy-groups"].append(
+            {
+                "name": "General Auto",
+                "type": "url-test",
+                "use": ["cr_general_us"],
+                "url": probe_url,
+                "interval": 1,
+                "timeout": 1000,
+                "tolerance": 50,
+            }
+        )
+        reserve_names = {
+            proxy["name"]
+            for key, provider in candidate["proxy-providers"].items()
+            if key.startswith("cr_browsing_")
+            for proxy in provider["payload"]
+        } | {"General Reserve"}
+        for provider in candidate["proxy-providers"].values():
+            provider["health-check"] = {
+                "enable": True,
+                "url": probe_url,
+                "interval": 1,
+                "timeout": 1000,
+                "lazy": False,
+                "expected-status": 204,
+            }
+        assert cap_endpoint_reserve_pools(candidate, reserve_names) == 3
+        _run_and_wait(
+            tmp_path,
+            candidate=candidate,
+            controller_port=controller_port,
+            secret=secret,
+            expected_auto=None,
+            expected_us_tier=region_reserve_group("US"),
+            capped=True,
         )
     finally:
         probe_server.shutdown()

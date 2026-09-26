@@ -184,7 +184,15 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             except ValidationError as exc:
                 errors.append(f"group {name!r} leaf expansion failed: {exc}")
             else:
-                if not leaves:
+                explicit_empty_stable = (
+                    str(name).startswith("__CR_BROWSING_")
+                    and str(name).endswith("_STABLE_AUTO")
+                    and group.get("hidden") is True
+                    and group.get("filter") == "^$"
+                    and group.get("proxies") == ["REJECT"]
+                    and runtime_graph.walk_resolved(name).builtins == frozenset({"REJECT"})
+                )
+                if not leaves and not explicit_empty_stable:
                     errors.append(
                         f"group {name!r} ({group.get('type')}) expands to zero leaf proxies"
                     )

@@ -113,13 +113,7 @@ Builder 在 compiler 输出后不再修改 topology。Python 内部阶段通过 
 
 ## Qualification 与调度
 
-网页浏览采用地区内资格验证和历史稳定性调度，自动地区顺序为：
-
-```text
-US -> SG -> JP -> TW -> KR -> HK -> OTHER
-```
-
-手动地区选择绝不会静默跨国；自动模式只有优先地区整体不可用时才跨区。私有匿名 scheduler history 可以在当前 live-qualified 集合中降级不稳定节点，但不能扩大 source admission。
+网页浏览保留地区内资格验证和历史稳定性调度。`网页自动` 使用跨地区 `url-test`，由 FlClash 所在真实网络测速选区，测速间隔为 300 秒，切换容差为 150 毫秒。每个地区仍保留 Stable → Reserve 恢复路径，手动地区选择保持固定地区。私有匿名 scheduler history 可以在当前 live-qualified 集合中降级不稳定节点，但不能扩大 source admission。
 
 AI 服务通过通用 `ServiceQualification` registry 进行资格验证。OpenAI、Claude、Gemini 都只是注册实现，主 qualification pipeline 不包含厂商分支。服务特有的 critical/supporting probes、cache TTL、route post-processing 和可选 client-path hardening 都封装在对应实现中。
 

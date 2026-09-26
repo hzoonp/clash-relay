@@ -137,6 +137,7 @@ def run_release_candidate_stage(
             project=project,
             candidate_path=paths.candidate,
             env=env,
+            mihomo_binary=primary_binary,
         )
         _write_json(paths.release_report, release)
     timings["publication"] = _elapsed_ms(started)

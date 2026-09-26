@@ -2,8 +2,8 @@
 
 The generated browsing inventory is provider-backed, but public scenario
 selectors never expose those providers or raw runtime nodes. Browsing is
-scheduled in two dimensions: first by preferred region, then by Stable/Reserve
-quality inside that region.
+scheduled by client-measured regional latency, with Stable/Reserve failover
+inside each region.
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def _providers_by_region(
 
 
 def harden_browsing_runtime(config: dict[str, Any], policies: dict[str, Any]) -> dict[str, Any]:
-    """Create region-priority browsing failover while keeping providers private."""
+    """Create client-measured regional browsing selection with private providers."""
 
     groups = config.get("proxy-groups")
     providers = config.get("proxy-providers")
@@ -256,12 +256,12 @@ def harden_browsing_runtime(config: dict[str, Any], policies: dict[str, Any]) ->
     automatic.update(
         {
             "name": BROWSING_AUTO_GROUP,
-            "type": "fallback",
+            "type": "url-test",
             "hidden": True,
             "proxies": region_groups,
             **_runtime_test_fields(
                 probe,
-                tolerance=False,
+                tolerance=True,
                 interval=_region_switch_interval(policies, probe),
             ),
         }
@@ -338,8 +338,11 @@ def validate_browsing_public_surface(config: dict[str, Any]) -> None:
     if not isinstance(automatic, dict):
         errors.append("网页自动 runtime group is missing")
     else:
-        if automatic.get("type") != "fallback" or not bool(automatic.get("hidden", False)):
-            errors.append("网页自动 must be a hidden regional fallback group")
+        if automatic.get("type") != "url-test" or not bool(automatic.get("hidden", False)):
+            errors.append("网页自动 must be a hidden regional url-test group")
+        tolerance = automatic.get("tolerance")
+        if type(tolerance) is not int or tolerance <= 0:
+            errors.append("网页自动 must declare a positive switching tolerance")
         if automatic.get("use"):
             errors.append("网页自动 must not expose providers directly")
         if not regions or automatic.get("proxies") != region_groups:

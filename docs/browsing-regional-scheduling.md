@@ -1,6 +1,6 @@
 # Browsing Regional Scheduling
 
-`v1.1.0` schedules generic web browsing by region before comparing individual nodes. The goal is to keep the web egress country stable while retaining automatic recovery.
+Generic web browsing compares regional latency on the client access network. Each region retains Stable/Reserve recovery. AI scheduling is unchanged.
 
 ## Policy
 
@@ -16,18 +16,11 @@ The canonical browsing pool declares the same regions and fallback order. Countr
 
 ## Automatic mode
 
-`网页自动` is a hidden regional fallback. For each surviving region the runtime builds a hidden Stable/Reserve pair. The effective order is:
+`网页自动` is a hidden cross-region `url-test`. Each candidate is a regional fallback that prefers its Stable tier and recovers through its Reserve tier. The client measures these regional candidates on its current network.
 
-```text
-US Stable -> US Reserve -> SG Stable -> SG Reserve ->
-JP Stable -> JP Reserve -> TW Stable -> TW Reserve ->
-KR Stable -> KR Reserve -> HK Stable -> HK Reserve ->
-OTHER Stable -> OTHER Reserve
-```
+`routing.browsing.preferred_regions` preserves deterministic display and initial candidate order; it no longer forces a healthy US region ahead of a faster region. The browsing probe's `tolerance` (150 ms in the canonical policy) suppresses switches for small latency differences. Mihomo may change the browsing exit country when another region is sufficiently faster.
 
-A healthy preferred region is retained even if another region has a lower instantaneous delay. Cross-region movement occurs only after the current region is unavailable according to Mihomo health evaluation.
-
-The canonical `scheduler.browsing.region_switch_interval` is 300 seconds. This avoids rapid region ping-pong while node-level browsing health checks continue at their own 180-second interval.
+The canonical `scheduler.browsing.region_switch_interval` is 300 seconds. Node-level browsing checks remain at 180 seconds. These intervals and tolerance reduce churn but do not guarantee session continuity across an exit change.
 
 ## Manual regional mode
 
@@ -81,7 +74,7 @@ The CI contract covers:
 - region/provider matching;
 - provider-free public browsing surface;
 - same-region Stable-to-Reserve recovery;
-- cross-region fallback only after a whole region is unavailable;
+- cross-region selection when a healthy region is measurably slower;
 - manual region pinning;
 - source isolation and multiplier filtering;
 - deterministic generation;

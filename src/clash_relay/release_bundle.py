@@ -30,6 +30,8 @@ class KVValue(Protocol):
 
     def publish(self, *, content: bytes) -> dict[str, Any]: ...
 
+    def delete(self) -> dict[str, Any]: ...
+
 
 PublisherFactory = Callable[[str], KVValue]
 
@@ -296,6 +298,7 @@ def publish_release_bundle(
     factory: PublisherFactory,
     production_key: str,
     content: bytes,
+    verify_active: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Stage, verify, activate, and commit a versioned release."""
     keys = release_keys(production_key)
@@ -305,6 +308,7 @@ def publish_release_bundle(
     previous_pointer_before = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
 
     if current_content == content:
+        smoke = verify_active() if verify_active is not None else None
         if current_pointer_before != new_release_id:
             try:
                 _restore_pointer(factory, keys.current_pointer, new_release_id)
@@ -320,6 +324,7 @@ def publish_release_bundle(
             "bytes": len(content),
             "sha256": new_release_id,
             "production_changed": False,
+            **({"final_link_smoke": smoke} if smoke is not None else {}),
         }
 
     if current_content is None:
@@ -330,6 +335,33 @@ def publish_release_bundle(
             new_release_id=new_release_id,
             current_pointer_before=current_pointer_before,
         )
+        smoke = None
+        if verify_active is not None:
+            try:
+                smoke = verify_active()
+            except Exception:
+                # Bootstrap has no previous bytes. Remove only the newly
+                # activated client key, then restore the pre-bootstrap pointer.
+                publisher = factory(keys.production)
+                try:
+                    publisher.delete()
+                    if publisher.read() is not None:
+                        raise CommitUnknownError("bootstrap cleanup could not be confirmed")
+                except Exception:
+                    raise CommitUnknownError(
+                        "first release smoke failed; activation cleanup state is unknown",
+                        production_changed="unknown",
+                    ) from None
+                try:
+                    _restore_pointer(factory, keys.current_pointer, current_pointer_before)
+                except PublicationError:
+                    raise CommitUnknownError(
+                        "first release smoke failed; pointer cleanup state is unknown",
+                        production_changed=False,
+                    ) from None
+                raise PublicationError(
+                    "first release smoke failed; new production value was removed"
+                ) from None
         return {
             "status": "published",
             "release_id": new_release_id,
@@ -338,9 +370,11 @@ def publish_release_bundle(
             "sha256": new_release_id,
             "production_changed": True,
             "first_release": True,
+            **({"final_link_smoke": smoke} if smoke is not None else {}),
         }
 
     old_release_id = _ensure_immutable_release(factory, keys, current_content)
+    smoke = None
 
     try:
         _publish_verified(factory, keys.production, content)
@@ -363,6 +397,26 @@ def publish_release_bundle(
         raise PublicationError(
             "release commit failed; previous production bytes were restored"
         ) from exc
+
+    if verify_active is not None:
+        try:
+            smoke = verify_active()
+        except Exception:
+            # Activation was read-back verified, so compensation is safe. This
+            # does not run on an ambiguous activation (handled above).
+            try:
+                _restore_after_failed_commit(
+                    factory,
+                    keys,
+                    previous_content=current_content,
+                    previous_release_id=old_release_id,
+                    previous_pointer_before=previous_pointer_before,
+                )
+            except PublicationError as compensation_error:
+                raise compensation_error from None
+            raise PublicationError(
+                "final-link smoke failed; previous production bytes were restored"
+            ) from None
 
     try:
         _restore_pointer(factory, keys.previous_pointer, old_release_id)
@@ -416,6 +470,7 @@ def publish_release_bundle(
         "sha256": new_release_id,
         "production_changed": True,
         "migrated_current_pointer": current_pointer_before is None,
+        **({"final_link_smoke": smoke} if smoke is not None else {}),
     }
 
 

@@ -47,6 +47,7 @@ This checklist is the human release review that complements the exact-SHA automa
 - [ ] Secret `CLOUDFLARE_API_TOKEN` is a narrowly scoped Workers KV token.
 - [ ] Variable `CLOUDFLARE_ACCOUNT_ID` is configured.
 - [ ] Variable `CLOUDFLARE_KV_NAMESPACE_TITLE` resolves to the intended namespace.
+- [ ] Secret `CLASH_RELAY_PROFILE_URL` points to the fixed HTTPS client entry; it serves the production key without rewriting/redirects and passes post-activation smoke.
 - [ ] `PROFILE_TOKEN` is not stored in GitHub.
 
 ## Cloudflare and privacy

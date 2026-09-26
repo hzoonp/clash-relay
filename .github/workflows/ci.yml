@@ -66,6 +66,7 @@ jobs:
           mypy --follow-imports=skip --ignore-missing-imports --check-untyped-defs \
             src/clash_relay/builder.py \
             src/clash_relay/classify.py \
+            src/clash_relay/cli.py \
             src/clash_relay/config_loader.py \
             src/clash_relay/node_policy.py \
             src/clash_relay/selector.py \
@@ -87,10 +88,13 @@ jobs:
             src/clash_relay/production_application.py \
             src/clash_relay/production_pipeline.py \
             src/clash_relay/production_diagnostics.py \
+            src/clash_relay/production_proof.py \
             src/clash_relay/production_event_audit.py \
             src/clash_relay/production_failure_metrics.py \
             src/clash_relay/promotion_guard.py \
             src/clash_relay/production_release_stage.py \
+            src/clash_relay/final_link_smoke.py \
+            src/clash_relay/health_check_inventory.py \
             src/clash_relay/release_bundle.py \
             src/clash_relay/release_reconciliation.py \
             src/clash_relay/publishers/cloudflare_kv.py \

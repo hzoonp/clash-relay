@@ -117,7 +117,7 @@ def _groups(config: dict) -> dict[str, dict]:
     return {group["name"]: group for group in config["proxy-groups"]}
 
 
-def test_hardening_builds_region_priority_surface_and_unifies_https_probe() -> None:
+def test_hardening_builds_client_measured_regional_surface_and_unifies_https_probe() -> None:
     config = _candidate()
 
     report = harden_browsing_runtime(config, _policies())
@@ -139,7 +139,8 @@ def test_hardening_builds_region_priority_surface_and_unifies_https_probe() -> N
             "DIRECT",
         ],
     }
-    assert automatic["type"] == "fallback"
+    assert automatic["type"] == "url-test"
+    assert automatic["tolerance"] == 150
     assert automatic["hidden"] is True
     assert automatic["proxies"] == [
         region_display_name("US"),
@@ -286,3 +287,12 @@ def test_history_demotion_is_region_local_and_moves_node_to_same_region_reserve(
         region_reserve_group("US"),
     ]
     assert region_stable_group("JP") not in groups[region_display_name("US")]["proxies"]
+
+
+@pytest.mark.parametrize("tolerance", [None, 0, -1, True])
+def test_public_surface_requires_positive_cross_region_switch_tolerance(tolerance) -> None:
+    config = _candidate()
+    harden_browsing_runtime(config, _policies())
+    _groups(config)[BROWSING_AUTO_GROUP]["tolerance"] = tolerance
+    with pytest.raises(ValidationError, match="positive switching tolerance"):
+        validate_browsing_public_surface(config)

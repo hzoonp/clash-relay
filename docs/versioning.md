@@ -25,9 +25,9 @@ There is no runtime Policy Model v1 fallback and no runtime alias for removed Pu
 - The canonical top-level user-facing groups are exactly `代理选择`, `网页浏览`, `人工智能`, `流媒体`, `消息通讯`, and `下载流量`. Public scenario groups do not attach proxy providers directly.
 - Production selector names, compatibility members, AI display names/exclusions, ACL4SSR binding targets, and ordering edges are declared under `routing.contract`; the Routing V2 audit consumes that declaration rather than a second hard-coded policy.
 - `流媒体`, `消息通讯`, and `下载流量` are general-only selectors. Browsing/AI-only sources cannot become reachable through them.
-- Browsing owns an independent regional order `US -> SG -> JP -> TW -> KR -> HK -> OTHER`; changing browsing preference does not change AI service preference order.
+- Browsing owns an independent regional display and initial candidate order `US -> SG -> JP -> TW -> KR -> HK -> OTHER`; changing browsing ordering does not change AI service preference order.
 - Browsing qualification is live and fail closed. Canonical policy is three attempts: 3/3 is Stable, 2/3 is Reserve, and fewer than 2/3 is rejected for publication.
-- Automatic browsing routing is region-first; lower instantaneous delay elsewhere is not sufficient to switch regions. Manual regional browsing choices never cross regions.
+- Automatic browsing routing uses client-measured cross-region URL testing; latency improvements must exceed the switching tolerance. Manual regional browsing choices never cross regions.
 - Scheduler history may demote a currently qualified node inside its region but never promotes a current Reserve or live-failed node into Stable.
 - OpenAI, Claude, and Gemini qualify independently behind the generic `ServiceQualification` API. The main qualification pipeline is provider-agnostic. Provider-specific probe, cache, diagnostic, route-postprocessing, and optional client-path hardening behavior belongs to the registered implementation.
 - The production data path is `Declarations -> Subscription I/O -> NodeInventory -> PolicyCompiler -> RuntimeGraph -> qualification -> Qualified Graph -> MihomoSerializer -> config.yaml`.

@@ -420,7 +420,7 @@ def _preflight_stubs(monkeypatch, *, drop_source: str | None = None, host_passes
             )
         return report
 
-    def endpoint(document, workers=12):
+    def endpoint(document, workers=12, reserve_names=None):
         removed = _prune(document) if host_passes else []
         report: dict = {
             "status": "passed",

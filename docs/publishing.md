@@ -38,6 +38,7 @@ Public Config v2 + private Secrets
   -> every stable core in tools/mihomo-versions.json
   -> immutable versioned release staging + read-back verification
   -> activate fixed client-facing production key
+  -> fetch final HTTPS entry / exact digest / YAML / real Mihomo smoke
   -> commit current/previous release pointers
   -> production proof + best-effort derived state / metrics / SLO
 ```
@@ -67,11 +68,48 @@ publishing:
 GitHub Actions expects:
 
 - Secret `CLOUDFLARE_API_TOKEN` with narrowly scoped Workers KV write permission;
+- Secret `CLASH_RELAY_PROFILE_URL` containing the complete fixed HTTPS client entry;
 - Variable `CLOUDFLARE_ACCOUNT_ID`;
 - Variable `CLOUDFLARE_KV_NAMESPACE_TITLE`;
 - Variable `CLASH_RELAY_SCHEDULE_PUBLISH` when a public fork intentionally opts into scheduled publication or when an operator needs to suspend/restore the upstream scheduled path.
 
-The complete Worker profile URL is a bearer credential and must not be copied into GitHub.
+The complete Worker profile URL is a bearer credential. Store it only in the
+`CLASH_RELAY_PROFILE_URL` GitHub Secret; never copy it into tracked files, logs,
+workflow inputs or artifacts. Publish and rollback both require it. Dry-run does
+not fetch the entry or require this secret.
+
+## Final client-entry smoke
+
+After the production KV value is activated and read-back verified, publication
+fetches the configured entry directly over verified HTTPS, requires HTTP 200,
+compares the exact decompressed response SHA-256 with the candidate, parses its
+YAML, then runs the primary validated Mihomo core's configuration and startup
+checks. Redirects are rejected. The Worker must serve the fixed production key
+without rewriting YAML; a Worker that resolves `current-release-v1` instead is
+not compatible with this activation order.
+
+Bounded retries wait 2, 5, 10, 20 and 30 seconds after the first attempt for edge
+propagation. Requests use `Cache-Control: no-cache`; configure Worker caching to
+make the updated value visible within this window. A successful check proves
+the runner's final-entry path, not every carrier or every edge location.
+
+Only static outcomes and attempt counts are reported. URL, response content,
+node identities, YAML errors and core diagnostics are suppressed. The exact
+downloaded response and core validation copies are temporary and cleaned up.
+
+Smoke failure restores the previous production bytes through the existing
+compensation path before release pointers advance. Failed first publication
+removes its newly activated production value and restores its prior pointer;
+unconfirmed cleanup is reported as unknown. An unchanged release is checked
+again without rotating history. KV compensation is still eventually consistent:
+edge caches can briefly serve the attempted release, so this is not an atomic
+cutover or proof that every client has already observed restoration.
+
+`scripts/publish_release_bundle.py` and `clash-relay publish-cloudflare-kv` require
+`--mihomo-bin` and use the same smoke and compensation path. These are activation
+adapters for already audited candidates; normal publication should use the full
+production lifecycle, including qualification, Promotion Guard and the stable
+core matrix.
 
 ## Versioned release transaction
 
@@ -93,8 +131,9 @@ Publication:
 2. writes or verifies its exact immutable manifest;
 3. ensures the current production bytes have a versioned immutable object when a current value exists;
 4. updates and read-back verifies the fixed client-facing production key;
-5. commits the previous-release pointer;
-6. commits the current-release pointer.
+5. verifies the final client HTTPS entry, exact digest, YAML and real Mihomo load;
+6. commits the previous-release pointer;
+7. commits the current-release pointer.
 
 There is no v2 `previous-v1` compatibility slot, write, or fallback.
 

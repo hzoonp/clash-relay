@@ -12,6 +12,7 @@ from typing import Any
 from .ai_qualification_cache import ai_cache_summary, derive_ai_cache_key, parse_ai_cache_bytes
 from .config_loader import ProjectDefinition
 from .errors import PublicationError, ValidationError
+from .final_link_smoke import prepare_final_link_smoke
 from .mihomo import load_candidate
 from .production_metrics import (
     append_metrics_run,
@@ -318,6 +319,7 @@ def publish_production_release(
     project: ProjectDefinition,
     candidate_path: Path,
     env: Mapping[str, str] | None = None,
+    mihomo_binary: Path | None = None,
 ) -> dict[str, Any]:
     """Validate, stage, verify, and activate one private Cloudflare KV release."""
 
@@ -330,6 +332,9 @@ def publish_production_release(
         raise PublicationError("failed to read production release candidate") from exc
     if not content:
         raise PublicationError("refusing to publish an empty production release candidate")
+    verify_active = prepare_final_link_smoke(
+        env=_environment(env), binary=mihomo_binary, content=content
+    )
     token, account_id, namespace_title = _credentials(env)
     if not token or not account_id or not namespace_title:
         raise PublicationError("Cloudflare credentials are required for production publication")
@@ -350,7 +355,9 @@ def publish_production_release(
             namespace_id=namespace_id,
         )
 
-    result = commit_release_bundle(factory=factory, production_key=production_key, content=content)
+    result = commit_release_bundle(
+        factory=factory, production_key=production_key, content=content, verify_active=verify_active
+    )
     keys = release_keys(production_key)
     try:
         journal, journal_status = parse_release_journal(factory(keys.journal).read())

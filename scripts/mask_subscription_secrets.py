@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit GitHub Actions masks for configured subscription URLs."""
+"""Emit GitHub Actions masks for resolved subscriptions and the client entry."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ def _command_escape(value: str) -> str:
 def main() -> int:
     for value in load_secret_mapping(env=os.environ).values():
         print(f"::add-mask::{_command_escape(value)}")
+    profile_url = os.environ.get("CLASH_RELAY_PROFILE_URL", "")
+    if profile_url:
+        print(f"::add-mask::{_command_escape(profile_url)}")
     return 0
 
 

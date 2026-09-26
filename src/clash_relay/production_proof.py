@@ -62,11 +62,25 @@ def _safe_release(value: dict[str, Any] | None) -> dict[str, Any] | None:
         raise ValidationError("production proof received invalid release metadata")
     if _RELEASE_ID.fullmatch(release_id) is None:
         raise ValidationError("production proof received an invalid release id")
-    return {
+    result = {
         "status": value["status"],
         "release_id": release_id,
         "production_changed": value.get("production_changed") is True,
     }
+    smoke = value.get("final_link_smoke")
+    if isinstance(smoke, dict) and (
+        smoke.get("status") == "passed"
+        and smoke.get("https") == "passed"
+        and smoke.get("yaml") == "passed"
+        and smoke.get("mihomo") == "passed"
+        and smoke.get("digest") == "matched"
+        and isinstance(smoke.get("attempts"), int)
+        and not isinstance(smoke.get("attempts"), bool)
+        and 1 <= smoke["attempts"] <= 6
+    ):
+        result["final_link_smoke"] = "passed"
+        result["smoke_attempts"] = smoke["attempts"]
+    return result
 
 
 def _safe_openai_app(value: Any) -> dict[str, int] | None:
@@ -286,6 +300,10 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
         lines.append(
             f"| Production bytes changed | {str(release.get('production_changed')).lower()} |"
         )
+        if release.get("final_link_smoke") == "passed":
+            lines.append(
+                f"| Final HTTPS entry smoke | passed ({release.get('smoke_attempts')} attempts) |"
+            )
     lines.extend(
         [
             "",

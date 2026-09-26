@@ -399,6 +399,8 @@ def test_cn_three_net_end_to_end_build_applies_profile(repo_root, tmp_path) -> N
         assert group["interval"] == 180
         assert group["timeout"] == 8000
     assert groups["网页自动"]["interval"] == 300
+    assert groups["网页自动"]["type"] == "url-test"
+    assert groups["网页自动"]["tolerance"] == 150
 
     assert result.report["network_profile"]["profile"] == NETWORK_PROFILE_CN_THREE_NET
     urltest_report = result.report["network_profile_urltest"]
@@ -435,3 +437,37 @@ def test_default_profile_end_to_end_build_keeps_canonical_resolver_pools(
 def test_canonical_public_configs_validate_against_schema(repo_root: Path) -> None:
     load_and_validate(repo_root / "config.yaml", "config.schema.json")
     load_and_validate(repo_root / "config.example.yaml", "config.schema.json")
+
+
+@pytest.mark.parametrize("all_reserve", [False, True])
+def test_endpoint_caps_preserve_canonical_production_audits(repo_root, tmp_path, all_reserve):
+    import copy
+
+    from clash_relay.config_loader import load_project
+    from clash_relay.dns_runtime_audit import audit_dns_runtime_dependencies
+    from clash_relay.production_pipeline import audit_candidate
+    from clash_relay.proxy_endpoint_qualification import cap_endpoint_reserve_pools
+    from clash_relay.validator import validate_generated_config
+
+    result = _build_canonical(repo_root, tmp_path, network_profile=NETWORK_PROFILE_CN_THREE_NET)
+    root = tmp_path / "canonical-profile"
+    project = load_project(
+        config_path=root / "config.yaml",
+        subscriptions_path=root / "subscriptions.yaml",
+        policies_path=root / "policies.yaml",
+    )
+    candidate = result.config
+    names = [
+        proxy["name"]
+        for provider in candidate["proxy-providers"].values()
+        for proxy in provider["payload"]
+    ]
+    reserves = set(names if all_reserve else names[::2])
+    assert reserves
+    assert cap_endpoint_reserve_pools(candidate, reserves) > 0
+    validate_generated_config(candidate)
+    audit_candidate(project, candidate, build_report=result.report)
+    assert audit_dns_runtime_dependencies(candidate)["status"] == "passed"
+    first = copy.deepcopy(candidate)
+    assert cap_endpoint_reserve_pools(candidate, reserves) == 0
+    assert candidate == first

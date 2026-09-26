@@ -2,18 +2,20 @@
 
 Authority boundary: this stage only filters obviously dead TCP endpoints from
 a GitHub Runner vantage point. It is never evidence of China Telecom /
-Unicom / Mobile quality. A transient timeout never permanently quarantines an
-endpoint on its own: every endpoint gets ``_ATTEMPTS`` bounded attempts and is
-quarantined only when none of them succeeds (0-of-N quorum). Endpoints that
-succeed on every attempt carry robust evidence; endpoints admitted with some
-failed attempts carry reserve evidence and rely on the client runtime URLTest
-for continuous re-selection. UDP-native transports remain owned by the Mihomo
+Unicom / Mobile quality. A timeout remains reserve evidence, while DNS failure is inconclusive.
+Endpoints that succeed on every attempt carry robust evidence; partial success
+remains reserve evidence. Endpoint reserve nodes are capped out of preferred
+runtime pools after service qualification. UDP-native transports remain owned by the Mihomo
 runtime probes.
 """
 
 from __future__ import annotations
 
+import copy
+import errno
+import hashlib
 import ipaddress
+import re
 import socket
 import time
 from collections import Counter
@@ -36,8 +38,17 @@ _ATTEMPT_BUDGET_SECONDS = 2.0
 _UNREACHABLE_ERRNOS = frozenset(
     value
     for value in (
-        getattr(socket, name, None)
-        for name in ("EHOSTUNREACH", "ENETUNREACH", "ENETDOWN", "ENETRESET")
+        getattr(errno, name, None)
+        for name in (
+            "EHOSTUNREACH",
+            "ENETUNREACH",
+            "ENETDOWN",
+            "ENETRESET",
+            "WSAEHOSTUNREACH",
+            "WSAENETUNREACH",
+            "WSAENETDOWN",
+            "WSAENETRESET",
+        )
     )
     if value is not None
 )
@@ -55,7 +66,7 @@ def _failure_category(error: OSError) -> str:
     if isinstance(error, (socket.timeout, TimeoutError)):
         return "connect_timeout"
     if isinstance(error, ConnectionRefusedError):
-        return "refused"
+        return "connection_refused"
     if error.errno in _UNREACHABLE_ERRNOS:
         return "network_unreachable"
     return "connect_failure"
@@ -86,7 +97,7 @@ def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
         seen_addresses.add(marker)
         public.append(marker)
     if not public:
-        return False, "dns_failure", 0
+        return False, "non_public_address", 0
     successes = 0
     category = "connect_failure"
     for _ in range(_ATTEMPTS):
@@ -132,7 +143,7 @@ def _region(provider_name: str) -> str:
 
 
 def quarantine_unreachable_tcp_endpoints(
-    config: dict[str, Any], *, workers: int = 12
+    config: dict[str, Any], *, workers: int = 12, reserve_names: set[str] | None = None
 ) -> dict[str, Any]:
     """Prune failed TCP entries while keeping UDP-native transports for Mihomo probes."""
     providers = config.get("proxy-providers")
@@ -169,6 +180,7 @@ def quarantine_unreachable_tcp_endpoints(
             "robust_endpoints": 0,
             "reserve_endpoints": 0,
             "dns_inconclusive": 0,
+            "timeout_reserve": 0,
             "unique_quarantined_nodes": 0,
             "unique_quarantined_endpoints": 0,
             "by_source": {},
@@ -223,12 +235,20 @@ def quarantine_unreachable_tcp_endpoints(
                 # candidate's own DoH resolvers; the runner's system DNS
                 # failing here is inconclusive, never node evidence.
                 counts["dns_inconclusive"] += 1
+                kept.append(proxy)
+                continue
+            if not admitted and failure_category == "connect_timeout":
+                counts["timeout_reserve"] += 1
                 tiers["reserve"] += 1
+                if reserve_names is not None:
+                    reserve_names.add(str(proxy["name"]))
                 kept.append(proxy)
                 continue
             if admitted:
                 counts["reachable"] += 1
                 tiers[_admission_tier(successes)] += 1
+                if successes < _ATTEMPTS and reserve_names is not None:
+                    reserve_names.add(str(proxy["name"]))
                 kept.append(proxy)
                 continue
             counts["unreachable"] += 1
@@ -267,6 +287,7 @@ def quarantine_unreachable_tcp_endpoints(
         "robust_endpoints": int(tiers["robust"]),
         "reserve_endpoints": int(tiers["reserve"]),
         "dns_inconclusive": int(counts["dns_inconclusive"]),
+        "timeout_reserve": int(counts["timeout_reserve"]),
         "unique_quarantined_nodes": len(unique_quarantined),
         "unique_quarantined_endpoints": len(quarantined_endpoints),
         "by_source": dict(sorted(by_source.items())),
@@ -278,6 +299,111 @@ def quarantine_unreachable_tcp_endpoints(
             for source, categories in sorted(by_source_failure_category.items())
         },
     }
+
+
+def endpoint_tier_group_name(parent: str, tier: str) -> str:
+    return f"__CR_ENDPOINT_{hashlib.sha256(parent.encode('utf-8')).hexdigest()[:16]}_{tier}"
+
+
+def cap_endpoint_reserve_pools(config: dict[str, Any], reserve_names: set[str]) -> int:
+    """Keep private endpoint evidence out of preferred pools, with explicit failover.
+
+    Existing service qualification filters remain authoritative. Empty preferred
+    browsing groups explicitly reject, preventing Mihomo's empty-group DIRECT
+    fallback. Names stay in the private configuration, never aggregate reports.
+    """
+    if not reserve_names:
+        return 0
+    providers = config.get("proxy-providers", {})
+    groups = config.get("proxy-groups", [])
+    by_name = {group.get("name"): group for group in groups if isinstance(group, dict)}
+    additions = []
+    changed = 0
+
+    def exact(names: set[str]) -> str:
+        # RE2-compatible literals; Python's re.escape also escapes whitespace.
+        meta = frozenset("\\.+*?()|[]{}^$")
+        return (
+            "^("
+            + "|".join(
+                "".join("\\" + char if char in meta else char for char in name)
+                for name in sorted(names)
+            )
+            + ")$"
+            if names
+            else "^$"
+        )
+
+    for group in list(groups):
+        if not isinstance(group, dict) or group.get("type") != "url-test":
+            continue
+        uses = group.get("use", [])
+        if not uses or not all(
+            str(key).startswith(("cr_general_", "cr_browsing_")) for key in uses
+        ):
+            continue
+        name = str(group.get("name", ""))
+        if name.startswith("__CR_ENDPOINT_"):
+            continue
+        browsing = any(str(key).startswith("cr_browsing_") for key in uses)
+        if browsing and not name.endswith("_STABLE_AUTO"):
+            continue
+        names = {
+            str(proxy["name"])
+            for key in uses
+            for proxy in providers.get(key, {}).get("payload", [])
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+        }
+        pattern = group.get("filter")
+        excluded = group.get("exclude-filter")
+        allowed = {
+            item
+            for item in names
+            if (not pattern or re.search(pattern, item))
+            and (not excluded or not re.search(excluded, item))
+        }
+        reserve = allowed & reserve_names
+        if not reserve:
+            continue
+        preferred = allowed - reserve
+        if browsing:
+            group["filter"] = exact(preferred)
+            if not preferred:
+                group["proxies"] = ["REJECT"]
+            reserve_group = by_name.get(name.replace("_STABLE_AUTO", "_RESERVE_AUTO"))
+            if isinstance(reserve_group, dict):
+                old_filter = reserve_group.get("filter")
+                old_names = {
+                    item for item in names if not old_filter or re.search(old_filter, item)
+                }
+                reserve_group["filter"] = exact(old_names | reserve)
+        else:
+            children = []
+            for tier, members in (("ROBUST", preferred), ("RESERVE", reserve)):
+                if not members:
+                    continue
+                child = copy.deepcopy(group)
+                child_name = endpoint_tier_group_name(name, tier)
+                if child_name in by_name:
+                    raise ValidationError("endpoint tier group name collision")
+                child.update(name=child_name, hidden=True, filter=exact(members))
+                child.pop("proxies", None)
+                additions.append(child)
+                children.append(child_name)
+            for key in (
+                "use",
+                "filter",
+                "exclude-filter",
+                "tolerance",
+                "include-all",
+                "include-all-providers",
+                "include-all-proxies",
+            ):
+                group.pop(key, None)
+            group.update(type="fallback", proxies=children)
+        changed += 1
+    groups.extend(additions)
+    return changed
 
 
 def accelerate_client_health_checks(config: dict[str, Any]) -> int:

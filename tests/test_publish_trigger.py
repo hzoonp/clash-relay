@@ -89,11 +89,11 @@ def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storag
 def test_individual_subscription_urls_are_masked_before_pipeline() -> None:
     workflow = WORKFLOW.read_text()
     masker = MASK_SCRIPT.read_text()
-    assert "Mask individual subscription URLs" in workflow
+    assert "Mask subscription and client-entry URLs" in workflow
     assert "python scripts/mask_subscription_secrets.py" in workflow
     assert "from clash_relay.secrets import load_secret_mapping" in masker
     assert "::add-mask::" in masker
-    assert workflow.index("Mask individual subscription URLs") < workflow.index(
+    assert workflow.index("Mask subscription and client-entry URLs") < workflow.index(
         "Run production pipeline"
     )
 

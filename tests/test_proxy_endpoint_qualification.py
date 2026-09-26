@@ -7,6 +7,7 @@ from clash_relay.proxy_endpoint_qualification import (
     _admission_tier,
     _probe_tcp,
     accelerate_client_health_checks,
+    cap_endpoint_reserve_pools,
     quarantine_unreachable_tcp_endpoints,
 )
 
@@ -70,7 +71,7 @@ def test_dead_tcp_entry_is_quarantined_while_reachable_and_udp_siblings_survive(
         seen.append((server, port))
         if server == "good.example":
             return True, "answered", 3
-        return False, "connect_timeout", 0
+        return False, "connection_refused", 0
 
     monkeypatch.setattr("clash_relay.proxy_endpoint_qualification._probe_tcp", probe)
     candidate = _candidate()
@@ -91,8 +92,8 @@ def test_dead_tcp_entry_is_quarantined_while_reachable_and_udp_siblings_survive(
     assert report["by_source"] == {"sub_2": 1}
     assert report["by_region"] == {"jp": 1}
     assert report["by_protocol"] == {"vless": 1}
-    assert report["by_failure_category"] == {"connect_timeout": 1}
-    assert report["by_source_failure_category"] == {"sub_2": {"connect_timeout": 1}}
+    assert report["by_failure_category"] == {"connection_refused": 1}
+    assert report["by_source_failure_category"] == {"sub_2": {"connection_refused": 1}}
     assert "dead.example" not in repr(report)
 
 
@@ -111,7 +112,7 @@ def test_transient_endpoint_failures_admit_as_reserve(monkeypatch) -> None:
         attempts.append(successes)
         if successes:
             return True, "answered", successes
-        return False, "connect_timeout", 0
+        return False, "connection_refused", 0
 
     monkeypatch.setattr("clash_relay.proxy_endpoint_qualification._probe_tcp", probe)
     candidate = _candidate()
@@ -135,6 +136,7 @@ def test_transient_endpoint_failures_admit_as_reserve(monkeypatch) -> None:
             "port": 443,
         },
     ]
+
     report = quarantine_unreachable_tcp_endpoints(candidate)
 
     assert report["reachable"] == 2
@@ -148,6 +150,114 @@ def test_transient_endpoint_failures_admit_as_reserve(monkeypatch) -> None:
         "good.example",
         "flaky.example",
     ]
+
+
+def test_timeout_keeps_node_as_private_reserve_evidence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "clash_relay.proxy_endpoint_qualification._probe_tcp",
+        lambda *_: (False, "connect_timeout", 0),
+    )
+    candidate = _candidate()
+    reserve = set()
+    report = quarantine_unreachable_tcp_endpoints(candidate, reserve_names=reserve)
+    assert report["quarantined"] == 0
+    assert report["timeout_reserve"] == report["reserve_endpoints"] == 2
+    assert len(reserve) == 2
+    assert len(candidate["proxy-providers"]["cr_browsing_jp"]["payload"]) == 3
+    assert all(name not in repr(report) for name in reserve)
+
+
+def test_endpoint_pool_cap_retains_service_filter_and_disjoint_failover() -> None:
+    import re
+
+    config = {
+        "proxy-providers": {
+            "cr_general_jp": {
+                "payload": [{"name": name} for name in ("robust", "reserve", "service-failed")]
+            }
+        },
+        "proxy-groups": [
+            {
+                "name": "自动选择",
+                "type": "url-test",
+                "use": ["cr_general_jp"],
+                "filter": "^(robust|reserve)$",
+                "url": "https://example.com/204",
+                "tolerance": 50,
+            }
+        ],
+    }
+    assert cap_endpoint_reserve_pools(config, {"reserve", "service-failed"}) == 1
+    parent, preferred, reserve = config["proxy-groups"]
+    assert parent["type"] == "fallback"
+    assert parent["proxies"] == [preferred["name"], reserve["name"]]
+    assert re.fullmatch(preferred["filter"], "robust")
+    assert not re.fullmatch(preferred["filter"], "reserve")
+    assert re.fullmatch(reserve["filter"], "reserve")
+    assert not re.fullmatch(reserve["filter"], "service-failed")
+
+
+def test_empty_browsing_preferred_pool_rejects_instead_of_direct() -> None:
+    config = {
+        "proxy-providers": {"cr_browsing_jp": {"payload": [{"name": "reserve"}]}},
+        "proxy-groups": [
+            {
+                "name": "__CR_BROWSING_JP_STABLE_AUTO",
+                "type": "url-test",
+                "use": ["cr_browsing_jp"],
+                "filter": "^reserve$",
+            },
+            {
+                "name": "__CR_BROWSING_JP_RESERVE_AUTO",
+                "type": "url-test",
+                "use": ["cr_browsing_jp"],
+                "filter": "^reserve$",
+            },
+        ],
+    }
+    assert cap_endpoint_reserve_pools(config, {"reserve"}) == 1
+    preferred = config["proxy-groups"][0]
+    assert preferred["filter"] == "^$"
+    assert preferred["proxies"] == ["REJECT"]
+
+
+def test_endpoint_child_names_do_not_depend_on_other_groups() -> None:
+    import copy
+
+    config = {
+        "proxy-providers": {"cr_general_us": {"payload": [{"name": "reserve"}]}},
+        "proxy-groups": [
+            {"name": "General Auto", "type": "url-test", "hidden": True, "use": ["cr_general_us"]}
+        ],
+    }
+    other = copy.deepcopy(config)
+    other["proxy-groups"].insert(0, {**other["proxy-groups"][0], "name": "Other Auto"})
+    cap_endpoint_reserve_pools(config, {"reserve"})
+    cap_endpoint_reserve_pools(other, {"reserve"})
+    assert config["proxy-groups"][0]["proxies"] == other["proxy-groups"][1]["proxies"]
+    snapshot = copy.deepcopy(other)
+    assert cap_endpoint_reserve_pools(other, {"reserve"}) == 0
+    assert other == snapshot
+
+
+def test_network_unreachable_is_classified_by_errno() -> None:
+    import errno
+
+    from clash_relay.proxy_endpoint_qualification import _failure_category
+
+    assert _failure_category(OSError(errno.ENETUNREACH, "synthetic")) == "network_unreachable"
+
+
+def test_non_public_resolution_is_not_kept_as_dns_inconclusive(monkeypatch) -> None:
+    import socket
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 443))],
+    )
+    monkeypatch.setattr(socket, "socket", lambda *_: pytest.fail("must not dial private IP"))
+    assert _probe_tcp("private.example", 443) == (False, "non_public_address", 0)
 
 
 def test_runner_dns_failure_keeps_stage_qualified_hostname(monkeypatch) -> None:
@@ -181,7 +291,7 @@ def test_runner_dns_failure_keeps_stage_qualified_hostname(monkeypatch) -> None:
     assert report["status"] == "passed"
     assert report["quarantined"] == 0
     assert report["dns_inconclusive"] == 1
-    assert report["reserve_endpoints"] == 1
+    assert report["reserve_endpoints"] == 0
     assert [row["server"] for row in candidate["proxy-providers"]["cr_browsing_jp"]["payload"]] == [
         "dead.example",
         "8.8.4.4",
@@ -302,7 +412,7 @@ def test_multi_address_attempt_budget_stops_extra_addresses(monkeypatch) -> None
 def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) -> None:
     monkeypatch.setattr(
         "clash_relay.proxy_endpoint_qualification._probe_tcp",
-        lambda *_: (False, "refused", 0),
+        lambda *_: (False, "connection_refused", 0),
     )
     candidate = _candidate()
     candidate["proxy-providers"]["cr_browsing_jp"]["payload"] = candidate["proxy-providers"][
@@ -426,7 +536,7 @@ def test_tcp_probe_classifies_refused_and_dns_failure(monkeypatch) -> None:
         lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 443))],
     )
     monkeypatch.setattr(socket, "socket", lambda *_args: RefusedSocket())
-    assert _probe_tcp("refused.example", 443) == (False, "refused", 0)
+    assert _probe_tcp("refused.example", 443) == (False, "connection_refused", 0)
 
     def fail_getaddrinfo(*_args, **_kwargs):
         raise socket.gaierror

@@ -101,15 +101,18 @@ jobs:
 
       - name: Activate audited validated previous release
         env:
+          CLASH_RELAY_PROFILE_URL: ${{ secrets.CLASH_RELAY_PROFILE_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_KV_NAMESPACE_TITLE: ${{ vars.CLOUDFLARE_KV_NAMESPACE_TITLE }}
         run: |
+          mihomo_bin=$(python -c 'import json; from pathlib import Path; tags = json.loads(Path("tools/mihomo-versions.json").read_text())["stable"]; print(".work/bin/rollback-validation/mihomo-" + tags[0]["tag"].removeprefix("v"))')
           python scripts/publish_release_bundle.py \
             --config config.yaml \
             --subscriptions subscriptions.yaml \
             --policies policies.yaml \
             --candidate .work/private/rollback.yaml \
+            --mihomo-bin "$mihomo_bin" \
             > .work/private/rollback-publication.json
 
       - name: Record rollback result

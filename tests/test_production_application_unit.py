@@ -215,6 +215,10 @@ def test_committed_release_records_an_append_only_journal_observation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     candidate = tmp_path / "candidate.yaml"
+    monkeypatch.setattr(
+        "clash_relay.production_application.prepare_final_link_smoke",
+        lambda **kwargs: lambda: {"status": "passed"},
+    )
     candidate.write_bytes(b"candidate\n")
     release_id = release_id_for(candidate.read_bytes())
     keys = release_keys("production-config")

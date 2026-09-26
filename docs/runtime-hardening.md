@@ -33,12 +33,12 @@ The canonical top-level visible policy groups remain:
 
 It has no `use` field and no provider filter. Raw runtime nodes such as `[BROWSING:US] subscription_x/...` are never direct members of the public selector.
 
-## Region-first browsing automatic failover
+## Client-measured browsing automatic selection
 
-The internal runtime graph is region-first. Each region has an independent hidden Stable/Reserve pair:
+The client compares regions by measured latency. Each region has an independent hidden Stable/Reserve pair:
 
 ```text
-网页自动 (hidden regional fallback)
+网页自动 (hidden regional url-test, tolerance: 150)
 ├── 网页 · 美国 (hidden fallback)
 │   ├── __CR_BROWSING_US_STABLE_AUTO
 │   └── __CR_BROWSING_US_RESERVE_AUTO
@@ -48,14 +48,7 @@ The internal runtime graph is region-first. Each region has an independent hidde
 └── ...
 ```
 
-The canonical automatic order is `US -> SG -> JP -> TW -> KR -> HK -> OTHER`. Automatic selection follows this strict order:
-
-1. preferred-region Stable;
-2. same-region Reserve;
-3. only when that whole region is unavailable, the next region's Stable;
-4. then that next region's Reserve, and so on.
-
-This prevents a healthy browsing session from changing countries merely because another region is temporarily tens of milliseconds faster.
+The policy order `US -> SG -> JP -> TW -> KR -> HK -> OTHER` is retained for display and initial selection. Automatic selection compares regional latency on the client's network at a 300-second interval, with a 150 ms tolerance. Within each region, Stable remains preferred over Reserve. A sufficiently faster region can replace a healthy current region.
 
 A manual regional choice is pinned to one region. `网页 · 日本`, for example, contains only Japan Stable and Japan Reserve. It never silently crosses to another country. `DIRECT` remains an explicit user choice and is not an automatic fallback.
 
@@ -80,7 +73,7 @@ Pre-publication browsing qualification and the published browsing runtime use th
 The qualification chain runs in one direction, and every layer owns exactly one authority:
 
 1. `proxy_host_qualification` (Runner) — resolves every proxy hostname through the candidate's DoH `proxy-server-nameserver` endpoints using RFC 8484 `application/dns-message` wireformat, parsed strictly by QDCOUNT/ANCOUNT (only Answer-section records of the queried type qualify). Authority: *DNS resolvability from a data-center vantage point*. Any resolver returning a public A record resolves the hostname (AAAA is also accepted when the candidate enables DNS IPv6); quarantining requires two **distinct resolver authorities** to agree on a definitive negative, so a single misbehaving resolver — or the same resolver declared twice — can never kill a node; one negative combined with a server failure, malformed response, or transport failure elsewhere is inconclusive and keeps the node. Runner transport failures never quarantine, probe evidence is cached per hostname (never reused across hostnames), and a stage where no resolver returned any DNS response fails closed instead of mass-quarantining. At least two distinct DoH authorities are required; `system` and non-HTTPS entries cannot take part in the runner probe, and the DNS runtime audit rejects duplicate resolver authorities in the declared configuration.
-2. `proxy_endpoint_qualification` (Runner) — bounded-retry TCP connect (3 attempts, 1.5s per-connect timeout, 2.0s per-attempt budget, 12 workers). Authority: *TCP reachability from a data-center vantage point*. Success counts attempts in which at least one deduplicated resolved address connected, and the first reachable address ends its attempt immediately (multi-address hosts can neither inflate one attempt into several successes nor multiply attempts × timeout of runner time); admission quorum is 1-of-3, so a transient timeout never permanently quarantines an endpoint on its own, and only 0-of-3 marks it clearly dead. A `dns_failure` on a hostname that stage 1 already DNS-qualified is inconclusive and keeps the node. Failures are classified (`dns_failure`, `connect_timeout`, `refused`, `network_unreachable`, `connect_failure`). UDP-native transports remain owned by Mihomo runtime probes.
+2. `proxy_endpoint_qualification` (Runner) — bounded-retry TCP connect (3 attempts, 1.5s per-connect timeout, 2.0s per-attempt budget, 12 workers). Authority: *TCP reachability from a data-center vantage point*. Success counts attempts in which at least one deduplicated resolved address connected. 3/3 is Robust; 1–2/3 and zero-success `connect_timeout` are Reserve and retained. `dns_failure` is inconclusive and retained without assigning Reserve. Zero-success `connection_refused` and `network_unreachable` quarantine the endpoint; endpoints without public addresses remain quarantined. After service qualification, endpoint Reserve evidence caps nodes out of preferred general automatic pools and browsing Stable pools. General automatic groups use Robust/Reserve fallback children; an empty browsing Stable pool explicitly contains `REJECT` to prevent Mihomo's implicit empty-group DIRECT fallback. UDP-native transports remain owned by Mihomo runtime probes.
 3. `browsing qualification` (Runner + real Mihomo cores) — per-node live probing. Authority: *pre-publication node admission measured through real Mihomo*. 3/3 successful probes → Stable, 2/3 → Reserve, below → removed from the browsing inventory.
 4. `AI qualification` (Runner + real Mihomo cores) — per-service live admission with cache policy. Authority: *service reachability measured through real Mihomo*.
 5. `client runtime URLTest` (user device) — the continuous authority after publication. Authority: *the only layer that observes the actual carrier access network*. Browsing groups switch after one failed probe (`max-failed-times: 1`), regional and other non-AI automatic groups after two; all non-AI probes use the canonical `https://cp.cloudflare.com/generate_204`.
@@ -92,9 +85,9 @@ No Runner-layer result may be interpreted as carrier quality; the summary keeps 
 
 The qualification summary classifies evidence into three tiers per evidence unit (`node_quality_tiers`) and reports per-stage removal provenance (`removed_by_stage`) plus the canonical totals `qualification_removed_unique_nodes` and `qualification_removed_runtime_entries`; no node identities are emitted:
 
-- **robust** — endpoint admitted on every attempt, hostname answered by the configured DoH resolvers, or browsing Stable (3/3). Browsing Stable feeds the region-first automatic scheduling directly (Stable group first).
-- **reserve** — endpoint admitted with some failed attempts (1-of-3 quorum), hostname probes inconclusive because of runner transport trouble, or browsing Reserve (2/3). Reserve feeds fallback scheduling: same-region Reserve is evaluated before any next region, and the client URLTest continuously re-selects.
-- **quarantined** — DNS-proven unresolvable hostnames (two agreeing distinct DoH authorities), 0-of-3 TCP endpoints, browsing nodes below the 2/3 threshold, and core-incompatible nodes. Every stage boundary carries aggregate delta accounting (`removed_by_stage`: unique nodes and runtime entries before/after/removed, by source/region/protocol, with the stage failure reason), so removals are attributable to `hostname`, `endpoint`, `browsing`, `ai`, or `service_hardening`. Any source whose entire runtime inventory was removed is flagged under `sources_fully_removed` with `removed_at_stage`, both unique-node and runtime-entry aggregates, and non-empty failure-category reasons — an unexplainable removal and any final-stage deletion fail closed with `ValidationError`. Unique removal uses the before/after full proxy-fingerprint set difference; TCP host:port probe counts are separate `unique_quarantined_endpoints`; runtime removal counts deleted provider entries, while OpenAI client-path clones are reported separately as runtime entries added by `service_hardening`. The Actions summary, production proof, and release manifest publish aggregate provenance under canonical source IDs and AI service evidence. Runtime source labels are parsed only from the generated name prefix, so source-looking text in original node names cannot change attribution. The legacy `removed_nodes` block is kept for compatibility and its per-source dimensions count runtime entries.
+- **robust** — endpoint admitted on every attempt, hostname answered by the configured DoH resolvers, or browsing Stable (3/3). Browsing Stable is preferred within each region; the client compares regional candidates by latency.
+- **reserve** — endpoint admitted with 1–2/3 successes or retained after connect timeouts, hostname probes inconclusive because of runner transport trouble, or browsing Reserve (2/3). Reserve provides recovery within its region; the client compares regional latency. Endpoint DNS failure stays separately inconclusive and does not assign a Reserve cap.
+- **quarantined** — DNS-proven unresolvable hostnames (two agreeing distinct DoH authorities), TCP endpoints with definitive refusal/unreachable evidence or no public addresses, browsing nodes below the 2/3 threshold, and core-incompatible nodes. Every stage boundary carries aggregate delta accounting (`removed_by_stage`: unique nodes and runtime entries before/after/removed, by source/region/protocol, with the stage failure reason), so removals are attributable to `hostname`, `endpoint`, `browsing`, `ai`, or `service_hardening`. Any source whose entire runtime inventory was removed is flagged under `sources_fully_removed` with `removed_at_stage`, both unique-node and runtime-entry aggregates, and non-empty failure-category reasons — an unexplainable removal and any final-stage deletion fail closed with `ValidationError`. Unique removal uses the before/after full proxy-fingerprint set difference; TCP host:port probe counts are separate `unique_quarantined_endpoints`; runtime removal counts deleted provider entries, while OpenAI client-path clones are reported separately as runtime entries added by `service_hardening`. The Actions summary, production proof, and release manifest publish aggregate provenance under canonical source IDs and AI service evidence. Runtime source labels are parsed only from the generated name prefix, so source-looking text in original node names cannot change attribution. The legacy `removed_nodes` block is kept for compatibility and its per-source dimensions count runtime entries.
 
 ## OpenAI systemic probe-environment isolation
 
@@ -147,7 +140,7 @@ The release is blocked unless all of the following hold:
 
 1. canonical public groups do not directly expose proxy providers;
 2. `网页浏览` contains `网页自动`, qualified regional choices in policy order, and `DIRECT`, with no raw runtime nodes;
-3. `网页自动` is a hidden regional fallback in `routing.browsing.preferred_regions` order;
+3. `网页自动` is a hidden cross-region `url-test` with positive switching tolerance;
 4. every manual regional group contains only its own Stable and Reserve tiers;
 5. every regional Stable/Reserve tier uses only the matching `cr_browsing_<region>` provider;
 6. same-region Reserve is evaluated before the next region;
