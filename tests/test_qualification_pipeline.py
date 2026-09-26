@@ -635,7 +635,7 @@ def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypat
     )
 
     carrier = result["reachability"]["carrier_qualification"]
-    assert carrier["status"] == "passed"
+    assert carrier["status"] == "partial"
     assert carrier["freshness"]["status"] == "current"
     assert set(carrier["carriers"]) == {"telecom", "unicom"}
     assert carrier["aggregate"]["tested"] == 80

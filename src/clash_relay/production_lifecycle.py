@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
+from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .config_loader import ProjectDefinition
 from .errors import CandidateValidationStageError, ClashRelayError, ValidationError
 from .mihomo import load_candidate
@@ -69,9 +70,12 @@ class ProductionLifecyclePaths:
     private_dir: Path
     public_dir: Path
     bin_dir: Path
+    carrier_qualification_input: Path | None = None
 
     @classmethod
-    def canonical(cls, root: Path) -> ProductionLifecyclePaths:
+    def canonical(
+        cls, root: Path, *, carrier_qualification_input: Path | None = None
+    ) -> ProductionLifecyclePaths:
         root = root.resolve()
         work = root / ".work"
         return cls(
@@ -85,6 +89,7 @@ class ProductionLifecyclePaths:
             private_dir=work / "private",
             public_dir=work / "public",
             bin_dir=work / "bin",
+            carrier_qualification_input=carrier_qualification_input,
         )
 
 
@@ -111,6 +116,7 @@ class ProductionPipeline:
         self.workers = workers
         self.warnings: list[str] = []
         self.timings_ms: dict[str, float] = {}
+        self._carrier_input_snapshot: Path | None = None
 
     def _private(self, name: str) -> Path:
         return self.paths.private_dir / name
@@ -155,11 +161,55 @@ class ProductionPipeline:
         self.timings_ms[name] = round((time.perf_counter() - started) * 1000.0, 3)
 
     def _prepare_dirs(self) -> None:
+        root = self.paths.root.resolve()
+        for target in (self.paths.private_dir, self.paths.public_dir):
+            resolved = target.resolve()
+            if resolved == root or not resolved.is_relative_to(root):
+                raise ValidationError("production work directory escapes the project root")
+        external = self.paths.carrier_qualification_input
+        if external is not None:
+            try:
+                resolved_input = external.resolve(strict=True)
+            except OSError as exc:
+                raise ValidationError("carrier qualification input could not be read") from exc
+            if (
+                not resolved_input.is_file()
+                or resolved_input.is_relative_to(self.paths.private_dir.resolve())
+                or resolved_input.is_relative_to(self.paths.public_dir.resolve())
+            ):
+                raise ValidationError(
+                    "carrier qualification input must be outside private/public work dirs"
+                )
         shutil.rmtree(self.paths.private_dir, ignore_errors=True)
         shutil.rmtree(self.paths.public_dir, ignore_errors=True)
         self.paths.private_dir.mkdir(parents=True, exist_ok=True)
         self.paths.public_dir.mkdir(parents=True, exist_ok=True)
         self.paths.bin_dir.mkdir(parents=True, exist_ok=True)
+
+    def _stage_carrier_input(self) -> None:
+        external = self.paths.carrier_qualification_input
+        if external is None:
+            self._carrier_input_snapshot = None
+            return
+        try:
+            resolved_input = external.resolve(strict=True)
+            if (
+                not resolved_input.is_file()
+                or resolved_input.is_relative_to(self.paths.private_dir.resolve())
+                or resolved_input.is_relative_to(self.paths.public_dir.resolve())
+            ):
+                raise ValidationError(
+                    "carrier qualification input must be outside private/public work dirs"
+                )
+            if resolved_input.stat().st_size > 16 * 1024:
+                raise ValidationError("carrier qualification input exceeds aggregate size limit")
+            payload = parse_carrier_json_text(resolved_input.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError) as exc:
+            raise ValidationError("carrier qualification input could not be read") from exc
+        run_carrier_qualification(payload)
+        snapshot = self._private("carrier-qualification.json")
+        atomic_write(snapshot, json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        self._carrier_input_snapshot = snapshot
 
     def _generate(self) -> dict[str, Any]:
         result = build_candidate(
@@ -233,13 +283,7 @@ class ProductionPipeline:
                 cache=self._private("ai-qualification-cache.json"),
                 cache_key=self._private("ai-qualification-cache.key"),
                 next_cache=self._private("ai-qualification-cache-next.json"),
-                # Optional self-hosted aggregate payload; absent file keeps the
-                # carrier report at not_configured.
-                carrier_input=(
-                    self._private("carrier-qualification.json")
-                    if self._private("carrier-qualification.json").is_file()
-                    else None
-                ),
+                carrier_input=self._carrier_input_snapshot,
             ),
             outputs=ProductionPipelineOutputs(
                 pre_audit=self._private("production-audit.json"),
@@ -637,6 +681,7 @@ class ProductionPipeline:
         lifecycle_started = time.perf_counter()
         project: ProjectDefinition | None = None
         try:
+            self._stage_carrier_input()
             project = ProjectPaths(
                 config=self.paths.config,
                 subscriptions=self.paths.subscriptions,

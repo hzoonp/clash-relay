@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import time
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+import clash_relay.production_lifecycle as lifecycle
+from clash_relay.carrier_qualification import run_carrier_qualification
 from clash_relay.errors import ValidationError
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
 from clash_relay.runtime_names import runtime_source_label
@@ -13,6 +17,62 @@ from clash_relay.runtime_names import runtime_source_label
 
 def _pipeline(tmp_path: Path, *, publish: bool = False) -> ProductionPipeline:
     return ProductionPipeline(ProductionLifecyclePaths.canonical(tmp_path), publish=publish)
+
+
+def test_external_carrier_input_survives_prepare_and_reaches_qualification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "collected_at_epoch": int(time.time()),
+        "carriers": {
+            name: {"tested": 2, "reachable": 2, "median_latency_ms": 50}
+            for name in ("telecom", "unicom", "mobile")
+        },
+    }
+    external = tmp_path / "external-carrier.json"
+    external.write_text(json.dumps(payload), encoding="utf-8")
+    paths = ProductionLifecyclePaths.canonical(tmp_path, carrier_qualification_input=external)
+    paths.private_dir.mkdir(parents=True)
+    (paths.private_dir / "old-private.json").write_text("stale", encoding="utf-8")
+    pipeline = ProductionPipeline(paths, publish=False)
+    pipeline._prepare_dirs()
+    assert external.is_file()
+    assert not (paths.private_dir / "old-private.json").exists()
+    pipeline._stage_carrier_input()
+    assert pipeline._carrier_input_snapshot == paths.private_dir / "carrier-qualification.json"
+    assert (
+        run_carrier_qualification(
+            json.loads(pipeline._carrier_input_snapshot.read_text(encoding="utf-8"))
+        )["status"]
+        == "full"
+    )
+
+    captured: list[Path | None] = []
+
+    def fake_run(**kwargs):
+        captured.append(kwargs["qualification_paths"].carrier_input)
+        return {"status": "qualified"}
+
+    monkeypatch.setattr(lifecycle, "run_production_pipeline", fake_run)
+    pipeline._qualify(tmp_path / "fixture-mihomo")
+    assert captured == [pipeline._carrier_input_snapshot]
+
+
+def test_carrier_input_inside_cleared_private_dir_is_rejected_before_cleanup(
+    tmp_path: Path,
+) -> None:
+    private = tmp_path / ".work" / "private"
+    private.mkdir(parents=True)
+    input_path = private / "carrier-qualification.json"
+    input_path.write_text("{}", encoding="utf-8")
+    pipeline = ProductionPipeline(
+        ProductionLifecyclePaths.canonical(tmp_path, carrier_qualification_input=input_path),
+        publish=False,
+    )
+    with pytest.raises(ValidationError, match="outside private/public"):
+        pipeline._prepare_dirs()
+    assert input_path.is_file()
 
 
 def test_lifecycle_json_helpers_round_trip_and_fail_closed(tmp_path: Path) -> None:

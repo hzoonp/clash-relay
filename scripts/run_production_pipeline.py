@@ -35,6 +35,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--cache-key", type=Path)
     parser.add_argument("--next-cache", type=Path)
+    parser.add_argument(
+        "--carrier-qualification-input",
+        type=Path,
+        help="Optional aggregate-only carrier evidence JSON from self-hosted probes",
+    )
     parser.add_argument("--pre-audit", type=Path, required=True)
     parser.add_argument("--post-audit", type=Path, required=True)
     parser.add_argument("--qualification-report", type=Path, required=True)
@@ -65,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 cache=args.cache,
                 cache_key=args.cache_key,
                 next_cache=args.next_cache,
+                carrier_input=args.carrier_qualification_input,
             ),
             outputs=ProductionPipelineOutputs(
                 pre_audit=args.pre_audit,

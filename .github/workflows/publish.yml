@@ -1,6 +1,5 @@
 name: Generate, validate, and publish
 # one-shot publication trigger: DNS/TUN production 2026-09-21
-
 on:
   push:
     branches:
@@ -29,21 +28,21 @@ on:
         required: true
         default: false
         type: boolean
-
+      carrier_qualification_json:
+        description: Optional aggregate evidence from external self-hosted carrier probes (JSON)
+        required: false
+        type: string
 permissions:
   contents: read
-
 concurrency:
   group: clash-relay-publish-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
   validate:
     name: Validate production SHA
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
-
   deploy:
     name: Run canonical production lifecycle
     needs: validate
@@ -78,6 +77,7 @@ jobs:
 
       - name: Run production pipeline
         env:
+          CARRIER_QUALIFICATION_JSON: ${{ inputs.carrier_qualification_json }}
           CLASH_RELAY_SUBSCRIPTIONS: ${{ secrets.CLASH_RELAY_SUBSCRIPTIONS }}
           CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}
           CLASH_RELAY_SCHEDULE_PUBLISH: ${{ github.event_name == 'schedule' && (vars.CLASH_RELAY_SCHEDULE_PUBLISH == 'true' || (github.repository == 'hzoonp/clash-relay' && vars.CLASH_RELAY_SCHEDULE_PUBLISH == '')) }}
@@ -91,5 +91,9 @@ jobs:
           args=()
           if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then
             args+=(--production-preflight)
+          fi
+          if [ -n "$CARRIER_QUALIFICATION_JSON" ]; then
+            printf '%s' "$CARRIER_QUALIFICATION_JSON" > "$RUNNER_TEMP/carrier-qualification-input.json"
+            args+=(--carrier-qualification-input "$RUNNER_TEMP/carrier-qualification-input.json")
           fi
           python scripts/run_production_release.py "${args[@]}"

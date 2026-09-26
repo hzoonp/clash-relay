@@ -12,7 +12,7 @@ from typing import Any
 
 from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
-from .carrier_qualification import run_carrier_qualification
+from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .classify import proxy_fingerprint
 from .errors import ValidationError
 from .policy_document import load_policy_document
@@ -131,13 +131,11 @@ def _carrier_report(carrier_input: Path | None) -> dict[str, Any]:
     if carrier_input is None:
         return run_carrier_qualification()
     try:
-        payload = json.loads(carrier_input.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = parse_carrier_json_text(carrier_input.read_text(encoding="utf-8"))
+    except OSError as exc:
         raise ValidationError(
             f"carrier qualification input {carrier_input.name!r} could not be read"
         ) from exc
-    if not isinstance(payload, dict):
-        raise ValidationError("carrier qualification input must be an object")
     return run_carrier_qualification(payload)
 
 

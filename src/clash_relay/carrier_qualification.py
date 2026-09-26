@@ -16,6 +16,8 @@ cross this boundary.
 
 from __future__ import annotations
 
+import json
+import math
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -27,7 +29,27 @@ _PAYLOAD_SCHEMA_VERSION = 1
 _PAYLOAD_KEYS = frozenset({"schema_version", "carriers", "collected_at_epoch"})
 _ROW_KEYS = frozenset({"tested", "reachable", "median_latency_ms"})
 _MAX_RESULT_AGE_SECONDS = 6 * 3600
-_CLOCK_SKEW_SECONDS = 300
+_AUTHORITY = "external_self_hosted_advisory"
+
+
+def parse_carrier_json_text(text: str) -> dict[str, Any]:
+    """Reject duplicate JSON keys before an aggregate mapping can overwrite them."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValidationError("carrier qualification JSON repeats a field")
+            result[key] = value
+        return result
+
+    try:
+        payload = json.loads(text, object_pairs_hook=unique_object)
+    except json.JSONDecodeError as exc:
+        raise ValidationError("carrier qualification input is invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValidationError("carrier qualification input must be an object")
+    return payload
 
 
 class CarrierProbeResult:
@@ -55,7 +77,12 @@ class CarrierProbeResult:
             or not 0 <= reachable <= tested
         ):
             raise ValidationError("carrier qualification requires reachable within tested samples")
-        if not isinstance(median_latency_ms, (int, float)) or isinstance(median_latency_ms, bool):
+        if (
+            not isinstance(median_latency_ms, (int, float))
+            or isinstance(median_latency_ms, bool)
+            or not math.isfinite(median_latency_ms)
+            or median_latency_ms < 0
+        ):
             raise ValidationError("carrier qualification requires a numeric median latency")
         self.carrier = carrier
         self.tested = int(tested)
@@ -76,30 +103,26 @@ def aggregate_carrier_results(results: Sequence[CarrierProbeResult]) -> dict[str
 
     rows = list(results)
     if not rows:
-        return {"status": "not_configured", "carriers": {}}
+        return {"status": "not_configured", "authority": _AUTHORITY, "carriers": {}}
     carriers: dict[str, dict[str, Any]] = {}
     tested_total = 0
     reachable_total = 0
     for row in rows:
+        if row.carrier in carriers:
+            raise ValidationError("carrier qualification repeats a carrier")
         carriers[row.carrier] = row.as_dict()
         tested_total += row.tested
         reachable_total += row.reachable
-    latency = sorted(row.median_latency_ms for row in rows)
-    middle = len(latency) // 2
-    median_latency = (
-        latency[middle]
-        if len(latency) % 2
-        else round((latency[middle - 1] + latency[middle]) / 2, 3)
-    )
     return {
-        "status": "passed",
+        "status": "full" if set(carriers) == _CARRIERS else "partial",
+        "authority": _AUTHORITY,
+        "freshness": {"status": "current", "source": "in_process"},
         "carriers": dict(sorted(carriers.items())),
         "aggregate": {
-            "carriers_reported": len(rows),
+            "carriers_reported": len(carriers),
             "tested": tested_total,
             "reachable": reachable_total,
             "reachable_ratio": round(reachable_total / tested_total, 4) if tested_total else 0.0,
-            "median_latency_ms": median_latency,
         },
     }
 
@@ -189,9 +212,10 @@ def run_carrier_qualification(
     ):
         return {
             "status": "not_configured",
+            "authority": _AUTHORITY,
             "carriers": {},
             "note": (
-                "carrier qualification is a reserved extension point; global endpoint "
+                "carrier qualification requires external self-hosted evidence; global endpoint "
                 "preflight results must not be read as carrier quality"
             ),
         }
@@ -200,7 +224,7 @@ def run_carrier_qualification(
         collected = results.get("collected_at_epoch")
         if isinstance(collected, int) and not isinstance(collected, bool):
             now = int(time.time()) if now_epoch is None else int(now_epoch)
-            if collected > now + _CLOCK_SKEW_SECONDS:
+            if collected > now:
                 raise ValidationError("carrier qualification timestamp is in the future")
             age_seconds = max(now - collected, 0)
             report["freshness"] = {
@@ -218,10 +242,83 @@ def run_carrier_qualification(
     if not rows:
         return {
             "status": "not_configured",
+            "authority": _AUTHORITY,
             "carriers": {},
             "note": (
-                "carrier qualification is a reserved extension point; global endpoint "
+                "carrier qualification requires external self-hosted evidence; global endpoint "
                 "preflight results must not be read as carrier quality"
             ),
         }
     return aggregate_carrier_results(rows)
+
+
+def safe_carrier_report(value: object) -> dict[str, Any]:
+    """Project only validated carrier aggregates into public observability."""
+    if not isinstance(value, Mapping):
+        raise ValidationError("carrier qualification report must be an object")
+    status = value.get("status")
+    if status not in {"not_configured", "partial", "full", "stale"}:
+        raise ValidationError("carrier qualification report has an invalid status")
+    if value.get("authority") != _AUTHORITY:
+        raise ValidationError("carrier qualification report has an invalid authority")
+    raw_carriers = value.get("carriers")
+    if not isinstance(raw_carriers, Mapping):
+        raise ValidationError("carrier qualification report has invalid carrier rows")
+    carriers: dict[str, dict[str, int | float]] = {}
+    for carrier, row in sorted(raw_carriers.items()):
+        if carrier not in _CARRIERS or not isinstance(row, Mapping):
+            raise ValidationError("carrier qualification report has an invalid carrier")
+        verified = CarrierProbeResult(
+            carrier=carrier,
+            tested=row.get("tested"),
+            reachable=row.get("reachable"),
+            median_latency_ms=row.get("median_latency_ms"),
+        )
+        carriers[carrier] = {
+            "tested": verified.tested,
+            "reachable": verified.reachable,
+            "median_latency_ms": round(verified.median_latency_ms, 3),
+        }
+    safe: dict[str, Any] = {
+        "status": status,
+        "authority": _AUTHORITY,
+        "carriers": carriers,
+    }
+    if status == "not_configured":
+        if carriers:
+            raise ValidationError("unconfigured carrier evidence contains rows")
+        return safe
+    aggregate = value.get("aggregate")
+    freshness = value.get("freshness")
+    if not isinstance(aggregate, Mapping) or not isinstance(freshness, Mapping):
+        raise ValidationError("carrier qualification report lacks aggregate freshness")
+    expected_tested = sum(row["tested"] for row in carriers.values())
+    expected_reachable = sum(row["reachable"] for row in carriers.values())
+    expected_ratio = round(expected_reachable / expected_tested, 4) if expected_tested else 0.0
+    if (
+        aggregate.get("carriers_reported") != len(carriers)
+        or aggregate.get("tested") != expected_tested
+        or aggregate.get("reachable") != expected_reachable
+        or aggregate.get("reachable_ratio") != expected_ratio
+    ):
+        raise ValidationError("carrier qualification aggregate counts drifted")
+    freshness_status = freshness.get("status")
+    if freshness_status not in {"current", "stale"}:
+        raise ValidationError("carrier qualification freshness is invalid")
+    expected_status = (
+        "stale"
+        if freshness_status == "stale"
+        else "full"
+        if set(carriers) == _CARRIERS
+        else "partial"
+    )
+    if status != expected_status:
+        raise ValidationError("carrier qualification coverage status drifted")
+    safe["aggregate"] = {
+        "carriers_reported": len(carriers),
+        "tested": expected_tested,
+        "reachable": expected_reachable,
+        "reachable_ratio": expected_ratio,
+    }
+    safe["freshness"] = {"status": freshness_status}
+    return safe
