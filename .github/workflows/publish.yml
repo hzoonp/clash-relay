@@ -1,5 +1,6 @@
 name: Generate, validate, and publish
 # one-shot publication trigger: DNS/TUN production 2026-09-21
+
 on:
   push:
     branches:
@@ -28,17 +29,21 @@ on:
         required: true
         default: false
         type: boolean
+
 permissions:
   contents: read
+
 concurrency:
   group: clash-relay-publish-${{ github.ref }}
   cancel-in-progress: false
+
 jobs:
   validate:
     name: Validate production SHA
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
+
   deploy:
     name: Run canonical production lifecycle
     needs: validate

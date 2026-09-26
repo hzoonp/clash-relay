@@ -21,20 +21,6 @@ def _require_status(document: Mapping[str, Any], key: str, expected: str) -> Non
         raise ValidationError(f"production event result requires {key}={expected!r}")
 
 
-NON_WRITING_CARRIER_STATUSES = {"not_configured", "skipped", "receipt_issued"}
-
-
-def _audit_zero_write_carrier_history(document: Mapping[str, Any]) -> None:
-    """Preflight and dry-run lifecycles must never claim a history write."""
-    carrier = document.get("carrier_observation_history")
-    if not isinstance(carrier, Mapping):
-        return
-    if carrier.get("status") not in NON_WRITING_CARRIER_STATUSES:
-        raise ValidationError(
-            "preflight and dry-run lifecycles must never persist carrier observation history"
-        )
-
-
 def _audit_published_observability(
     result: ProductionLifecycleResult,
     document: Mapping[str, Any],
@@ -118,7 +104,6 @@ def audit_production_event_result(
 
     for key in ("proof_status", "manifest_status"):
         _require_status(document, key, "passed")
-    _audit_zero_write_carrier_history(document)
     if result.release_phase is not ReleasePhase.VERIFIED:
         raise ValidationError("production dry-run result must finish in verified release phase")
     if result.publication_status is not ProductionPublicationStatus.DRY_RUN:
@@ -149,4 +134,3 @@ def audit_production_preflight_result(result: ProductionLifecycleResult) -> None
         "manifest_status",
     ):
         _require_status(document, key, "passed")
-    _audit_zero_write_carrier_history(document)

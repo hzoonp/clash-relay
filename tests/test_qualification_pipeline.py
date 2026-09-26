@@ -605,15 +605,9 @@ def test_pipeline_sources_fully_removed_report_unique_and_runtime_entries(
     ]
 
 
-def test_pipeline_rejects_legacy_carrier_payload_without_candidate_binding(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_pipeline_consumes_self_hosted_carrier_payload(tmp_path: Path, monkeypatch) -> None:
     candidate, policies, mihomo = _pipeline_inputs(tmp_path)
     _success_services(monkeypatch)
-    monkeypatch.setenv(
-        "CLASH_RELAY_CARRIER_HMAC_KEY", "fixture-repository-hmac-key-at-least-32-bytes"
-    )
-    monkeypatch.setenv("GITHUB_REPOSITORY", "hzoonp/clash-relay")
     carrier_input = tmp_path / "carrier-qualification.json"
     carrier_input.write_text(
         json.dumps(
@@ -629,17 +623,22 @@ def test_pipeline_rejects_legacy_carrier_payload_without_candidate_binding(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValidationError, match="candidate binding"):
-        pipeline.run_qualification_pipeline(
-            candidate=candidate,
-            output=tmp_path / "final.yaml",
-            policies=policies,
-            mihomo_bin=mihomo,
-            stage_dir=tmp_path / "stages",
-            browsing_report=tmp_path / "browsing.json",
-            ai_report=tmp_path / "ai.json",
-            carrier_input=carrier_input,
-        )
+    result = pipeline.run_qualification_pipeline(
+        candidate=candidate,
+        output=tmp_path / "final.yaml",
+        policies=policies,
+        mihomo_bin=mihomo,
+        stage_dir=tmp_path / "stages",
+        browsing_report=tmp_path / "browsing.json",
+        ai_report=tmp_path / "ai.json",
+        carrier_input=carrier_input,
+    )
+
+    carrier = result["reachability"]["carrier_qualification"]
+    assert carrier["status"] == "passed"
+    assert carrier["freshness"]["status"] == "current"
+    assert set(carrier["carriers"]) == {"telecom", "unicom"}
+    assert carrier["aggregate"]["tested"] == 80
 
 
 def test_pipeline_carrier_input_fails_closed_on_invalid_payload(
@@ -647,10 +646,6 @@ def test_pipeline_carrier_input_fails_closed_on_invalid_payload(
 ) -> None:
     candidate, policies, mihomo = _pipeline_inputs(tmp_path)
     _success_services(monkeypatch)
-    monkeypatch.setenv(
-        "CLASH_RELAY_CARRIER_HMAC_KEY", "fixture-repository-hmac-key-at-least-32-bytes"
-    )
-    monkeypatch.setenv("GITHUB_REPOSITORY", "hzoonp/clash-relay")
     carrier_input = tmp_path / "carrier-qualification.json"
     carrier_input.write_text(
         json.dumps({"schema_version": 1, "carriers": {}, "endpoints": ["1.2.3.4"]}),

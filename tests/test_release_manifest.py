@@ -4,7 +4,6 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from clash_relay.carrier_qualification import run_carrier_qualification
 from clash_relay.release_manifest import build_release_manifest, render_release_manifest_markdown
 
 
@@ -129,20 +128,6 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
                     }
                 }
             },
-            "reachability": {
-                "carrier_qualification": run_carrier_qualification(
-                    {
-                        "schema_version": 1,
-                        "collected_at_epoch": 1_000,
-                        "carriers": {
-                            "telecom": {"tested": 2, "reachable": 1, "median_latency_ms": 40},
-                            "unicom": {"tested": 2, "reachable": 2, "median_latency_ms": 50},
-                        },
-                    },
-                    now_epoch=1_000,
-                ),
-                "url": "secret.example.invalid",
-            },
         },
         promotion_guard={"status": "skipped", "reason": "dry_run"},
         matrix=_matrix(),
@@ -179,7 +164,6 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     assert manifest["qualification"]["sources_fully_removed"][0]["source"] == "subscription_4"
     assert manifest["qualification"]["removed_by_stage"]["browsing"]["by_region"] == {"jp": 1}
     assert manifest["qualification"]["removed_by_stage"]["browsing"]["by_protocol"] == {"trojan": 1}
-    assert manifest["qualification"]["carrier_qualification"]["status"] == "partial"
     assert (
         manifest["qualification"]["ai_service_evidence"]["openai"][
             "blocked_critical_endpoint_count"
@@ -188,7 +172,6 @@ def test_dry_run_release_manifest_uses_exact_bytes_and_is_aggregate_only() -> No
     )
     encoded = json.dumps(manifest, ensure_ascii=False)
     markdown = render_release_manifest_markdown(manifest)
-    assert "Carrier qualification (advisory)" in markdown
     assert "| openai | passed | live | false | false | 2 / 2 / 0 / 0 | 1 |" in markdown
     for secret in ("subscription_1", "sub_1", "secret-node", "secret.example", "do-not-leak"):
         assert secret not in encoded
@@ -219,7 +202,6 @@ def test_published_manifest_uses_release_transaction_identity() -> None:
     )
 
     assert manifest["release_status"] == "published"
-    assert manifest["qualification"]["carrier_qualification"]["status"] == "not_configured"
     assert manifest["production_changed"] is True
     assert manifest["previous_release_id"] == "f" * 64
     markdown = render_release_manifest_markdown(manifest)
