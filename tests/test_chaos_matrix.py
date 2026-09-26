@@ -59,8 +59,10 @@ def test_corrupt_production_metrics_falls_back_to_empty_bounded_state() -> None:
 def test_publish_workflow_serializes_production_mutations(repo_root: Path) -> None:
     workflow = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
 
-    assert "group: clash-relay-publish-${{ github.ref }}" in workflow
-    assert "cancel-in-progress: false" in workflow
+    assert "clash-relay-production-commit-{0}" in workflow
+    assert "clash-relay-production-preflight-{0}" in workflow
+    assert "clash-relay-production-dry-run-{0}" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'push' }}" in workflow
     assert workflow.count("python scripts/run_production_release.py") == 1
 
 
