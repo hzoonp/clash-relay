@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: clash-relay-carrier-probe-${{ github.ref }}
+  group: clash-relay-publish-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

@@ -342,7 +342,12 @@ def aggregate_carrier_results(results: Sequence[CarrierProbeResult]) -> dict[str
 
     rows = list(results)
     if not rows:
-        return {"status": "not_configured", "authority": _AUTHORITY, "carriers": {}}
+        return {
+            "status": "not_configured",
+            "coverage": "not_configured",
+            "authority": _AUTHORITY,
+            "carriers": {},
+        }
     carriers: dict[str, dict[str, Any]] = {}
     tested_total = 0
     reachable_total = 0
@@ -518,6 +523,7 @@ def run_carrier_qualification(
     ):
         return {
             "status": "not_configured",
+            "coverage": "not_configured",
             "authority": _AUTHORITY,
             "carriers": {},
             "note": (
@@ -547,7 +553,6 @@ def run_carrier_qualification(
                 "status": "current" if age_seconds <= _MAX_RESULT_AGE_SECONDS else "stale",
             }
             if age_seconds > _MAX_RESULT_AGE_SECONDS:
-                report["status"] = "stale"
                 evidence["status"] = "stale"
         return report
     rows = list(results)
@@ -556,6 +561,7 @@ def run_carrier_qualification(
     if not rows:
         return {
             "status": "not_configured",
+            "coverage": "not_configured",
             "authority": _AUTHORITY,
             "carriers": {},
             "note": (
@@ -571,8 +577,10 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValidationError("carrier qualification report must be an object")
     status = value.get("status")
-    if status not in {"not_configured", "partial", "full", "stale"}:
+    if status not in {"not_configured", "partial", "full"}:
         raise ValidationError("carrier qualification report has an invalid status")
+    if value.get("coverage", status) != status:
+        raise ValidationError("carrier qualification coverage status drifted")
     if value.get("authority") != _AUTHORITY:
         raise ValidationError("carrier qualification report has an invalid authority")
     raw_carriers = value.get("carriers")
@@ -658,6 +666,7 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
         carriers[carrier] = carrier_row
     safe: dict[str, Any] = {
         "status": status,
+        "coverage": status,
         "authority": _AUTHORITY,
         "carriers": carriers,
     }
@@ -687,13 +696,7 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
     freshness_status = freshness.get("status")
     if freshness_status not in {"current", "stale"}:
         raise ValidationError("carrier qualification freshness is invalid")
-    expected_status = (
-        "stale"
-        if freshness_status == "stale"
-        else "full"
-        if set(carriers) == _CARRIERS
-        else "partial"
-    )
+    expected_status = "full" if set(carriers) == _CARRIERS else "partial"
     if status != expected_status:
         raise ValidationError("carrier qualification coverage status drifted")
     safe["coverage"] = "full" if set(carriers) == _CARRIERS else "partial"

@@ -206,7 +206,7 @@ def test_lifecycle_owns_metrics_independently_after_release_commit() -> None:
     assert '"persist_ai_qualification_cache",' in lifecycle
     assert '"persist_production_metrics",' in lifecycle
     assert '"publish_scheduler_observation",' in lifecycle
-    assert lifecycle.count("self._best_effort_state(") == 4
+    assert lifecycle.count("self._best_effort_state(") == 6
     assert "production_metrics" not in scheduler_publisher
     assert "build_metrics_run" not in scheduler_publisher
     assert "persist_production_metrics" in metrics_publisher

@@ -18,6 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
+from .carrier_history_application import (
+    persist_carrier_observation,
+    render_carrier_history_markdown,
+)
 from .carrier_probe import verify_carrier_candidate_binding_from_env
 from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .config_loader import ProjectDefinition
@@ -119,6 +123,7 @@ class ProductionPipeline:
         self.warnings: list[str] = []
         self.timings_ms: dict[str, float] = {}
         self._carrier_input_snapshot: Path | None = None
+        self._carrier_binding_passed = False
 
     def _private(self, name: str) -> Path:
         return self.paths.private_dir / name
@@ -189,6 +194,7 @@ class ProductionPipeline:
         self.paths.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _stage_carrier_input(self) -> None:
+        self._carrier_binding_passed = False
         external = self.paths.carrier_qualification_input
         if external is None:
             self._carrier_input_snapshot = None
@@ -246,6 +252,32 @@ class ProductionPipeline:
             return
         payload = self._load_json(snapshot)
         verify_carrier_candidate_binding_from_env(candidate, payload, env=os.environ)
+        self._carrier_binding_passed = True
+
+    def _record_carrier_observation(
+        self, project: ProjectDefinition, *, binding_passed: bool = True
+    ) -> dict[str, Any]:
+        """Observe the bound campaign in an independent aggregate state key."""
+        snapshot = self._carrier_input_snapshot
+        if snapshot is None:
+            return {"status": "not_configured"}
+        if binding_passed and not self._carrier_binding_passed:
+            return {"status": "skipped", "reason": "candidate_binding_not_verified"}
+        report = run_carrier_qualification(self._load_json(snapshot))
+        result = self._best_effort_state(
+            "persist_carrier_observation",
+            lambda: persist_carrier_observation(
+                project=project,
+                report=report,
+                binding_passed=binding_passed,
+                env=os.environ,
+            ),
+        )
+        self._write_json(self._private("carrier-observation-result.json"), result)
+        summary = self._private("carrier-observation-summary.md")
+        atomic_write(summary, render_carrier_history_markdown(result))
+        self._append_summary(summary)
+        return result
 
     def _load_derived_state(self, project: ProjectDefinition) -> None:
         scheduler = load_scheduler_history_state(
@@ -705,10 +737,19 @@ class ProductionPipeline:
             try:
                 generation = self._generate()
             except ValidationError as exc:
+                if self._carrier_input_snapshot is not None and not self._carrier_binding_passed:
+                    self._best_effort_state(
+                        "record_carrier_binding_failure",
+                        lambda: self._record_carrier_observation(project, binding_passed=False),
+                    )
                 _tag_validation_stage(exc, "generation_validation")
                 raise
             self._record_timing("generation", started)
             progress.advance(ReleasePhase.PREPARED)
+
+            started = time.perf_counter()
+            carrier_history = self._record_carrier_observation(project)
+            self._record_timing("carrier_observation", started)
 
             started = time.perf_counter()
             try:
@@ -810,6 +851,7 @@ class ProductionPipeline:
                 "derived_state": derived_state.get("status"),
                 "production_metrics": metrics.get("status"),
                 "scheduler_observation": scheduler_observation.get("status"),
+                "carrier_observation_history": carrier_history,
                 "operational_slo": slo.get("status"),
                 "source_stage_accounting": self._source_stage_accounting(),
                 "regional_group_counts": generation.get("regional_group_counts", {}),

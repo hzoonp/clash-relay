@@ -180,8 +180,10 @@ def test_carrier_payload_freshness_current_and_stale() -> None:
     }
 
     stale = run_carrier_qualification(payload, now_epoch=1_000 + 7 * 3600)
-    assert stale["status"] == "stale"
+    assert stale["status"] == "partial"
+    assert stale["coverage"] == "partial"
     assert stale["freshness"]["status"] == "stale"
+    assert stale["evidence"]["status"] == "stale"
     assert stale["aggregate"]["tested"] == 20
 
 

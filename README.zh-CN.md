@@ -34,6 +34,8 @@ Fork
 
 采样用绑定本仓库的 HMAC 身份去重，并分别生成选中样本、完整 eligible inventory 和 probe plan 的匿名 ID。按规范地域、协议、订阅来源平衡，TCP 目标上限为 12；`ANY` 和 `CHAIN` 属于非地域 scope，同一 endpoint 的地域标签冲突时拒绝。collector 要求三网 sample、inventory、plan ID、采样数、sampler 版本一致，时间戳相差不超过五分钟。coverage（`partial`/`full`）与证据质量（`sufficient`/`insufficient`/`stale`）分开：sufficient 要求足量且全部完成的不同 TCP endpoint，并依据地域或来源多样性判断；小型 inventory 有明确的有界回退。protocol 标签只供观察，不单独提高证据质量。对外仅公开多样性计数和失败类别汇总（`dns_failure`、`connect_timeout`、`connection_refused`、`connect_failure`、`tcp_connected`），不公开 endpoint 身份。纯 UDP endpoint 计为 skipped；同时有 TCP occurrence 的 endpoint 不重复计入 skipped。证据始终仅供参考，不删节点，也不改变 Promotion Guard 或调度。
 
+Carrier observation history 使用独立的 aggregate-only Cloudflare KV 状态（`<production-key>.carrier-observation-history-v1`），与 scheduler history、AI cache 完全隔离。只有 candidate binding 通过、coverage 为 full、freshness 为 current、evidence 为 sufficient 的 campaign 才更新各运营商可达率、延迟和结果类别的 EMA；其他 campaign 最多增加状态计数，不更新质量。状态用 30 天滚动窗口、最多 64 个 campaign 时间戳，仅输出数值计数和 EMA，不生成 `improving`、`stable`、`degrading` 判断。当前 aggregate-only 证据不能给单节点做三网排名；未来如需单节点评分，须另行设计保护隐私的 per-node evidence contract。
+
 ## Public Config v2
 
 受支持的跟踪配置面保持最小化：

@@ -246,7 +246,7 @@ def render_qualification_observability_markdown(
             "## Carrier qualification (advisory)",
             "",
             f"Authority: **{carrier['authority']}**  ",
-            f"Coverage: **{carrier['status']}**",
+            f"Coverage: **{carrier['coverage']}**",
         ]
     )
     if "aggregate" in carrier:
@@ -254,6 +254,7 @@ def render_qualification_observability_markdown(
         lines.extend(
             [
                 f"Freshness: **{carrier['freshness']['status']}**  ",
+                f"Evidence: **{carrier['evidence']['status']}**  ",
                 f"Aggregate tested / reachable / ratio: **{aggregate['tested']} / {aggregate['reachable']} / {aggregate['reachable_ratio']}**",
                 "",
                 "| Carrier | Tested | Reachable | Median latency (ms) |",

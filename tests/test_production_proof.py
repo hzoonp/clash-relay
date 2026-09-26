@@ -244,6 +244,7 @@ def test_proof_without_carrier_input_is_explicitly_not_configured(tmp_path: Path
     proof = build_production_proof(**_inputs(candidate))
     assert proof["qualification_pipeline"]["carrier_qualification"] == {
         "status": "not_configured",
+        "coverage": "not_configured",
         "authority": "external_self_hosted_advisory",
         "carriers": {},
     }

@@ -41,6 +41,8 @@ RISK_COVERAGE_FLOORS: dict[str, float] = {
     "src/clash_relay/carrier_probe.py": 78.0,
     "src/clash_relay/carrier_collector.py": 85.0,
     "src/clash_relay/carrier_qualification.py": 85.0,
+    "src/clash_relay/carrier_history.py": 84.0,
+    "src/clash_relay/carrier_history_application.py": 90.0,
 }
 
 
