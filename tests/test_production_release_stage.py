@@ -180,3 +180,46 @@ def test_dry_run_skips_production_state_but_keeps_real_core_matrix(monkeypatch, 
     assert calls == ["matrix"]
     assert result.promotion == {"status": "skipped", "reason": "dry_run"}
     assert result.release is None
+
+
+def test_preflight_reads_production_state_but_never_publishes(monkeypatch, tmp_path) -> None:
+    calls: list[str] = []
+
+    def fetch(**kwargs):
+        calls.append("baseline")
+        return {"status": "fetched"}
+
+    def guard(**kwargs):
+        calls.append("guard")
+        return {"status": "passed"}
+
+    def matrix(**kwargs):
+        calls.append("matrix")
+        return {"status": "passed", "validated_cores": ["v1", "v2"]}
+
+    def publish(**kwargs):
+        calls.append("publish")
+        raise AssertionError("production preflight must never publish")
+
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.fetch_current_production_config", fetch
+    )
+    monkeypatch.setattr("clash_relay.production_release_stage.run_promotion_guard", guard)
+    monkeypatch.setattr("clash_relay.production_release_stage.validate_mihomo_matrix", matrix)
+    monkeypatch.setattr(
+        "clash_relay.production_release_stage.publish_production_release", publish
+    )
+
+    result = run_release_candidate_stage(
+        project=_project(),
+        publish=False,
+        preflight=True,
+        primary_binary=tmp_path / "mihomo",
+        paths=_paths(tmp_path),
+        env={},
+    )
+
+    assert calls == ["baseline", "guard", "matrix"]
+    assert result.promotion["status"] == "passed"
+    assert result.matrix["status"] == "passed"
+    assert result.release is None
