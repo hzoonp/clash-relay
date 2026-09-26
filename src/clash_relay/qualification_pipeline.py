@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from collections import Counter
@@ -12,6 +13,7 @@ from typing import Any
 
 from .ai_application import run_ai_qualification
 from .browsing_application import run_browsing_qualification
+from .carrier_probe import verify_carrier_candidate_binding_from_env
 from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .classify import proxy_fingerprint
 from .errors import ValidationError
@@ -567,6 +569,18 @@ def run_qualification_pipeline(
     generated_document = load_yaml_file(generated)
     if not isinstance(generated_document, dict):
         raise ValidationError("proxy hostname qualification candidate is not a YAML mapping")
+    carrier_report = run_carrier_qualification()
+    if carrier_input is not None:
+        try:
+            if carrier_input.stat().st_size > 16 * 1024:
+                raise ValidationError("carrier qualification input exceeds aggregate size limit")
+            carrier_payload = parse_carrier_json_text(carrier_input.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError) as exc:
+            raise ValidationError("carrier qualification input could not be read") from exc
+        verify_carrier_candidate_binding_from_env(
+            generated_document, carrier_payload, env=os.environ
+        )
+        carrier_report = run_carrier_qualification(carrier_payload)
     # Snapshot per-source counts and the full entry inventory before preflight
     # stages prune the payloads; the inventories feed per-stage attribution.
     generated_source_counts = _source_node_counts(generated_document)
@@ -791,7 +805,7 @@ def run_qualification_pipeline(
                 "ai_status": ai_summary.get("status"),
                 "accelerated_health_check_groups": accelerated_groups,
             },
-            "carrier_qualification": _carrier_report(carrier_input),
+            "carrier_qualification": carrier_report,
         },
     }
     return QualificationPipelineResult.from_mapping(result).as_dict()

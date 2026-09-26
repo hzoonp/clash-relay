@@ -105,7 +105,7 @@ def test_generated_general_copies_do_not_override_regional_identity(
     assert sample.sampled == 12
     assert {target.region for target in sample.targets} == {"HK", "JP"}
     assert {target.source for target in sample.targets} >= {"sub_2", "sub_3"}
-    assert sample.sampler_version == 2
+    assert sample.sampler_version == 3
     assert sample.inventory_set_id != sample.sample_set_id
     assert sample.probe_plan_id
 
@@ -273,7 +273,7 @@ def test_generated_three_carrier_aggregate_stays_private_and_advisory(
         assert private not in serialized
 
 
-def test_many_samples_from_one_generated_stratum_are_insufficient(
+def test_single_generated_stratum_uses_bounded_full_inventory_fallback(
     generated_candidate: dict,
 ) -> None:
     single_stratum = copy.deepcopy(generated_candidate)
@@ -299,9 +299,10 @@ def test_many_samples_from_one_generated_stratum_are_insufficient(
     assert row["protocols_sampled"] == 1
     assert row["sources_sampled"] == 1
     assert row["strata_sampled"] == 1
-    assert row["sufficient_evidence"] is False
+    assert row["eligible_tcp_endpoints"] == sample.sampled
+    assert row["sufficient_evidence"] is True
     report = run_carrier_qualification(payload, now_epoch=1001)
-    assert report["evidence"]["status"] == "insufficient"
+    assert report["evidence"]["status"] == "sufficient"
 
 
 def test_generated_producers_collector_and_canonical_preflight_ingestion(

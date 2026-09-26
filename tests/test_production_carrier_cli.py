@@ -64,7 +64,7 @@ def test_external_carrier_aggregate_reaches_actions_proof_and_manifest(tmp_path:
                 "sample_set_id": "a" * 32,
                 "inventory_set_id": "b" * 32,
                 "probe_plan_id": "c" * 32,
-                "sampler_version": 2,
+                "sampler_version": 3,
                 "carriers": {
                     carrier: {
                         "sampled": 6,
@@ -77,6 +77,14 @@ def test_external_carrier_aggregate_reaches_actions_proof_and_manifest(tmp_path:
                         "protocols_sampled": 1,
                         "sources_sampled": 1,
                         "strata_sampled": 2,
+                        "eligible_tcp_endpoints": 6,
+                        "outcomes": {
+                            "dns_failure": 0,
+                            "connect_timeout": 0,
+                            "connection_refused": 0,
+                            "connect_failure": 0,
+                            "tcp_connected": 6,
+                        },
                         "sufficient_evidence": True,
                         "median_latency_ms": latency,
                         "p90_latency_ms": latency,
@@ -129,6 +137,13 @@ def test_external_carrier_aggregate_reaches_actions_proof_and_manifest(tmp_path:
         assert projected["carrier_qualification"]["aggregate"]["tested"] == 18
         assert projected["carrier_qualification"]["sample_set_id"] == "a" * 32
         assert projected["carrier_qualification"]["evidence"]["status"] == "sufficient"
+        assert projected["carrier_qualification"]["carriers"]["telecom"]["outcomes"] == {
+            "dns_failure": 0,
+            "connect_timeout": 0,
+            "connection_refused": 0,
+            "connect_failure": 0,
+            "tcp_connected": 6,
+        }
     for markdown in (
         render_qualification_observability_markdown(qualification),
         render_production_proof_markdown(proof),

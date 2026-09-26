@@ -64,7 +64,7 @@ def payload(
         "sample_set_id": sample_id,
         "inventory_set_id": "b" * 32,
         "probe_plan_id": "c" * 32,
-        "sampler_version": 2,
+        "sampler_version": 3,
         "collected_at_epoch": timestamp,
         "carriers": {
             carrier: {
@@ -78,6 +78,14 @@ def payload(
                 "protocols_sampled": 1,
                 "sources_sampled": 1 if sampled < 5 else 2,
                 "strata_sampled": 1 if sampled < 5 else 2,
+                "eligible_tcp_endpoints": sampled,
+                "outcomes": {
+                    "dns_failure": tested,
+                    "connect_timeout": 0,
+                    "connection_refused": 0,
+                    "connect_failure": 0,
+                    "tcp_connected": 0,
+                },
                 "median_latency_ms": None,
                 "p90_latency_ms": None,
                 "sufficient_evidence": sampled >= 5 and tested == sampled,
@@ -152,7 +160,7 @@ def test_inventory_plan_and_sampler_drift_fail_closed() -> None:
     with pytest.raises(ValidationError, match="probe plans differ"):
         collect_carrier_probes(plan_drift, now_epoch=1001)
     version_drift = [*baseline[:2], payload("mobile")]
-    version_drift[2]["sampler_version"] = 3
+    version_drift[2]["sampler_version"] += 1
     with pytest.raises(ValidationError, match="sampler version"):
         collect_carrier_probes(version_drift, now_epoch=1001)
 
@@ -180,10 +188,61 @@ def test_single_repeated_stratum_is_insufficient_despite_five_samples() -> None:
     row = candidate_payload["carriers"]["telecom"]
     row["sources_sampled"] = 1
     row["strata_sampled"] = 1
+    row["eligible_tcp_endpoints"] = 20
     row["sufficient_evidence"] = False
     report = run_carrier_qualification(candidate_payload, now_epoch=1001)
     assert report["coverage"] == "partial"
     assert report["evidence"]["status"] == "insufficient"
+
+
+def test_protocol_labels_alone_do_not_make_evidence_sufficient() -> None:
+    candidate_payload = payload("telecom")
+    row = candidate_payload["carriers"]["telecom"]
+    row.update(
+        {
+            "sources_sampled": 1,
+            "geographic_regions_sampled": 1,
+            "protocols_sampled": 2,
+            "strata_sampled": 2,
+            "eligible_tcp_endpoints": 20,
+            "sufficient_evidence": False,
+        }
+    )
+    assert (
+        run_carrier_qualification(candidate_payload, now_epoch=1001)["evidence"]["status"]
+        == "insufficient"
+    )
+
+
+def test_failure_category_aggregate_is_bounded_and_private() -> None:
+    sample = sample_probe_targets(candidate=candidate(), key=KEY, repository=REPO)
+    categories = (
+        "dns_failure",
+        "connect_timeout",
+        "connection_refused",
+        "connect_failure",
+        "tcp_connected",
+    )
+    outcomes = {
+        target.identity: {
+            "outcome": categories[index % len(categories)],
+            "reachable": categories[index % len(categories)] == "tcp_connected",
+            "latency_ms": 25.0 if categories[index % len(categories)] == "tcp_connected" else None,
+        }
+        for index, target in enumerate(sample.targets)
+    }
+    aggregate = build_carrier_probe_payload(
+        carrier="telecom", sample=sample, outcomes=outcomes, collected_at_epoch=1000
+    )
+    row = aggregate["carriers"]["telecom"]
+    assert set(row["outcomes"]) == set(categories)
+    assert sum(row["outcomes"].values()) == row["tested"]
+    assert row["outcomes"]["tcp_connected"] == row["reachable"]
+    assert "example.invalid" not in json.dumps(aggregate)
+    corrupted = json.loads(json.dumps(aggregate))
+    corrupted["carriers"]["telecom"]["outcomes"]["dns_failure"] += 1
+    with pytest.raises(ValidationError, match="outcome counts"):
+        run_carrier_qualification(corrupted, now_epoch=1001)
 
 
 def test_udp_native_skipped_and_producer_privacy() -> None:

@@ -8,12 +8,15 @@ Publication transactions intentionally remain in ``release_bundle``.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .acl4ssr_reference import validate_acl4ssr_fidelity
 from .ai_runtime_reliability import audit_openai_client_path
+from .carrier_probe import verify_carrier_candidate_binding_from_env
+from .carrier_qualification import parse_carrier_json_text
 from .config_loader import ProjectDefinition, load_project
 from .errors import CandidateValidationStageError, ValidationError
 from .mihomo import load_candidate
@@ -213,6 +216,15 @@ def run_production_pipeline(
     build_report = _load_json(build_report_path) if build_report_path is not None else None
 
     generated = load_candidate(qualification_paths.candidate)
+    if qualification_paths.carrier_input is not None:
+        try:
+            carrier_path = qualification_paths.carrier_input
+            if carrier_path.stat().st_size > 16 * 1024:
+                raise ValidationError("carrier qualification input exceeds aggregate size limit")
+            carrier_payload = parse_carrier_json_text(carrier_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError) as exc:
+            raise ValidationError("carrier qualification input could not be read") from exc
+        verify_carrier_candidate_binding_from_env(generated, carrier_payload, env=os.environ)
     try:
         pre_audit = audit_candidate(project, generated, build_report=build_report)
     except CandidateValidationStageError:

@@ -53,15 +53,28 @@ _ROW_KEYS = frozenset(
         "protocols_sampled",
         "sources_sampled",
         "strata_sampled",
+        "eligible_tcp_endpoints",
+        "outcomes",
     }
 )
 _MAX_RESULT_AGE_SECONDS = 6 * 3600
 _MIN_SAMPLES_PER_CARRIER = 5
 MIN_SAMPLES_PER_CARRIER = _MIN_SAMPLES_PER_CARRIER
-SAMPLER_VERSION = 2
+SAMPLER_VERSION = 3
 MAX_CARRIER_SAMPLES = 48
 MAX_UDP_NATIVE_ENDPOINTS = 100_000
+MAX_ELIGIBLE_ENDPOINTS = 100_000
+MAX_FALLBACK_INVENTORY = 12
 MAX_LATENCY_MS = 60_000
+OUTCOME_CATEGORIES = frozenset(
+    {
+        "dns_failure",
+        "connect_timeout",
+        "connection_refused",
+        "connect_failure",
+        "tcp_connected",
+    }
+)
 _SAMPLE_SET_ID_PATTERN = re.compile(r"^[0-9a-f]{16,64}$")
 _AUTHORITY = "external_self_hosted_advisory"
 
@@ -96,8 +109,10 @@ class CarrierProbeResult:
 
     __slots__ = (
         "carrier",
+        "eligible_tcp_endpoints",
         "geographic_regions_sampled",
         "median_latency_ms",
+        "outcomes",
         "p90_latency_ms",
         "protocols_sampled",
         "reachable",
@@ -127,6 +142,8 @@ class CarrierProbeResult:
         protocols_sampled: object = None,
         sources_sampled: object = None,
         strata_sampled: object = None,
+        eligible_tcp_endpoints: object = None,
+        outcomes: object = None,
     ) -> None:
         if carrier not in _CARRIERS:
             raise ValidationError(
@@ -216,6 +233,28 @@ class CarrierProbeResult:
                 or strata < max(geographic, protocols, sources)
             ):
                 raise ValidationError("carrier qualification diversity counts are invalid")
+        if eligible_tcp_endpoints is not None and (
+            not isinstance(eligible_tcp_endpoints, int)
+            or isinstance(eligible_tcp_endpoints, bool)
+            or not (sampled if isinstance(sampled, int) else 0)
+            <= eligible_tcp_endpoints
+            <= MAX_ELIGIBLE_ENDPOINTS
+        ):
+            raise ValidationError("carrier qualification eligible endpoint count is invalid")
+        if outcomes is not None:
+            if not isinstance(outcomes, Mapping) or set(outcomes) != OUTCOME_CATEGORIES:
+                raise ValidationError("carrier qualification outcome categories are invalid")
+            if (
+                any(
+                    not isinstance(count, int)
+                    or isinstance(count, bool)
+                    or not 0 <= count <= tested
+                    for count in outcomes.values()
+                )
+                or sum(outcomes.values()) != tested
+                or outcomes["tcp_connected"] != reachable
+            ):
+                raise ValidationError("carrier qualification outcome counts are invalid")
         self.carrier = carrier
         self.tested = int(tested)
         self.reachable = int(reachable)
@@ -237,6 +276,20 @@ class CarrierProbeResult:
         )
         self.sources_sampled = cast(int, sources_sampled) if sources_sampled is not None else None
         self.strata_sampled = cast(int, strata_sampled) if strata_sampled is not None else None
+        self.eligible_tcp_endpoints = (
+            cast(int, eligible_tcp_endpoints) if eligible_tcp_endpoints is not None else None
+        )
+        self.outcomes = dict(sorted(outcomes.items())) if isinstance(outcomes, Mapping) else None
+        diverse = (
+            self.geographic_regions_sampled is not None
+            and self.sources_sampled is not None
+            and (self.geographic_regions_sampled >= 2 or self.sources_sampled >= 2)
+        )
+        fallback = (
+            self.eligible_tcp_endpoints is not None
+            and self.eligible_tcp_endpoints <= MAX_FALLBACK_INVENTORY
+            and self.sampled == self.eligible_tcp_endpoints
+        )
         self.sufficient = (
             self.sampled is not None
             and self.sampled >= _MIN_SAMPLES_PER_CARRIER
@@ -247,7 +300,9 @@ class CarrierProbeResult:
             and self.protocols_sampled is not None
             and self.sources_sampled is not None
             and self.strata_sampled is not None
-            and self.strata_sampled >= 2
+            and self.eligible_tcp_endpoints is not None
+            and self.outcomes is not None
+            and (diverse or fallback)
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -273,6 +328,8 @@ class CarrierProbeResult:
             "protocols_sampled",
             "sources_sampled",
             "strata_sampled",
+            "eligible_tcp_endpoints",
+            "outcomes",
         ):
             value = getattr(self, name)
             if value is not None:
@@ -371,6 +428,8 @@ def parse_carrier_aggregate_payload(
                 protocols_sampled=row.get("protocols_sampled"),
                 sources_sampled=row.get("sources_sampled"),
                 strata_sampled=row.get("strata_sampled"),
+                eligible_tcp_endpoints=row.get("eligible_tcp_endpoints"),
+                outcomes=row.get("outcomes"),
             )
         )
     seen = {row.carrier for row in rows}
@@ -566,6 +625,8 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
             protocols_sampled=row.get("protocols_sampled"),
             sources_sampled=row.get("sources_sampled"),
             strata_sampled=row.get("strata_sampled"),
+            eligible_tcp_endpoints=row.get("eligible_tcp_endpoints"),
+            outcomes=row.get("outcomes"),
         )
         carrier_row: dict[str, Any] = {
             "tested": verified.tested,
@@ -588,6 +649,8 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
             "protocols_sampled",
             "sources_sampled",
             "strata_sampled",
+            "eligible_tcp_endpoints",
+            "outcomes",
         ):
             measured = getattr(verified, name)
             if measured is not None:

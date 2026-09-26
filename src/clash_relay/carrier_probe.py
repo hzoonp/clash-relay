@@ -16,11 +16,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .carrier_qualification import MIN_SAMPLES_PER_CARRIER, SAMPLER_VERSION
+from .carrier_qualification import (
+    MAX_FALLBACK_INVENTORY,
+    MIN_SAMPLES_PER_CARRIER,
+    OUTCOME_CATEGORIES,
+    SAMPLER_VERSION,
+    parse_carrier_aggregate_payload,
+)
 from .classify import proxy_fingerprint
 from .errors import ValidationError
 from .proxy_endpoint_qualification import _TCP_TYPES, _UDP_NATIVE_TYPES
 from .runtime_names import parse_runtime_name_region, parse_runtime_source_name
+from .util import stable_json
 
 CARRIERS = frozenset({"telecom", "unicom", "mobile"})
 GEOGRAPHIC_REGIONS = frozenset({"HK", "TW", "SG", "JP", "US", "KR", "OTHER"})
@@ -67,6 +74,7 @@ class ProbeTarget:
 @dataclass(frozen=True, slots=True)
 class CarrierProbeSample:
     targets: tuple[ProbeTarget, ...]
+    eligible_tcp_endpoints: int
     skipped_unsupported: int
     sample_set_id: str
     inventory_set_id: str
@@ -85,12 +93,44 @@ class CarrierProbeSample:
     def skipped_udp_native_endpoints(self) -> int:
         return self.skipped_unsupported
 
+    def aggregate_counts(self) -> dict[str, int]:
+        """Safe diversity counts shared by producer and candidate verifier."""
+        geographic = {t.region for t in self.targets if t.region in GEOGRAPHIC_REGIONS}
+        return {
+            "sampled": self.sampled,
+            "sampled_tcp_endpoints": self.sampled_tcp_endpoints,
+            "skipped_unsupported": self.skipped_unsupported,
+            "skipped_udp_native_endpoints": self.skipped_udp_native_endpoints,
+            "geographic_regions_sampled": len(geographic),
+            "protocols_sampled": len({t.protocol for t in self.targets}),
+            "sources_sampled": len({t.source for t in self.targets}),
+            "strata_sampled": len({(t.region, t.protocol, t.source) for t in self.targets}),
+            "eligible_tcp_endpoints": self.eligible_tcp_endpoints,
+        }
+
 
 def _canonical_region(name: str) -> str:
     scope_region = parse_runtime_name_region(name)
     if scope_region is None:
         raise ValidationError("carrier probe candidate has invalid runtime identity")
     return scope_region if scope_region in GEOGRAPHIC_REGIONS else UNKNOWN_REGION
+
+
+def _candidate_topology_digest(candidate: Mapping[str, Any]) -> str:
+    """Hash the generated candidate with provider payload order normalized."""
+    canonical = dict(candidate)
+    providers = canonical.get("proxy-providers")
+    if isinstance(providers, Mapping):
+        canonical["proxy-providers"] = {
+            name: {
+                **dict(provider),
+                "payload": sorted(provider["payload"], key=stable_json),
+            }
+            if isinstance(provider, Mapping) and isinstance(provider.get("payload"), list)
+            else provider
+            for name, provider in providers.items()
+        }
+    return hashlib.sha256(stable_json(canonical).encode()).hexdigest()
 
 
 def sample_probe_targets(
@@ -198,12 +238,74 @@ def sample_probe_targets(
         f"{target.identity}\0{target.region}\0{target.protocol}\0{target.source}"
         for target in selected
     ]
+    # Bind endpoint evidence to the exact generated routing/topology candidate,
+    # including policy-only changes that leave the endpoint inventory intact.
+    plan_items.append("candidate:" + _candidate_topology_digest(candidate))
     probe_plan_id = _keyed_id(key, repository, "probe-plan", "\0".join(sorted(plan_items)))
     # A UDP occurrence on a probed TCP endpoint is one endpoint, not a skip.
     udp_only = udp_identities - set(by_identity)
     return CarrierProbeSample(
-        tuple(selected), len(udp_only), set_id, inventory_set_id, probe_plan_id
+        tuple(selected), len(by_identity), len(udp_only), set_id, inventory_set_id, probe_plan_id
     )
+
+
+def verify_carrier_candidate_binding(
+    candidate: Mapping[str, Any],
+    aggregate: Mapping[str, Any],
+    *,
+    key: bytes,
+    repository: str,
+) -> None:
+    """Reject carrier evidence from any other generated candidate or HMAC key."""
+    rows, _, sample_set_id = parse_carrier_aggregate_payload(aggregate)
+    if (
+        not isinstance(sample_set_id, str)
+        or not isinstance(aggregate.get("inventory_set_id"), str)
+        or not isinstance(aggregate.get("probe_plan_id"), str)
+        or aggregate.get("sampler_version") != SAMPLER_VERSION
+        or not rows
+        or any(row.sampled is None for row in rows)
+    ):
+        raise ValidationError("carrier evidence lacks complete candidate binding")
+    sampled_counts = {row.sampled for row in rows}
+    if len(sampled_counts) != 1:
+        raise ValidationError("carrier evidence sampled counts differ")
+    sampled_count = next(iter(sampled_counts))
+    plan = sample_probe_targets(
+        candidate=candidate,
+        key=key,
+        repository=repository,
+        max_targets=sampled_count if sampled_count else DEFAULT_MAX_TARGETS,
+    )
+    for name, expected in (
+        ("sample_set_id", plan.sample_set_id),
+        ("inventory_set_id", plan.inventory_set_id),
+        ("probe_plan_id", plan.probe_plan_id),
+    ):
+        supplied = aggregate.get(name)
+        if not isinstance(supplied, str) or not hmac.compare_digest(supplied, expected):
+            raise ValidationError("carrier evidence does not match the current candidate")
+    if plan.sampler_version != aggregate["sampler_version"]:
+        raise ValidationError("carrier evidence sampler version does not match")
+    expected_counts = plan.aggregate_counts()
+    for row in rows:
+        for name, expected_count in expected_counts.items():
+            if getattr(row, name) != expected_count:
+                raise ValidationError("carrier evidence plan counts do not match candidate")
+
+
+def verify_carrier_candidate_binding_from_env(
+    candidate: Mapping[str, Any],
+    aggregate: Mapping[str, Any],
+    *,
+    env: Mapping[str, str],
+) -> None:
+    """Read the key only for an active evidence input; never serialize it."""
+    key = env.get("CLASH_RELAY_CARRIER_HMAC_KEY", "").encode("utf-8")
+    repository = env.get("GITHUB_REPOSITORY", "")
+    if len(key) < 32 or not repository:
+        raise ValidationError("carrier evidence requires a repository-bound HMAC key")
+    verify_carrier_candidate_binding(candidate, aggregate, key=key, repository=repository)
 
 
 def _resolve_bounded(hostname: str, port: int, timeout: float) -> list[tuple[Any, ...]]:
@@ -295,26 +397,31 @@ def build_carrier_probe_payload(
             reachable += 1
             latencies.append(float(latency))
     latencies.sort()
-    geographic_regions = {t.region for t in sample.targets if t.region in GEOGRAPHIC_REGIONS}
-    protocols = {t.protocol for t in sample.targets}
-    sources = {t.source for t in sample.targets}
-    strata = {(t.region, t.protocol, t.source) for t in sample.targets}
+    counts = sample.aggregate_counts()
+    diverse = counts["geographic_regions_sampled"] >= 2 or counts["sources_sampled"] >= 2
+    fallback = (
+        sample.eligible_tcp_endpoints <= MAX_FALLBACK_INVENTORY
+        and sample.sampled == sample.eligible_tcp_endpoints
+    )
     sufficient = (
         sample.sampled >= MIN_SAMPLES_PER_CARRIER
         and len(outcomes) == sample.sampled
-        and len(strata) >= 2
+        and (diverse or fallback)
     )
+    outcome_counts = dict.fromkeys(sorted(OUTCOME_CATEGORIES), 0)
+    for target in sample.targets:
+        result = outcomes[target.identity]
+        outcome = result.get("outcome")
+        if outcome not in OUTCOME_CATEGORIES or (outcome == "tcp_connected") != bool(
+            result.get("reachable")
+        ):
+            raise ValidationError("carrier probe outcome is invalid")
+        outcome_counts[outcome] += 1
     row = {
-        "sampled": sample.sampled,
-        "sampled_tcp_endpoints": sample.sampled_tcp_endpoints,
+        **counts,
         "tested": len(outcomes),
         "reachable": reachable,
-        "skipped_unsupported": sample.skipped_unsupported,
-        "skipped_udp_native_endpoints": sample.skipped_udp_native_endpoints,
-        "geographic_regions_sampled": len(geographic_regions),
-        "protocols_sampled": len(protocols),
-        "sources_sampled": len(sources),
-        "strata_sampled": len(strata),
+        "outcomes": outcome_counts,
         "sufficient_evidence": sufficient,
         "median_latency_ms": round(statistics.median(latencies), 3) if latencies else None,
         "p90_latency_ms": round(latencies[math.ceil(0.9 * len(latencies)) - 1], 3)

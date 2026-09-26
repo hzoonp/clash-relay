@@ -12,11 +12,13 @@ import json
 import os
 import shutil
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
+from .carrier_probe import verify_carrier_candidate_binding_from_env
 from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
 from .config_loader import ProjectDefinition
 from .errors import CandidateValidationStageError, ClashRelayError, ValidationError
@@ -218,6 +220,8 @@ class ProductionPipeline:
             policies_path=self.paths.policies,
             env=os.environ,
         )
+        if self._carrier_input_snapshot is not None:
+            self._verify_carrier_candidate(result.config)
         atomic_write(self._private("generated.yaml"), result.yaml_text)
         self._write_json(self._private("build-report.json"), result.report)
         summary = {
@@ -234,6 +238,14 @@ class ProductionPipeline:
         }
         self._write_json(self._private("generation-summary.json"), summary)
         return summary
+
+    def _verify_carrier_candidate(self, candidate: Mapping[str, Any]) -> None:
+        """Bind staged advisory evidence to this exact generated inventory."""
+        snapshot = self._carrier_input_snapshot
+        if snapshot is None:
+            return
+        payload = self._load_json(snapshot)
+        verify_carrier_candidate_binding_from_env(candidate, payload, env=os.environ)
 
     def _load_derived_state(self, project: ProjectDefinition) -> None:
         scheduler = load_scheduler_history_state(
