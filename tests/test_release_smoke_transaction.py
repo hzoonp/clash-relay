@@ -55,6 +55,20 @@ def test_smoke_runs_after_activation_before_pointer_commit():
     assert parse_release_pointer(store.values[keys.current_pointer]) == result["release_id"]
 
 
+def test_second_release_smoke_failure_preserves_empty_previous_pointer():
+    store = Store()
+    first = store.publish(b"first")
+    keys = release_keys("production")
+    assert parse_release_pointer(store.values.get(keys.previous_pointer)) is None
+
+    with pytest.raises(PublicationError, match="previous production bytes were restored"):
+        store.publish(b"second", _failed_smoke)
+
+    assert store.values["production"] == b"first"
+    assert parse_release_pointer(store.values[keys.current_pointer]) == first["release_id"]
+    assert parse_release_pointer(store.values.get(keys.previous_pointer)) is None
+
+
 def test_failed_smoke_restores_previous_production_and_history():
     store = Store()
     store.publish(b"first")
