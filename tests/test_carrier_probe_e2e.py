@@ -384,10 +384,11 @@ def test_workflow_persists_history_only_after_successful_preflight() -> None:
     preflight_position = workflow.index("--production-preflight")
     commit_position = workflow.index("scripts/persist_carrier_observation.py")
     assert preflight_position < commit_position
-    # The commit step is explicit, guarded, and independently fail-closed.
+    # The commit job is explicit, guarded, and independently fail-closed.
     commit_header = workflow.index("Persist carrier observation history")
     commit_step = workflow[commit_header:]
-    assert "\n        if: success()\n" in commit_step
+    assert "needs.collect.result == 'success'" in workflow
+    assert "group: clash-relay-carrier-history-${{ github.ref }}" in workflow
     assert "set -euo pipefail" in commit_step
     for secret in (
         "CLOUDFLARE_API_TOKEN",

@@ -98,12 +98,6 @@ def test_preflight_issues_read_only_receipt_and_never_persists_history(
     )
     assert pipeline._generate()["status"] == "generated"
 
-    def forbidden(*_args, **_kwargs):
-        raise AssertionError("preflight must not invoke external persistence")
-
-    monkeypatch.setattr(
-        "clash_relay.production_lifecycle.commit_carrier_observation_receipt", forbidden
-    )
     result = pipeline._finalize_carrier_observation(SimpleNamespace())
     assert result == {"status": "receipt_issued", "receipt": RECEIPT_FILENAME}
     receipt = parse_carrier_observation_receipt(
@@ -136,14 +130,8 @@ def test_binding_failure_stays_local_and_never_persists(tmp_path: Path, monkeypa
     monkeypatch.setattr(
         "clash_relay.production_lifecycle.build_candidate", lambda **_kw: _generated(changed)
     )
-    called = []
-    monkeypatch.setattr(
-        "clash_relay.production_lifecycle.commit_carrier_observation_receipt",
-        lambda **kwargs: called.append(kwargs),
-    )
     with pytest.raises(ValidationError, match="current candidate"):
         pipeline._generate()
-    assert called == []
     assert not pipeline._carrier_receipt_path().exists()
     # The failure remains a local diagnostic and a step-summary note.
     diagnostic = json.loads(
@@ -159,13 +147,7 @@ def test_binding_failure_stays_local_and_never_persists(tmp_path: Path, monkeypa
 def test_preflight_without_carrier_input_skips_history(tmp_path: Path, monkeypatch) -> None:
     pipeline = ProductionPreflightPipeline(ProductionLifecyclePaths.canonical(tmp_path))
     monkeypatch.delenv("CLASH_RELAY_CARRIER_HMAC_KEY", raising=False)
-    called = []
-    monkeypatch.setattr(
-        "clash_relay.production_lifecycle.commit_carrier_observation_receipt",
-        lambda **kwargs: called.append(kwargs),
-    )
     assert pipeline._finalize_carrier_observation(SimpleNamespace()) == {"status": "not_configured"}
-    assert called == []
 
 
 def test_receipt_write_never_contains_private_material(tmp_path: Path, monkeypatch) -> None:
@@ -256,7 +238,7 @@ def _full_run_pipeline(
     return pipeline
 
 
-def test_publish_commits_history_only_after_release_gate(tmp_path: Path, monkeypatch) -> None:
+def test_publish_issues_receipt_only_after_release_gate(tmp_path: Path, monkeypatch) -> None:
     order: list[str] = []
     pipeline = _full_run_pipeline(
         tmp_path, publish=True, receipt={"receipt_schema_version": 1}, monkeypatch=monkeypatch
@@ -268,17 +250,22 @@ def test_publish_commits_history_only_after_release_gate(tmp_path: Path, monkeyp
         return original_release(project, binary)
 
     monkeypatch.setattr(pipeline, "_release_candidate_stage", release_stage)
+    original_receipt = pipeline._finalize_carrier_observation
 
-    def commit(**_kwargs):
-        order.append("carrier_commit")
-        return {"status": "published"}
+    def issue_receipt(project):
+        order.append("receipt")
+        return original_receipt(project)
 
-    monkeypatch.setattr(lifecycle, "commit_carrier_observation_receipt", commit)
+    monkeypatch.setattr(pipeline, "_finalize_carrier_observation", issue_receipt)
     result = pipeline.run()
     assert result["status"] == "passed"
-    assert order == ["release_gate", "carrier_commit"]
-    assert result["carrier_observation_history"] == {"status": "published"}
+    assert order == ["release_gate", "receipt"]
+    assert result["carrier_observation_history"] == {
+        "status": "receipt_issued",
+        "receipt": RECEIPT_FILENAME,
+    }
     assert pipeline._carrier_receipt_path().is_file()
+    assert not pipeline._private("carrier-observation-result.json").exists()
 
 
 def test_bound_preflight_receipt_then_explicit_commit_is_idempotent(
@@ -360,27 +347,22 @@ def test_qualification_failure_issues_no_receipt_or_history_write(
         raise ValidationError("qualification failed")
 
     monkeypatch.setattr(pipeline, "_qualify", failed_qualification)
-    writes: list[object] = []
-    monkeypatch.setattr(
-        lifecycle, "commit_carrier_observation_receipt", lambda **kwargs: writes.append(kwargs)
-    )
     with pytest.raises(ValidationError, match="qualification failed"):
         pipeline.run()
-    assert writes == []
     assert not pipeline._carrier_receipt_path().exists()
 
 
-def test_publish_carrier_history_failure_does_not_break_verified_release(
+def test_publish_receipt_failure_does_not_break_verified_release(
     tmp_path: Path, monkeypatch
 ) -> None:
     pipeline = _full_run_pipeline(
         tmp_path, publish=True, receipt={"receipt_schema_version": 1}, monkeypatch=monkeypatch
     )
 
-    def broken_commit(**_kwargs):
-        raise ValidationError("history unavailable")
+    def broken_receipt(**_kwargs):
+        raise ValidationError("receipt unavailable")
 
-    monkeypatch.setattr(lifecycle, "commit_carrier_observation_receipt", broken_commit)
+    monkeypatch.setattr(lifecycle, "build_carrier_observation_receipt", broken_receipt)
     result = pipeline.run()
     assert result["status"] == "passed"
     assert result["release_status"] == "published"
@@ -388,7 +370,8 @@ def test_publish_carrier_history_failure_does_not_break_verified_release(
         "status": "unavailable",
         "reason": "stage_failed",
     }
-    assert "persist_carrier_observation" in result["warnings"]
+    assert "issue_carrier_observation_receipt" in result["warnings"]
+    assert not pipeline._carrier_receipt_path().exists()
 
 
 def test_publish_without_carrier_input_never_commits(tmp_path: Path, monkeypatch) -> None:
@@ -426,10 +409,6 @@ def test_publish_without_carrier_input_never_commits(tmp_path: Path, monkeypatch
     )
     monkeypatch.setattr(pipeline, "_write_lifecycle_observability", lambda _progress: None)
 
-    def forbidden(*_args, **_kwargs):
-        raise AssertionError("publish without carrier input must not commit history")
-
-    monkeypatch.setattr(lifecycle, "commit_carrier_observation_receipt", forbidden)
     result = pipeline.run()
     assert result["status"] == "passed"
     assert result["carrier_observation_history"] == {"status": "not_configured"}

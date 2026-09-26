@@ -18,11 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from .builder import build_candidate
-from .carrier_history_application import render_carrier_history_markdown
 from .carrier_observation_receipt import (
     RECEIPT_FILENAME,
     build_carrier_observation_receipt,
-    commit_carrier_observation_receipt,
 )
 from .carrier_probe import verify_carrier_candidate_binding_from_env
 from .carrier_qualification import parse_carrier_json_text, run_carrier_qualification
@@ -302,14 +300,7 @@ class ProductionPipeline:
             raise ValidationError("stale carrier receipt could not be removed") from exc
 
     def _finalize_carrier_observation(self, project: ProjectDefinition) -> dict[str, Any]:
-        """Issue the Phase-A receipt after the full gate; commit only on publish.
-
-        Phase A (prepare) is local-only: a privacy-safe receipt is written once
-        the complete qualification and release gates have succeeded. Phase B
-        (commit) runs only in a publishing lifecycle, after that gate, and
-        stays best-effort so history failure can never break a verified
-        release. Preflight and dry-run lifecycles never reach Phase B.
-        """
+        """Issue a local receipt after the full gate; explicit CLI owns commit."""
         snapshot = self._carrier_input_snapshot
         if snapshot is None:
             return {"status": "not_configured"}
@@ -326,18 +317,7 @@ class ProductionPipeline:
             self._carrier_receipt_path(),
             json.dumps(receipt, ensure_ascii=False, sort_keys=True) + "\n",
         )
-        if not self.publish:
-            return {"status": "receipt_issued", "receipt": RECEIPT_FILENAME}
-        result = commit_carrier_observation_receipt(
-            project=project,
-            receipt=receipt,
-            env=os.environ,
-        )
-        self._write_json(self._private("carrier-observation-result.json"), result)
-        summary = self._private("carrier-observation-summary.md")
-        atomic_write(summary, render_carrier_history_markdown(result))
-        self._append_summary(summary)
-        return result
+        return {"status": "receipt_issued", "receipt": RECEIPT_FILENAME}
 
     def _load_derived_state(self, project: ProjectDefinition) -> None:
         scheduler = load_scheduler_history_state(
@@ -866,8 +846,8 @@ class ProductionPipeline:
                 lifecycle_started=lifecycle_started,
             )
 
-            # Phase A follows every preflight gate, proof, and manifest. Phase B
-            # is optional after publication and cannot invalidate that release.
+            # Receipt issuance follows every preflight gate, proof, and manifest.
+            # History commit is a separate, optional workflow step.
             if (
                 self._carrier_input_snapshot is not None
                 and not self.publish
@@ -877,7 +857,7 @@ class ProductionPipeline:
             started = time.perf_counter()
             carrier_observation = (
                 self._best_effort_state(
-                    "persist_carrier_observation",
+                    "issue_carrier_observation_receipt",
                     lambda: self._finalize_carrier_observation(project),
                 )
                 if self.publish

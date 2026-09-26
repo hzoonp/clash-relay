@@ -19,9 +19,11 @@ import hashlib
 import hmac
 import os
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
+from .carrier_history import MAX_AGE_SECONDS
 from .carrier_history_application import persist_carrier_observation
 from .carrier_qualification import run_carrier_qualification
 from .config_loader import ProjectDefinition
@@ -165,6 +167,7 @@ def parse_carrier_observation_receipt(
         "aggregate": dict(aggregate),
         "collected_epoch": collected,
         "validated_sha": validated_sha,
+        "campaign_id": receipt["aggregate_digest"],
     }
 
 
@@ -192,11 +195,20 @@ def commit_carrier_observation_receipt(
 ) -> dict[str, Any]:
     """Phase B: persist history from a validated receipt or fail closed."""
     environment = os.environ if env is None else env
-    validated = parse_carrier_observation_receipt(receipt, now_epoch=now_epoch, env=environment)
+    now = int(time.time()) if now_epoch is None else now_epoch
+    validated = parse_carrier_observation_receipt(receipt, now_epoch=now, env=environment)
+    if now - validated["collected_epoch"] > MAX_AGE_SECONDS:
+        raise ValidationError("carrier observation receipt is outside the history window")
     expectation = _expected_validated_sha(
         expect_validated_sha=expect_validated_sha, env=environment
     )
     if not hmac.compare_digest(validated["validated_sha"], expectation):
         raise ValidationError("carrier observation receipt validated SHA mismatch")
-    report = run_carrier_qualification(validated["aggregate"], now_epoch=now_epoch)
-    return persist_carrier_observation(project=project, report=report, env=environment)
+    report = run_carrier_qualification(validated["aggregate"], now_epoch=now)
+    return persist_carrier_observation(
+        project=project,
+        report=report,
+        campaign_id=validated["campaign_id"],
+        env=environment,
+        now_epoch=now,
+    )

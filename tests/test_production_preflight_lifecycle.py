@@ -70,7 +70,6 @@ def test_full_production_preflight_never_invokes_external_persistence(
         "persist_production_metrics",
         "publish_scheduler_observation",
         "persist_operational_slo",
-        "commit_carrier_observation_receipt",
     ):
         monkeypatch.setattr(lifecycle, name, forbidden_external_write)
     # The history write path itself stays forbidden even if reached directly.
@@ -261,7 +260,6 @@ def test_preflight_with_carrier_input_issues_receipt_without_any_write(
         "persist_production_metrics",
         "publish_scheduler_observation",
         "persist_operational_slo",
-        "commit_carrier_observation_receipt",
     ):
         monkeypatch.setattr(lifecycle, name, forbidden_external_write)
     # The history write path itself stays forbidden even if reached directly.

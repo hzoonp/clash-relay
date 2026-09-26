@@ -89,14 +89,16 @@ def _project():
 def test_valid_history_persists_in_separate_aggregate_key_and_retry_is_idempotent(memory_kv):
     storage, calls = memory_kv
     report = _report(collected=999, now=1000)
-    first = persist_carrier_observation(project=_project(), report=report, env=ENV, now_epoch=1000)
+    first = persist_carrier_observation(
+        project=_project(), report=report, campaign_id="a" * 64, env=ENV, now_epoch=1000
+    )
     assert first["status"] == "published"
     assert first["history"]["recent_campaign_count"] == 1
     assert first["history"]["consecutive_valid_campaigns"] == 1
     assert first["history"]["carriers"]["telecom"]["reachable_ratio_ema"] == 0.8
     assert calls == ["read", "publish"]
     repeated = persist_carrier_observation(
-        project=_project(), report=report, env=ENV, now_epoch=1010
+        project=_project(), report=report, campaign_id="a" * 64, env=ENV, now_epoch=1010
     )
     assert repeated["status"] == "unchanged"
     assert calls == ["read", "publish", "read"]
@@ -122,11 +124,16 @@ def test_valid_history_persists_in_separate_aggregate_key_and_retry_is_idempoten
 def test_stale_and_partial_campaigns_do_not_change_quality(memory_kv):
     _, _calls = memory_kv
     first = persist_carrier_observation(
-        project=_project(), report=_report(collected=999, now=1000), env=ENV, now_epoch=1000
+        project=_project(),
+        report=_report(collected=999, now=1000),
+        campaign_id="a" * 64,
+        env=ENV,
+        now_epoch=1000,
     )["history"]
     stale = persist_carrier_observation(
         project=_project(),
         report=_report(collected=1100, now=1100 + 7 * 3600),
+        campaign_id="b" * 64,
         env=ENV,
         now_epoch=1100 + 7 * 3600,
     )["history"]
@@ -138,6 +145,7 @@ def test_stale_and_partial_campaigns_do_not_change_quality(memory_kv):
         report=_report(
             collected=1100 + 7 * 3600 + 1, now=1100 + 7 * 3600 + 1, carriers=("telecom",)
         ),
+        campaign_id="c" * 64,
         env=ENV,
         now_epoch=1100 + 7 * 3600 + 1,
     )["history"]
@@ -147,11 +155,16 @@ def test_stale_and_partial_campaigns_do_not_change_quality(memory_kv):
 
 def test_zero_reachable_campaign_does_not_fake_latency(memory_kv):
     first = persist_carrier_observation(
-        project=_project(), report=_report(collected=999, now=1000), env=ENV, now_epoch=1000
+        project=_project(),
+        report=_report(collected=999, now=1000),
+        campaign_id="a" * 64,
+        env=ENV,
+        now_epoch=1000,
     )["history"]
     dead = persist_carrier_observation(
         project=_project(),
         report=_report(collected=1100, now=1100, reachable=0),
+        campaign_id="b" * 64,
         env=ENV,
         now_epoch=1100,
     )["history"]
@@ -167,7 +180,11 @@ def test_malformed_previous_state_recovers_without_identity_leak(memory_kv):
     storage, _ = memory_kv
     storage["config.carrier-observation-history-v1"] = b'{"raw_samples":["198.51.100.1"]}'
     result = persist_carrier_observation(
-        project=_project(), report=_report(collected=999, now=1000), env=ENV, now_epoch=1000
+        project=_project(),
+        report=_report(collected=999, now=1000),
+        campaign_id="a" * 64,
+        env=ENV,
+        now_epoch=1000,
     )
     assert result["status"] == "published"
     assert result["history"]["recent_campaign_count"] == 1
@@ -178,7 +195,11 @@ def test_malformed_previous_state_recovers_without_identity_leak(memory_kv):
 def test_missing_cloudflare_credentials_do_not_write_or_change_quality(memory_kv):
     _storage, calls = memory_kv
     result = persist_carrier_observation(
-        project=_project(), report=_report(collected=999, now=1000), env={}, now_epoch=1000
+        project=_project(),
+        report=_report(collected=999, now=1000),
+        campaign_id="a" * 64,
+        env={},
+        now_epoch=1000,
     )
     assert result == {"status": "skipped", "reason": "cloudflare_unavailable"}
     assert calls == []
@@ -199,7 +220,11 @@ def test_read_failure_does_not_overwrite_history(monkeypatch):
 
     monkeypatch.setattr("clash_relay.carrier_history_application.CloudflareKVPublisher", Publisher)
     result = persist_carrier_observation(
-        project=_project(), report=_report(collected=999, now=1000), env=ENV, now_epoch=1000
+        project=_project(),
+        report=_report(collected=999, now=1000),
+        campaign_id="a" * 64,
+        env=ENV,
+        now_epoch=1000,
     )
     assert result == {"status": "unavailable", "reason": "history_read_failed"}
     assert calls == []

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from clash_relay.carrier_history import MAX_AGE_SECONDS
 from clash_relay.carrier_observation_receipt import (
     RECEIPT_KEYS,
     build_carrier_observation_receipt,
@@ -150,10 +151,16 @@ def test_commit_requires_an_expected_validated_sha() -> None:
     receipt = _receipt()
     with pytest.raises(ValidationError, match=r"requires (an expected validated SHA|GITHUB_SHA)"):
         commit_carrier_observation_receipt(
-            project=_project(), receipt=receipt, env=ENV, expect_validated_sha="  "
+            project=_project(),
+            receipt=receipt,
+            env=ENV,
+            expect_validated_sha="  ",
+            now_epoch=1001,
         )
     with pytest.raises(ValidationError, match=r"requires (an expected validated SHA|GITHUB_SHA)"):
-        commit_carrier_observation_receipt(project=_project(), receipt=receipt, env=ENV)
+        commit_carrier_observation_receipt(
+            project=_project(), receipt=receipt, env=ENV, now_epoch=1001
+        )
 
 
 def test_commit_fails_closed_on_validated_sha_mismatch() -> None:
@@ -164,6 +171,7 @@ def test_commit_fails_closed_on_validated_sha_mismatch() -> None:
             receipt=receipt,
             env=ENV,
             expect_validated_sha="b" * 40,
+            now_epoch=1001,
         )
 
 
@@ -222,6 +230,59 @@ def test_successful_commit_writes_history_exactly_once_and_retries_idempotently(
         assert forbidden not in persisted
 
 
+def test_distinct_campaigns_in_same_second_both_commit(memory_kv) -> None:
+    storage, calls = memory_kv
+    first = _receipt()
+    second = build_carrier_observation_receipt(
+        aggregate=_aggregate(collected=1000, reachable=5), validated_sha=SHA, env=ENV
+    )
+    assert first["aggregate_digest"] != second["aggregate_digest"]
+    for receipt in (first, second):
+        result = commit_carrier_observation_receipt(
+            project=_project(),
+            receipt=receipt,
+            env=ENV,
+            expect_validated_sha=SHA,
+            now_epoch=1001,
+        )
+        assert result["status"] == "published"
+    assert calls == ["read", "publish", "read", "publish"]
+    state = json.loads(storage["config.carrier-observation-history-v1"])
+    assert state["recent_campaign_count"] == 2
+    assert {item["campaign_id"] for item in state["recent_campaigns"]} == {
+        first["aggregate_digest"],
+        second["aggregate_digest"],
+    }
+
+
+def test_older_receipt_never_reverses_quality_ema(memory_kv) -> None:
+    storage, calls = memory_kv
+    newer = build_carrier_observation_receipt(
+        aggregate=_aggregate(collected=1001), validated_sha=SHA, env=ENV
+    )
+    older = _receipt()
+    first = commit_carrier_observation_receipt(
+        project=_project(),
+        receipt=newer,
+        env=ENV,
+        expect_validated_sha=SHA,
+        now_epoch=1002,
+    )
+    ignored = commit_carrier_observation_receipt(
+        project=_project(),
+        receipt=older,
+        env=ENV,
+        expect_validated_sha=SHA,
+        now_epoch=1003,
+    )
+    assert first["status"] == "published"
+    assert ignored["status"] == "unchanged"
+    assert calls == ["read", "publish", "read"]
+    state = json.loads(storage["config.carrier-observation-history-v1"])
+    assert state["recent_campaign_count"] == 1
+    assert state["last_campaign_epoch"] == 1001
+
+
 def test_commit_rejects_future_collected_epoch(memory_kv) -> None:
     _, calls = memory_kv
     receipt = build_carrier_observation_receipt(
@@ -234,5 +295,18 @@ def test_commit_rejects_future_collected_epoch(memory_kv) -> None:
             env=ENV,
             expect_validated_sha=SHA,
             now_epoch=1500,
+        )
+    assert calls == []
+
+
+def test_expired_receipt_cannot_reenter_history_after_dedupe_window(memory_kv) -> None:
+    _, calls = memory_kv
+    with pytest.raises(ValidationError, match="outside the history window"):
+        commit_carrier_observation_receipt(
+            project=_project(),
+            receipt=_receipt(),
+            env=ENV,
+            expect_validated_sha=SHA,
+            now_epoch=1000 + MAX_AGE_SECONDS + 1,
         )
     assert calls == []

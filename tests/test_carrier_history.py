@@ -1,5 +1,6 @@
 """Aggregate-only carrier observation persistence and quality gates."""
 
+import hashlib
 import json
 
 import pytest
@@ -9,11 +10,28 @@ from clash_relay.carrier_history import (
     MAX_CAMPAIGNS,
     WINDOW_DAYS,
     empty_history,
-    observe_campaign,
     parse_history_bytes,
     safe_history_summary,
     serialize_history,
 )
+from clash_relay.carrier_history import (
+    observe_campaign as _observe_campaign,
+)
+
+
+def observe_campaign(history, campaign, *, now_epoch, campaign_id=None, **kwargs):
+    """Supply a stable digest fixture while exercising the strict public API."""
+    if campaign_id is None:
+        epoch = (
+            campaign.get("freshness", {}).get("collected_at_epoch", now_epoch)
+            if campaign
+            else now_epoch
+        )
+        payload = json.dumps([campaign, epoch], sort_keys=True).encode()
+        campaign_id = hashlib.sha256(payload).hexdigest()
+    return _observe_campaign(
+        history, campaign, now_epoch=now_epoch, campaign_id=campaign_id, **kwargs
+    )
 
 
 def report(*, coverage="full", freshness="current", evidence="sufficient"):
@@ -129,7 +147,7 @@ def test_expired_and_malformed_history_reset_safely():
     assert parse_history_bytes(data, now_epoch=100 + MAX_AGE_SECONDS + 1) == empty_history()
     assert parse_history_bytes(b"{not json", now_epoch=100) == empty_history()
     assert (
-        parse_history_bytes(b'{"schema_version":2,"schema_version":2}', now_epoch=100)
+        parse_history_bytes(b'{"schema_version":3,"schema_version":3}', now_epoch=100)
         == empty_history()
     )
     assert parse_history_bytes(b"x" * 20_000, now_epoch=100) == empty_history()
@@ -143,7 +161,7 @@ def test_expired_and_malformed_history_reset_safely():
         == empty_history()
     )
     # A v1 state (or any foreign schema) resets instead of being reinterpreted.
-    v1 = serialize_history(state).replace(b'"schema_version":2', b'"schema_version":1')
+    v1 = serialize_history(state).replace(b'"schema_version":3', b'"schema_version":1')
     assert parse_history_bytes(v1, now_epoch=100) == empty_history()
 
 
@@ -181,12 +199,53 @@ def test_same_collected_campaign_is_idempotent_across_preflight_retries():
     assert repeated["last_campaign_epoch"] == 90
 
 
+def test_two_distinct_campaigns_in_same_second_are_both_observed():
+    same_second = report()
+    same_second["freshness"]["collected_at_epoch"] = 90
+    first = observe_campaign(empty_history(), same_second, now_epoch=100, campaign_id="a" * 64)
+    second = observe_campaign(first, same_second, now_epoch=100, campaign_id="b" * 64)
+    assert second["recent_campaign_count"] == 2
+    assert second["status_counts_lifetime"]["valid"] == 2
+    assert second["carriers"]["telecom"]["campaign_runs_lifetime"] == 2
+    assert second["recent_campaigns"] == [
+        {"campaign_id": "a" * 64, "epoch": 90},
+        {"campaign_id": "b" * 64, "epoch": 90},
+    ]
+    assert observe_campaign(second, same_second, now_epoch=100, campaign_id="a" * 64) == second
+
+
+def test_same_epoch_capacity_rejects_new_id_before_eviction():
+    campaign = report()
+    campaign["freshness"]["collected_at_epoch"] = 90
+    state = empty_history()
+    for index in range(MAX_CAMPAIGNS):
+        state = observe_campaign(state, campaign, now_epoch=100, campaign_id=f"{index:064x}")
+    with pytest.raises(ValueError, match=r"same-epoch.*capacity"):
+        observe_campaign(state, campaign, now_epoch=100, campaign_id=f"{MAX_CAMPAIGNS:064x}")
+    assert state["recent_campaign_count"] == MAX_CAMPAIGNS
+
+
+def test_out_of_order_campaign_does_not_reverse_quality_or_status():
+    latest = report()
+    latest["freshness"]["collected_at_epoch"] = 110
+    state = observe_campaign(empty_history(), latest, now_epoch=120, campaign_id="a" * 64)
+    older = report(coverage="partial")
+    older["freshness"]["collected_at_epoch"] = 100
+    assert observe_campaign(state, older, now_epoch=120, campaign_id="b" * 64) == state
+
+
+def test_campaign_id_is_a_strict_private_digest():
+    for campaign_id in ("not-a-digest", "A" * 64, "x" * 64, "198.51.100.1:443"):
+        with pytest.raises(ValueError, match="campaign_id"):
+            observe_campaign(empty_history(), report(), now_epoch=100, campaign_id=campaign_id)
+
+
 def test_recent_campaign_count_uses_a_rolling_age_window():
     state = empty_history()
     for epoch in (100, 100 + 20 * 24 * 3600, 100 + 40 * 24 * 3600):
         state = observe_campaign(state, report(), now_epoch=epoch)
     assert state["recent_campaign_count"] == 2
-    assert state["recent_campaign_epochs"] == [
+    assert [item["epoch"] for item in state["recent_campaigns"]] == [
         100 + 20 * 24 * 3600,
         100 + 40 * 24 * 3600,
     ]
@@ -204,7 +263,7 @@ def test_parse_reaps_windowed_counters_at_read_time():
     # lifetime counters are saturating and therefore unchanged.
     reaped = parse_history_bytes(data, now_epoch=100 + 31 * 24 * 3600)
     assert reaped["recent_campaign_count"] == 1
-    assert reaped["recent_campaign_epochs"] == [100 + 20 * 24 * 3600]
+    assert [item["epoch"] for item in reaped["recent_campaigns"]] == [100 + 20 * 24 * 3600]
     assert reaped["status_counts_lifetime"]["valid"] == 2
     assert reaped["carriers"]["telecom"]["campaign_runs_lifetime"] == 2
 

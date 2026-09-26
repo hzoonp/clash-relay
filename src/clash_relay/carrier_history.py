@@ -15,9 +15,11 @@ dimensions; ``invalid`` is reserved for a bound campaign whose aggregate
 semantics are internally inconsistent.
 
 Counter semantics (explicit, not rolling):
-- ``recent_campaign_count`` counts recorded campaigns inside the trailing
-  ``window_days`` (30-day) bounded window. It is reaped on every recorded
-  campaign and again when state is read, so it never counts older campaigns.
+- ``recent_campaign_count`` counts retained campaigns inside the trailing
+  ``window_days`` (30-day) window, capped at ``MAX_CAMPAIGNS``. Each entry has
+  only a privacy-safe receipt digest and epoch. Duplicate digests are ignored.
+  Older epochs do not update counters or EMAs. Equal-epoch, distinct digests
+  each count once and update EMAs in serialized commit order.
 - ``status_counts_lifetime`` and each carrier's ``campaign_runs_lifetime`` are
   saturating lifetime counters capped at ``MAX_CAMPAIGNS``. They are NOT
   rolling 30-day values. A carrier row (including its run counter) resets only
@@ -35,10 +37,11 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from typing import Any, cast
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_AGE_SECONDS = 30 * 24 * 3600
 MAX_CAMPAIGNS = 64
 MAX_STATE_BYTES = 16_384
@@ -59,6 +62,7 @@ STATUSES = (
     "valid",
 )
 WINDOW_DAYS = 30
+_CAMPAIGN_ID = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _empty_carrier() -> dict[str, Any]:
@@ -81,7 +85,7 @@ def empty_history() -> dict[str, Any]:
         "window_days": WINDOW_DAYS,
         "last_updated_epoch": None,
         "last_campaign_epoch": None,
-        "recent_campaign_epochs": [],
+        "recent_campaigns": [],
         "recent_campaign_count": 0,
         "consecutive_valid_campaigns": 0,
         "status_counts_lifetime": dict.fromkeys(STATUSES, 0),
@@ -125,14 +129,23 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
         value.get("consecutive_valid_campaigns")
     ):
         return False
-    recent = value.get("recent_campaign_epochs")
+    recent = value.get("recent_campaigns")
     if (
         not isinstance(recent, list)
         or len(recent) > MAX_CAMPAIGNS
-        or any(not _count(epoch, maximum=2**53) for epoch in recent)
-        or recent != sorted(set(recent))
+        or any(
+            not isinstance(item, Mapping)
+            or set(item) != {"campaign_id", "epoch"}
+            or not isinstance(item.get("campaign_id"), str)
+            or _CAMPAIGN_ID.fullmatch(item["campaign_id"]) is None
+            or not _count(item.get("epoch"), maximum=2**53)
+            for item in recent
+        )
+        or recent != sorted(recent, key=lambda item: (item["epoch"], item["campaign_id"]))
+        or len({item["campaign_id"] for item in recent}) != len(recent)
         or value["recent_campaign_count"] != len(recent)
-        or (updated is not None and any(epoch > updated for epoch in recent))
+        or (updated is not None and any(item["epoch"] > updated for item in recent))
+        or (campaign is not None and any(item["epoch"] > campaign for item in recent))
     ):
         return False
     statuses = value.get("status_counts_lifetime")
@@ -225,10 +238,10 @@ def _valid_history(value: object, now_epoch: int | None = None) -> bool:
 
 def _reap_window(history: dict[str, Any], now_epoch: int) -> dict[str, Any]:
     """Drop campaigns and carrier rows that left the bounded window."""
-    history["recent_campaign_epochs"] = [
-        epoch for epoch in history["recent_campaign_epochs"] if now_epoch - epoch <= MAX_AGE_SECONDS
+    history["recent_campaigns"] = [
+        item for item in history["recent_campaigns"] if now_epoch - item["epoch"] <= MAX_AGE_SECONDS
     ]
-    history["recent_campaign_count"] = len(history["recent_campaign_epochs"])
+    history["recent_campaign_count"] = len(history["recent_campaigns"])
     for carrier in CARRIERS:
         row = history["carriers"][carrier]
         last_seen = row["last_seen_epoch"]
@@ -332,17 +345,21 @@ def observe_campaign(
     report: Mapping[str, Any],
     *,
     now_epoch: int,
+    campaign_id: str,
     binding_passed: bool = True,
 ) -> dict[str, Any]:
     """Record one already-bound campaign; update quality only when valid.
 
     ``report`` must come from a validated receipt commit path; unbound or
-    unconfigured evidence has no representable status here.
+    unconfigured evidence has no representable status here. ``campaign_id``
+    is the 64-character lowercase digest derived from that validated receipt.
     """
     if binding_passed is not True:
         raise ValueError("unbound carrier campaign must not enter observation history")
     if not isinstance(report, Mapping) or not report:
         raise ValueError("carrier observation requires a bound aggregate report")
+    if not isinstance(campaign_id, str) or _CAMPAIGN_ID.fullmatch(campaign_id) is None:
+        raise ValueError("carrier campaign_id must be a 64-character lowercase digest")
     state = (
         json.loads(serialize_history(history))
         if _valid_history(history, now_epoch)
@@ -358,18 +375,30 @@ def observe_campaign(
         and 0 <= collected <= now_epoch
         else now_epoch
     )
-    if state["last_campaign_epoch"] is not None and campaign_epoch <= state["last_campaign_epoch"]:
+    if any(item["campaign_id"] == campaign_id for item in state["recent_campaigns"]):
         return state
+    # A late receipt cannot move quality EMAs backwards in observation time.
+    # Equal-second, distinct receipts are independent campaigns: the commit
+    # lock determines their order, and both contribute once.
+    if state["last_campaign_epoch"] is not None and campaign_epoch < state["last_campaign_epoch"]:
+        return state
+    if (
+        len(state["recent_campaigns"]) >= MAX_CAMPAIGNS
+        and state["recent_campaigns"][0]["epoch"] == campaign_epoch
+    ):
+        raise ValueError("same-epoch carrier campaign history capacity exceeded")
     status = _campaign_status(report)
     state["last_updated_epoch"] = now_epoch
     state["last_campaign_epoch"] = campaign_epoch
     recent = [
-        epoch for epoch in state["recent_campaign_epochs"] if now_epoch - epoch <= MAX_AGE_SECONDS
+        item for item in state["recent_campaigns"] if now_epoch - item["epoch"] <= MAX_AGE_SECONDS
     ]
     if now_epoch - campaign_epoch <= MAX_AGE_SECONDS:
-        recent.append(campaign_epoch)
-    state["recent_campaign_epochs"] = recent[-MAX_CAMPAIGNS:]
-    state["recent_campaign_count"] = len(state["recent_campaign_epochs"])
+        recent.append({"campaign_id": campaign_id, "epoch": campaign_epoch})
+    state["recent_campaigns"] = sorted(
+        recent, key=lambda item: (item["epoch"], item["campaign_id"])
+    )[-MAX_CAMPAIGNS:]
+    state["recent_campaign_count"] = len(state["recent_campaigns"])
     state["status_counts_lifetime"][status] = min(
         MAX_CAMPAIGNS, state["status_counts_lifetime"][status] + 1
     )

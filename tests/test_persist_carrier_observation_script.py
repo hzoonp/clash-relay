@@ -121,7 +121,7 @@ def test_script_consumes_only_receipt_and_commits_once(
     assert script_runner.calls == ["read", "publish"]
     persisted = script_runner.storage["production-config.carrier-observation-history-v1"]
     document = json.loads(persisted)
-    assert document["schema_version"] == 2
+    assert document["schema_version"] == 3
     assert document["carriers"]["telecom"]["campaign_runs_lifetime"] == 1
 
     # Retrying the same receipt is idempotent: one write total.

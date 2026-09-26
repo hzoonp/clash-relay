@@ -45,6 +45,7 @@ def persist_carrier_observation(
     *,
     project: ProjectDefinition,
     report: Mapping[str, Any],
+    campaign_id: str,
     env: Mapping[str, str] | None = None,
     now_epoch: int | None = None,
 ) -> dict[str, Any]:
@@ -60,7 +61,7 @@ def persist_carrier_observation(
     except PublicationError:
         return {"status": "unavailable", "reason": "history_read_failed"}
     history = parse_history_bytes(previous, now_epoch=now)
-    observed = observe_campaign(history, report, now_epoch=now)
+    observed = observe_campaign(history, report, now_epoch=now, campaign_id=campaign_id)
     summary = safe_history_summary(observed)
     if observed == history and previous is not None:
         return {"status": "unchanged", "state_version": SCHEMA_VERSION, "history": summary}

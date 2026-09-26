@@ -66,7 +66,6 @@ def test_full_dry_run_never_invokes_external_persistence(
         "persist_production_metrics",
         "publish_scheduler_observation",
         "persist_operational_slo",
-        "commit_carrier_observation_receipt",
     ):
         monkeypatch.setattr(lifecycle, name, forbidden_external_write)
     # The history write path itself stays forbidden even if reached directly.
@@ -153,7 +152,6 @@ def test_dry_run_with_carrier_input_has_zero_writes_and_no_committable_receipt(
         "persist_production_metrics",
         "publish_scheduler_observation",
         "persist_operational_slo",
-        "commit_carrier_observation_receipt",
     ):
         monkeypatch.setattr(lifecycle, name, forbidden_external_write)
     # The history write path itself stays forbidden even if reached directly.
