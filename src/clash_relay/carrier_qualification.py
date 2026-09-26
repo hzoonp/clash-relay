@@ -5,8 +5,8 @@ endpoints from a US data-center vantage point; it must never be read as China
 Telecom / Unicom / Mobile reachability. True carrier quality can only come
 from self-hosted probes on those access networks.
 
-The repository ships no real probes. A CI job or self-hosted probe operator
-submits an aggregate-only payload (``parse_carrier_aggregate_payload``) or
+The separate self-hosted producer submits an aggregate-only payload
+(``parse_carrier_aggregate_payload``) or
 in-process :class:`CarrierProbeResult` rows; ``run_carrier_qualification``
 reduces them to an aggregate-only report and defaults to ``not_configured``.
 Validation fails closed on anything beyond per-carrier aggregate numbers, so
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -26,9 +27,22 @@ from .errors import ValidationError
 
 _CARRIERS = frozenset({"telecom", "unicom", "mobile"})
 _PAYLOAD_SCHEMA_VERSION = 1
-_PAYLOAD_KEYS = frozenset({"schema_version", "carriers", "collected_at_epoch"})
-_ROW_KEYS = frozenset({"tested", "reachable", "median_latency_ms"})
+_PAYLOAD_KEYS = frozenset({"schema_version", "carriers", "collected_at_epoch", "sample_set_id"})
+_ROW_KEYS = frozenset(
+    {
+        "tested",
+        "reachable",
+        "median_latency_ms",
+        "sampled",
+        "skipped_unsupported",
+        "p90_latency_ms",
+        "sufficient_evidence",
+    }
+)
 _MAX_RESULT_AGE_SECONDS = 6 * 3600
+_MIN_SAMPLES_PER_CARRIER = 5
+MIN_SAMPLES_PER_CARRIER = _MIN_SAMPLES_PER_CARRIER
+_SAMPLE_SET_ID_PATTERN = re.compile(r"^[0-9a-f]{16,64}$")
 _AUTHORITY = "external_self_hosted_advisory"
 
 
@@ -60,16 +74,37 @@ class CarrierProbeResult:
     The stage never passes raw endpoints into this boundary.
     """
 
-    __slots__ = ("carrier", "median_latency_ms", "reachable", "tested")
+    __slots__ = (
+        "carrier",
+        "median_latency_ms",
+        "p90_latency_ms",
+        "reachable",
+        "sampled",
+        "skipped_unsupported",
+        "sufficient",
+        "tested",
+    )
 
     def __init__(
-        self, *, carrier: str, tested: object, reachable: object, median_latency_ms: object
+        self,
+        *,
+        carrier: str,
+        tested: object,
+        reachable: object,
+        median_latency_ms: object,
+        sampled: object = None,
+        skipped_unsupported: object = None,
+        p90_latency_ms: object = None,
     ) -> None:
         if carrier not in _CARRIERS:
             raise ValidationError(
                 f"carrier qualification requires a known carrier, got {carrier!r}"
             )
-        if not isinstance(tested, int) or isinstance(tested, bool) or tested < 1:
+        if (
+            not isinstance(tested, int)
+            or isinstance(tested, bool)
+            or tested < (0 if sampled is not None else 1)
+        ):
             raise ValidationError("carrier qualification requires a positive sample count")
         if (
             not isinstance(reachable, int)
@@ -77,25 +112,66 @@ class CarrierProbeResult:
             or not 0 <= reachable <= tested
         ):
             raise ValidationError("carrier qualification requires reachable within tested samples")
-        if (
+        if median_latency_ms is None and reachable == 0:
+            pass
+        elif (
             not isinstance(median_latency_ms, (int, float))
             or isinstance(median_latency_ms, bool)
             or not math.isfinite(median_latency_ms)
             or median_latency_ms < 0
+            or reachable == 0
         ):
             raise ValidationError("carrier qualification requires a numeric median latency")
+        if sampled is not None and (
+            not isinstance(sampled, int) or isinstance(sampled, bool) or sampled < tested
+        ):
+            raise ValidationError("carrier qualification sampled count is invalid")
+        if skipped_unsupported is not None and (
+            not isinstance(skipped_unsupported, int)
+            or isinstance(skipped_unsupported, bool)
+            or skipped_unsupported < 0
+        ):
+            raise ValidationError("carrier qualification skipped count is invalid")
+        if p90_latency_ms is not None and (
+            not isinstance(p90_latency_ms, (int, float))
+            or isinstance(p90_latency_ms, bool)
+            or not math.isfinite(p90_latency_ms)
+            or p90_latency_ms < 0
+            or reachable == 0
+        ):
+            raise ValidationError("carrier qualification p90 latency is invalid")
         self.carrier = carrier
         self.tested = int(tested)
         self.reachable = int(reachable)
-        self.median_latency_ms = float(median_latency_ms)
+        self.median_latency_ms = float(median_latency_ms) if median_latency_ms is not None else None
+        self.sampled = int(sampled) if sampled is not None else None
+        self.skipped_unsupported = (
+            int(skipped_unsupported) if skipped_unsupported is not None else None
+        )
+        self.p90_latency_ms = float(p90_latency_ms) if p90_latency_ms is not None else None
+        self.sufficient = (
+            self.sampled is not None
+            and self.sampled >= _MIN_SAMPLES_PER_CARRIER
+            and self.tested == self.sampled
+        )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        row: dict[str, Any] = {
             "carrier": self.carrier,
             "tested": self.tested,
             "reachable": self.reachable,
-            "median_latency_ms": round(self.median_latency_ms, 3),
+            "median_latency_ms": round(self.median_latency_ms, 3)
+            if self.median_latency_ms is not None
+            else None,
         }
+        if self.sampled is not None:
+            row["sampled"] = self.sampled
+            row["sufficient_evidence"] = self.sufficient
+        if self.skipped_unsupported is not None:
+            row["skipped_unsupported"] = self.skipped_unsupported
+        if self.p90_latency_ms is not None:
+            row["p90_latency_ms"] = round(self.p90_latency_ms, 3)
+        return row
 
 
 def aggregate_carrier_results(results: Sequence[CarrierProbeResult]) -> dict[str, Any]:
@@ -115,6 +191,8 @@ def aggregate_carrier_results(results: Sequence[CarrierProbeResult]) -> dict[str
         reachable_total += row.reachable
     return {
         "status": "full" if set(carriers) == _CARRIERS else "partial",
+        "coverage": "full" if set(carriers) == _CARRIERS else "partial",
+        "evidence": _evidence_block(rows),
         "authority": _AUTHORITY,
         "freshness": {"status": "current", "source": "in_process"},
         "carriers": dict(sorted(carriers.items())),
@@ -127,7 +205,9 @@ def aggregate_carrier_results(results: Sequence[CarrierProbeResult]) -> dict[str
     }
 
 
-def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierProbeResult]:
+def parse_carrier_aggregate_payload(
+    payload: Mapping[str, Any],
+) -> tuple[list[CarrierProbeResult], int, str | None]:
     """Validate one self-hosted aggregate payload and return probe rows.
 
     Accepted shape::
@@ -176,6 +256,9 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
                 tested=row.get("tested"),
                 reachable=row.get("reachable"),
                 median_latency_ms=row.get("median_latency_ms"),
+                sampled=row.get("sampled"),
+                skipped_unsupported=row.get("skipped_unsupported"),
+                p90_latency_ms=row.get("p90_latency_ms"),
             )
         )
     seen = {row.carrier for row in rows}
@@ -183,13 +266,46 @@ def parse_carrier_aggregate_payload(payload: Mapping[str, Any]) -> list[CarrierP
         raise ValidationError("carrier qualification payload repeats a carrier")
     if "collected_at_epoch" not in payload:
         raise ValidationError("carrier qualification payload requires collected_at_epoch")
-    if "collected_at_epoch" in payload:
-        collected = payload["collected_at_epoch"]
-        if not isinstance(collected, int) or isinstance(collected, bool):
+    collected = payload["collected_at_epoch"]
+    if not isinstance(collected, int) or isinstance(collected, bool):
+        raise ValidationError("carrier qualification collected_at_epoch must be an integer epoch")
+    sample_set_id = payload.get("sample_set_id")
+    if sample_set_id is not None and (
+        not isinstance(sample_set_id, str)
+        or _SAMPLE_SET_ID_PATTERN.fullmatch(sample_set_id) is None
+    ):
+        raise ValidationError(
+            "carrier qualification sample_set_id must be 16-64 lowercase hex digits"
+        )
+    # Producer-declared sufficiency must agree with the sample counts; drift
+    # means the payload was hand-edited and fails closed.
+    for carrier, row in carriers.items():
+        claimed = row.get("sufficient_evidence")
+        sampled = row.get("sampled")
+        if claimed is None and sampled is None:
+            continue  # legacy aggregate is accepted but insufficient
+        expected = (
+            isinstance(sampled, int)
+            and not isinstance(sampled, bool)
+            and sampled >= _MIN_SAMPLES_PER_CARRIER
+            and row.get("tested") == sampled
+        )
+        if not isinstance(claimed, bool) or claimed != expected:
             raise ValidationError(
-                "carrier qualification collected_at_epoch must be an integer epoch"
+                f"carrier qualification sufficiency evidence drifted for {carrier!r}"
             )
-    return rows
+    return rows, collected, sample_set_id
+
+
+def _evidence_block(rows: Sequence[CarrierProbeResult]) -> dict[str, Any]:
+    """Evidence quality for the reporting carriers, separate from coverage."""
+
+    insufficient = [row.carrier for row in rows if not row.sufficient]
+    return {
+        "status": "sufficient" if rows and not insufficient else "insufficient",
+        "minimum_samples_per_carrier": _MIN_SAMPLES_PER_CARRIER,
+        "insufficient_carriers": sorted(insufficient),
+    }
 
 
 def run_carrier_qualification(
@@ -220,8 +336,12 @@ def run_carrier_qualification(
             ),
         }
     if isinstance(results, Mapping):
-        report = aggregate_carrier_results(parse_carrier_aggregate_payload(results))
-        collected = results.get("collected_at_epoch")
+        rows, collected, sample_set_id = parse_carrier_aggregate_payload(results)
+        report = aggregate_carrier_results(rows)
+        if sample_set_id is not None:
+            report["sample_set_id"] = sample_set_id
+        evidence = _evidence_block(rows)
+        report["evidence"] = evidence
         if isinstance(collected, int) and not isinstance(collected, bool):
             now = int(time.time()) if now_epoch is None else int(now_epoch)
             if collected > now:
@@ -235,6 +355,7 @@ def run_carrier_qualification(
             }
             if age_seconds > _MAX_RESULT_AGE_SECONDS:
                 report["status"] = "stale"
+                evidence["status"] = "stale"
         return report
     rows = list(results)
     if any(not isinstance(row, CarrierProbeResult) for row in rows):
@@ -264,7 +385,13 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
     raw_carriers = value.get("carriers")
     if not isinstance(raw_carriers, Mapping):
         raise ValidationError("carrier qualification report has invalid carrier rows")
-    carriers: dict[str, dict[str, int | float]] = {}
+    raw_sample_set_id = value.get("sample_set_id")
+    if raw_sample_set_id is not None and (
+        not isinstance(raw_sample_set_id, str)
+        or _SAMPLE_SET_ID_PATTERN.fullmatch(raw_sample_set_id) is None
+    ):
+        raise ValidationError("carrier qualification sample_set_id is invalid")
+    carriers: dict[str, dict[str, Any]] = {}
     for carrier, row in sorted(raw_carriers.items()):
         if carrier not in _CARRIERS or not isinstance(row, Mapping):
             raise ValidationError("carrier qualification report has an invalid carrier")
@@ -273,17 +400,32 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
             tested=row.get("tested"),
             reachable=row.get("reachable"),
             median_latency_ms=row.get("median_latency_ms"),
+            sampled=row.get("sampled"),
+            skipped_unsupported=row.get("skipped_unsupported"),
+            p90_latency_ms=row.get("p90_latency_ms"),
         )
-        carriers[carrier] = {
+        carrier_row: dict[str, Any] = {
             "tested": verified.tested,
             "reachable": verified.reachable,
-            "median_latency_ms": round(verified.median_latency_ms, 3),
+            "median_latency_ms": round(verified.median_latency_ms, 3)
+            if verified.median_latency_ms is not None
+            else None,
         }
+        if verified.sampled is not None:
+            carrier_row["sampled"] = verified.sampled
+            carrier_row["sufficient_evidence"] = verified.sufficient
+        if verified.skipped_unsupported is not None:
+            carrier_row["skipped_unsupported"] = verified.skipped_unsupported
+        if verified.p90_latency_ms is not None:
+            carrier_row["p90_latency_ms"] = round(verified.p90_latency_ms, 3)
+        carriers[carrier] = carrier_row
     safe: dict[str, Any] = {
         "status": status,
         "authority": _AUTHORITY,
         "carriers": carriers,
     }
+    if raw_sample_set_id is not None:
+        safe["sample_set_id"] = raw_sample_set_id
     if status == "not_configured":
         if carriers:
             raise ValidationError("unconfigured carrier evidence contains rows")
@@ -314,6 +456,7 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
     )
     if status != expected_status:
         raise ValidationError("carrier qualification coverage status drifted")
+    safe["coverage"] = "full" if set(carriers) == _CARRIERS else "partial"
     safe["aggregate"] = {
         "carriers_reported": len(carriers),
         "tested": expected_tested,
@@ -321,4 +464,25 @@ def safe_carrier_report(value: object) -> dict[str, Any]:
         "reachable_ratio": expected_ratio,
     }
     safe["freshness"] = {"status": freshness_status}
+    sampled_carriers = [
+        carrier for carrier, row in carriers.items() if row.get("sampled") is not None
+    ]
+    sufficient = len(sampled_carriers) == len(carriers) and all(
+        row.get("sufficient_evidence")
+        for carrier, row in carriers.items()
+        if row.get("sampled") is not None
+    )
+    if freshness_status == "stale":
+        evidence_status = "stale"
+    elif sufficient:
+        evidence_status = "sufficient"
+    else:
+        evidence_status = "insufficient"
+    safe["evidence"] = {
+        "status": evidence_status,
+        "minimum_samples_per_carrier": _MIN_SAMPLES_PER_CARRIER,
+        "insufficient_carriers": sorted(
+            carrier for carrier, row in carriers.items() if row.get("sufficient_evidence") is False
+        ),
+    }
     return safe

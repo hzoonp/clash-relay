@@ -26,6 +26,14 @@ Fork
 
 自动 `push` 生产运行继续被硬锁为 dry-run；手动 `workflow_dispatch` 只有 `publish=true` 才发布。定时 `schedule` 只能通过专用 `CLASH_RELAY_SCHEDULE_PUBLISH` 门禁进入发布：已明确授权的上游 `hzoonp/clash-relay` 在该变量未设置时启用自动发布；公开 Fork 默认仍为 dry-run，只有显式把仓库变量设为精确小写 `true` 才启用。把变量设为 `false` 可立即暂停无人值守发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
 
+## 可选的 self-hosted 三网探测
+
+独立的 **Self-hosted three-carrier probe** workflow 仅在 `main` 上手动触发、且仓库变量 `CLASH_RELAY_CARRIER_PROBE_ENABLED=true` 时运行。分别在电信、联通、移动网络部署 Linux self-hosted runner，并配置专属标签 `carrier-probe-telecom`、`carrier-probe-unicom`、`carrier-probe-mobile`。设置 `CLASH_RELAY_SUBSCRIPTIONS` 和本仓库专用 Secret `CLASH_RELAY_CARRIER_HMAC_KEY`；三台 runner 使用相同的密钥和订阅输入。没有三网基础设施时，carrier evidence 保持 `not_configured`，正常生产发布独立运行。
+
+各 runner 在私有环境构建候选节点，并探测同一确定性、有数量上限的 endpoint 样本。TCP-native 节点执行 DNS 解析和有界 TCP 连接；UDP-native 节点计为 skipped。候选配置、目标、endpoint、凭据和原始样本留在私有 runner，仅匿名聚合 JSON 跨 job 传递。collector 校验三份聚合结果后，将 `carrier-qualification.json` 送入 canonical production preflight；不上传 probe artifact，也不发布配置。carrier evidence 仍为 `external_self_hosted_advisory`，客户端 URLTest 仍是本地最终判断。
+
+采样用绑定本仓库的 HMAC 身份去重和生成 sample-set ID，再按地域、协议、订阅来源平衡，TCP 目标上限为 12。collector 要求每个运营商恰好一份结果、相同 sample-set ID 和采样数，时间戳相差不超过五分钟。coverage（`partial`/`full`）与证据质量（`sufficient`/`insufficient`/`stale`）分开：每网至少采样并完成五个 TCP 目标，且整批样本均已测试。证据始终仅供参考，不删节点，也不改变 Promotion Guard 或调度。
+
 ## Public Config v2
 
 受支持的跟踪配置面保持最小化：

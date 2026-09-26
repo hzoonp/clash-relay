@@ -26,6 +26,14 @@ Fork
 
 Automatic `push` production runs remain hard-latched to dry-run mode. Manual `workflow_dispatch` publishes only with `publish=true`. Scheduled runs may publish only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate: the authorized upstream `hzoonp/clash-relay` deployment is enabled when the variable is unset, while public forks remain dry-run unless they explicitly set the repository variable to `true`. Setting it to `false` suspends unattended publication. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
+## Optional self-hosted carrier probes
+
+The separate **Self-hosted three-carrier probe** workflow runs only when manually dispatched on `main` with repository variable `CLASH_RELAY_CARRIER_PROBE_ENABLED=true`. Register three Linux self-hosted runners with dedicated labels `carrier-probe-telecom`, `carrier-probe-unicom`, and `carrier-probe-mobile`, attached to their respective carrier networks. Configure `CLASH_RELAY_SUBSCRIPTIONS` and a repository-specific secret `CLASH_RELAY_CARRIER_HMAC_KEY`; the three jobs must use the same key and subscription input. Without this infrastructure, carrier evidence stays `not_configured` and normal production publishing continues independently.
+
+Each runner builds the private candidate and probes the same deterministic bounded endpoint sample. TCP-native endpoints use DNS resolution and bounded TCP connection attempts; UDP-native endpoints are counted as skipped. Raw candidates, targets, endpoint details, credentials, and probe samples stay on the private runner. Only anonymous aggregate JSON crosses the job boundary. The collector checks all three aggregates, then feeds `carrier-qualification.json` into the canonical production preflight. It uploads no probe artifact and does not publish configuration. Carrier evidence remains `external_self_hosted_advisory`; client URLTest retains local authority.
+
+Sampling uses a repository-bound HMAC identity for endpoint deduplication and the sample-set ID, then balances region, protocol, and subscription source with a cap of 12 TCP targets. The collector requires one result per carrier, the same sample-set ID and sampled count, and timestamps within five minutes. Coverage (`partial`/`full`) is separate from evidence quality (`sufficient`/`insufficient`/`stale`): each carrier needs at least five sampled and tested TCP targets, with the full sample tested. Evidence remains advisory and never prunes nodes or changes Promotion Guard or scheduling.
+
 ## Public Config v2
 
 The supported tracked declaration surface is intentionally small:

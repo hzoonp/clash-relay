@@ -142,8 +142,11 @@ def test_carrier_payload_never_echoes_input_identities() -> None:
 
     assert report["status"] == "partial"
     assert "endpoints" not in serialized
-    assert "samples" not in serialized
     assert "probe_server" not in serialized
+    # The only "samples" reference is the declared policy constant name; no
+    # raw sample payload is echoed.
+    assert "minimum_samples_per_carrier" in serialized
+    assert '"samples"' not in serialized
 
 
 def test_parse_carrier_aggregate_payload_rejects_non_mapping() -> None:
