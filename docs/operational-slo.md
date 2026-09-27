@@ -60,3 +60,18 @@ Operational SLO collection does not widen qualification thresholds, retry counts
 - a Promotion Guard threshold adjustment requires sustained block evidence and separate inventory analysis;
 - scheduler changes require latency/stability evidence from the existing aggregate metrics;
 - candidate churn should be interpreted alongside release cadence and byte-size deltas, not as a quality score by itself.
+
+
+## Qualification performance evidence
+
+Successful production qualification also emits a bounded aggregate performance view that separates failures by plane instead of collapsing them into a generic timeout count:
+
+- DNS: confirmed NXDOMAIN/no-answer, inconclusive resolver evidence, and quarantined runtime entries;
+- TCP: refused, unreachable, other connect failures, timeout-reserve evidence, and robust/reserve/quarantined endpoint tiers;
+- HTTPS browsing: successful and failed samples, missing delays, controller probe errors, and controller HTTP errors;
+- UDP transport: TCP prefilter failures, UDP failures, selector failures, and statically UDP-disabled nodes;
+- AI: live tested/passed/failed/inconclusive counts and systemic-failure service count.
+
+The same view records the current bounded tuning parameters such as endpoint attempts/quorum, browsing attempts/success quorum, transport TCP attempts, and UDP timeout. It also records the anti-false-kill actions: endpoint connect timeouts remain Reserve evidence, while inconclusive DNS evidence keeps the node.
+
+These counters are observability only. They do not copy node identities, hosts, IP addresses, subscription URLs, service endpoint URLs, or credentials, and they never change thresholds automatically. Any future timeout, quorum, or retry adjustment requires longitudinal evidence from this aggregate stream plus the existing SLO tuning evidence gate.

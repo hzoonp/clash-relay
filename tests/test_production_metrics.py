@@ -112,6 +112,59 @@ def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Pat
                 "recovered_by_retry": True,
                 "recovered_failure_category": "transient",
             },
+            "performance_evidence": {
+                "failure_planes": {
+                    "dns": {
+                        "nxdomain": 2,
+                        "no_answer": 1,
+                        "confirmed_unresolvable": 3,
+                        "inconclusive": 4,
+                        "quarantined": 3,
+                        "private-label": 999,
+                    },
+                    "tcp": {
+                        "connection_refused": 1,
+                        "network_unreachable": 1,
+                        "connect_failure": 1,
+                        "timeout_reserve": 5,
+                        "quarantined": 3,
+                        "robust": 10,
+                        "reserve": 6,
+                    },
+                    "https": {
+                        "successful_samples": 30,
+                        "failed_samples": 6,
+                        "missing_delay": 2,
+                        "probe_error": 2,
+                        "controller_http_errors": 2,
+                    },
+                    "udp": {
+                        "tcp_failed_nodes": 1,
+                        "udp_failed_nodes": 2,
+                        "selector_failures": 1,
+                        "static_udp_disabled_nodes": 1,
+                    },
+                    "ai": {
+                        "live_tested": 12,
+                        "live_passed": 9,
+                        "live_failed": 2,
+                        "inconclusive": 1,
+                        "systemic_failures": 1,
+                    },
+                },
+                "tuning": {
+                    "endpoint_attempts": 3,
+                    "endpoint_admission_quorum": 1,
+                    "endpoint_timeout_action": "reserve",
+                    "dns_inconclusive_action": "keep",
+                    "browsing_attempts_per_node": 3,
+                    "browsing_required_successes": 2,
+                    "transport_tcp_attempts": 2,
+                    "transport_tcp_required_successes": 1,
+                    "transport_udp_timeout_ms": 700,
+                    "private-setting": "SECRET",
+                },
+            },
         },
         promotion_guard={"status": "passed", "violations": []},
         lifecycle={
@@ -132,16 +185,72 @@ def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Pat
         "browsing_attempts": 2,
         "recovered_by_retry": True,
         "recovered_failure_category": "transient",
+        "failure_planes": {
+            "dns": {
+                "nxdomain": 2,
+                "no_answer": 1,
+                "confirmed_unresolvable": 3,
+                "inconclusive": 4,
+                "quarantined": 3,
+            },
+            "tcp": {
+                "connection_refused": 1,
+                "network_unreachable": 1,
+                "connect_failure": 1,
+                "timeout_reserve": 5,
+                "quarantined": 3,
+                "robust": 10,
+                "reserve": 6,
+            },
+            "https": {
+                "successful_samples": 30,
+                "failed_samples": 6,
+                "missing_delay": 2,
+                "probe_error": 2,
+                "controller_http_errors": 2,
+            },
+            "udp": {
+                "tcp_failed_nodes": 1,
+                "udp_failed_nodes": 2,
+                "selector_failures": 1,
+                "static_udp_disabled_nodes": 1,
+            },
+            "ai": {
+                "live_tested": 12,
+                "live_passed": 9,
+                "live_failed": 2,
+                "inconclusive": 1,
+                "systemic_failures": 1,
+            },
+        },
+        "tuning": {
+            "endpoint_attempts": 3,
+            "endpoint_admission_quorum": 1,
+            "browsing_attempts_per_node": 3,
+            "browsing_required_successes": 2,
+            "transport_tcp_attempts": 2,
+            "transport_tcp_required_successes": 1,
+            "transport_udp_timeout_ms": 700,
+            "endpoint_timeout_action": "reserve",
+            "dns_inconclusive_action": "keep",
+        },
     }
     assert run["promotion_guard"] == {"status": "passed", "violations": 0}
     assert run["lifecycle"]["release_progress"]["phase"] == "verified"
     assert "private-name-must-not-survive" not in serialized
     assert "private-config-bytes" not in serialized
+    assert "private-label" not in serialized
+    assert "private-setting" not in serialized
+    assert "SECRET" not in serialized
 
     state = append_metrics_run(empty_metrics(), run)
     summary = metrics_summary(state)
     assert summary["latest_qualification_attempts"] == 2
     assert summary["latest_recovered_by_retry"] is True
+    assert summary["latest_qualification_failure_planes"]["dns"]["confirmed_unresolvable"] == 3
+    assert summary["latest_qualification_failure_planes"]["tcp"]["timeout_reserve"] == 5
+    assert summary["latest_qualification_tuning"]["endpoint_timeout_action"] == "reserve"
+    assert summary["latest_qualification_tuning"]["dns_inconclusive_action"] == "keep"
     assert summary["latest_promotion_guard_status"] == "passed"
     assert summary["latest_release_phase"] == "verified"
     assert summary["retry_runs"] == 1

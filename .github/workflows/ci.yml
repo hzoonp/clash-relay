@@ -86,6 +86,7 @@ jobs:
             src/clash_relay/scheduler_history.py \
             src/clash_relay/scheduler_policy.py \
             src/clash_relay/qualification_pipeline.py \
+            src/clash_relay/qualification_performance.py \
             src/clash_relay/qualification_pipeline_result.py \
             src/clash_relay/qualification_reliability.py \
             src/clash_relay/production_application.py \
