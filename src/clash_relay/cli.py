@@ -173,7 +173,6 @@ def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
         project=project,
         candidate_path=args.candidate,
         env=environment,
-        mihomo_binary=args.mihomo_bin,
     )
     print(_json_text(result), end="")
     return 0
@@ -342,7 +341,6 @@ def build_parser() -> argparse.ArgumentParser:
     cloudflare.add_argument("--namespace-title")
     cloudflare.add_argument("--key")
     cloudflare.set_defaults(handler=_command_publish_cloudflare_kv)
-    cloudflare.add_argument("--mihomo-bin", type=_path, required=True)
 
     gist = subparsers.add_parser("publish-gist", help="Publish a validated candidate to a Gist.")
     _add_project_args(gist)
