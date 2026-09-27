@@ -21,8 +21,8 @@ _INFORMATIONAL_NODE_PATTERNS = (
     re.compile(
         r"(?:剩余流量|流量剩余|套餐到期|距离到期|距离重置|下次重置|官网地址|官方网站|联系客服|在线客服|订阅到期|过期时间)"
     ),
-    re.compile(r"(?:^|[\\s|｜])剩余\\s*[:：]"),
-    re.compile(r"\\b(?:traffic|expire|remaining|reset)\\s*[:：]", re.IGNORECASE),
+    re.compile(r"(?:^|[\\s|\\uFF5C])剩余\\s*[:\\uFF1A]"),
+    re.compile(r"\\b(?:traffic|expire|remaining|reset)\\s*[:\\uFF1A]", re.IGNORECASE),
 )
 
 
