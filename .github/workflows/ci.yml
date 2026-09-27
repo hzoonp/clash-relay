@@ -68,6 +68,7 @@ jobs:
             src/clash_relay/classify.py \
             src/clash_relay/cli.py \
             src/clash_relay/config_loader.py \
+            src/clash_relay/diagnose.py \
             src/clash_relay/node_policy.py \
             src/clash_relay/selector.py \
             src/clash_relay/policy_compiler.py \
