@@ -49,6 +49,11 @@ runtime:
       - '*.lan'
       - '*.local'
       - localhost
+      # Narrow compatibility exceptions for carrier authentication and banking apps.
+      - '*.cmpassport.com'
+      - '*.cmbchina.com.cn'
+      - '*.icbc.com.cn'
+      - '*.pingan.com.cn'
   tun:
     mode: client
   sniffer:

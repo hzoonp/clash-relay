@@ -13,6 +13,7 @@ from typing import Any
 from .acl4ssr import load_acl4ssr_rules
 from .classify import classify_proxy, deduplicate_nodes
 from .config_loader import ProjectDefinition, load_project
+from .dns_compatibility import audit_fake_ip_compatibility
 from .dns_leak_audit import audit_dns_leak_protection
 from .dns_runtime_audit import audit_dns_runtime_dependencies
 from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscriptionError
@@ -368,6 +369,7 @@ def build_candidate(
     output = serialize_runtime_graph(compiled.graph)
 
     validate_generated_config(output, secret_urls=secret_values)
+    dns_compatibility_report = audit_fake_ip_compatibility(output)
     dns_leak_report = audit_dns_leak_protection(output)
     dns_runtime_report = audit_dns_runtime_dependencies(output)
     yaml_text = dump_yaml(output, header=generation["generated_header"])
@@ -392,6 +394,7 @@ def build_candidate(
         "informational_nodes_rejected": informational_nodes_rejected,
         "name_filtered_nodes": name_filtered_nodes,
         "multiplier_filtered_nodes": multiplier_filtered_nodes,
+        "dns_compatibility_audit": dns_compatibility_report,
         "dns_leak_audit": dns_leak_report,
         "dns_runtime_audit": dns_runtime_report,
         **compiled.report,
