@@ -543,6 +543,8 @@ class ProductionPipeline:
             ai=self._private("ai-qualification-summary.json"),
             qualification=self._private("qualification-pipeline-summary.json"),
             release=self._private("release-publication.json") if release is not None else None,
+            build_report=self._private("build-report.json"),
+            promotion_guard=self._private("promotion-guard.json"),
             validated_cores_report=self._private("mihomo-validation-matrix.json"),
             publication_status="published" if self.publish else "dry-run",
             markdown=self._private("production-proof.md"),
