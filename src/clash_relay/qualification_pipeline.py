@@ -24,6 +24,7 @@ from .proxy_endpoint_qualification import (
     quarantine_unreachable_tcp_endpoints,
 )
 from .proxy_host_qualification import quarantine_unresolvable_proxy_hosts
+from .qualification_performance import build_qualification_performance_evidence
 from .qualification_pipeline_result import QualificationPipelineResult
 from .qualification_reliability import QualificationStageRejected
 from .runtime_graph import CandidateArtifact
@@ -765,6 +766,12 @@ def run_qualification_pipeline(
             host_report=proxy_host_resolution,
             endpoint_report=endpoint_qualification,
             browsing_summary=browsing_summary,
+        ),
+        "performance_evidence": build_qualification_performance_evidence(
+            host_report=proxy_host_resolution,
+            endpoint_report=endpoint_qualification,
+            browsing_summary=browsing_summary,
+            ai_summary=ai_summary,
         ),
         "accelerated_health_check_groups": accelerated_groups,
         "ai": {
