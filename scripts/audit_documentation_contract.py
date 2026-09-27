@@ -75,6 +75,8 @@ PUBLIC_SURFACE_DOCS = (
     "docs/routing-v2.md",
 )
 
+SOURCE_POLICY_DOCS = ("docs/rules.md",)
+
 
 def _read(root: Path, relative: str) -> str:
     return (root / relative).read_text(encoding="utf-8")
@@ -87,6 +89,15 @@ def _canonical_visible_groups(root: Path) -> tuple[str, ...]:
         for group in manifest["groups"]
         if not bool(group.get("hidden", False))
     )
+
+
+def _canonical_source_uses(root: Path) -> dict[str, tuple[str, ...]]:
+    document = yaml.safe_load(_read(root, "subscriptions.yaml"))
+    return {
+        str(subscription["id"]): tuple(str(use) for use in subscription["allowed_uses"])
+        for subscription in document["subscriptions"]
+        if bool(subscription.get("enabled", False))
+    }
 
 
 def _canonical_ai_excluded_regions(root: Path) -> frozenset[str]:
@@ -113,7 +124,12 @@ def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     texts: dict[str, str] = {}
 
-    documented = set(AUTHORITATIVE) | set(PUBLICATION_CONTRACT_DOCS) | set(PUBLIC_SURFACE_DOCS)
+    documented = (
+        set(AUTHORITATIVE)
+        | set(PUBLICATION_CONTRACT_DOCS)
+        | set(PUBLIC_SURFACE_DOCS)
+        | set(SOURCE_POLICY_DOCS)
+    )
     for relative in documented:
         try:
             texts[relative] = _read(root, relative)
@@ -156,6 +172,21 @@ def audit(root: Path = ROOT) -> list[str]:
         for group in visible_groups:
             if group not in text:
                 errors.append(f"{relative} is missing canonical visible group: {group}")
+
+    try:
+        source_uses = _canonical_source_uses(root)
+    except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
+        errors.append(f"cannot derive canonical source policy: {exc}")
+        source_uses = {}
+    for relative in SOURCE_POLICY_DOCS:
+        text = texts.get(relative, "")
+        for source_id, allowed_uses in source_uses.items():
+            expected = f"{source_id}\n  allowed_uses: {', '.join(allowed_uses)}"
+            if expected not in text:
+                errors.append(
+                    f"{relative} is missing canonical source policy for {source_id}: "
+                    f"allowed_uses={list(allowed_uses)}"
+                )
 
     try:
         excluded_regions = _canonical_ai_excluded_regions(root)
