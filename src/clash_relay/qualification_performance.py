@@ -11,7 +11,11 @@ from typing import Any
 
 
 def _count(value: Any) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else 0
+    )
 
 
 def _mapping(value: Any) -> dict[str, Any]:
