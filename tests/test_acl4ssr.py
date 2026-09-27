@@ -168,7 +168,15 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert groups["美国节点"]["tolerance"] == 150
     regional_groups = [groups[name] for name in general_choices[:-1]]
     assert all(group["on_empty"] == "omit" for group in regional_groups)
-    assert {group["region"] for group in regional_groups} == {"HK", "TW", "SG", "JP", "US", "KR", "UK"}
+    assert {group["region"] for group in regional_groups} == {
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "US",
+        "KR",
+        "UK",
+    }
     assert all("filter" not in group for group in regional_groups)
     assert all(group["timeout"] == 8000 for group in regional_groups)
     automatic_groups = [
