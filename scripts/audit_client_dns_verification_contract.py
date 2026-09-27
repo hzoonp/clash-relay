@@ -40,7 +40,9 @@ _REQUIRED_CHECKS = {
 
 
 def _string_set(value: object, label: str) -> set[str]:
-    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
         raise SystemExit(f"client/DNS verification contract: {label} must be a string list")
     return set(value)
 
@@ -71,7 +73,9 @@ def main() -> int:
     if not isinstance(checks, list) or not all(isinstance(row, dict) for row in checks):
         raise SystemExit("client/DNS verification contract: checks must be an object list")
     ids = [row.get("id") for row in checks]
-    if not all(isinstance(item, str) and item for item in ids) or len(ids) != len(set(ids)):
+    if not all(isinstance(item, str) and item for item in ids) or len(ids) != len(
+        set(ids)
+    ):
         raise SystemExit("client/DNS verification contract: check IDs must be unique strings")
     if set(ids) != _REQUIRED_CHECKS:
         raise SystemExit("client/DNS verification contract: required check set drift")
