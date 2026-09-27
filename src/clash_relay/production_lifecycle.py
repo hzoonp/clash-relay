@@ -56,6 +56,8 @@ from .scheduler_observation import publish_scheduler_observation
 from .slo_application import persist_operational_slo
 from .util import atomic_write
 
+_MAX_CARRIER_INPUT_BYTES = 64 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class ProductionLifecyclePaths:
@@ -155,11 +157,26 @@ class ProductionPipeline:
         self.timings_ms[name] = round((time.perf_counter() - started) * 1000.0, 3)
 
     def _prepare_dirs(self) -> None:
+        # Carrier evidence is supplied by the operator before this run. Keep
+        # this input while clearing reports and candidates from prior runs.
+        carrier_path = self._private("carrier-qualification.json")
+        carrier_input = None
+        if carrier_path.is_file():
+            try:
+                with carrier_path.open("rb") as stream:
+                    raw = stream.read(_MAX_CARRIER_INPUT_BYTES + 1)
+                if len(raw) > _MAX_CARRIER_INPUT_BYTES:
+                    raise ValidationError("carrier qualification input exceeds the 64 KiB limit")
+                carrier_input = raw.decode("utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise ValidationError("production lifecycle could not read carrier input") from exc
         shutil.rmtree(self.paths.private_dir, ignore_errors=True)
         shutil.rmtree(self.paths.public_dir, ignore_errors=True)
         self.paths.private_dir.mkdir(parents=True, exist_ok=True)
         self.paths.public_dir.mkdir(parents=True, exist_ok=True)
         self.paths.bin_dir.mkdir(parents=True, exist_ok=True)
+        if carrier_input is not None:
+            atomic_write(carrier_path, carrier_input)
 
     def _generate(self) -> dict[str, Any]:
         result = build_candidate(
@@ -634,11 +651,11 @@ class ProductionPipeline:
                 "reason": "canonical_declarations_missing",
             }
 
-        self._prepare_dirs()
         progress = ReleaseProgress(publish=self.publish)
         lifecycle_started = time.perf_counter()
         project: ProjectDefinition | None = None
         try:
+            self._prepare_dirs()
             project = ProjectPaths(
                 config=self.paths.config,
                 subscriptions=self.paths.subscriptions,

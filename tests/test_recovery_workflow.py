@@ -13,7 +13,7 @@ def test_rollback_is_manual_confirmed_and_main_only() -> None:
     assert "      confirm:\n" in text
     assert "        default: false\n" in text
     assert "github.ref == 'refs/heads/main' && inputs.confirm == true" in text
-    assert "clash-relay-publish-${{ github.ref }}" in text
+    assert "clash-relay-production-commit-${{ github.ref }}" in text
 
 
 def test_rollback_executor_must_be_the_exact_fully_validated_sha() -> None:

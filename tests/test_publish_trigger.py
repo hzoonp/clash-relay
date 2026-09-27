@@ -38,6 +38,15 @@ def test_concurrency_domains_separate_read_only_and_writer_runs() -> None:
     assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == ''" in text
 
 
+def test_production_writers_share_one_concurrency_group() -> None:
+    publish = WORKFLOW.read_text(encoding="utf-8")
+    writer_group = "clash-relay-production-commit-${{ github.ref }}"
+    assert "format('clash-relay-production-commit-{0}', github.ref)" in publish
+    for name in ("rollback.yml", "retention.yml"):
+        workflow = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert f"group: {writer_group}" in workflow
+
+
 def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
     text = WORKFLOW.read_text()
     assert text.count("CLASH_RELAY_SCHEDULE_PUBLISH:") == 1

@@ -15,7 +15,7 @@ def test_retention_is_manual_confirmed_main_only_and_serialized() -> None:
     assert "      confirm:\n" in text
     assert "        default: false\n" in text
     assert "github.ref == 'refs/heads/main' && inputs.confirm == true" in text
-    assert "clash-relay-publish-${{ github.ref }}" in text
+    assert "clash-relay-production-commit-${{ github.ref }}" in text
 
 
 def test_retention_revalidates_exact_sha_and_reviewed_plan_before_deletion() -> None:

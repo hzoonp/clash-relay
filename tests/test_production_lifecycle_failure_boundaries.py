@@ -36,9 +36,13 @@ def test_private_workdir_is_removed_when_lifecycle_fails_after_preparation(
 ) -> None:
     pipeline = _pipeline(tmp_path)
     _write_canonical_declarations(pipeline.paths)
+    pipeline.paths.private_dir.mkdir(parents=True)
+    carrier_path = pipeline._private("carrier-qualification.json")
+    carrier_path.write_text('{"schema_version": 1, "carriers": {}}\n', encoding="utf-8")
 
     def fail_load(_self: Any) -> Any:
         assert pipeline.paths.private_dir.is_dir()
+        assert carrier_path.is_file()
         (pipeline.paths.private_dir / "sensitive-candidate.yaml").write_text(
             "private: true\n", encoding="utf-8"
         )
@@ -62,6 +66,25 @@ def test_best_effort_state_never_swallows_programming_errors(tmp_path: Path) -> 
         pipeline._best_effort_state("optional_state", fail)
 
     assert pipeline.warnings == []
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [(b"\xff", "could not read carrier input"), (b" " * (64 * 1024 + 1), "64 KiB limit")],
+    ids=["invalid_utf8", "oversized"],
+)
+def test_carrier_preparation_failure_is_reported_and_cleans_private_workdir(
+    tmp_path: Path, payload: bytes, message: str
+) -> None:
+    pipeline = _pipeline(tmp_path)
+    _write_canonical_declarations(pipeline.paths)
+    pipeline.paths.private_dir.mkdir(parents=True)
+    pipeline._private("carrier-qualification.json").write_bytes(payload)
+
+    with pytest.raises(ValidationError, match=message):
+        pipeline.run()
+
+    assert not pipeline.paths.private_dir.exists()
 
 
 def test_dry_run_post_commit_manifest_failure_remains_fail_closed(

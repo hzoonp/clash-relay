@@ -117,6 +117,33 @@ def test_common_uri_schemes(uri: str, proxy_type: str) -> None:
     assert result.proxies[0]["type"] == proxy_type
 
 
+@pytest.mark.parametrize(
+    ("uri", "expected_field"),
+    [
+        ("trojan://pass@trojan.invalid.example:443?sni=cert.invalid.example", "sni"),
+        ("hysteria2://pass@hy.invalid.example:443?sni=cert.invalid.example", "sni"),
+        ("hy2://pass@hy.invalid.example:443?servername=cert.invalid.example", "sni"),
+        (
+            "tuic://00000000-0000-4000-8000-000000000010:pass@tuic.invalid.example:443"
+            "?sni=cert.invalid.example",
+            "sni",
+        ),
+        ("anytls://pass@any.invalid.example:443?sni=cert.invalid.example", "sni"),
+        (
+            "vless://00000000-0000-4000-8000-000000000009@v.invalid.example:443"
+            "?sni=cert.invalid.example",
+            "servername",
+        ),
+    ],
+)
+def test_uri_sni_maps_to_protocol_field(uri: str, expected_field: str) -> None:
+    proxy = parse_subscription(uri).proxies[0]
+
+    other_field = "servername" if expected_field == "sni" else "sni"
+    assert proxy[expected_field] == "cert.invalid.example"
+    assert other_field not in proxy
+
+
 def test_empty_subscription_is_parseable_but_has_no_nodes() -> None:
     result = parse_subscription("\n\n")
     assert result.proxies == ()

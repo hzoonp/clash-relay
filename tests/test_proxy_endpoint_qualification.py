@@ -409,6 +409,40 @@ def test_multi_address_attempt_budget_stops_extra_addresses(monkeypatch) -> None
     assert eq._ATTEMPT_BUDGET_SECONDS >= eq._CONNECT_TIMEOUT
 
 
+def test_multi_address_connect_timeout_uses_remaining_attempt_budget(monkeypatch) -> None:
+    import socket
+
+    import clash_relay.proxy_endpoint_qualification as eq
+
+    clock = {"t": 0.0}
+    timeouts: list[float] = []
+
+    class SlowFailingSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def settimeout(self, timeout: float) -> None:
+            timeouts.append(timeout)
+
+        def connect(self, _target) -> None:
+            clock["t"] += timeouts[-1]
+            raise TimeoutError
+
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 0, "", (f"93.184.216.{n}", 443)) for n in range(1, 4)
+    ]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args, **_kwargs: addresses)
+    monkeypatch.setattr(socket, "socket", lambda *_args: SlowFailingSocket())
+    monkeypatch.setattr(eq.time, "monotonic", lambda: clock["t"])
+
+    assert _probe_tcp("many.example", 443) == (False, "connect_timeout", 0)
+    assert timeouts == [1.5, 0.5] * eq._ATTEMPTS
+    assert clock["t"] == eq._ATTEMPTS * eq._ATTEMPT_BUDGET_SECONDS
+
+
 def test_all_dead_provider_fails_closed_without_mutating_candidate(monkeypatch) -> None:
     monkeypatch.setattr(
         "clash_relay.proxy_endpoint_qualification._probe_tcp",

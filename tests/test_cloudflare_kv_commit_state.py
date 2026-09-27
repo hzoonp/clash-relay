@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -99,3 +100,40 @@ def test_put_unparseable_success_response_is_commit_unknown(monkeypatch) -> None
 
     with pytest.raises(CommitUnknownError):
         _publisher().publish(content=b"candidate\n")
+
+
+class _TruncatedResponse(_Response):
+    def read(self, size: int = -1) -> bytes:
+        raise http.client.IncompleteRead(b'{"success":true', 20)
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_truncated_write_response_preserves_unknown_commit_state(monkeypatch, method: str) -> None:
+    def fake_urlopen(request, timeout):
+        if request.get_method() == "GET":
+            return _json_response(_namespace())
+        assert request.get_method() == method
+        return _TruncatedResponse(b"")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    publisher = _publisher()
+    with pytest.raises(CommitUnknownError, match="response was not received"):
+        if method == "PUT":
+            publisher.publish(content=b"candidate\n")
+        else:
+            publisher.delete()
+
+
+@pytest.mark.parametrize("failure_point", ["namespace", "value"])
+def test_truncated_read_response_is_publication_error(monkeypatch, failure_point: str) -> None:
+    def fake_urlopen(request, timeout):
+        if "/storage/kv/namespaces?" in request.full_url and failure_point == "value":
+            return _json_response(_namespace())
+        return _TruncatedResponse(b"")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(PublicationError, match="request failed") as captured:
+        _publisher().read()
+    assert not isinstance(captured.value, CommitUnknownError)

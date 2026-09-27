@@ -8,11 +8,50 @@ import pytest
 
 from clash_relay.errors import ValidationError
 from clash_relay.production_lifecycle import ProductionLifecyclePaths, ProductionPipeline
+from clash_relay.production_pipeline import QualificationPaths
 from clash_relay.runtime_names import runtime_source_label
 
 
 def _pipeline(tmp_path: Path, *, publish: bool = False) -> ProductionPipeline:
     return ProductionPipeline(ProductionLifecyclePaths.canonical(tmp_path), publish=publish)
+
+
+@pytest.mark.parametrize(
+    "carrier_input", [None, '{"schema_version": 1, "carriers": {}}\n', "invalid-json"]
+)
+def test_preparation_preserves_only_carrier_input_for_qualification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, carrier_input: str | None
+) -> None:
+    pipeline = _pipeline(tmp_path)
+    pipeline.paths.private_dir.mkdir(parents=True)
+    pipeline.paths.public_dir.mkdir(parents=True)
+    carrier_path = pipeline._private("carrier-qualification.json")
+    if carrier_input is not None:
+        carrier_path.write_text(carrier_input, encoding="utf-8")
+    stale_candidate = pipeline._private("config.yaml")
+    stale_candidate.write_text("stale candidate", encoding="utf-8")
+    stale_report = pipeline._public("release-manifest.json")
+    stale_report.write_text("stale report", encoding="utf-8")
+
+    pipeline._prepare_dirs()
+
+    assert not stale_candidate.exists()
+    assert not stale_report.exists()
+    seen: list[Path | None] = []
+
+    def qualify(*, qualification_paths: QualificationPaths, **_kwargs: Any) -> dict[str, Any]:
+        path = qualification_paths.carrier_input
+        seen.append(path)
+        if carrier_input is not None:
+            assert path == carrier_path
+            assert path.read_text(encoding="utf-8") == carrier_input
+        else:
+            assert path is None
+        return {"production_pipeline": {"status": "passed"}}
+
+    monkeypatch.setattr("clash_relay.production_lifecycle.run_production_pipeline", qualify)
+    pipeline._qualify(tmp_path / "fixture-mihomo")
+    assert seen == [carrier_path if carrier_input is not None else None]
 
 
 def test_lifecycle_json_helpers_round_trip_and_fail_closed(tmp_path: Path) -> None:

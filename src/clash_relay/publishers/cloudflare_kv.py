@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import secrets
 import urllib.error
@@ -39,7 +40,7 @@ def _request_json(
         # can use the ordinary failure/compensation path. Retryable or server
         # failures stay commit-unknown because the remote mutation may have run.
         raise PublicationError(f"Cloudflare API request failed with HTTP {exc.code}") from exc
-    except (urllib.error.URLError, OSError) as exc:
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
         if commit_unknown_on_unverified_response:
             raise CommitUnknownError("Cloudflare API write response was not received") from exc
         raise PublicationError("Cloudflare API request failed") from exc
@@ -162,7 +163,7 @@ class CloudflareKVPublisher:
             if exc.code == 404:
                 return None
             raise PublicationError(f"Cloudflare API request failed with HTTP {exc.code}") from exc
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
             raise PublicationError("Cloudflare API request failed") from exc
         if len(content) > _MAX_VALUE_BYTES:
             raise PublicationError("Cloudflare KV value exceeds the 25 MiB safety limit")

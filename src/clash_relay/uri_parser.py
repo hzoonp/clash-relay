@@ -89,7 +89,10 @@ def _standard_uri(uri: str, proxy_type: str) -> dict[str, Any]:
         proxy["tls"] = True
     servername = query.get("sni", query.get("servername", [""]))[0]
     if servername:
-        proxy["servername"] = servername
+        sni_field = (
+            "sni" if proxy_type in {"trojan", "hysteria2", "tuic", "anytls"} else "servername"
+        )
+        proxy[sni_field] = servername
     if _bool(query, "allowInsecure") or _bool(query, "skip-cert-verify"):
         proxy["skip-cert-verify"] = True
     if network:

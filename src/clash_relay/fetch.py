@@ -6,8 +6,10 @@ import gzip
 import http.client
 import io
 import ipaddress
+import queue
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -26,6 +28,7 @@ _CLIENT_USER_AGENTS = {
     "default": _USER_AGENT,
     "mihomo": "clash.meta",
 }
+_DNS_SLOTS = threading.BoundedSemaphore(16)
 
 
 class _Deadline:
@@ -105,11 +108,41 @@ def _resolve_public_destination(
         raise FetchError("subscription hostname may not target localhost")
     port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
     try:
-        if deadline is not None:
+        if deadline is None:
+            answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        else:
+            # getaddrinfo has no timeout. A bounded number of daemon workers
+            # lets the caller honor its deadline without retaining blocked
+            # non-daemon threads when a resolver stalls.
+            if not _DNS_SLOTS.acquire(timeout=deadline.remaining()):
+                deadline.remaining()
+                raise FetchError("subscription fetch exceeded the configured total timeout")
+            result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+            def resolve() -> None:
+                try:
+                    result.put((True, socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)))
+                except Exception as exc:
+                    result.put((False, exc))
+                finally:
+                    _DNS_SLOTS.release()
+
+            try:
+                deadline.remaining()
+                threading.Thread(target=resolve, daemon=True).start()
+            except BaseException:
+                _DNS_SLOTS.release()
+                raise
+            try:
+                succeeded, value = result.get(timeout=deadline.remaining())
+            except queue.Empty as exc:
+                raise FetchError(
+                    "subscription fetch exceeded the configured total timeout"
+                ) from exc
             deadline.remaining()
-        answers = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-        if deadline is not None:
-            deadline.remaining()
+            if not succeeded:
+                raise value
+            answers = value
     except socket.gaierror as exc:
         raise FetchError(
             f"subscription hostname could not be resolved for {redact_url(url)}"
@@ -260,7 +293,7 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
             allow_http=self._allow_http,
             allow_file=self._allow_file,
         )
-        _validate_resolved_destination(newurl, deadline=self._deadline)
+        self._deadline.remaining()
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -279,14 +312,20 @@ def _read_bounded(
     *,
     limit_error: str | None = None,
     deadline: _Deadline | None = None,
+    read_once: bool = False,
 ) -> bytes:
     chunks: list[bytes] = []
     total = 0
+    reader = (
+        response.read1
+        if read_once and callable(getattr(response, "read1", None))
+        else response.read
+    )
     while True:
         if deadline is not None:
             deadline.remaining()
             _set_response_read_timeout(response, deadline)
-        chunk = response.read(min(65536, max_bytes + 1 - total))
+        chunk = reader(min(65536, max_bytes + 1 - total))
         if not chunk:
             break
         chunks.append(chunk)
@@ -329,13 +368,11 @@ def fetch_subscription(
     if parsed.scheme == "file":
         path = Path(url2pathname(unquote(parsed.path)))
         try:
-            raw = path.read_bytes()
+            with path.open("rb") as stream:
+                raw = _read_bounded(stream, max_bytes, deadline=deadline)
         except OSError as exc:
             raise FetchError("cannot read local subscription fixture") from exc
-        if len(raw) > max_bytes:
-            raise FetchError("subscription exceeds the configured byte limit")
     else:
-        _validate_resolved_destination(url, deadline=deadline)
         user_agent = _CLIENT_USER_AGENTS.get(client_profile)
         if user_agent is None:
             raise FetchError("unsupported subscription client profile")
@@ -358,8 +395,7 @@ def fetch_subscription(
                 validate_subscription_url(
                     response.geturl(), allow_http=allow_http, allow_file=allow_file
                 )
-                _validate_resolved_destination(response.geturl(), deadline=deadline)
-                raw = _read_bounded(response, max_bytes, deadline=deadline)
+                raw = _read_bounded(response, max_bytes, deadline=deadline, read_once=True)
                 if response.headers.get("Content-Encoding", "").lower() == "gzip":
                     raw = _decompress_gzip_bounded(raw, max_bytes, deadline=deadline)
         except FetchError:

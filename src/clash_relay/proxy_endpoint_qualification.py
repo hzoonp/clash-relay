@@ -106,11 +106,12 @@ def _probe_tcp(server: str, port: int) -> tuple[bool, str, int]:
         # must never multiply into attempts * timeout of runner time.
         deadline = time.monotonic() + _ATTEMPT_BUDGET_SECONDS
         for family, sockaddr in public:
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 break
             try:
                 with socket.socket(family, socket.SOCK_STREAM) as connection:
-                    connection.settimeout(_CONNECT_TIMEOUT)
+                    connection.settimeout(min(_CONNECT_TIMEOUT, remaining))
                     connection.connect(sockaddr)
                 attempt_succeeded = True
                 break  # one reachable address ends this attempt
