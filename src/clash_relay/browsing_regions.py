@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
-DEFAULT_BROWSING_REGIONS = ("US", "SG", "JP", "TW", "KR", "HK", "OTHER")
+DEFAULT_BROWSING_REGIONS = ("US", "SG", "JP", "TW", "KR", "HK", "UK", "OTHER")
 REGION_LABELS = {
     "US": "美国",
     "SG": "新加坡",
@@ -13,6 +13,7 @@ REGION_LABELS = {
     "TW": "台湾",
     "KR": "韩国",
     "HK": "香港",
+    "UK": "英国",
     "OTHER": "其他地区",
 }
 _REGION_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
