@@ -137,7 +137,7 @@ Media service capability checks may influence node scheduling inside `流媒体`
 
 ## AI live qualification
 
-AI remains a protected clash-relay extension. Candidate nodes are qualified independently for OpenAI, Claude, and Gemini behind the `ServiceQualification` registry. Hong Kong is excluded before qualification, and each service follows its own qualified set in the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference order.
+AI remains a protected clash-relay extension. Candidate nodes are qualified independently for OpenAI, Claude, and Gemini behind the `ServiceQualification` registry. Hong Kong and the United Kingdom are excluded before qualification, and each service follows its own qualified set in the declared `US -> SG -> JP -> TW -> KR -> OTHER` preference order.
 
 A protected service with no qualified node fails closed to `REJECT`; if protected AI qualification cannot satisfy the production contract, publication aborts and the previous KV value remains untouched.
 

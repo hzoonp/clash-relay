@@ -65,6 +65,7 @@
           "hidden": {"type": "boolean"},
           "type": {"enum": ["select", "url-test", "fallback"]},
           "provider_pool": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "region": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
           "filter": {"type": "string", "minLength": 1, "maxLength": 512},
           "on_empty": {"enum": ["error", "omit"]},
           "url": {"type": "string", "pattern": "^https?://"},

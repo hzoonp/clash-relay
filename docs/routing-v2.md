@@ -111,11 +111,11 @@ The qualified sets are not merged. Each service target can reference only anchor
 Region is a second dimension over the already service-qualified set. Canonical policy:
 
 ```text
-excluded: HK
+excluded: HK, UK
 preferred: US -> SG -> JP -> TW -> KR -> OTHER
 ```
 
-Hong Kong is excluded before service qualification and cannot be re-enabled by a service. The preferred order is materialized independently for OpenAI, Claude, and Gemini. A service/region combination with no qualified nodes is not generated.
+Hong Kong and the United Kingdom are excluded before service qualification and cannot be re-enabled by a service. The preferred order is materialized independently for OpenAI, Claude, and Gemini. A service/region combination with no qualified nodes is not generated.
 
 `人工智能` remains the generic user-facing AI control. Service-specific rules route directly to their independently qualified hidden targets; the visible group does not merge service qualification sets.
 
@@ -155,7 +155,7 @@ A drift-guard failure cannot publish or replace production configuration. Produc
 ## Non-negotiable boundaries
 
 - `subscription_1` remains usable only by `browsing` and `ai` inventories.
-- AI excludes Hong Kong before service qualification.
+- AI excludes Hong Kong and the United Kingdom before service qualification.
 - OpenAI, Claude, and Gemini remain independently qualified.
 - media and download use only the `general` permission domain.
 - `ProxyGFWlist -> 网页浏览` remains canonical.

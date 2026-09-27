@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .acl4ssr_policy import canonical_region_filter
 from .config_loader import ProjectDefinition
-from .errors import ValidationError
+from .errors import GenerationError, ValidationError
 from .policy_contract import RuntimePolicyContract, load_policy_contract
 from .routing_model import compile_routing_model
 from .routing_policy_v2 import (
@@ -232,10 +233,13 @@ def _audit_cutover_routes(
             raise ValidationError("Routing V2 cannot resolve the general pool for omission audit")
         pool_name = str(pool["display_name"])
         leaves = graph.effective_leaf_proxies(pool_name)
-        filter_text = row.get("filter")
         try:
-            pattern = re.compile(str(filter_text)) if isinstance(filter_text, str) else None
-        except re.error as exc:
+            filter_text = canonical_region_filter(
+                row,
+                country_classification=dict(project.policies.get("country_classification", {})),
+            )
+            pattern = re.compile(filter_text) if filter_text else None
+        except (GenerationError, re.error) as exc:
             raise ValidationError("Routing V2 found an invalid omittable-region filter") from exc
         count = sum(1 for leaf in leaves if pattern is None or pattern.search(leaf))
         present = display_name in groups

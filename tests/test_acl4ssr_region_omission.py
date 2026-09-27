@@ -54,7 +54,15 @@ def _build(repo_root, *, secondary_kr: bool):
 
 def _assert_public_references_resolve(config: dict[str, Any]) -> None:
     groups = {group["name"]: group for group in config["proxy-groups"]}
-    regions = {"香港节点", "台湾节点", "新加坡节点", "日本节点", "美国节点", "韩国节点"}
+    regions = {
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "英国节点",
+    }
     for group in config["proxy-groups"]:
         if group.get("hidden", False):
             continue

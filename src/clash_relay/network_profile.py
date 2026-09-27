@@ -64,7 +64,14 @@ _CN_THREE_NET_DNS_OVERRIDES: dict[str, list[str]] = {
 # qualification acceleration stage.
 _CN_THREE_NET_BROWSING_PROBE = {"url": _CANONICAL_PROBE_URL, "interval": 180, "timeout": 8000}
 _CN_THREE_NET_REGION_SWITCH_INTERVAL = 300
-_CN_THREE_NET_REGIONAL_TOLERANCE_MS = {"HK": 120, "TW": 120, "SG": 120, "JP": 120, "KR": 120}
+_CN_THREE_NET_REGIONAL_TOLERANCE_MS = {
+    "HK": 120,
+    "TW": 120,
+    "SG": 120,
+    "JP": 120,
+    "KR": 120,
+    "UK": 120,
+}
 _CN_THREE_NET_US_TOLERANCE_MS = 150
 _CN_THREE_NET_MAX_FAILED_TIMES = {"browsing": 1, "regional_and_other": 2}
 
@@ -78,6 +85,7 @@ _REGIONAL_GROUP_IDS = {
     "policy_jp": "JP",
     "policy_kr": "KR",
     "policy_us": "US",
+    "policy_uk": "UK",
 }
 _DOWNLOAD_AUTO_GROUP_ID = "policy_download_auto"
 _DOWNLOAD_MIN_INTERVAL = 600

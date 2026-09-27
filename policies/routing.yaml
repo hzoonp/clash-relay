@@ -9,9 +9,9 @@ routing:
     ai: {source_use: ai, scheduler_profile: ai}
     final: {source_use: general, scheduler_profile: connectivity}
   browsing:
-    preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]
+    preferred_regions: [US, SG, JP, TW, KR, HK, UK, OTHER]
   ai:
-    excluded_regions: [HK]
+    excluded_regions: [HK, UK]
     preferred_regions: [US, SG, JP, TW, KR, OTHER]
   download:
     mode: general_auto
@@ -34,6 +34,7 @@ routing:
       - 日本节点
       - 美国节点
       - 韩国节点
+      - 英国节点
       - DIRECT
     compatibility_selectors:
       全球直连: [DIRECT, 代理选择, 自动选择]
@@ -60,7 +61,7 @@ routing:
         US: [AI · 美国, AI · US]
         KR: [AI · 韩国, AI · KR]
         OTHER: [AI · 其他地区, AI · OTHER]
-      required_excluded_regions: [HK]
+      required_excluded_regions: [HK, UK]
     binding_targets:
       telegram: 消息通讯
       ai: 人工智能

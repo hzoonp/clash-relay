@@ -193,14 +193,14 @@ def audit(root: Path = ROOT) -> list[str]:
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
         errors.append(f"cannot derive canonical AI excluded regions: {exc}")
         excluded_regions = frozenset()
-    if excluded_regions != frozenset({"HK"}):
+    if excluded_regions != frozenset({"HK", "UK"}):
         errors.append(
-            "canonical topology no longer has the reviewed HK-only AI exclusion; "
+            "canonical topology no longer has the reviewed HK/UK AI exclusion; "
             f"found {sorted(excluded_regions)}"
         )
     routing_text = texts.get("docs/routing-v2.md", "")
-    if "excluded: HK" not in routing_text:
-        errors.append("docs/routing-v2.md is missing canonical `excluded: HK` policy wording")
+    if "excluded: HK, UK" not in routing_text:
+        errors.append("docs/routing-v2.md is missing canonical `excluded: HK, UK` policy wording")
 
     return errors
 

@@ -132,6 +132,14 @@ def _urltest_output() -> dict:
                 "tolerance": 150,
             },
             {
+                "name": "英国节点",
+                "type": "url-test",
+                "url": "https://cp.cloudflare.com/generate_204",
+                "interval": 300,
+                "timeout": 8000,
+                "tolerance": 50,
+            },
+            {
                 "name": "下载自动",
                 "type": "url-test",
                 "url": "https://cp.cloudflare.com/generate_204",
@@ -156,6 +164,7 @@ def _group_specs() -> list[dict]:
     return [
         {"id": "policy_hk", "display_name": "香港节点"},
         {"id": "policy_us", "display_name": "美国节点"},
+        {"id": "policy_uk", "display_name": "英国节点"},
         {"id": "policy_download_auto", "display_name": "下载自动"},
     ]
 
@@ -198,10 +207,15 @@ def test_cn_three_net_widens_regional_tolerance_without_carrier_hardcoding() -> 
     )
 
     assert report["status"] == "applied"
-    assert report["tolerance_overrides"] == {"香港节点": 120, "美国节点": 150}
+    assert report["tolerance_overrides"] == {
+        "香港节点": 120,
+        "美国节点": 150,
+        "英国节点": 120,
+    }
     groups = {group["name"]: group for group in output["proxy-groups"]}
     assert groups["香港节点"]["tolerance"] == 120
     assert groups["美国节点"]["tolerance"] == 150
+    assert groups["英国节点"]["tolerance"] == 120
     assert report["regional"]["interval"] == 300
     assert report["regional"]["timeout"] == 8000
     assert report["regional"]["max_failed_times"] == {
@@ -273,7 +287,8 @@ def test_cn_three_net_requires_canonical_browsing_probe_contract() -> None:
 
 def test_cn_three_net_requires_low_frequency_high_tolerance_download_group() -> None:
     output = _urltest_output()
-    output["proxy-groups"][2]["interval"] = 120
+    download = next(group for group in output["proxy-groups"] if group["name"] == "下载自动")
+    download["interval"] = 120
 
     with pytest.raises(GenerationError, match="low-frequency"):
         apply_network_profile_urltest(
@@ -284,7 +299,15 @@ def test_cn_three_net_requires_low_frequency_high_tolerance_download_group() -> 
         )
 
 
-_REGIONAL_GROUPS = ("香港节点", "台湾节点", "新加坡节点", "日本节点", "韩国节点", "美国节点")
+_REGIONAL_GROUPS = (
+    "香港节点",
+    "台湾节点",
+    "新加坡节点",
+    "日本节点",
+    "韩国节点",
+    "美国节点",
+    "英国节点",
+)
 
 
 def _canonical_project(
@@ -319,7 +342,7 @@ def _canonical_fetcher(url: str, **_kwargs) -> str:
         2: ["Hong Kong", "Taiwan"],
         3: ["Singapore", "Japan"],
         4: ["Korea"],
-        5: ["US"],
+        5: ["US", "United Kingdom"],
     }[source]
     proxies = [
         {
@@ -412,6 +435,7 @@ def test_cn_three_net_end_to_end_build_applies_profile(repo_root, tmp_path) -> N
         "日本节点": 120,
         "韩国节点": 120,
         "美国节点": 150,
+        "英国节点": 120,
     }
     assert urltest_report["automatic_groups_checked"] > 0
 

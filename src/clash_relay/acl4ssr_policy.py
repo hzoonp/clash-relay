@@ -77,6 +77,38 @@ def _resolve_route_member(
     raise GenerationError("deterministic route contains an invalid member")
 
 
+def canonical_region_filter(
+    spec: dict[str, Any],
+    *,
+    country_classification: dict[str, Any],
+) -> str | None:
+    region = spec.get("region")
+    explicit_filter = spec.get("filter")
+    if region is not None and explicit_filter is not None:
+        raise GenerationError(
+            f"ACL4SSR group {spec['display_name']!r} cannot declare both region and filter"
+        )
+    if region is None:
+        if isinstance(explicit_filter, str) and explicit_filter:
+            return explicit_filter
+        return None
+
+    aliases = country_classification.get("aliases")
+    patterns = aliases.get(str(region)) if isinstance(aliases, dict) else None
+    if not isinstance(patterns, list) or not patterns:
+        raise GenerationError(
+            f"ACL4SSR group {spec['display_name']!r} references unknown canonical region {region!r}"
+        )
+
+    scoped: list[str] = []
+    for pattern in patterns:
+        value = str(pattern)
+        if value.startswith("(?i)"):
+            value = f"(?i:{value[4:]})"
+        scoped.append(f"(?:{value})")
+    return "(?:" + "|".join(scoped) + ")"
+
+
 def _apply_test_fields(group: dict[str, Any], spec: dict[str, Any]) -> None:
     for key in ("url", "interval"):
         if key not in spec:
@@ -101,6 +133,7 @@ def apply_acl4ssr_group_semantics(
     *,
     group_specs: list[dict[str, Any]],
     pool_specs: list[dict[str, Any]],
+    country_classification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Apply provider-backed helpers, deterministic routes, and UI visibility.
 
@@ -196,8 +229,11 @@ def apply_acl4ssr_group_semantics(
             group["use"] = provider_names
             provider_backed.append(display_name)
 
-            filter_pattern = spec.get("filter")
-            if isinstance(filter_pattern, str) and filter_pattern:
+            filter_pattern = canonical_region_filter(
+                spec,
+                country_classification=country_classification or {},
+            )
+            if filter_pattern:
                 group["filter"] = filter_pattern
 
             try:

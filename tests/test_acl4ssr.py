@@ -102,6 +102,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "日本节点",
         "美国节点",
         "韩国节点",
+        "英国节点",
         "DIRECT",
     ]
     assert _group_members(groups["代理选择"]) == [
@@ -112,6 +113,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "日本节点",
         "美国节点",
         "韩国节点",
+        "英国节点",
         "手动切换",
         "DIRECT",
     ]
@@ -166,6 +168,16 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     assert groups["美国节点"]["tolerance"] == 150
     regional_groups = [groups[name] for name in general_choices[:-1]]
     assert all(group["on_empty"] == "omit" for group in regional_groups)
+    assert {group["region"] for group in regional_groups} == {
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "US",
+        "KR",
+        "UK",
+    }
+    assert all("filter" not in group for group in regional_groups)
     assert all(group["timeout"] == 8000 for group in regional_groups)
     automatic_groups = [
         (name, group) for name, group in groups.items() if group.get("type") == "url-test"
@@ -175,7 +187,15 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         group["url"] == "https://cp.cloudflare.com/generate_204" for _, group in automatic_groups
     )
     assert all(group["expected_status"] == "204" for _, group in automatic_groups)
-    region_names = {"香港节点", "台湾节点", "新加坡节点", "日本节点", "美国节点", "韩国节点"}
+    region_names = {
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "英国节点",
+    }
     assert all(
         group["timeout"] == (8000 if name in region_names or name == "网页自动" else 5000)
         for name, group in automatic_groups

@@ -18,8 +18,8 @@ pools:
     display_name: __CR_BROWSING_INVENTORY
     module: general
     source_use: browsing
-    regions: [US, SG, JP, TW, KR, HK, OTHER]
-    fallback_order: [US, SG, JP, TW, KR, HK, OTHER]
+    regions: [US, SG, JP, TW, KR, HK, UK, OTHER]
+    fallback_order: [US, SG, JP, TW, KR, HK, UK, OTHER]
     capabilities_any: [general]
     capabilities_all: []
     excluded_capabilities: []
