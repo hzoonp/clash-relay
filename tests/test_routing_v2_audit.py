@@ -146,7 +146,7 @@ def test_routing_v2_audit_accepts_prequalification_graph(repo_root) -> None:
     assert summary["bindings_checked"] >= 18
     assert summary["deterministic_targets_checked"] == 0
     assert summary["ai"]["stage"] == "pre_qualification"
-    assert summary["ai"]["excluded_regions"] == ["HK"]
+    assert summary["ai"]["excluded_regions"] == ["HK", "UK"]
     assert summary["cutover"]["intentional_deviations"] == [
         "BanProgramAD disabled",
         "AI extension",
