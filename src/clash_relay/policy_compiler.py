@@ -99,7 +99,7 @@ def compile_runtime_graph(
             output,
             group_specs=group_specs,
             pool_specs=list(policies["pools"]),
-            country_classification=dict(policies["country_classification"]),
+            country_classification=dict(policies.get("country_classification", {})),
         )
         if group_specs
         else {}
