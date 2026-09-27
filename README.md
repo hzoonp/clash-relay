@@ -155,7 +155,7 @@ Cloudflare KV is not a cross-key transactional database. The versioned Cloudflar
 
 ## Operational SLO and privacy
 
-Production proof, production metrics, and operational SLO history contain aggregate operational metadata only. The SLO ring can measure qualification rejection rate, retry recovery rate, Promotion Guard block rate, lifecycle duration, and candidate churn without node identity or subscription data. SLO persistence is best-effort and never weakens a publication gate.
+Production proof, production metrics, and operational SLO history contain aggregate operational metadata only. The production proof unifies source-admission counts, endpoint qualification, DNS compatibility/leak/runtime audits, Promotion Guard status, browsing/AI qualification, and the validated Mihomo core matrix. The SLO ring can measure qualification rejection rate, retry recovery rate, Promotion Guard block rate, lifecycle duration, and candidate churn without node identity or subscription data. SLO persistence is best-effort and never weakens a publication gate.
 
 Public or persisted aggregate data excludes proxy names, servers, ports, credentials, subscription URLs, generated config bytes, and child-process diagnostics.
 
