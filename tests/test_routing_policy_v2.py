@@ -27,9 +27,10 @@ def test_canonical_routing_v2_policy_is_explicit_and_safe() -> None:
     assert policy.scenario_use("download") == "general"
     assert policy.scenario_use("ai") == "ai"
     assert policy.scenario_use("final") == "general"
-    assert policy.ai.excluded_regions == ("HK",)
+    assert policy.ai.excluded_regions == ("HK", "UK")
     assert policy.ai.preferred_regions == ("US", "SG", "JP", "TW", "KR", "OTHER")
     assert "HK" not in policy.ai.preferred_regions
+    assert "UK" not in policy.ai.preferred_regions
     assert policy.download.mode == "general_auto"
 
 
@@ -50,7 +51,7 @@ def test_routing_v2_requires_contract_exclusion() -> None:
     policies = copy.deepcopy(_policies())
     policies["routing"]["ai"]["excluded_regions"] = ["MO"]
 
-    with pytest.raises(ConfigurationError, match="contract-required excluded regions: HK"):
+    with pytest.raises(ConfigurationError, match="contract-required excluded regions: HK, UK"):
         load_routing_policy_v2(policies)
 
 
