@@ -503,6 +503,15 @@ def test_pipeline_reports_node_quality_tiers(tmp_path: Path, monkeypatch) -> Non
     assert tiers["runner_hostname_evidence"] == {"robust": 2, "reserve": 0, "quarantined": 0}
     assert tiers["browsing_node_evidence"] == {"robust": 2, "reserve": 1, "quarantined": 1}
 
+    performance = result["performance_evidence"]
+    assert performance["authority"] == "aggregate_pre_publish_observability_only"
+    assert performance["failure_planes"]["tcp"]["robust"] == 1
+    assert performance["failure_planes"]["tcp"]["quarantined"] == 0
+    assert performance["tuning"]["endpoint_attempts"] == 3
+    assert performance["tuning"]["endpoint_admission_quorum"] == 1
+    assert performance["tuning"]["endpoint_timeout_action"] == "reserve"
+    assert performance["tuning"]["dns_inconclusive_action"] == "keep"
+
 
 def test_pipeline_flags_fully_removed_source_with_reasons(tmp_path: Path, monkeypatch) -> None:
     _, policies, mihomo = _pipeline_inputs(tmp_path)
