@@ -200,7 +200,9 @@ def audit(root: Path = ROOT) -> list[str]:
         )
     routing_text = texts.get("docs/routing-v2.md", "")
     if "excluded: HK, UK" not in routing_text:
-        errors.append("docs/routing-v2.md is missing canonical `excluded: HK, UK` policy wording")
+        errors.append(
+            "docs/routing-v2.md is missing canonical `excluded: HK, UK` policy wording"
+        )
 
     return errors
 
