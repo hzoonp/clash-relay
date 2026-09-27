@@ -77,7 +77,7 @@ def _resolve_route_member(
     raise GenerationError("deterministic route contains an invalid member")
 
 
-def _region_filter(
+def canonical_region_filter(
     spec: dict[str, Any],
     *,
     country_classification: dict[str, Any],
@@ -133,7 +133,7 @@ def apply_acl4ssr_group_semantics(
     *,
     group_specs: list[dict[str, Any]],
     pool_specs: list[dict[str, Any]],
-    country_classification: dict[str, Any],
+    country_classification: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Apply provider-backed helpers, deterministic routes, and UI visibility.
 
@@ -229,9 +229,9 @@ def apply_acl4ssr_group_semantics(
             group["use"] = provider_names
             provider_backed.append(display_name)
 
-            filter_pattern = _region_filter(
+            filter_pattern = canonical_region_filter(
                 spec,
-                country_classification=country_classification,
+                country_classification=country_classification or {},
             )
             if filter_pattern:
                 group["filter"] = filter_pattern
