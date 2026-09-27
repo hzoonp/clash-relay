@@ -7,7 +7,10 @@ import yaml
 from clash_relay.builder import build_candidate
 from clash_relay.classify import deduplicate_nodes
 from clash_relay.models import Node
-from clash_relay.node_policy import filter_informational_proxies, filter_proxies_by_name_patterns
+from clash_relay.node_policy import (
+    filter_informational_proxies,
+    filter_proxies_by_name_patterns,
+)
 from clash_relay.selector import select_nodes
 
 
