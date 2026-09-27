@@ -234,4 +234,4 @@ python scripts/repository_audit.py
 - [Publishing](docs/publishing.md)
 - [Versioning and compatibility](docs/versioning.md)
 - [v2 release checklist](docs/release-checklist.md)
-- [2.0.0 release notes](docs/releases/2.0.0.md)
+- [2.3.0 release notes](docs/releases/2.3.0.md)

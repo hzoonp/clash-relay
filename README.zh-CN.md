@@ -232,4 +232,4 @@ python scripts/repository_audit.py
 - [发布](docs/publishing.md)
 - [版本与兼容性](docs/versioning.md)
 - [v2 发布检查清单](docs/release-checklist.md)
-- [2.0.0 release notes](docs/releases/2.0.0.md)
+- [2.3.0 release notes](docs/releases/2.3.0.md)

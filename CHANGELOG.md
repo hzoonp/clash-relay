@@ -4,6 +4,8 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-27
+
 ### Added
 
 - OpenAI live qualification now distinguishes systemic probe-environment failures from real per-node failures: a bounded deterministic sentinel sweep (with a connectivity control) gates the full OpenAI probe, an aggregate detector re-checks full-sweep results, and a systemic verdict produces `inconclusive` evidence that never writes negative cache entries or refreshes cached passes. Routing falls back to the fresh pass cache (last known good, bounded by the 7200s OpenAI pass TTL); without a fresh cache the release is held (`probe_environment_hold`) with the previous verified production version preserved and OpenAI runtime routing never collapsed to REJECT. Claude, Gemini, general, and browsing qualifications are unaffected. Per-service aggregate evidence is published under `ai.service_evidence`., and every region now records explicit per-endpoint counters (`probed`/`passed`/`failed`/`reached`/`network_failure`/`outcomes`) that survive shard merges, so verdicts never re-derive pass/fail from outcome prefixes. Provider-to-region attribution comes from shared runtime-identity naming (fail-closed on unmapped or ambiguous AI providers), the connectivity control requires its own expected-status pass, and real-Mihomo integration tests cover multi-shard evidence, partial control coverage, and the end-to-end systemic verdict.
@@ -437,7 +439,8 @@ All notable user-visible changes are documented here. This project follows Seman
 - Production publication is fail-closed: a failed generation, audit, qualification, core validation, or publication gate does not replace the last known-good production value.
 - Source-use isolation remains an admission and graph-reachability invariant rather than a post-generation best-effort filter.
 
-[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/hzoonp/clash-relay/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/hzoonp/clash-relay/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/hzoonp/clash-relay/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/hzoonp/clash-relay/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/hzoonp/clash-relay/compare/v1.8.1...v2.0.0
