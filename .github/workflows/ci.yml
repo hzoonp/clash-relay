@@ -93,7 +93,6 @@ jobs:
             src/clash_relay/production_failure_metrics.py \
             src/clash_relay/promotion_guard.py \
             src/clash_relay/production_release_stage.py \
-            src/clash_relay/final_link_smoke.py \
             src/clash_relay/health_check_inventory.py \
             src/clash_relay/release_bundle.py \
             src/clash_relay/release_reconciliation.py \
