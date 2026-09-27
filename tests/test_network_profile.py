@@ -287,7 +287,8 @@ def test_cn_three_net_requires_canonical_browsing_probe_contract() -> None:
 
 def test_cn_three_net_requires_low_frequency_high_tolerance_download_group() -> None:
     output = _urltest_output()
-    output["proxy-groups"][2]["interval"] = 120
+    download = next(group for group in output["proxy-groups"] if group["name"] == "下载自动")
+    download["interval"] = 120
 
     with pytest.raises(GenerationError, match="low-frequency"):
         apply_network_profile_urltest(
