@@ -89,7 +89,11 @@ def _region_filter(
             f"ACL4SSR group {spec['display_name']!r} cannot declare both region and filter"
         )
     if region is None:
-        return str(explicit_filter) if isinstance(explicit_filter, str) and explicit_filter else None
+        return (
+            str(explicit_filter)
+            if isinstance(explicit_filter, str) and explicit_filter
+            else None
+        )
 
     aliases = country_classification.get("aliases")
     patterns = aliases.get(str(region)) if isinstance(aliases, dict) else None
