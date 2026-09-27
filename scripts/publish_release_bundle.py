@@ -22,7 +22,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--subscriptions", type=_path, default=Path("subscriptions.yaml"))
     parser.add_argument("--policies", type=_path, default=Path("policies.yaml"))
     parser.add_argument("--candidate", type=_path, required=True)
-    parser.add_argument("--mihomo-bin", type=_path, required=True)
     return parser
 
 
@@ -34,9 +33,7 @@ def main(argv: list[str] | None = None) -> int:
             subscriptions_path=args.subscriptions,
             policies_path=args.policies,
         )
-        result = publish_production_release(
-            project=project, candidate_path=args.candidate, mihomo_binary=args.mihomo_bin
-        )
+        result = publish_production_release(project=project, candidate_path=args.candidate)
     except (OSError, ClashRelayError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
