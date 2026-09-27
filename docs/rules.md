@@ -54,6 +54,29 @@ Any additional classification source or compatibility change must be declared in
 
 The old canonical `ProxyGFWlist` substitution and standalone YouTube/Netflix/game/Bilibili/ChinaMedia classification graph are deliberately removed. ACL4SSR Online decides the classification category; clash-relay decides which source-safe node inventory that category may use.
 
+## Node admission before routing
+
+Untrusted subscription entries pass through admission before they can reach classification or any
+runtime inventory:
+
+```text
+parse and structural validation
+  -> high-confidence informational pseudo-node rejection
+  -> subscription deny_name_patterns
+  -> multiplier ceiling
+  -> country/capability classification
+  -> deduplication
+```
+
+The informational stage rejects status/support labels such as `剩余流量`, `套餐到期`,
+`距离重置`, `官方网站`, `联系客服`, and explicit English status labels such as
+`Traffic:`, `Expire:`, `Remaining:`, or `Reset:`. It deliberately does not reject broad
+tokens such as `流量`, `套餐`, `官网`, or `节点` on their own, so ordinary endpoint names
+such as `日本流量优化 02` remain valid.
+
+Diagnostics are aggregate-only. Rejected informational node names are never copied into the build
+report.
+
 ## Six public controls
 
 FlClash exposes only the main scenario decisions:

@@ -7,7 +7,10 @@ import yaml
 from clash_relay.builder import build_candidate
 from clash_relay.classify import deduplicate_nodes
 from clash_relay.models import Node
-from clash_relay.node_policy import filter_proxies_by_name_patterns
+from clash_relay.node_policy import (
+    filter_informational_proxies,
+    filter_proxies_by_name_patterns,
+)
 from clash_relay.selector import select_nodes
 
 
@@ -40,6 +43,34 @@ def _selector(source_use: str) -> dict:
         "excluded_capabilities": [],
         "allowed_cost_levels": ["standard"],
     }
+
+
+def test_informational_filter_is_conservative_and_high_confidence() -> None:
+    proxies = [
+        _proxy("剩余流量\uff1a100 GB"),
+        _proxy("套餐到期 2026-10-01"),
+        _proxy("距离重置 3 天"),
+        _proxy("官方网站 https://example.invalid"),
+        _proxy("联系客服"),
+        _proxy("Traffic: 100 GB"),
+        _proxy("Expire: 2026-10-01"),
+        _proxy("Remaining: 50 GB"),
+        _proxy("Reset: 3 days"),
+        _proxy("香港节点 01"),
+        _proxy("日本流量优化 02"),
+        _proxy("官网优化节点 03"),
+        _proxy("套餐线路 04"),
+    ]
+
+    kept, rejected = filter_informational_proxies(proxies)
+
+    assert [item["name"] for item in kept] == [
+        "香港节点 01",
+        "日本流量优化 02",
+        "官网优化节点 03",
+        "套餐线路 04",
+    ]
+    assert rejected == 9
 
 
 def test_deny_name_patterns_remove_nodes_before_classification() -> None:
@@ -117,6 +148,80 @@ def test_builder_reports_name_admission_rejections(
     assert any("Keep normal" in name for name in runtime_names)
     assert primary_report["filtered_by_name"] == 1
     assert result.report["name_filtered_nodes"] == 1
+
+
+def test_builder_applies_informational_source_and_multiplier_admission_in_order(
+    project_factory,
+    fixture_env,
+    yaml_editor,
+) -> None:
+    _root, paths = project_factory()
+
+    def configure_subscriptions(document):
+        for item in document["subscriptions"]:
+            item["enabled"] = item["id"] == "primary"
+            if item["id"] == "primary":
+                item["deny_name_patterns"] = ["(?i)emby"]
+                item["max_node_multiplier"] = 2.0
+
+    def configure_modules(document):
+        for module in document["modules"]:
+            document["modules"][module] = module == "general"
+
+    yaml_editor(paths["subscriptions_path"], configure_subscriptions)
+    yaml_editor(paths["config_path"], configure_modules)
+
+    source = """proxies:
+  - name: 剩余流量\uff1a100 GB EMBY 3x
+    type: http
+    server: informational.invalid.example
+    port: 21001
+  - name: Drop EMBY 1x
+    type: http
+    server: emby.invalid.example
+    port: 21002
+  - name: Drop multiplier 3x
+    type: http
+    server: multiplier.invalid.example
+    port: 21003
+  - name: 香港节点 01
+    type: http
+    server: hk.invalid.example
+    port: 21004
+  - name: 日本流量优化 02
+    type: http
+    server: jp.invalid.example
+    port: 21005
+"""
+    result = build_candidate(
+        **paths,
+        env=fixture_env,
+        fetcher=lambda _url, **_kwargs: source,
+    )
+
+    provider = result.config["proxy-providers"]["cr_general_any"]
+    runtime_names = [item["name"] for item in provider["payload"]]
+    primary_report = next(
+        item for item in result.report["subscriptions"] if item["id"] == "primary"
+    )
+
+    assert any("香港节点 01" in name for name in runtime_names)
+    assert any("日本流量优化 02" in name for name in runtime_names)
+    assert all("剩余流量" not in name for name in runtime_names)
+    assert all("EMBY" not in name for name in runtime_names)
+    assert all("Drop multiplier" not in name for name in runtime_names)
+
+    assert primary_report["parsed_valid_nodes"] == 5
+    assert primary_report["post_informational_filter_nodes"] == 4
+    assert primary_report["informational_rejected"] == 1
+    assert primary_report["post_name_filter_nodes"] == 3
+    assert primary_report["filtered_by_name"] == 1
+    assert primary_report["post_multiplier_filter_nodes"] == 2
+    assert primary_report["filtered_over_multiplier"] == 1
+    assert result.report["informational_nodes_rejected"] == 1
+    assert result.report["name_filtered_nodes"] == 1
+    assert result.report["multiplier_filtered_nodes"] == 1
+    assert "剩余流量" not in str(result.report)
 
 
 def test_canonical_subscription_1_uses_true_admission_filter(repo_root: Path) -> None:

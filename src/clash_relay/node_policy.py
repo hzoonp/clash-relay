@@ -17,6 +17,35 @@ _MULTIPLIER_PATTERNS = (
     ),
 )
 
+_INFORMATIONAL_NODE_PATTERNS = (
+    re.compile(
+        r"(?:剩余流量|流量剩余|套餐到期|距离到期|距离重置|下次重置|官网地址|官方网站|联系客服|在线客服|订阅到期|过期时间)"
+    ),
+    re.compile(r"(?:^|[\s|\uff5c])剩余\s*[:\uff1a]"),
+    re.compile(r"\b(?:traffic|expire|remaining|reset)\s*[:\uff1a]", re.IGNORECASE),
+)
+
+
+def filter_informational_proxies(
+    proxies: Iterable[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Drop high-confidence subscription status or support pseudo-nodes.
+
+    The filter is intentionally conservative. Generic words such as "流量",
+    "套餐", "官网", or "节点" are not sufficient by themselves because real
+    endpoint names may legitimately contain them.
+    """
+
+    kept: list[dict[str, Any]] = []
+    rejected = 0
+    for proxy in proxies:
+        name = str(proxy.get("name", ""))
+        if any(pattern.search(name) is not None for pattern in _INFORMATIONAL_NODE_PATTERNS):
+            rejected += 1
+            continue
+        kept.append(proxy)
+    return kept, rejected
+
 
 def node_name_multiplier(name: str) -> float | None:
     """Return the highest explicit multiplier marker found in a node name.
