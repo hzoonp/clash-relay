@@ -118,6 +118,7 @@ def test_failed_pointer_commit_restores_previous_production_bytes() -> None:
 
     assert kv.values[key] == first
     assert kv.values[keys.current_pointer].decode().strip() == release_id_for(first)
+    assert parse_release_pointer(kv.values[keys.previous_pointer]) is None
 
 
 def test_ambiguous_successful_production_put_is_recovered_by_exact_readback() -> None:
