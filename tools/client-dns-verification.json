@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "strategy": "cartesian_product",
+  "dimensions": {
+    "clients": ["flclash_windows", "flclash_android"],
+    "modes": ["system_proxy", "tun"],
+    "networks": ["wifi", "mobile_hotspot", "china_telecom", "china_unicom", "china_mobile"]
+  },
+  "checks": [
+    {"id": "profile_refresh", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "tun_dns_hijack", "modes": ["tun"], "evidence": "client_runtime"},
+    {"id": "fake_ip_compatibility", "modes": ["tun"], "evidence": "client_runtime"},
+    {"id": "direct_dns", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "proxy_server_dns", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "cn_three_net", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "six_public_groups", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "uk_region", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "ai_services", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "web_browsing", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "streaming", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "messaging", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "download", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "ipv4_ipv6", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "network_transition", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
+    {"id": "carrier_auth", "modes": ["tun"], "evidence": "client_runtime"},
+    {"id": "banking_auth", "modes": ["tun"], "evidence": "client_runtime"}
+  ]
+}

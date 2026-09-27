@@ -226,6 +226,7 @@ python scripts/repository_audit.py
 - [Configuration model](docs/configuration.md)
 - [Service Qualification API](docs/service-qualification.md)
 - [Operational SLO](docs/operational-slo.md)
+- [Client / DNS verification matrix](docs/client-dns-verification.md)
 - [Production maturity](docs/production-maturity.md)
 - [OpenAI App reliability](docs/openai-app-reliability.md)
 - [ACL4SSR routing model](docs/rules.md)
