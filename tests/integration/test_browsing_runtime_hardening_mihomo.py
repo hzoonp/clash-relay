@@ -72,10 +72,9 @@ def _regional_candidate(
     controller_port: int,
     secret: str,
     probe_url: str,
+    broken_proxy_port: int,
     us_reserve_direct: bool,
 ) -> dict:
-    us_stable_port = _port()
-    us_reserve_port = _port()
     us_reserve = (
         {"name": "US Reserve Direct", "type": "direct"}
         if us_reserve_direct
@@ -83,7 +82,7 @@ def _regional_candidate(
             "name": "US Reserve Broken",
             "type": "http",
             "server": "127.0.0.1",
-            "port": us_reserve_port,
+            "port": broken_proxy_port,
         }
     )
     return {
@@ -101,7 +100,7 @@ def _regional_candidate(
                         "name": "US Stable Broken",
                         "type": "http",
                         "server": "127.0.0.1",
-                        "port": us_stable_port,
+                        "port": broken_proxy_port,
                     },
                     us_reserve,
                 ],
@@ -337,8 +336,31 @@ def _probe_server(delay: float = 0) -> tuple[ThreadingHTTPServer, threading.Thre
     return server, thread
 
 
+def _failure_proxy_server() -> tuple[ThreadingHTTPServer, threading.Thread]:
+    class Handler(BaseHTTPRequestHandler):
+        def _fail(self) -> None:
+            self.send_response(503)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        do_CONNECT = _fail
+        do_HEAD = _fail
+        do_GET = _fail
+
+        def log_message(self, format, *args) -> None:
+            return
+
+    # Keep the port actively bound for the whole test. The old free-port
+    # sentinel could be reused by Mihomo or the OS and become reachable.
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
 def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_path: Path) -> None:
     probe_server, _ = _probe_server()
+    broken_proxy, _ = _failure_proxy_server()
     controller_port = _port()
     secret = "regional-browsing-same-region-reserve"
     try:
@@ -346,6 +368,7 @@ def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_pa
             controller_port=controller_port,
             secret=secret,
             probe_url=f"http://127.0.0.1:{probe_server.server_port}/generate_204",
+            broken_proxy_port=broken_proxy.server_port,
             us_reserve_direct=True,
         )
         _run_and_wait(
@@ -359,12 +382,15 @@ def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_pa
     finally:
         probe_server.shutdown()
         probe_server.server_close()
+        broken_proxy.shutdown()
+        broken_proxy.server_close()
 
 
 def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
     tmp_path: Path,
 ) -> None:
     probe_server, _ = _probe_server()
+    broken_proxy, _ = _failure_proxy_server()
     controller_port = _port()
     secret = "regional-browsing-cross-region-fallback"
     try:
@@ -372,6 +398,7 @@ def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
             controller_port=controller_port,
             secret=secret,
             probe_url=f"http://127.0.0.1:{probe_server.server_port}/generate_204",
+            broken_proxy_port=broken_proxy.server_port,
             us_reserve_direct=False,
         )
         _run_and_wait(
@@ -385,10 +412,13 @@ def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
     finally:
         probe_server.shutdown()
         probe_server.server_close()
+        broken_proxy.shutdown()
+        broken_proxy.server_close()
 
 
 def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Path) -> None:
     probe_server, _ = _probe_server()
+    broken_proxy, _ = _failure_proxy_server()
     slow_proxy, _ = _probe_server(delay=0.35)
     controller_port = _port()
     secret = "regional-browsing-client-latency"
@@ -397,6 +427,7 @@ def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Pa
             controller_port=controller_port,
             secret=secret,
             probe_url=f"http://127.0.0.1:{probe_server.server_port}/generate_204",
+            broken_proxy_port=broken_proxy.server_port,
             us_reserve_direct=True,
         )
         # A local HTTP proxy fixture returns the probe response after 350 ms.
@@ -417,12 +448,15 @@ def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Pa
     finally:
         probe_server.shutdown()
         probe_server.server_close()
+        broken_proxy.shutdown()
+        broken_proxy.server_close()
         slow_proxy.shutdown()
         slow_proxy.server_close()
 
 
 def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path: Path) -> None:
     probe_server, _ = _probe_server()
+    broken_proxy, _ = _failure_proxy_server()
     controller_port = _port()
     secret = "endpoint-reserve-runtime"
     try:
@@ -431,6 +465,7 @@ def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path
             controller_port=controller_port,
             secret=secret,
             probe_url=probe_url,
+            broken_proxy_port=broken_proxy.server_port,
             us_reserve_direct=True,
         )
         candidate["proxy-providers"]["cr_general_us"] = {
@@ -479,3 +514,5 @@ def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path
     finally:
         probe_server.shutdown()
         probe_server.server_close()
+        broken_proxy.shutdown()
+        broken_proxy.server_close()
