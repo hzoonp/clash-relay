@@ -40,9 +40,7 @@ _REQUIRED_CHECKS = {
 
 
 def _string_set(value: object, label: str) -> set[str]:
-    if not isinstance(value, list) or not all(
-        isinstance(item, str) and item for item in value
-    ):
+    if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
         raise SystemExit(f"client/DNS verification contract: {label} must be a string list")
     return set(value)
 
@@ -52,7 +50,9 @@ def main() -> int:
         data = json.loads(MATRIX.read_text(encoding="utf-8"))
         documentation = DOC.read_text(encoding="utf-8")
     except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit("client/DNS verification contract: failed to load canonical files") from exc
+        raise SystemExit(
+            "client/DNS verification contract: failed to load canonical files"
+        ) from exc
 
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise SystemExit("client/DNS verification contract: schema_version must be 1")
@@ -73,9 +73,7 @@ def main() -> int:
     if not isinstance(checks, list) or not all(isinstance(row, dict) for row in checks):
         raise SystemExit("client/DNS verification contract: checks must be an object list")
     ids = [row.get("id") for row in checks]
-    if not all(isinstance(item, str) and item for item in ids) or len(ids) != len(
-        set(ids)
-    ):
+    if not all(isinstance(item, str) and item for item in ids) or len(ids) != len(set(ids)):
         raise SystemExit("client/DNS verification contract: check IDs must be unique strings")
     if set(ids) != _REQUIRED_CHECKS:
         raise SystemExit("client/DNS verification contract: required check set drift")
@@ -85,7 +83,9 @@ def main() -> int:
         if not modes or not modes <= _REQUIRED_MODES:
             raise SystemExit("client/DNS verification contract: invalid check mode")
         if row.get("evidence") != "client_runtime":
-            raise SystemExit("client/DNS verification contract: checks require client_runtime evidence")
+            raise SystemExit(
+                "client/DNS verification contract: checks require client_runtime evidence"
+            )
         if f"`{row['id']}`" not in documentation:
             raise SystemExit(
                 f"client/DNS verification contract: documentation is missing {row['id']}"
