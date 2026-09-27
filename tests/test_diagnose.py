@@ -40,9 +40,7 @@ def _candidate() -> dict:
     }
 
 
-def test_diagnose_reports_only_aggregate_safe_results(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_diagnose_reports_only_aggregate_safe_results(tmp_path: Path, monkeypatch) -> None:
     path = tmp_path / "candidate.yaml"
     path.write_text(yaml.safe_dump(_candidate(), allow_unicode=True), encoding="utf-8")
     monkeypatch.setattr(diagnose_module, "validate_generated_config", lambda candidate: None)
@@ -83,9 +81,7 @@ def test_diagnose_fails_closed_without_echoing_validator_details(
     assert "secret.example" not in serialized
 
 
-def test_diagnose_runtime_is_optional_and_aggregate(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_diagnose_runtime_is_optional_and_aggregate(tmp_path: Path, monkeypatch) -> None:
     path = tmp_path / "candidate.yaml"
     path.write_text(yaml.safe_dump(_candidate(), allow_unicode=True), encoding="utf-8")
     binary = tmp_path / "mihomo"
