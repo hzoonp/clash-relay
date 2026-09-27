@@ -11,11 +11,7 @@ from typing import Any
 
 
 def _count(value: Any) -> int:
-    return (
-        value
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
-        else 0
-    )
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -118,12 +114,8 @@ def build_qualification_performance_evidence(
             "endpoint_admission_quorum": _count(endpoint_report.get("admission_quorum")),
             "endpoint_timeout_action": "reserve",
             "dns_inconclusive_action": "keep",
-            "browsing_attempts_per_node": _count(
-                browsing_diagnostics.get("attempts_per_node")
-            ),
-            "browsing_required_successes": _count(
-                browsing_diagnostics.get("required_successes")
-            ),
+            "browsing_attempts_per_node": _count(browsing_diagnostics.get("attempts_per_node")),
+            "browsing_required_successes": _count(browsing_diagnostics.get("required_successes")),
             "transport_tcp_attempts": _count(transport_diagnostics.get("tcp_attempts")),
             "transport_tcp_required_successes": _count(
                 transport_diagnostics.get("tcp_required_successes")
