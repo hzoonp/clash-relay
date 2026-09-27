@@ -75,6 +75,20 @@ def _inputs(candidate_path: Path) -> dict:
         "qualification": {
             "status": "qualified",
             "stages": [],
+            "endpoint_qualification": {
+                "status": "passed",
+                "tcp_nodes": 12,
+                "tested": 12,
+                "reachable": 9,
+                "unreachable": 2,
+                "quarantined": 2,
+                "skipped_udp_native": 3,
+                "robust_endpoints": 7,
+                "reserve_endpoints": 2,
+                "dns_inconclusive": 1,
+                "timeout_reserve": 1,
+                "server": "SHOULD-NOT-LEAK",
+            },
             "timings_ms": {"ai": 1, "secret.example.invalid": 2},
             "qualification_removed_unique_nodes": 1,
             "qualification_removed_runtime_entries": 2,
@@ -120,6 +134,48 @@ def _inputs(candidate_path: Path) -> dict:
                     }
                 }
             },
+        },
+        "build_report": {
+            "subscriptions": [
+                {"id": "subscription_1", "url": "SHOULD-NOT-LEAK"},
+                {"id": "subscription_2", "url": "SHOULD-NOT-LEAK"},
+            ],
+            "successful_subscriptions": 2,
+            "parsed_nodes": 14,
+            "usable_nodes": 11,
+            "duplicates_removed": 1,
+            "informational_nodes_rejected": 2,
+            "name_filtered_nodes": 1,
+            "multiplier_filtered_nodes": 3,
+            "dns_compatibility_audit": {
+                "status": "passed",
+                "mode": "fake_ip",
+                "entries": 7,
+                "compatibility_entries": 4,
+                "private": "SHOULD-NOT-LEAK",
+            },
+            "dns_leak_audit": {
+                "status": "passed",
+                "mode": "strict_tun",
+                "policy_rulesets": 4,
+                "exact_domain_overrides": 3,
+                "encrypted_resolver_fields": 4,
+                "dns_hijack_protocols": 2,
+                "resolver": "SHOULD-NOT-LEAK",
+            },
+            "dns_runtime_audit": {
+                "status": "passed",
+                "resolver_transport": "independent",
+                "direct_resolver_policy": "bypass",
+                "automatic_groups": 8,
+                "resolver": "SHOULD-NOT-LEAK",
+            },
+        },
+        "promotion_guard": {
+            "status": "passed",
+            "reason": "within_thresholds",
+            "violations": [],
+            "candidate": {"server": "SHOULD-NOT-LEAK"},
         },
     }
 
@@ -173,6 +229,47 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "runtime_providers": 2,
         "runtime_nodes": 3,
     }
+    assert proof["source_admission"] == {
+        "configured_subscriptions": 2,
+        "successful_subscriptions": 2,
+        "parsed_nodes": 14,
+        "usable_nodes": 11,
+        "duplicates_removed": 1,
+        "informational_rejected": 2,
+        "name_filtered": 1,
+        "multiplier_filtered": 3,
+    }
+    assert proof["endpoint_qualification"] == {
+        "status": "passed",
+        "tcp_nodes": 12,
+        "tested": 12,
+        "reachable": 9,
+        "unreachable": 2,
+        "quarantined": 2,
+        "skipped_udp_native": 3,
+        "robust_endpoints": 7,
+        "reserve_endpoints": 2,
+        "dns_inconclusive": 1,
+        "timeout_reserve": 1,
+    }
+    assert proof["dns"]["compatibility"] == {
+        "status": "passed",
+        "mode": "fake_ip",
+        "entries": 7,
+        "compatibility_entries": 4,
+    }
+    assert proof["dns"]["leak"]["status"] == "passed"
+    assert proof["dns"]["runtime"] == {
+        "status": "passed",
+        "resolver_transport": "independent",
+        "direct_resolver_policy": "bypass",
+        "automatic_groups": 8,
+    }
+    assert proof["promotion_guard"] == {
+        "status": "passed",
+        "reason": "within_thresholds",
+        "violations": 0,
+    }
     assert proof["qualification_pipeline"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
     assert proof["qualification_pipeline"]["sources_fully_removed"][0]["source"] == "subscription_4"
     assert proof["qualification_pipeline"]["removed_by_stage"]["browsing"]["by_source"] == {
@@ -195,6 +292,13 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     assert "OpenAI critical TLS / DNS / timeout failures | 2 / 1 / 3" in markdown
     assert "OpenAI client-path selection | stable_first_fallback" in markdown
     assert "OpenAI client-path nodes | 3" in markdown
+    assert "Subscriptions successful / configured | 2 / 2" in markdown
+    assert "Informational nodes rejected | 2" in markdown
+    assert "TCP reachable / tested | 9 / 12" in markdown
+    assert "DNS compatibility | passed" in markdown
+    assert "DNS leak audit | passed" in markdown
+    assert "DNS runtime audit | passed" in markdown
+    assert "Promotion Guard | passed" in markdown
     for secret in (
         "SECRET-NODE-NAME",
         "secret.example.invalid",

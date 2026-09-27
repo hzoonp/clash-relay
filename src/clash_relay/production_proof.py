@@ -69,6 +69,124 @@ def _safe_release(value: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _safe_count(value: dict[str, Any], key: str) -> int:
+    raw = value.get(key, 0)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return 0
+    return max(0, int(raw))
+
+
+def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    subscriptions = value.get("subscriptions")
+    configured = len(subscriptions) if isinstance(subscriptions, list) else 0
+
+    compatibility = value.get("dns_compatibility_audit")
+    leak = value.get("dns_leak_audit")
+    runtime = value.get("dns_runtime_audit")
+    dns: dict[str, Any] = {}
+
+    if isinstance(compatibility, dict):
+        status = compatibility.get("status")
+        dns["compatibility"] = {
+            "status": status if status in {"passed", "not_applicable"} else "unknown",
+            "mode": compatibility.get("mode")
+            if compatibility.get("mode") in {"fake_ip", "no_managed_dns", "not_fake_ip"}
+            else "unknown",
+            "entries": _safe_count(compatibility, "entries"),
+            "compatibility_entries": _safe_count(compatibility, "compatibility_entries"),
+        }
+    if isinstance(leak, dict):
+        status = leak.get("status")
+        dns["leak"] = {
+            "status": status if status in {"passed", "not_applicable"} else "unknown",
+            "mode": leak.get("mode")
+            if leak.get("mode") in {"strict_tun", "no_tun", "tun_disabled"}
+            else "unknown",
+            "policy_rulesets": _safe_count(leak, "policy_rulesets"),
+            "exact_domain_overrides": _safe_count(leak, "exact_domain_overrides"),
+            "encrypted_resolver_fields": _safe_count(leak, "encrypted_resolver_fields"),
+            "dns_hijack_protocols": _safe_count(leak, "dns_hijack_protocols"),
+        }
+    if isinstance(runtime, dict):
+        status = runtime.get("status")
+        dns["runtime"] = {
+            "status": status if status in {"passed", "not_applicable"} else "unknown",
+            "resolver_transport": "independent"
+            if runtime.get("resolver_transport") == "independent"
+            else "unknown",
+            "direct_resolver_policy": "bypass"
+            if runtime.get("direct_resolver_policy") == "bypass"
+            else "unknown",
+            "automatic_groups": _safe_count(runtime, "automatic_groups"),
+        }
+
+    return {
+        "source_admission": {
+            "configured_subscriptions": configured,
+            "successful_subscriptions": _safe_count(value, "successful_subscriptions"),
+            "parsed_nodes": _safe_count(value, "parsed_nodes"),
+            "usable_nodes": _safe_count(value, "usable_nodes"),
+            "duplicates_removed": _safe_count(value, "duplicates_removed"),
+            "informational_rejected": _safe_count(value, "informational_nodes_rejected"),
+            "name_filtered": _safe_count(value, "name_filtered_nodes"),
+            "multiplier_filtered": _safe_count(value, "multiplier_filtered_nodes"),
+        },
+        "dns": dns,
+    }
+
+
+def _safe_endpoint_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    endpoint = value.get("endpoint_qualification")
+    if not isinstance(endpoint, dict):
+        return None
+    status = endpoint.get("status")
+    return {
+        "status": status if status in {"passed", "skipped"} else "unknown",
+        **{
+            key: _safe_count(endpoint, key)
+            for key in (
+                "tcp_nodes",
+                "tested",
+                "reachable",
+                "unreachable",
+                "quarantined",
+                "skipped_udp_native",
+                "robust_endpoints",
+                "reserve_endpoints",
+                "dns_inconclusive",
+                "timeout_reserve",
+            )
+        },
+    }
+
+
+def _safe_promotion_guard(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    status = value.get("status")
+    if status not in {"passed", "blocked"}:
+        raise ValidationError("production proof received invalid Promotion Guard status")
+    reason = value.get("reason")
+    safe_reasons = {
+        "disabled",
+        "first_release",
+        "within_thresholds",
+        "degraded",
+        "availability_contract",
+        "probe_environment_hold",
+    }
+    violations = value.get("violations")
+    return {
+        "status": status,
+        "reason": reason if reason in safe_reasons else "other",
+        "violations": len(violations) if isinstance(violations, list) else 0,
+    }
+
+
 def _safe_openai_app(value: Any) -> dict[str, int] | None:
     if not isinstance(value, dict):
         return None
@@ -115,6 +233,8 @@ def build_production_proof(
     publication_status: str,
     qualification: dict[str, Any] | None = None,
     release: dict[str, Any] | None = None,
+    build_report: dict[str, Any] | None = None,
+    promotion_guard: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return aggregate-only metadata for the exact validated candidate bytes."""
     if publication_status not in _ALLOWED_PUBLICATION_STATUSES:
@@ -202,6 +322,18 @@ def build_production_proof(
     )
     if safe_qualification is not None:
         proof["qualification_pipeline"] = safe_qualification
+    endpoint_qualification = _safe_endpoint_qualification(qualification)
+    if endpoint_qualification is not None:
+        proof["endpoint_qualification"] = endpoint_qualification
+
+    build_observability = _safe_build_observability(build_report)
+    if build_observability is not None:
+        proof.update(build_observability)
+
+    safe_promotion = _safe_promotion_guard(promotion_guard)
+    if safe_promotion is not None:
+        proof["promotion_guard"] = safe_promotion
+
     safe_release = _safe_release(release)
     if safe_release is not None:
         if safe_release["release_id"] != proof["candidate"]["sha256"]:
@@ -270,6 +402,50 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     lines.append(
         f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |"
     )
+
+    source_admission = proof.get("source_admission")
+    if isinstance(source_admission, dict):
+        lines.extend(
+            [
+                f"| Subscriptions successful / configured | {source_admission.get('successful_subscriptions', 0)} / {source_admission.get('configured_subscriptions', 0)} |",
+                f"| Parsed / usable nodes | {source_admission.get('parsed_nodes', 0)} / {source_admission.get('usable_nodes', 0)} |",
+                f"| Informational nodes rejected | {source_admission.get('informational_rejected', 0)} |",
+                f"| Name / multiplier filtered | {source_admission.get('name_filtered', 0)} / {source_admission.get('multiplier_filtered', 0)} |",
+            ]
+        )
+
+    endpoint = proof.get("endpoint_qualification")
+    if isinstance(endpoint, dict):
+        lines.extend(
+            [
+                f"| Endpoint qualification | {endpoint.get('status', 'unknown')} |",
+                f"| TCP reachable / tested | {endpoint.get('reachable', 0)} / {endpoint.get('tested', 0)} |",
+                f"| TCP quarantined / unreachable | {endpoint.get('quarantined', 0)} / {endpoint.get('unreachable', 0)} |",
+                f"| UDP-native skipped | {endpoint.get('skipped_udp_native', 0)} |",
+                f"| DNS inconclusive / timeout reserve | {endpoint.get('dns_inconclusive', 0)} / {endpoint.get('timeout_reserve', 0)} |",
+            ]
+        )
+
+    dns = proof.get("dns")
+    if isinstance(dns, dict):
+        for label, key in (
+            ("DNS compatibility", "compatibility"),
+            ("DNS leak audit", "leak"),
+            ("DNS runtime audit", "runtime"),
+        ):
+            row = dns.get(key)
+            if isinstance(row, dict):
+                lines.append(f"| {label} | {row.get('status', 'unknown')} |")
+
+    promotion = proof.get("promotion_guard")
+    if isinstance(promotion, dict):
+        lines.extend(
+            [
+                f"| Promotion Guard | {promotion.get('status', 'unknown')} |",
+                f"| Promotion Guard reason | {promotion.get('reason', 'other')} |",
+                f"| Promotion Guard violations | {promotion.get('violations', 0)} |",
+            ]
+        )
 
     qualification = proof.get("qualification_pipeline")
     if isinstance(qualification, dict):

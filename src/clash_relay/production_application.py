@@ -671,6 +671,8 @@ def render_production_proof_application(
     publication_status: str,
     qualification: Path | None = None,
     release: Path | None = None,
+    build_report: Path | None = None,
+    promotion_guard: Path | None = None,
     validated_cores: tuple[str, ...] = (),
     validated_cores_report: Path | None = None,
     markdown: Path | None = None,
@@ -706,6 +708,10 @@ def render_production_proof_application(
         if qualification is not None
         else None,
         release=_load_json(release, "release transaction") if release is not None else None,
+        build_report=_load_json(build_report, "build report") if build_report is not None else None,
+        promotion_guard=_load_json(promotion_guard, "Promotion Guard")
+        if promotion_guard is not None
+        else None,
     )
     if markdown is not None:
         markdown.parent.mkdir(parents=True, exist_ok=True)
