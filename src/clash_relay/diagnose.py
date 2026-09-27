@@ -20,7 +20,9 @@ _PUBLIC_SCENARIO_GROUPS = (
 )
 
 
-def _result(*, status: str, tested: int, passed: int, failed: int, skipped: int = 0) -> dict[str, Any]:
+def _result(
+    *, status: str, tested: int, passed: int, failed: int, skipped: int = 0
+) -> dict[str, Any]:
     return {
         "status": status,
         "tested": tested,
@@ -121,7 +123,13 @@ def diagnose_candidate(
             "status": "passed" if runtime_ok else "failed",
             **{
                 key: runtime[key]
-                for key in ("binary", "version", "config_test", "startup_smoke", "startup_tun_disabled")
+                for key in (
+                    "binary",
+                    "version",
+                    "config_test",
+                    "startup_smoke",
+                    "startup_tun_disabled",
+                )
                 if key in runtime
             },
         }
