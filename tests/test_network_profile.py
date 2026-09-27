@@ -207,7 +207,11 @@ def test_cn_three_net_widens_regional_tolerance_without_carrier_hardcoding() -> 
     )
 
     assert report["status"] == "applied"
-    assert report["tolerance_overrides"] == {"香港节点": 120, "美国节点": 150, "英国节点": 120}
+    assert report["tolerance_overrides"] == {
+        "香港节点": 120,
+        "美国节点": 150,
+        "英国节点": 120,
+    }
     groups = {group["name"]: group for group in output["proxy-groups"]}
     assert groups["香港节点"]["tolerance"] == 120
     assert groups["美国节点"]["tolerance"] == 150
@@ -294,7 +298,15 @@ def test_cn_three_net_requires_low_frequency_high_tolerance_download_group() -> 
         )
 
 
-_REGIONAL_GROUPS = ("香港节点", "台湾节点", "新加坡节点", "日本节点", "韩国节点", "美国节点", "英国节点")
+_REGIONAL_GROUPS = (
+    "香港节点",
+    "台湾节点",
+    "新加坡节点",
+    "日本节点",
+    "韩国节点",
+    "美国节点",
+    "英国节点",
+)
 
 
 def _canonical_project(
