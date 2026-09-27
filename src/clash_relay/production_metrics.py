@@ -31,6 +31,55 @@ _PRODUCTION_FAILURE_CATEGORIES = frozenset(item.value for item in ProductionFail
 _RELEASE_PHASES = frozenset({"prepared", "qualified", "promoted", "published", "verified"})
 
 
+_FAILURE_PLANE_FIELDS = {
+    "dns": (
+        "nxdomain",
+        "no_answer",
+        "confirmed_unresolvable",
+        "inconclusive",
+        "quarantined",
+    ),
+    "tcp": (
+        "connection_refused",
+        "network_unreachable",
+        "connect_failure",
+        "timeout_reserve",
+        "quarantined",
+        "robust",
+        "reserve",
+    ),
+    "https": (
+        "successful_samples",
+        "failed_samples",
+        "missing_delay",
+        "probe_error",
+        "controller_http_errors",
+    ),
+    "udp": (
+        "tcp_failed_nodes",
+        "udp_failed_nodes",
+        "selector_failures",
+        "static_udp_disabled_nodes",
+    ),
+    "ai": (
+        "live_tested",
+        "live_passed",
+        "live_failed",
+        "inconclusive",
+        "systemic_failures",
+    ),
+}
+_TUNING_FIELDS = (
+    "endpoint_attempts",
+    "endpoint_admission_quorum",
+    "browsing_attempts_per_node",
+    "browsing_required_successes",
+    "transport_tcp_attempts",
+    "transport_tcp_required_successes",
+    "transport_udp_timeout_ms",
+)
+
+
 def empty_metrics() -> dict[str, Any]:
     return {"version": _STATE_VERSION, "runs": [], "failures": []}
 
@@ -201,6 +250,33 @@ def _clean_performance(value: Any) -> dict[str, float] | None:
     return clean or None
 
 
+
+def _clean_failure_planes(value: Any) -> dict[str, dict[str, int]] | None:
+    if not isinstance(value, dict):
+        return None
+    clean: dict[str, dict[str, int]] = {}
+    for plane, fields in _FAILURE_PLANE_FIELDS.items():
+        row = value.get(plane)
+        if not isinstance(row, dict):
+            continue
+        clean[plane] = {field: _non_negative_int(row.get(field)) for field in fields}
+    return clean or None
+
+
+def _clean_qualification_tuning(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    if value.get("endpoint_timeout_action") != "reserve":
+        return None
+    if value.get("dns_inconclusive_action") != "keep":
+        return None
+    return {
+        **{field: _non_negative_int(value.get(field)) for field in _TUNING_FIELDS},
+        "endpoint_timeout_action": "reserve",
+        "dns_inconclusive_action": "keep",
+    }
+
+
 def _clean_qualification(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -232,6 +308,15 @@ def _clean_qualification(value: Any) -> dict[str, Any] | None:
         clean["recovered_by_retry"] = recovered
         if isinstance(category, str) and category in _FAILURE_CATEGORIES:
             clean["recovered_failure_category"] = category
+
+    performance_evidence = value.get("performance_evidence")
+    performance_source = performance_evidence if isinstance(performance_evidence, dict) else value
+    failure_planes = _clean_failure_planes(performance_source.get("failure_planes"))
+    tuning = _clean_qualification_tuning(performance_source.get("tuning"))
+    if failure_planes is not None:
+        clean["failure_planes"] = failure_planes
+    if tuning is not None:
+        clean["tuning"] = tuning
     return clean
 
 
@@ -554,6 +639,16 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
     promotion = (
         latest.get("promotion_guard", {}) if isinstance(latest.get("promotion_guard"), dict) else {}
     )
+    qualification_failure_planes = (
+        qualification.get("failure_planes", {})
+        if isinstance(qualification.get("failure_planes"), dict)
+        else {}
+    )
+    qualification_tuning = (
+        qualification.get("tuning", {})
+        if isinstance(qualification.get("tuning"), dict)
+        else {}
+    )
     lifecycle = latest.get("lifecycle", {}) if isinstance(latest.get("lifecycle"), dict) else {}
     lifecycle_timings = (
         lifecycle.get("timings_ms", {}) if isinstance(lifecycle.get("timings_ms"), dict) else {}
@@ -585,6 +680,8 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_generation_ms": lifecycle_timings.get("generation", 0.0),
         "latest_qualification_attempts": qualification.get("browsing_attempts", 1),
         "latest_recovered_by_retry": qualification.get("recovered_by_retry", False),
+        "latest_qualification_failure_planes": qualification_failure_planes,
+        "latest_qualification_tuning": qualification_tuning,
         "latest_promotion_guard_status": promotion.get("status", "unknown"),
         "latest_release_phase": release_progress.get("phase", "unknown"),
         "retry_runs": retry_runs,
