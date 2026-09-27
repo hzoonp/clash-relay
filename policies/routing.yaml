@@ -9,7 +9,7 @@ routing:
     ai: {source_use: ai, scheduler_profile: ai}
     final: {source_use: general, scheduler_profile: connectivity}
   browsing:
-    preferred_regions: [US, SG, JP, TW, KR, HK, OTHER]
+    preferred_regions: [US, SG, JP, TW, KR, HK, UK, OTHER]
   ai:
     excluded_regions: [HK]
     preferred_regions: [US, SG, JP, TW, KR, OTHER]
@@ -34,6 +34,7 @@ routing:
       - 日本节点
       - 美国节点
       - 韩国节点
+      - 英国节点
       - DIRECT
     compatibility_selectors:
       全球直连: [DIRECT, 代理选择, 自动选择]
