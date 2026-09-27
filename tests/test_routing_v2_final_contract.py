@@ -33,7 +33,7 @@ def test_final_routing_v2_permission_and_region_contract(repo_root: Path) -> Non
         "final": "general",
     }
     assert policy.download.mode == "general_auto"
-    assert policy.ai.excluded_regions == ("HK",)
+    assert policy.ai.excluded_regions == ("HK", "UK")
     assert policy.ai.preferred_regions == ("US", "SG", "JP", "TW", "KR", "OTHER")
 
     subscription_1 = next(item for item in project.subscriptions if item.id == "subscription_1")
@@ -149,6 +149,7 @@ def test_final_routing_v2_ai_inventory_has_no_hong_kong(repo_root: Path) -> None
 
     assert ai_pools
     assert all("HK" not in row["regions"] for row in ai_pools)
+    assert all("UK" not in row["regions"] for row in ai_pools)
     assert {region for row in ai_pools for region in row["regions"]} == {
         "US",
         "SG",
