@@ -209,13 +209,8 @@ clash-relay diagnose --candidate .work/config.yaml
 ruff check .
 ruff format --check .
 pytest -m "not integration"
-python scripts/audit_documentation_contract.py
-python scripts/audit_architecture_contract.py
-python scripts/audit_operational_slo_contract.py
-python scripts/audit_service_qualification_contract.py
-python scripts/audit_supply_chain.py
-python scripts/audit_acl4ssr_fidelity.py
-python scripts/repository_audit.py
+python scripts/run_project_checks.py typecheck
+python scripts/run_project_checks.py audit --offline-acl4ssr
 ```
 
 ## Documentation

@@ -29,8 +29,10 @@ runtime entries.
 from __future__ import annotations
 
 import ipaddress
+import time
 import urllib.parse
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .classify import proxy_fingerprint
@@ -41,6 +43,7 @@ from .runtime_names import parse_runtime_source_name
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
 _DNS_CONFIRMED_CATEGORIES = frozenset({"nxdomain", "no_answer"})
 _MIN_AGREEING_NEGATIVES = 2
+_MAX_HOST_WORKERS = 8
 _UniqueKey = tuple[str, str]
 
 
@@ -180,6 +183,9 @@ def _empty_report() -> dict[str, Any]:
         "quarantined": 0,
         "unique_quarantined_nodes": 0,
         "unique_quarantined_hostnames": 0,
+        "unique_hostnames_probed": 0,
+        "worker_count": 0,
+        "probe_duration_ms": 0.0,
         "by_source": {},
         "by_region": {},
         "by_protocol": {},
@@ -187,8 +193,21 @@ def _empty_report() -> dict[str, Any]:
     }
 
 
-def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any]:
+def _host_evidence(
+    hostname: str, endpoints: list[str], *, allow_aaaa: bool
+) -> tuple[list[tuple[bool, str]], str, str]:
+    records = [_probe_hostname(endpoint, hostname, allow_aaaa=allow_aaaa) for endpoint in endpoints]
+    verdict, category = _verdict(records)
+    return records, verdict, category
+
+
+def quarantine_unresolvable_proxy_hosts(
+    config: dict[str, Any], *, workers: int = 1
+) -> dict[str, Any]:
     """Remove only hostnames that configured DoH resolvers prove unresolvable."""
+
+    if workers < 1:
+        raise ValidationError("proxy hostname qualification requires a positive worker count")
 
     providers = config.get("proxy-providers")
     if not isinstance(providers, dict):
@@ -224,7 +243,36 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
     by_source_failure_category: dict[str, Counter[str]] = {}
     unique_quarantined: dict[_UniqueKey, tuple[str, str]] = {}
     quarantined_hostnames: set[str] = set()
-    cache: dict[str, tuple[list[tuple[bool, str]], str, str]] = {}
+    hostnames = list(
+        dict.fromkeys(
+            server
+            for provider in providers.values()
+            if isinstance(provider, dict) and isinstance(provider.get("payload"), list)
+            for proxy in provider["payload"]
+            if isinstance(proxy, dict)
+            for server in (proxy.get("server"),)
+            if isinstance(server, str) and not _public_address(server)
+        )
+    )
+    worker_count = min(workers, _MAX_HOST_WORKERS, len(hostnames))
+    started = time.perf_counter()
+    if worker_count > 1:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            evidence = list(
+                executor.map(
+                    lambda hostname: _host_evidence(hostname, endpoints, allow_aaaa=allow_aaaa),
+                    hostnames,
+                )
+            )
+    else:
+        evidence = [
+            _host_evidence(hostname, endpoints, allow_aaaa=allow_aaaa) for hostname in hostnames
+        ]
+    elapsed_ms = round((time.perf_counter() - started) * 1000.0, 3)
+    cache = dict(zip(hostnames, evidence, strict=True))
+    dns_responses = sum(
+        1 for records, _, _ in evidence for _, category in records if category in ANSWER_CATEGORIES
+    )
     for provider_name, provider in providers.items():
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
             continue
@@ -241,16 +289,6 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
                 kept.append(proxy)
                 continue
             counts["hostname_nodes"] += 1
-            if server not in cache:
-                records = [
-                    _probe_hostname(endpoint, server, allow_aaaa=allow_aaaa)
-                    for endpoint in endpoints
-                ]
-                verdict, failure_category = _verdict(records)
-                # Cache the full per-endpoint evidence together with the
-                # verdict; evidence is never taken from another hostname.
-                cache[server] = (records, verdict, failure_category)
-                dns_responses += sum(1 for _, category in records if category in ANSWER_CATEGORIES)
             _, verdict, failure_category = cache[server]
             if verdict == "resolved":
                 counts["resolved"] += 1
@@ -302,6 +340,9 @@ def quarantine_unresolvable_proxy_hosts(config: dict[str, Any]) -> dict[str, Any
         },
         "unique_quarantined_nodes": len(unique_quarantined),
         "unique_quarantined_hostnames": len(quarantined_hostnames),
+        "unique_hostnames_probed": len(hostnames),
+        "worker_count": worker_count,
+        "probe_duration_ms": elapsed_ms,
         "by_source": dict(sorted(by_source.items())),
         "by_region": dict(sorted(by_region.items())),
         "by_protocol": dict(sorted(by_protocol.items())),

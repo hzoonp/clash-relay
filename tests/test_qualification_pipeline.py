@@ -393,7 +393,7 @@ def _preflight_stubs(monkeypatch, *, drop_source: str | None = None, host_passes
             "by_source_failure_category": {source: {category: len(unique)}},
         }
 
-    def host(document):
+    def host(document, *, workers=1):
         removed = _prune(document) if not host_passes else []
         report: dict = {
             "status": "passed",

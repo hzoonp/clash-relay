@@ -575,7 +575,7 @@ def run_qualification_pipeline(
     generated_source_counts = _source_node_counts(generated_document)
     generated_unique_source_counts = _source_node_counts(generated_document, unique=True)
     preflight_inventory = _entry_inventory(generated_document)
-    proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document)
+    proxy_host_resolution = quarantine_unresolvable_proxy_hosts(generated_document, workers=workers)
     post_host_inventory = _entry_inventory(generated_document)
     endpoint_reserve_names: set[str] = set()
     endpoint_qualification = quarantine_unreachable_tcp_endpoints(

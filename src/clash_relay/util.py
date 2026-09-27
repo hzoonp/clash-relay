@@ -84,6 +84,24 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         raise
 
 
+def atomic_write_bytes(path: Path, content: bytes, *, mode: int = 0o600) -> None:
+    """Replace sensitive bytes without exposing a partly written destination."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, mode)
+        os.replace(temp_name, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temp_name)
+        raise
+
+
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

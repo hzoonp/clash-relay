@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import threading
+
 import pytest
 
 from clash_relay.errors import ValidationError
@@ -355,6 +358,53 @@ def test_duplicate_hostname_across_providers_probes_once_and_counts_unique(
     # the same physical node replicated across providers.
     assert report["by_source"] == {"sub_2": 3}
     assert report["by_protocol"] == {"trojan": 3}
+
+
+def test_bounded_parallel_host_probes_keep_serial_verdicts(monkeypatch) -> None:
+    candidate = _candidate()
+    candidate["proxy-providers"]["cr_browsing_jp"]["payload"].insert(
+        1,
+        {
+            "name": "[BROWSING:JP] provider_a/second #0000000000",
+            "type": "trojan",
+            "server": "second.example",
+        },
+    )
+    serial = copy.deepcopy(candidate)
+    endpoints = candidate["dns"]["proxy-server-nameserver"]
+
+    def result(_endpoint: str, hostname: str):
+        return (False, "nxdomain") if hostname == "broken.example" else (True, "answered")
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", result)
+    serial_report = quarantine_unresolvable_proxy_hosts(serial, workers=1)
+
+    started_together = threading.Barrier(2, timeout=2)
+
+    def concurrent_result(endpoint: str, hostname: str):
+        if endpoint == endpoints[0]:
+            started_together.wait()
+        return result(endpoint, hostname)
+
+    monkeypatch.setattr("clash_relay.proxy_host_qualification.probe_doh", concurrent_result)
+    concurrent_report = quarantine_unresolvable_proxy_hosts(candidate, workers=2)
+
+    assert candidate == serial
+    for key in ("quarantined", "by_source", "by_failure_category", "unique_quarantined_nodes"):
+        assert concurrent_report[key] == serial_report[key]
+    assert concurrent_report["unique_hostnames_probed"] == 2
+    assert concurrent_report["worker_count"] == 2
+    assert concurrent_report["probe_duration_ms"] >= 0
+    assert "second.example" not in repr(concurrent_report)
+
+
+def test_host_worker_count_is_capped_and_positive(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "clash_relay.proxy_host_qualification.probe_doh", lambda *_: (True, "answered")
+    )
+    assert quarantine_unresolvable_proxy_hosts(_candidate(), workers=100)["worker_count"] == 1
+    with pytest.raises(ValidationError, match="positive worker count"):
+        quarantine_unresolvable_proxy_hosts(_candidate(), workers=0)
 
 
 def test_cache_evidence_is_never_reused_across_hostnames(monkeypatch) -> None:

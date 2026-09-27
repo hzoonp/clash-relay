@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 import zlib
 from collections.abc import Iterable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -36,12 +37,63 @@ class _Deadline:
 
     def __init__(self, timeout: float) -> None:
         self._end = time.monotonic() + timeout
+        self._lock = threading.Lock()
+        self._sockets: set[socket.socket] = set()
+        self._timer: threading.Timer | None = None
+        self._closed = False
+        self._expired = False
 
     def remaining(self) -> float:
         remaining = self._end - time.monotonic()
         if remaining <= 0:
             raise FetchError("subscription fetch exceeded the configured total timeout")
         return remaining
+
+    def start_network_watchdog(self) -> None:
+        """Interrupt reads that perform repeated socket operations internally."""
+        timer = threading.Timer(self.remaining(), self._expire_network)
+        timer.daemon = True
+        with self._lock:
+            self._timer = timer
+        timer.start()
+
+    def watch_socket(self, sock: socket.socket, *, replacing: socket.socket | None = None) -> None:
+        with self._lock:
+            if replacing is not None:
+                self._sockets.discard(replacing)
+            interrupt = self._closed or self._expired
+            if not interrupt:
+                self._sockets.add(sock)
+        if interrupt:
+            self._interrupt_socket(sock)
+
+    @staticmethod
+    def _interrupt_socket(sock: socket.socket) -> None:
+        with suppress(OSError):
+            sock.shutdown(socket.SHUT_RDWR)
+        with suppress(OSError):
+            sock.close()
+
+    def _expire_network(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._expired = True
+            sockets = tuple(self._sockets)
+            self._sockets.clear()
+        for sock in sockets:
+            self._interrupt_socket(sock)
+
+    def stop_network_watchdog(self) -> None:
+        with self._lock:
+            self._closed = True
+            sockets = tuple(self._sockets)
+            self._sockets.clear()
+            timer = self._timer
+        if timer is not None:
+            timer.cancel()
+        for sock in sockets:
+            self._interrupt_socket(sock)
 
 
 def _is_private_literal(hostname: str) -> bool:
@@ -214,6 +266,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
             source_address=self.source_address,
             deadline=self._deadline,
         )
+        self._deadline.watch_socket(self.sock)
         if self._tunnel_host:
             self._tunnel()
 
@@ -233,11 +286,18 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             source_address=self.source_address,
             deadline=self._deadline,
         )
+        self._deadline.watch_socket(self.sock)
         server_hostname = self.host
         if self._tunnel_host:
             self._tunnel()
             server_hostname = self._tunnel_host
-        self.sock = self._context.wrap_socket(self.sock, server_hostname=server_hostname)
+        raw_sock = self.sock
+        self.sock = self._context.wrap_socket(
+            raw_sock, server_hostname=server_hostname, do_handshake_on_connect=False
+        )
+        self._deadline.watch_socket(self.sock, replacing=raw_sock)
+        self.sock.settimeout(self._deadline.remaining())
+        self.sock.do_handshake()
 
 
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):
@@ -326,6 +386,8 @@ def _read_bounded(
             deadline.remaining()
             _set_response_read_timeout(response, deadline)
         chunk = reader(min(65536, max_bytes + 1 - total))
+        if deadline is not None:
+            deadline.remaining()
         if not chunk:
             break
         chunks.append(chunk)
@@ -390,8 +452,10 @@ def fetch_subscription(
             _PinnedHTTPHandler(deadline=deadline),
             _PinnedHTTPSHandler(context=context, deadline=deadline),
         )
+        deadline.start_network_watchdog()
         try:
             with opener.open(request, timeout=deadline.remaining()) as response:
+                deadline.remaining()
                 validate_subscription_url(
                     response.geturl(), allow_http=allow_http, allow_file=allow_file
                 )
@@ -401,11 +465,16 @@ def fetch_subscription(
         except FetchError:
             raise
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            deadline.remaining()
             safe = redact_text(str(exc), [url])
             raise FetchError(f"subscription fetch failed for {redact_url(url)}: {safe}") from exc
+        finally:
+            deadline.stop_network_watchdog()
     try:
         # Normalize transport line endings so local fixture reads and remote
         # subscriptions have the same deterministic text representation.
-        return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        result = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        deadline.remaining()
+        return result
     except UnicodeDecodeError as exc:
         raise FetchError("subscription is not valid UTF-8") from exc

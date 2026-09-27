@@ -23,8 +23,9 @@ from .production_proof import build_production_proof, render_production_proof_ma
 from .promotion_guard import assess_promotion, load_promotion_guard_policy
 from .publication import publication_gate
 from .publishers.cloudflare_kv import CloudflareKVPublisher
-from .release_bundle import parse_release_pointer, release_keys
+from .release_bundle import manifest_bytes, parse_release_pointer, release_id_for, release_keys
 from .release_bundle import publish_release_bundle as commit_release_bundle
+from .release_inventory import plan_release_inventory
 from .release_journal import (
     parse_release_journal,
     plan_release_retention,
@@ -35,7 +36,7 @@ from .release_journal import (
 )
 from .release_reconciliation import reconcile_release_bundle
 from .scheduler_history import derive_fingerprint_key, parse_history_bytes
-from .util import atomic_write
+from .util import atomic_write, atomic_write_bytes
 from .validator import validate_generated_config
 
 
@@ -223,9 +224,7 @@ def fetch_current_production_config(
         return {"status": "absent"}
     if not current:
         raise PublicationError("current production release is empty")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(current)
-    os.chmod(output, 0o600)
+    atomic_write_bytes(output, current)
     return {
         "status": "fetched",
         "bytes": len(current),
@@ -317,6 +316,7 @@ def publish_production_release(
     *,
     project: ProjectDefinition,
     candidate_path: Path,
+    baseline_capture: Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Validate, stage, verify, and activate one private Cloudflare KV release."""
@@ -350,7 +350,22 @@ def publish_production_release(
             namespace_id=namespace_id,
         )
 
-    result = commit_release_bundle(factory=factory, production_key=production_key, content=content)
+    def capture_baseline(previous: bytes | None) -> None:
+        if baseline_capture is None:
+            return
+        marker = baseline_capture.with_suffix(".captured")
+        if previous is None:
+            baseline_capture.unlink(missing_ok=True)
+        else:
+            atomic_write_bytes(baseline_capture, previous)
+        atomic_write(marker, "captured\n")
+
+    result = commit_release_bundle(
+        factory=factory,
+        production_key=production_key,
+        content=content,
+        baseline_observer=capture_baseline,
+    )
     keys = release_keys(production_key)
     try:
         journal, journal_status = parse_release_journal(factory(keys.journal).read())
@@ -423,6 +438,55 @@ def reconcile_production_release(
     ).to_dict()
 
 
+def reconcile_production_release_ids(
+    *,
+    project: ProjectDefinition,
+    candidate_release_id: str,
+    previous_release_id: str | None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Reconcile from verified private immutable KV evidence after a runner exits."""
+    token, account_id, namespace_title = _credentials(env)
+    if not token or not account_id or not namespace_title:
+        raise PublicationError("Cloudflare credentials are required for release reconciliation")
+    production_key = _production_key(project)
+    root = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    )
+    namespace_id = root.resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    keys = release_keys(production_key)
+
+    def verified_bytes(release_id: str) -> bytes:
+        content = factory(keys.config(release_id)).read()
+        if content is None or release_id_for(content) != release_id:
+            raise PublicationError("immutable release bytes are missing or mismatched")
+        if factory(keys.manifest(release_id)).read() != manifest_bytes(content):
+            raise PublicationError("immutable release manifest is missing or mismatched")
+        return content
+
+    candidate = verified_bytes(candidate_release_id)
+    previous = verified_bytes(previous_release_id) if previous_release_id is not None else None
+    return reconcile_release_bundle(
+        factory=factory,
+        production_key=production_key,
+        candidate_content=candidate,
+        previous_content=previous,
+    ).to_dict()
+
+
 def plan_production_release_retention(
     *,
     project: ProjectDefinition,
@@ -459,15 +523,62 @@ def plan_production_release_retention(
         raise PublicationError("release journal is invalid")
     current_release_id = parse_release_pointer(factory(keys.current_pointer).read())
     previous_release_id = parse_release_pointer(factory(keys.previous_pointer).read())
+    production_content = factory(keys.production).read()
     plan = plan_release_retention(
         journal,
         current_release_id=current_release_id,
         previous_release_id=previous_release_id,
+        production_release_id=release_id_for(production_content) if production_content else None,
         retain_seconds=retention_days * 24 * 60 * 60,
     ).to_dict()
     plan["journal_status"] = journal_status
     plan["retention_days"] = retention_days
     plan["production_key"] = production_key
+    return plan
+
+
+def audit_production_release_inventory(
+    *, project: ProjectDefinition, env: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """Compare listed immutable objects with the journal and live references."""
+    token, account_id, namespace_title = _credentials(env)
+    if not token or not account_id or not namespace_title:
+        raise PublicationError("Cloudflare credentials are required for release inventory")
+    production_key = _production_key(project)
+    root = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    )
+    namespace_id = root.resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    keys = release_keys(production_key)
+    journal, journal_status = parse_release_journal(factory(keys.journal).read())
+    if journal_status == "invalid":
+        raise PublicationError("release journal is invalid")
+    current = parse_release_pointer(factory(keys.current_pointer).read())
+    previous = parse_release_pointer(factory(keys.previous_pointer).read())
+    production = factory(keys.production).read()
+    names = root.list_keys(prefix=f"{production_key}.release-v1.")
+    plan = plan_release_inventory(
+        production_key=production_key,
+        names=names,
+        journal_ids=set(journal["releases"]),
+        current_release_id=current,
+        previous_release_id=previous,
+        production_release_id=release_id_for(production) if production else None,
+    )
+    plan["journal_status"] = journal_status
     return plan
 
 

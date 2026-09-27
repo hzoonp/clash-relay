@@ -19,9 +19,11 @@ from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
 from .production_application import (
     apply_production_release_retention,
+    audit_production_release_inventory,
     plan_production_release_retention,
     publish_production_release,
     reconcile_production_release,
+    reconcile_production_release_ids,
 )
 from .publication import ACKNOWLEDGEMENT, publication_gate
 from .publishers.gist import GistPublisher
@@ -213,11 +215,24 @@ def _command_reconcile_release(args: argparse.Namespace) -> int:
         subscriptions_path=args.subscriptions,
         policies_path=args.policies,
     )
-    result = reconcile_production_release(
-        project=project,
-        candidate=args.candidate,
-        previous=args.previous,
-    )
+    if args.candidate_release_id is not None:
+        if args.previous is not None:
+            raise ValidationError(
+                "KV reconciliation requires --previous-release-id or --first-release"
+            )
+        result = reconcile_production_release_ids(
+            project=project,
+            candidate_release_id=args.candidate_release_id,
+            previous_release_id=args.previous_release_id,
+        )
+    else:
+        if args.previous_release_id is not None:
+            raise ValidationError("file reconciliation requires --previous or --first-release")
+        result = reconcile_production_release(
+            project=project,
+            candidate=args.candidate,
+            previous=args.previous,
+        )
     print(_json_text(result), end="")
     return 0
 
@@ -233,6 +248,16 @@ def _command_plan_release_retention(args: argparse.Namespace) -> int:
         retention_days=args.retention_days,
     )
     print(_json_text(result), end="")
+    return 0
+
+
+def _command_audit_release_inventory(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    print(_json_text(audit_production_release_inventory(project=project)), end="")
     return 0
 
 
@@ -376,12 +401,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read-only reconciliation of an ambiguous Cloudflare KV release transaction.",
     )
     _add_project_args(reconcile)
-    reconcile.add_argument("--candidate", type=_path, required=True)
+    candidate_source = reconcile.add_mutually_exclusive_group(required=True)
+    candidate_source.add_argument("--candidate", type=_path)
+    candidate_source.add_argument("--candidate-release-id")
     previous = reconcile.add_mutually_exclusive_group(required=True)
     previous.add_argument(
         "--previous",
         type=_path,
         help="Exact production bytes observed before the ambiguous update.",
+    )
+    previous.add_argument(
+        "--previous-release-id",
+        help="Verified immutable KV release ID of the pre-attempt production value.",
     )
     previous.add_argument(
         "--first-release",
@@ -397,6 +428,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project_args(retention)
     retention.add_argument("--retention-days", type=int, default=30)
     retention.set_defaults(handler=_command_plan_release_retention)
+
+    inventory = subparsers.add_parser(
+        "audit-release-inventory",
+        help="Read-only comparison of immutable KV keys, journal, and live pointers.",
+    )
+    _add_project_args(inventory)
+    inventory.set_defaults(handler=_command_audit_release_inventory)
 
     apply_retention = subparsers.add_parser(
         "apply-release-retention",

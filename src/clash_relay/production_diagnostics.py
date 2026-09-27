@@ -356,11 +356,36 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
         None,
     )
     if isinstance(commit_unknown, CommitUnknownError):
-        return {
+        commit_diagnostic: dict[str, Any] = {
             "status": "failed",
             "category": ProductionFailureCategory.CLOUDFLARE_COMMIT_UNKNOWN.value,
             "production_changed": commit_unknown.production_changed,
         }
+        recovery_status = getattr(commit_unknown, "recovery_status", None)
+        if recovery_status in {
+            "committed",
+            "not_committed",
+            "preserved",
+            "candidate_missing",
+            "preservation_failed",
+        }:
+            commit_diagnostic["recovery_status"] = recovery_status
+        candidate_id = getattr(commit_unknown, "candidate_release_id", None)
+        if (
+            isinstance(candidate_id, str)
+            and len(candidate_id) == 64
+            and all(character in "0123456789abcdef" for character in candidate_id)
+        ):
+            commit_diagnostic["candidate_release_id"] = candidate_id
+        if hasattr(commit_unknown, "previous_release_id"):
+            previous_id = commit_unknown.previous_release_id
+            if previous_id is None or (
+                isinstance(previous_id, str)
+                and len(previous_id) == 64
+                and all(character in "0123456789abcdef" for character in previous_id)
+            ):
+                commit_diagnostic["previous_release_id"] = previous_id
+        return commit_diagnostic
 
     for item in chain:
         stage = _validation_stage(item)

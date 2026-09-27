@@ -46,6 +46,39 @@ def _success(result, *, total_count: int | None = None) -> dict:
     return document
 
 
+def test_cloudflare_key_listing_paginates_without_writing(monkeypatch) -> None:
+    requests: list[urllib.request.Request] = []
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        assert request.get_method() == "GET"
+        if "cursor=next" in request.full_url:
+            return _Response(
+                {"success": True, "result": [{"name": "prod.release-v1.b"}], "result_info": {}}
+            )
+        return _Response(
+            {
+                "success": True,
+                "result": [{"name": "prod.release-v1.a"}],
+                "result_info": {"cursor": "next"},
+            }
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    publisher = CloudflareKVPublisher(
+        token="token",
+        account_id="account",
+        namespace_title="private",
+        key_name="prod",
+        namespace_id="namespace",
+    )
+    assert publisher.list_keys(prefix="prod.release-v1.") == [
+        "prod.release-v1.a",
+        "prod.release-v1.b",
+    ]
+    assert len(requests) == 2
+
+
 def test_cloudflare_publisher_resolves_namespace_and_writes_exact_config(monkeypatch) -> None:
     requests: list[urllib.request.Request] = []
 

@@ -16,6 +16,7 @@ from ..errors import CommitUnknownError, PublicationError
 _API_ROOT = "https://api.cloudflare.com/client/v4"
 _MAX_VALUE_BYTES = 25 * 1024 * 1024
 _MAX_NAMESPACE_PAGES = 100
+_MAX_KEY_PAGES = 100
 _AMBIGUOUS_HTTP_STATUSES = frozenset({408, 425, 429})
 
 
@@ -138,6 +139,44 @@ class CloudflareKVPublisher:
     def resolve_namespace_id(self) -> str:
         """Resolve and cache the unique namespace identity for a lifecycle."""
         return self._namespace_id()
+
+    def list_keys(self, *, prefix: str) -> list[str]:
+        """List names under one exact prefix without reading or changing values."""
+        if not prefix or len(prefix.encode()) > 512:
+            raise PublicationError("Cloudflare KV key prefix is invalid")
+        namespace_id = self._namespace_id()
+        base = (
+            f"{_API_ROOT}/accounts/{urllib.parse.quote(self._account_id, safe='')}/"
+            f"storage/kv/namespaces/{urllib.parse.quote(namespace_id, safe='')}/keys"
+        )
+        names: list[str] = []
+        cursor = ""
+        seen_cursors: set[str] = set()
+        for _ in range(_MAX_KEY_PAGES):
+            query = {"prefix": prefix, "limit": 1000}
+            if cursor:
+                query["cursor"] = cursor
+            request = urllib.request.Request(
+                f"{base}?{urllib.parse.urlencode(query)}", headers=self._headers(), method="GET"
+            )
+            document = _request_json(request)
+            items = document.get("result")
+            if not isinstance(items, list):
+                raise PublicationError("Cloudflare KV key listing returned an invalid result")
+            for item in items:
+                name = item.get("name") if isinstance(item, dict) else None
+                if not isinstance(name, str) or not name.startswith(prefix):
+                    raise PublicationError("Cloudflare KV key listing escaped the requested prefix")
+                names.append(name)
+            info = document.get("result_info")
+            next_cursor = info.get("cursor") if isinstance(info, dict) else None
+            if next_cursor in (None, ""):
+                return names
+            if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
+                raise PublicationError("Cloudflare KV key listing returned an invalid cursor")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        raise PublicationError("Cloudflare KV key listing exceeded the safety page limit")
 
     def _value_url(self, namespace_id: str) -> str:
         encoded_account = urllib.parse.quote(self._account_id, safe="")

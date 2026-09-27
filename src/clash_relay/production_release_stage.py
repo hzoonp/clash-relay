@@ -136,6 +136,7 @@ def run_release_candidate_stage(
         release = publish_production_release(
             project=project,
             candidate_path=paths.candidate,
+            baseline_capture=paths.baseline,
             env=env,
         )
         _write_json(paths.release_report, release)

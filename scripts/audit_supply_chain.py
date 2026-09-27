@@ -78,7 +78,8 @@ def main() -> int:
         "--only-binary=:all:",
         "--no-build-isolation",
         "--cov-fail-under=75",
-        "mypy --follow-imports=skip",
+        "scripts/run_project_checks.py audit",
+        "scripts/run_project_checks.py typecheck",
         "Validated SHA",
     ):
         if token not in ci:

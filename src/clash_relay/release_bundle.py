@@ -296,6 +296,7 @@ def publish_release_bundle(
     factory: PublisherFactory,
     production_key: str,
     content: bytes,
+    baseline_observer: Callable[[bytes | None], None] | None = None,
 ) -> dict[str, Any]:
     """Stage, verify, activate, and commit a versioned release."""
     keys = release_keys(production_key)
@@ -303,6 +304,8 @@ def publish_release_bundle(
     current_content = _safe_read(factory, keys.production)
     current_pointer_before = parse_release_pointer(_safe_read(factory, keys.current_pointer))
     previous_pointer_before = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
+    if baseline_observer is not None:
+        baseline_observer(current_content)
 
     if current_content == content:
         if current_pointer_before != new_release_id:

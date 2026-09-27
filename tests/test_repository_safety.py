@@ -142,7 +142,11 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert "continue-on-error" not in ci
     assert "--require-hashes" in ci
     assert "--cov-fail-under=75" in ci
-    assert "mypy --follow-imports=skip" in ci
+    assert "scripts/run_project_checks.py typecheck" in ci
+    assert "scripts/run_project_checks.py audit" in ci
+    makefile = (repo_root / "Makefile").read_text(encoding="utf-8")
+    assert "scripts/run_project_checks.py typecheck" in makefile
+    assert "scripts/run_project_checks.py audit" in makefile
 
     publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(

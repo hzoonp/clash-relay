@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import time
@@ -18,7 +19,13 @@ from typing import Any
 
 from .builder import build_candidate
 from .config_loader import ProjectDefinition
-from .errors import CandidateValidationStageError, ClashRelayError, ValidationError
+from .errors import (
+    CandidateValidationStageError,
+    ClashRelayError,
+    CommitUnknownError,
+    PublicationError,
+    ValidationError,
+)
 from .mihomo import load_candidate
 from .mihomo_download import download_pinned_mihomo
 from .operational_slo import (
@@ -34,6 +41,7 @@ from .production_application import (
     persist_ai_qualification_cache,
     persist_production_metrics,
     persist_scheduler_history,
+    reconcile_production_release,
     render_production_proof_application,
 )
 from .production_diagnostics import sanitize_source_admission_report
@@ -54,7 +62,7 @@ from .release_reliability import ReleasePhase, ReleaseProgress
 from .runtime_names import valid_source_id
 from .scheduler_observation import publish_scheduler_observation
 from .slo_application import persist_operational_slo
-from .util import atomic_write
+from .util import atomic_write, atomic_write_bytes
 
 _MAX_CARRIER_INPUT_BYTES = 64 * 1024
 
@@ -639,6 +647,91 @@ class ProductionPipeline:
             },
         )
 
+    @staticmethod
+    def _safe_hostname_observability(pipeline: dict[str, Any]) -> dict[str, Any]:
+        host = pipeline.get("proxy_host_resolution")
+        if not isinstance(host, dict):
+            return {}
+        output: dict[str, Any] = {}
+        sources = host.get("by_source_failure_category")
+        if isinstance(sources, dict):
+            clean: dict[str, dict[str, int]] = {}
+            for source, categories in sources.items():
+                if not isinstance(source, str) or not valid_source_id(source):
+                    continue
+                if not isinstance(categories, dict):
+                    continue
+                counts = {
+                    name: value
+                    for name in ("nxdomain", "no_answer")
+                    if isinstance((value := categories.get(name)), int)
+                    and not isinstance(value, bool)
+                    and value >= 0
+                }
+                if counts:
+                    clean[source] = counts
+            output["hostname_failure_categories_by_source"] = dict(sorted(clean.items()))
+        duration = host.get("probe_duration_ms")
+        if (
+            isinstance(duration, (int, float))
+            and not isinstance(duration, bool)
+            and math.isfinite(duration)
+            and duration >= 0
+        ):
+            output["hostname_probe_duration_ms"] = duration
+        count = host.get("unique_hostnames_probed")
+        if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            output["unique_hostnames_probed"] = count
+        return output
+
+    def _preserve_ambiguous_release(self, project: ProjectDefinition) -> str:
+        """Reconcile while exact private bytes remain, retaining them if unresolved."""
+        candidate = self._private("config.yaml")
+        baseline = self._private("current-production.yaml")
+        baseline_known = baseline.with_suffix(".captured").is_file()
+        if not candidate.is_file():
+            return "candidate_missing"
+        status = "staging_unknown"
+        if baseline_known:
+            try:
+                result = reconcile_production_release(
+                    project=project,
+                    candidate=candidate,
+                    previous=baseline if baseline.is_file() else None,
+                    env=os.environ,
+                )
+                if result["status"] in {"committed", "not_committed"}:
+                    return str(result["status"])
+                status = str(result["status"])
+            except PublicationError:
+                status = "read_failed"
+
+        recovery_root = self.paths.work_dir / "recovery"
+        recovery_root.mkdir(parents=True, exist_ok=True)
+        os.chmod(recovery_root, 0o700)
+        content = candidate.read_bytes()
+        recovery = recovery_root / f"{time.time_ns()}-{hashlib.sha256(content).hexdigest()[:12]}"
+        recovery.mkdir(mode=0o700)
+        for source, name in ((candidate, "candidate.yaml"), (baseline, "previous.yaml")):
+            if name == "previous.yaml" and not baseline_known:
+                continue
+            if source.is_file():
+                destination = recovery / name
+                atomic_write_bytes(destination, source.read_bytes())
+        self._write_json(
+            recovery / "metadata.json",
+            {
+                "version": 1,
+                "reconciliation_status": status,
+                "candidate_sha256": hashlib.sha256(content).hexdigest(),
+                "previous_present": baseline_known and baseline.is_file(),
+                "baseline_known": baseline_known,
+                "created_epoch": int(time.time()),
+                "review_by_epoch": int(time.time()) + 7 * 24 * 60 * 60,
+            },
+        )
+        return "preserved"
+
     def run(self) -> dict[str, Any]:
         if (
             not self.paths.config.is_file()
@@ -777,12 +870,34 @@ class ProductionPipeline:
                 "regional_group_counts": generation.get("regional_group_counts", {}),
                 "omitted_empty_groups": generation.get("omitted_empty_groups", []),
                 "endpoint_qualification": pipeline.get("endpoint_qualification"),
+                **self._safe_hostname_observability(pipeline),
                 "accelerated_health_check_groups": pipeline.get(
                     "accelerated_health_check_groups", 0
                 ),
                 "warnings": sorted(self.warnings),
             }
         except Exception as exc:
+            if self.publish and project is not None and isinstance(exc, CommitUnknownError):
+                candidate_path = self._private("config.yaml")
+                baseline_path = self._private("current-production.yaml")
+                baseline_known = baseline_path.with_suffix(".captured").is_file()
+                try:
+                    if candidate_path.is_file():
+                        candidate_id = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+                        exc.candidate_release_id = candidate_id  # type: ignore[attr-defined]
+                    if baseline_known:
+                        previous_id = (
+                            hashlib.sha256(baseline_path.read_bytes()).hexdigest()
+                            if baseline_path.is_file()
+                            else None
+                        )
+                        exc.previous_release_id = previous_id  # type: ignore[attr-defined]
+                except OSError:
+                    pass
+                try:
+                    exc.recovery_status = self._preserve_ambiguous_release(project)  # type: ignore[attr-defined]
+                except OSError:
+                    exc.recovery_status = "preservation_failed"  # type: ignore[attr-defined]
             source_admission = self._safe_source_admission_summary()
             if source_admission is not None:
                 exc.source_admission_report = source_admission  # type: ignore[attr-defined]

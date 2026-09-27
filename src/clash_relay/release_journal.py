@@ -122,6 +122,7 @@ def plan_release_retention(
     *,
     current_release_id: str | None,
     previous_release_id: str | None,
+    production_release_id: str | None = None,
     retain_seconds: int,
     now_epoch: int | None = None,
 ) -> ReleaseRetentionPlan:
@@ -132,7 +133,11 @@ def plan_release_retention(
         raise PublicationError("release journal is invalid")
     from .release_bundle import _validate_release_id
 
-    protected = {item for item in (current_release_id, previous_release_id) if item is not None}
+    protected = {
+        item
+        for item in (current_release_id, previous_release_id, production_release_id)
+        if item is not None
+    }
     for release_id in protected:
         _validate_release_id(release_id)
     cutoff = int(time.time() if now_epoch is None else now_epoch) - retain_seconds

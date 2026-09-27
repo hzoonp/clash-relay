@@ -11,6 +11,7 @@ from clash_relay.errors import PublicationError, ValidationError
 from clash_relay.production_application import (
     _load_json,
     apply_production_release_retention,
+    audit_production_release_inventory,
     fetch_current_production_config,
     load_ai_qualification_cache_state,
     load_scheduler_history_state,
@@ -19,8 +20,14 @@ from clash_relay.production_application import (
     plan_production_release_retention,
     publish_production_release,
     reconcile_production_release,
+    reconcile_production_release_ids,
 )
-from clash_relay.release_bundle import release_id_for, release_keys
+from clash_relay.release_bundle import manifest_bytes, release_id_for, release_keys
+from clash_relay.release_journal import (
+    empty_release_journal,
+    record_release_observation,
+    serialize_release_journal,
+)
 
 
 def _project(root: Path) -> ProjectDefinition:
@@ -162,7 +169,123 @@ def test_release_reconciliation_reads_only_the_versioned_release_state(
     ]
 
 
-def test_release_retention_plan_reads_journal_and_pointers_only(
+def test_release_id_reconciliation_verifies_private_immutable_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate, previous = b"candidate\n", b"previous\n"
+    candidate_id, previous_id = release_id_for(candidate), release_id_for(previous)
+    keys = release_keys("production-config")
+    values = {
+        keys.config(candidate_id): candidate,
+        keys.manifest(candidate_id): manifest_bytes(candidate),
+        keys.config(previous_id): previous,
+        keys.manifest(previous_id): manifest_bytes(previous),
+        keys.production: candidate,
+        keys.current_pointer: f"{candidate_id}\n".encode(),
+        keys.previous_pointer: f"{previous_id}\n".encode(),
+    }
+    reads: list[str] = []
+
+    class Reader:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def resolve_namespace_id(self) -> str:
+            return "namespace-id"
+
+        def read(self) -> bytes | None:
+            reads.append(self.key)
+            return values.get(self.key)
+
+        def publish(self, *, content: bytes) -> None:
+            raise AssertionError("release reconciliation must remain read-only")
+
+    monkeypatch.setattr(
+        "clash_relay.production_application._publisher",
+        lambda **kwargs: Reader(str(kwargs["key_name"])),
+    )
+    result = reconcile_production_release_ids(
+        project=_project(tmp_path),
+        candidate_release_id=candidate_id,
+        previous_release_id=previous_id,
+        env={
+            "CLOUDFLARE_API_TOKEN": "private-token",
+            "CLOUDFLARE_ACCOUNT_ID": "account",
+            "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+        },
+    )
+    assert result["status"] == "committed"
+    assert reads[:4] == [
+        keys.config(candidate_id),
+        keys.manifest(candidate_id),
+        keys.config(previous_id),
+        keys.manifest(previous_id),
+    ]
+
+    values[keys.manifest(candidate_id)] = b"wrong manifest"
+    with pytest.raises(PublicationError, match="manifest is missing or mismatched"):
+        reconcile_production_release_ids(
+            project=_project(tmp_path),
+            candidate_release_id=candidate_id,
+            previous_release_id=previous_id,
+            env={
+                "CLOUDFLARE_API_TOKEN": "private-token",
+                "CLOUDFLARE_ACCOUNT_ID": "account",
+                "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+            },
+        )
+
+
+def test_release_inventory_application_lists_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live, orphan = b"live\n", b"orphan\n"
+    live_id, orphan_id = release_id_for(live), release_id_for(orphan)
+    keys = release_keys("production-config")
+    journal = record_release_observation(empty_release_journal(), release_id=live_id)
+    values = {
+        keys.journal: serialize_release_journal(journal),
+        keys.current_pointer: f"{live_id}\n".encode(),
+        keys.previous_pointer: None,
+        keys.production: live,
+    }
+
+    class Reader:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def resolve_namespace_id(self) -> str:
+            return "namespace-id"
+
+        def read(self) -> bytes | None:
+            return values.get(self.key)
+
+        def list_keys(self, *, prefix: str) -> list[str]:
+            assert prefix == "production-config.release-v1."
+            return [keys.config(live_id), keys.manifest(live_id), keys.config(orphan_id)]
+
+        def publish(self, *, content: bytes) -> None:
+            raise AssertionError("inventory audit must remain read-only")
+
+    monkeypatch.setattr(
+        "clash_relay.production_application._publisher",
+        lambda **kwargs: Reader(str(kwargs["key_name"])),
+    )
+    result = audit_production_release_inventory(
+        project=_project(tmp_path),
+        env={
+            "CLOUDFLARE_API_TOKEN": "private-token",
+            "CLOUDFLARE_ACCOUNT_ID": "account",
+            "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+        },
+    )
+    assert result["unrecorded_unprotected_release_ids"] == [orphan_id]
+    assert result["incomplete_release_ids"] == [orphan_id]
+    assert result["protected_release_ids"] == [live_id]
+    assert result["mutation"] == "none"
+
+
+def test_release_retention_plan_also_protects_client_visible_production(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     current = release_id_for(b"current\n")
@@ -208,7 +331,7 @@ def test_release_retention_plan_reads_journal_and_pointers_only(
 
     assert result["mutation"] == "none"
     assert result["deletion_candidate_ids"] == [expired]
-    assert calls == [keys.journal, keys.current_pointer, keys.previous_pointer]
+    assert calls == [keys.journal, keys.current_pointer, keys.previous_pointer, keys.production]
 
 
 def test_committed_release_records_an_append_only_journal_observation(
