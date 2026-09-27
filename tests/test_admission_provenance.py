@@ -47,7 +47,7 @@ def _selector(source_use: str) -> dict:
 
 def test_informational_filter_is_conservative_and_high_confidence() -> None:
     proxies = [
-        _proxy("剩余流量\uFF1A100 GB"),
+        _proxy("剩余流量\uff1a100 GB"),
         _proxy("套餐到期 2026-10-01"),
         _proxy("距离重置 3 天"),
         _proxy("官方网站 https://example.invalid"),
@@ -172,7 +172,7 @@ def test_builder_applies_informational_source_and_multiplier_admission_in_order(
     yaml_editor(paths["config_path"], configure_modules)
 
     source = """proxies:
-  - name: 剩余流量\uFF1A100 GB EMBY 3x
+  - name: 剩余流量\uff1a100 GB EMBY 3x
     type: http
     server: informational.invalid.example
     port: 21001
