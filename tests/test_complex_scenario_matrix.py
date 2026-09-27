@@ -119,6 +119,6 @@ def test_finalized_routing_v2_graph_has_no_declared_drift(repo_root) -> None:
     assert drift["ai"] == {
         "region_order": ["US", "SG", "JP", "TW", "KR", "OTHER"],
         "declared_region_order": ["US", "SG", "JP", "TW", "KR", "OTHER"],
-        "excluded_regions": ["HK"],
+        "excluded_regions": ["HK", "UK"],
         "policy_applied": True,
     }
