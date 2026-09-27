@@ -23,7 +23,7 @@ def test_canonical_policy_declares_runtime_contract() -> None:
     assert contract.public_group("browsing") == "网页浏览"
     assert contract.public_group("ai") == "人工智能"
     assert contract.automatic_group("media") == "媒体自动"
-    assert contract.ai.required_excluded_regions == ("HK",)
+    assert contract.ai.required_excluded_regions == ("HK", "UK")
     assert contract.binding_target("proxy_lite") == "网页浏览"
     assert contract.ai.region_for_display("AI · 美国") == "US"
     assert contract.ai.region_for_display("AI · US") == "US"
