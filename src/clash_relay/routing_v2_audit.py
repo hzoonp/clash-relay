@@ -236,9 +236,7 @@ def _audit_cutover_routes(
         try:
             filter_text = canonical_region_filter(
                 row,
-                country_classification=dict(
-                    project.policies.get("country_classification", {})
-                ),
+                country_classification=dict(project.policies.get("country_classification", {})),
             )
             pattern = re.compile(filter_text) if filter_text else None
         except (GenerationError, re.error) as exc:
