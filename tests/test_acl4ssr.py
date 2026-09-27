@@ -187,7 +187,15 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         group["url"] == "https://cp.cloudflare.com/generate_204" for _, group in automatic_groups
     )
     assert all(group["expected_status"] == "204" for _, group in automatic_groups)
-    region_names = {"香港节点", "台湾节点", "新加坡节点", "日本节点", "美国节点", "韩国节点", "英国节点"}
+    region_names = {
+        "香港节点",
+        "台湾节点",
+        "新加坡节点",
+        "日本节点",
+        "美国节点",
+        "韩国节点",
+        "英国节点",
+    }
     assert all(
         group["timeout"] == (8000 if name in region_names or name == "网页自动" else 5000)
         for name, group in automatic_groups
