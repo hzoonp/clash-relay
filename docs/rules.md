@@ -90,8 +90,17 @@ subscription_1
   EMBY-labelled nodes: excluded
   max_node_multiplier: 2.0
 
-subscription_2+
-  allowed_uses: general, browsing, ai
+subscription_2
+  allowed_uses: general, browsing
+
+subscription_3
+  allowed_uses: general, browsing
+
+subscription_4
+  allowed_uses: general, browsing
+
+subscription_5
+  allowed_uses: general, browsing
 ```
 
 The selector checks `allowed_uses` before provider generation. Therefore subscription 1 is structurally absent from the general inventory used by media, messaging, downloads, final fallback, and compatibility selectors.
