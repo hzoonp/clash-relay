@@ -103,6 +103,7 @@ jobs:
               "work/p17c-dns-connection-boundary",
               "release/dns-tun-one-shot-dispatch-20260921",
               "work/remove-actions-history-cleanup",
+              "fix/remove-required-final-link-smoke",
               "dependabot/github_actions/actions/checkout-7.0.1",
               "dependabot/github_actions/actions/setup-python-7.0.0",
               "dependabot/pip/hatchling-1.32.0",
