@@ -250,7 +250,6 @@ def _clean_performance(value: Any) -> dict[str, float] | None:
     return clean or None
 
 
-
 def _clean_failure_planes(value: Any) -> dict[str, dict[str, int]] | None:
     if not isinstance(value, dict):
         return None
