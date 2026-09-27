@@ -644,9 +644,7 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         else {}
     )
     qualification_tuning = (
-        qualification.get("tuning", {})
-        if isinstance(qualification.get("tuning"), dict)
-        else {}
+        qualification.get("tuning", {}) if isinstance(qualification.get("tuning"), dict) else {}
     )
     lifecycle = latest.get("lifecycle", {}) if isinstance(latest.get("lifecycle"), dict) else {}
     lifecycle_timings = (
