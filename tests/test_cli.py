@@ -114,6 +114,44 @@ def test_validate_existing_candidate(
     assert json.loads(capsys.readouterr().out)["static_validation"] == "passed"
 
 
+def test_diagnose_command_returns_aggregate_status(monkeypatch, tmp_path: Path, capsys) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "diagnose_candidate",
+        lambda *args, **kwargs: {
+            "status": "passed",
+            "summary": {"status": "passed", "tested": 3, "passed": 3, "failed": 0, "skipped": 1},
+            "checks": {},
+        },
+    )
+
+    assert cli.main(["diagnose", "--candidate", str(candidate)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["summary"]["tested"] == 3
+    assert report["summary"]["failed"] == 0
+
+
+def test_diagnose_command_uses_nonzero_exit_on_failed_report(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "diagnose_candidate",
+        lambda *args, **kwargs: {
+            "status": "failed",
+            "summary": {"status": "failed", "tested": 3, "passed": 2, "failed": 1, "skipped": 1},
+            "checks": {},
+        },
+    )
+
+    assert cli.main(["diagnose", "--candidate", str(candidate)]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
+
+
 def test_reconcile_release_command_is_read_only_adapter(
     project_paths, monkeypatch, tmp_path: Path, capsys
 ) -> None:

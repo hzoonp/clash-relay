@@ -13,6 +13,7 @@ from typing import Any
 from . import __version__
 from .builder import build_candidate
 from .config_loader import load_project
+from .diagnose import diagnose_candidate
 from .doctor import run_doctor
 from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
@@ -94,6 +95,16 @@ def _command_doctor(args: argparse.Namespace) -> int:
     )
     print(_json_text(report), end="")
     return 0
+
+
+def _command_diagnose(args: argparse.Namespace) -> int:
+    report = diagnose_candidate(
+        args.candidate,
+        mihomo_bin=args.mihomo_bin,
+        startup_seconds=args.startup_seconds,
+    )
+    print(_json_text(report), end="")
+    return 0 if report["status"] == "passed" else 2
 
 
 def _command_generate(args: argparse.Namespace) -> int:
@@ -286,6 +297,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify Cloudflare KV read connectivity without publishing any bytes.",
     )
     doctor.set_defaults(handler=_command_doctor)
+
+    diagnose = subparsers.add_parser(
+        "diagnose",
+        help="Run read-only aggregate diagnostics for an existing generated candidate.",
+    )
+    diagnose.add_argument("--candidate", type=_path, required=True)
+    diagnose.add_argument("--mihomo-bin", type=_path)
+    diagnose.add_argument("--startup-seconds", type=float, default=1.5)
+    diagnose.set_defaults(handler=_command_diagnose)
 
     generate = subparsers.add_parser(
         "generate", help="Fetch, parse, classify, generate, and statically validate a candidate."

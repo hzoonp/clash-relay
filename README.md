@@ -22,7 +22,7 @@ Fork
   -> validated rollback when required
 ```
 
-`clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes.
+`clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes. `clash-relay diagnose --candidate <config.yaml>` is a separate read-only candidate/runtime diagnostic that reports aggregate pass/fail counts only; add `--mihomo-bin` to include a real-core startup smoke.
 
 Automatic `push` production runs remain hard-latched to dry-run mode. Manual `workflow_dispatch` publishes only with `publish=true`. Scheduled runs may publish only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate: the authorized upstream `hzoonp/clash-relay` deployment is enabled when the variable is unset, while public forks remain dry-run unless they explicitly set the repository variable to `true`. Setting it to `false` suspends unattended publication. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
@@ -205,6 +205,7 @@ python -m venv .venv
 python -m pip install --require-hashes -r requirements-dev.lock
 python -m pip install --no-build-isolation --no-deps -e .
 clash-relay doctor --public-only
+clash-relay diagnose --candidate .work/config.yaml
 ruff check .
 ruff format --check .
 pytest -m "not integration"
