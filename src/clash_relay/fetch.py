@@ -464,6 +464,9 @@ def fetch_subscription(
                     raw = _decompress_gzip_bounded(raw, max_bytes, deadline=deadline)
         except FetchError:
             raise
+        except http.client.HTTPException as exc:
+            deadline.remaining()
+            raise FetchError(f"subscription HTTP response failed for {redact_url(url)}") from exc
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             deadline.remaining()
             safe = redact_text(str(exc), [url])

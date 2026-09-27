@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import socket
 import threading
 import time
@@ -8,6 +9,39 @@ import pytest
 
 from clash_relay import fetch
 from clash_relay.errors import FetchError
+
+
+def test_incomplete_http_response_is_a_safe_fetch_error(monkeypatch) -> None:
+    class Response:
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def geturl(self) -> str:
+            return "http://public.invalid/subscription"
+
+        def read(self, _size: int) -> bytes:
+            raise http.client.IncompleteRead(b"private payload", 20)
+
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(fetch.urllib.request, "build_opener", lambda *_: Opener())
+    with pytest.raises(FetchError, match="subscription HTTP response failed") as caught:
+        fetch.fetch_subscription(
+            "http://public.invalid/subscription",
+            timeout=2,
+            max_bytes=1024,
+            allow_http=True,
+            allow_file=False,
+        )
+    assert "private payload" not in str(caught.value)
 
 
 @pytest.mark.parametrize(
