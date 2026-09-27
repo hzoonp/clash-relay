@@ -42,7 +42,7 @@ def test_fake_ip_compatibility_accepts_narrow_canonical_exceptions(repo_root: Pa
 
 @pytest.mark.parametrize("entry", ["*", "*.com", "*.cn", "*.com.cn", "example"])
 def test_fake_ip_compatibility_rejects_overbroad_exclusions(entry: str) -> None:
-    with pytest.raises(ValidationError, match="broader|wildcard"):
+    with pytest.raises(ValidationError, match=r"broader|wildcard"):
         audit_fake_ip_compatibility(_candidate(["*.lan", entry]))
 
 
