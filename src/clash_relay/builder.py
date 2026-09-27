@@ -19,7 +19,11 @@ from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscr
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
 from .models import BuildResult, Node, SubscriptionSpec
-from .node_policy import filter_proxies_by_multiplier, filter_proxies_by_name_patterns
+from .node_policy import (
+    filter_informational_proxies,
+    filter_proxies_by_multiplier,
+    filter_proxies_by_name_patterns,
+)
 from .pinned_fetch import fetch_pinned_text
 from .policy_compiler import compile_runtime_graph
 from .redact import redact_text
@@ -221,6 +225,7 @@ def build_candidate(
     nodes: list[Node] = []
     source_reports: list[dict[str, Any]] = []
     successful = 0
+    informational_nodes_rejected = 0
     name_filtered_nodes = 0
     multiplier_filtered_nodes = 0
     ordered_specs = sorted(enabled_specs, key=lambda item: (item.ingest_order, item.id))
@@ -250,6 +255,8 @@ def build_candidate(
                         "input_nodes": parsed.skipped_items,
                         "parsed_valid_nodes": 0,
                         "skipped_invalid_nodes": parsed.skipped_items,
+                        "post_informational_filter_nodes": 0,
+                        "informational_rejected": 0,
                         "post_name_filter_nodes": 0,
                         "post_multiplier_filter_nodes": 0,
                         "post_dedup_nodes": 0,
@@ -263,8 +270,11 @@ def build_candidate(
                         )
                     continue
 
+                admitted_informational, rejected_informational = filter_informational_proxies(
+                    parsed.proxies
+                )
                 admitted_by_name, rejected_name = filter_proxies_by_name_patterns(
-                    parsed.proxies,
+                    admitted_informational,
                     deny_patterns=spec.deny_name_patterns,
                 )
                 admitted, rejected_multiplier = filter_proxies_by_multiplier(
@@ -274,6 +284,7 @@ def build_candidate(
                 classified = [classify_proxy(proxy, spec, project.policies) for proxy in admitted]
                 nodes.extend(classified)
                 successful += 1
+                informational_nodes_rejected += rejected_informational
                 name_filtered_nodes += rejected_name
                 multiplier_filtered_nodes += rejected_multiplier
 
@@ -284,6 +295,8 @@ def build_candidate(
                     "input_nodes": len(parsed.proxies) + parsed.skipped_items,
                     "parsed_valid_nodes": len(parsed.proxies),
                     "skipped_invalid_nodes": parsed.skipped_items,
+                    "post_informational_filter_nodes": len(admitted_informational),
+                    "informational_rejected": rejected_informational,
                     "post_name_filter_nodes": len(admitted_by_name),
                     "filtered_by_name": rejected_name,
                     "post_multiplier_filter_nodes": len(classified),
@@ -376,6 +389,7 @@ def build_candidate(
         "parsed_nodes": len(nodes),
         "usable_nodes": len(deduplicated),
         "duplicates_removed": duplicate_count,
+        "informational_nodes_rejected": informational_nodes_rejected,
         "name_filtered_nodes": name_filtered_nodes,
         "multiplier_filtered_nodes": multiplier_filtered_nodes,
         "dns_leak_audit": dns_leak_report,
