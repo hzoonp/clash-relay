@@ -43,6 +43,8 @@ Maps to the deliberately small Mihomo runtime surface: mixed port, LAN binding, 
 
 `runtime.network_profile` selects a network-profile compilation layer that adapts resolver pools and client URLTest tuning to the access network the profile is deployed into. The layer lives in `src/clash_relay/network_profile.py`; renderer, generator, and routing code never branch on profile names. Two profiles exist:
 
+Run `clash-relay effective-config` to compare the validated public DNS declaration with the effective resolver pools and declared URLTest contract. `clash-relay doctor --public-only` also lists fields overridden by the profile. Both views are safe without subscription Secrets; final node membership and qualification decisions require a generated private candidate.
+
 - `default` (absent key) keeps the declared DNS exactly as written and applies no URLTest tuning. Declared `proxy_server_nameservers` must stay IP-literal encrypted under this profile.
 - `cn_three_net` adapts to China Telecom / Unicom / Mobile access networks. Before rendering it overrides four resolver pools — `default-nameserver: 223.5.5.5 / 119.29.29.29`, `nameserver: dns.alidns.com + doh.pub` (DoH), and `proxy-server-nameserver` / `direct-nameserver: system + dns.alidns.com + doh.pub` — so proxy hostnames resolve through carrier-local answers instead of foreign anycast. `system` and hostname DoH are bootstrap-safe: the OS resolver lives outside Mihomo routing and hostname DoH bootstraps through the IP-literal `default-nameserver` pool, so the resolver transport still cannot recurse into proxy routing. The ACL4SSR rule-set `nameserver-policy`, the exact `stun.l.google.com` override, `direct_nameserver_follow_policy: false`, and the Fake-IP surface are preserved verbatim; no wildcard keys are introduced. `cn_three_net` requires enabled managed DNS.
 
@@ -75,7 +77,7 @@ This split prevents the remote profile from leaving residual `strict-route` or `
 | `duplicate_policy` | `keep_first` or `error` on identical proxy fingerprints |
 | `allow_http_subscription_urls` | explicit HTTP opt-in; HTTPS is default |
 | `allow_file_subscription_urls` | test/local opt-in; disabled in production |
-| `reject_private_proxy_hosts` | reject literal private/special IP endpoints |
+| `reject_private_proxy_hosts` | when true, reject all non-global IP literals at subscription ingestion, including shared `100.64.0.0/10` and IPv4-mapped IPv6; when false, keep the ingestion opt-out (later public qualification stages still apply) |
 | `fail_on_required_subscription_error` | required-source failure gate |
 | `generated_header` | stable generated-file attribution/header option |
 

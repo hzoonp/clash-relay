@@ -173,6 +173,11 @@ _EMPTY_SUBSCRIPTION_REASON_BY_INVALID_REASON = {
     "missing_required_field": "all_missing_required_fields",
     "malformed_options": "all_malformed_options",
     "unsupported_values": "all_unsupported_values",
+    "unknown_uri_scheme": "all_unknown_uri_schemes",
+    "malformed_uri": "all_malformed_uris",
+    "garbage_uri_line": "all_garbage_uri_lines",
+    "invalid_auth": "all_invalid_auth",
+    "unsupported_uri_parameter": "all_unsupported_uri_parameters",
     "other_invalid": "all_other_invalid",
 }
 

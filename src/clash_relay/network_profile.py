@@ -17,6 +17,7 @@ Nothing outside this module may branch on profile names.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from .browsing_runtime import BROWSING_AUTO_GROUP
@@ -136,6 +137,40 @@ def apply_network_profile(config: dict[str, Any]) -> dict[str, Any]:
         "dns_overrides": sorted(_CN_THREE_NET_DNS_OVERRIDES),
         "urltest_tuning": True,
     }
+
+
+def compile_effective_config(
+    declared_config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply the network profile to a copy of the validated public declaration."""
+
+    effective_config = copy.deepcopy(declared_config)
+    report = apply_network_profile(effective_config)
+    return effective_config, report
+
+
+def public_urltest_contract(config: dict[str, Any], policies: dict[str, Any]) -> dict[str, Any]:
+    """Summarize the declared client probe and profile tuning without node data."""
+
+    probes = policies.get("probes")
+    browsing = probes.get("browsing") if isinstance(probes, dict) else None
+    scheduler = policies.get("scheduler")
+    browsing_scheduler = scheduler.get("browsing") if isinstance(scheduler, dict) else None
+    result: dict[str, Any] = {}
+    if isinstance(browsing, dict):
+        result["browsing"] = {
+            key: browsing[key]
+            for key in ("url", "interval", "timeout", "tolerance")
+            if key in browsing
+        }
+    if isinstance(browsing_scheduler, dict):
+        result["regional"] = {"interval": browsing_scheduler.get("region_switch_interval")}
+    if resolve_network_profile(config) == NETWORK_PROFILE_CN_THREE_NET:
+        result.setdefault("regional", {})["tolerance_ms"] = {
+            **dict(_CN_THREE_NET_REGIONAL_TOLERANCE_MS),
+            "US": _CN_THREE_NET_US_TOLERANCE_MS,
+        }
+    return result
 
 
 def _is_non_ai_automatic(group: dict[str, Any]) -> bool:

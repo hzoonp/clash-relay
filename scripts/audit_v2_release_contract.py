@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -30,6 +31,27 @@ _RUNTIME_COMPATIBILITY_TOKENS = (
     "legacy-previous-v1",
 )
 _PHASE_TOKEN = re.compile(r"\bP\d+(?:\.\d+)?(?:-P?\d+(?:\.\d+)?)?\b")
+
+
+def _durable_docs(root: Path) -> list[Path]:
+    """Only versioned documents are durable release contract inputs."""
+
+    docs_root = root / "docs"
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--cached", "--", "docs"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        result = None
+    if result is None or result.returncode != 0:
+        return sorted(docs_root.glob("*.md"))
+    paths = (Path(item) for item in result.stdout.decode("utf-8").split("\0") if item)
+    return sorted(
+        root / path for path in paths if path.parent == Path("docs") and path.suffix == ".md"
+    )
 
 
 def _iter_runtime_text_files(root: Path):
@@ -106,8 +128,7 @@ def audit(root: Path = ROOT) -> list[str]:
     for path in sorted((root / "tests").glob("test_p[0-9]*.py")):
         errors.append(f"phase-era test filename returned: {path.relative_to(root)}")
 
-    docs_root = root / "docs"
-    for path in sorted(docs_root.glob("*.md")):
+    for path in _durable_docs(root):
         text = path.read_text(encoding="utf-8")
         match = _PHASE_TOKEN.search(text)
         if match is not None:

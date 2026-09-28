@@ -12,10 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 MYPY_OPTIONS = ("--follow-imports=skip", "--ignore-missing-imports", "--check-untyped-defs")
 MYPY_TARGETS = (
     "builder",
+    "carrier_qualification",
     "classify",
     "cli",
     "config_loader",
     "diagnose",
+    "effective_config",
+    "network_address_policy",
     "node_policy",
     "selector",
     "policy_compiler",
@@ -46,6 +49,7 @@ MYPY_TARGETS = (
     "release_bundle",
     "release_inventory",
     "release_reconciliation",
+    "release_transaction",
     "publishers/cloudflare_kv",
     "operational_slo",
     "slo_application",

@@ -40,6 +40,7 @@ class ReleaseKeys:
     current_pointer: str
     previous_pointer: str
     journal: str
+    transaction: str
 
     def config(self, release_id: str) -> str:
         _validate_release_id(release_id)
@@ -58,6 +59,7 @@ def release_keys(production_key: str) -> ReleaseKeys:
         current_pointer=f"{production_key}.current-release-v1",
         previous_pointer=f"{production_key}.previous-release-v1",
         journal=f"{production_key}.release-journal-v1",
+        transaction=f"{production_key}.release-transaction-v1",
     )
 
 
@@ -200,6 +202,93 @@ def _restore_pointer(
     _publish_verified(factory, key, content)
 
 
+def _transaction_write(
+    factory: PublisherFactory,
+    keys: ReleaseKeys,
+    content: bytes,
+    *,
+    production_changed: bool | str = "unknown",
+) -> None:
+    try:
+        _publish_verified(factory, keys.transaction, content)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "release transaction state is unknown", production_changed=production_changed
+        ) from exc
+
+
+def _recover_transaction(
+    factory: PublisherFactory,
+    keys: ReleaseKeys,
+    *,
+    content: bytes,
+    production: bytes | None,
+    current_id: str | None,
+    previous_id: str | None,
+    observed_transaction: Any = None,
+) -> dict[str, Any] | None:
+    from .release_transaction import parse_release_transaction
+
+    transaction = observed_transaction or parse_release_transaction(
+        _safe_read(factory, keys.transaction)
+    )
+    if transaction is None:
+        return None
+    to_id = release_id_for(content)
+    if to_id != transaction.to_release_id:
+        raise PublicationError("unfinished release transaction targets another candidate")
+    from_id = transaction.from_release_id
+    if production is None or release_id_for(production) != to_id:
+        # A stale KV read can show the old production even after an accepted PUT.
+        # A later read-only reconciliation must settle this before any writes.
+        raise CommitUnknownError(
+            "unfinished release activation needs reconciliation", production_changed="unknown"
+        )
+    if current_id not in {None, from_id, to_id} or previous_id not in {
+        transaction.previous_release_id,
+        from_id,
+    }:
+        raise PublicationError("release transaction pointers contradict their intent")
+    if from_id is not None:
+        former = _safe_read(factory, keys.config(from_id))
+        if (
+            former is None
+            or release_id_for(former) != from_id
+            or _safe_read(factory, keys.manifest(from_id)) != manifest_bytes(former)
+        ):
+            raise PublicationError("transaction predecessor immutable release is unavailable")
+    # The immutable candidate and manifest were verified by the caller. Ensure
+    # rollback points to the immediately preceding production before current.
+    try:
+        if previous_id != from_id:
+            _restore_pointer(factory, keys.previous_pointer, from_id)
+        if current_id != to_id:
+            _restore_pointer(factory, keys.current_pointer, to_id)
+    except CommitUnknownError as exc:
+        raise CommitUnknownError(
+            "release transaction pointer repair state is unknown", production_changed=True
+        ) from exc
+    if (
+        _safe_read(factory, keys.production) != content
+        or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) != from_id
+        or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != to_id
+    ):
+        raise CommitUnknownError(
+            "release transaction verification is incomplete", production_changed="unknown"
+        )
+    _transaction_write(factory, keys, _EMPTY_POINTER)
+    return {
+        "status": "published",
+        "release_id": to_id,
+        "previous_release_id": from_id,
+        "bytes": len(content),
+        "sha256": to_id,
+        "production_changed": True,
+        "recovered_transaction": True,
+        "first_release": from_id is None,
+    }
+
+
 def _restore_after_failed_commit(
     factory: PublisherFactory,
     keys: ReleaseKeys,
@@ -300,12 +389,39 @@ def publish_release_bundle(
 ) -> dict[str, Any]:
     """Stage, verify, activate, and commit a versioned release."""
     keys = release_keys(production_key)
+    from .release_transaction import parse_release_transaction
+
+    observed_transaction = parse_release_transaction(_safe_read(factory, keys.transaction))
+    if observed_transaction is not None and observed_transaction.to_release_id != release_id_for(
+        content
+    ):
+        raise PublicationError("unfinished release transaction targets another candidate")
     new_release_id = _ensure_immutable_release(factory, keys, content)
     current_content = _safe_read(factory, keys.production)
     current_pointer_before = parse_release_pointer(_safe_read(factory, keys.current_pointer))
     previous_pointer_before = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
     if baseline_observer is not None:
         baseline_observer(current_content)
+    recovered = _recover_transaction(
+        factory,
+        keys,
+        content=content,
+        production=current_content,
+        current_id=current_pointer_before,
+        previous_id=previous_pointer_before,
+        observed_transaction=observed_transaction,
+    )
+    if recovered is not None:
+        return recovered
+    if current_content is None and current_pointer_before is not None:
+        raise PublicationError("current pointer exists without production content")
+    if current_content is None and previous_pointer_before is not None:
+        raise PublicationError("previous pointer exists without production content")
+    if current_content is not None and current_pointer_before not in {
+        None,
+        release_id_for(current_content),
+    }:
+        raise PublicationError("production and current pointer disagree without transaction")
 
     if current_content == content:
         if current_pointer_before != new_release_id:
@@ -326,13 +442,38 @@ def publish_release_bundle(
         }
 
     if current_content is None:
-        _activate_first_release(
+        from .release_transaction import ReleaseTransaction, serialize_release_transaction
+
+        _transaction_write(
             factory,
             keys,
-            content=content,
-            new_release_id=new_release_id,
-            current_pointer_before=current_pointer_before,
+            serialize_release_transaction(ReleaseTransaction(None, new_release_id, None)),
+            production_changed=False,
         )
+        try:
+            _activate_first_release(
+                factory,
+                keys,
+                content=content,
+                new_release_id=new_release_id,
+                current_pointer_before=current_pointer_before,
+            )
+        except CommitUnknownError:
+            raise
+        except PublicationError as exc:
+            if str(exc) == "first release activation failed; current pointer was restored":
+                _transaction_write(factory, keys, _EMPTY_POINTER)
+            raise
+        if (
+            _safe_read(factory, keys.production) != content
+            or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != new_release_id
+            or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) is not None
+        ):
+            raise CommitUnknownError(
+                "first release transaction verification is incomplete",
+                production_changed="unknown",
+            )
+        _transaction_write(factory, keys, _EMPTY_POINTER)
         return {
             "status": "published",
             "release_id": new_release_id,
@@ -344,6 +485,16 @@ def publish_release_bundle(
         }
 
     old_release_id = _ensure_immutable_release(factory, keys, current_content)
+    from .release_transaction import ReleaseTransaction, serialize_release_transaction
+
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(
+            ReleaseTransaction(old_release_id, new_release_id, previous_pointer_before)
+        ),
+        production_changed=False,
+    )
 
     try:
         _publish_verified(factory, keys.production, content)
@@ -363,6 +514,7 @@ def publish_release_bundle(
             )
         except PublicationError as compensation_error:
             raise compensation_error from exc
+        _transaction_write(factory, keys, _EMPTY_POINTER)
         raise PublicationError(
             "release commit failed; previous production bytes were restored"
         ) from exc
@@ -385,6 +537,7 @@ def publish_release_bundle(
             )
         except PublicationError as compensation_error:
             raise compensation_error from exc
+        _transaction_write(factory, keys, _EMPTY_POINTER)
         raise PublicationError(
             "release commit failed; previous production bytes were restored"
         ) from exc
@@ -407,10 +560,20 @@ def publish_release_bundle(
             )
         except PublicationError as compensation_error:
             raise compensation_error from exc
+        _transaction_write(factory, keys, _EMPTY_POINTER)
         raise PublicationError(
             "release commit failed; previous production bytes were restored"
         ) from exc
 
+    if (
+        _safe_read(factory, keys.production) != content
+        or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != new_release_id
+        or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) != old_release_id
+    ):
+        raise CommitUnknownError(
+            "release transaction verification is incomplete", production_changed="unknown"
+        )
+    _transaction_write(factory, keys, _EMPTY_POINTER)
     return {
         "status": "published",
         "release_id": new_release_id,
@@ -429,6 +592,10 @@ def read_previous_release(
 ) -> tuple[bytes, dict[str, Any]]:
     """Read and verify the versioned previous release."""
     keys = release_keys(production_key)
+    from .release_transaction import parse_release_transaction
+
+    if parse_release_transaction(_safe_read(factory, keys.transaction)) is not None:
+        raise PublicationError("previous release is unavailable during an unfinished transaction")
     previous_release_id = parse_release_pointer(_safe_read(factory, keys.previous_pointer))
     if previous_release_id is None:
         raise PublicationError("no previous production release is available")

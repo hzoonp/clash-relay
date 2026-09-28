@@ -63,6 +63,21 @@ jobs:
             --junitxml=.work/unit-3.12.xml
       - name: Enforce risk-based coverage ratchet
         run: python scripts/audit_risk_coverage.py .work/coverage-3.12.xml
+      - name: Build and smoke the installed wheel outside the source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip wheel --no-build-isolation --no-deps --wheel-dir .work/wheels .
+          python -m venv .work/wheel-venv
+          .work/wheel-venv/bin/python -m pip install --require-hashes --only-binary=:all: --requirement requirements.lock
+          .work/wheel-venv/bin/python -m pip install --no-deps .work/wheels/*.whl
+          smoke_dir="$(mktemp -d)"
+          cp config.yaml subscriptions.yaml policies.yaml "$smoke_dir/"
+          cp -R policies rules "$smoke_dir/"
+          cd "$smoke_dir"
+          "$GITHUB_WORKSPACE/.work/wheel-venv/bin/clash-relay" --help >/dev/null
+          "$GITHUB_WORKSPACE/.work/wheel-venv/bin/clash-relay" doctor --public-only \
+            --mihomo-manifest "$GITHUB_WORKSPACE/tools/mihomo-versions.json" >/dev/null
 
   python-compat:
     name: Python ${{ matrix.python }} compatibility

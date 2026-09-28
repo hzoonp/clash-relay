@@ -1,0 +1,7 @@
+uri: 'trojan://pass@trojan.invalid.example:443?sni=cert.invalid.example#Trojan'
+expected:
+  type: trojan
+  server: trojan.invalid.example
+  port: 443
+  password: pass
+  sni: cert.invalid.example

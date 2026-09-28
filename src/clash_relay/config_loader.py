@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from .errors import ConfigurationError
 from .models import SubscriptionSpec
-from .network_profile import apply_network_profile
+from .network_profile import compile_effective_config
 from .policy_document import load_policy_document
 from .schema import load_and_validate
 from .status import parse_expected_status
@@ -27,6 +27,7 @@ class ProjectDefinition:
     policies: dict[str, Any]
     acl4ssr: dict[str, Any] | None
     network_profile: dict[str, Any]
+    declared_config: dict[str, Any] | None = None
 
 
 def _ensure_unique(items: list[dict[str, Any]], field: str, label: str) -> None:
@@ -195,9 +196,9 @@ def load_project(
     subscriptions_path: Path,
     policies_path: Path,
 ) -> ProjectDefinition:
-    config = load_and_validate(config_path, "config.schema.json")
-    _sniffer_semantics(config)
-    network_profile = apply_network_profile(config)
+    declared_config = load_and_validate(config_path, "config.schema.json")
+    _sniffer_semantics(declared_config)
+    config, network_profile = compile_effective_config(declared_config)
     _dns_tun_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")
     policy_document = load_policy_document(policies_path)
@@ -433,4 +434,5 @@ def load_project(
         policies=policies,
         acl4ssr=acl4ssr,
         network_profile=network_profile,
+        declared_config=declared_config,
     )

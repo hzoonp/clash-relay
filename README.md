@@ -24,6 +24,10 @@ Fork
 
 `clash-relay doctor` validates public declarations, subscription-secret readiness, the pinned Mihomo manifest, and optional Cloudflare read connectivity without publishing configuration bytes. `clash-relay diagnose --candidate <config.yaml>` is a separate read-only candidate/runtime diagnostic that reports aggregate pass/fail counts only; add `--mihomo-bin` to include a real-core startup smoke.
 
+`clash-relay effective-config` shows public DNS and URLTest declarations after the selected network profile is applied, including each overridden field. It reads no subscription Secret.
+
+`clash-relay audit-release-state` checks private Cloudflare release consistency without writing. Use `clash-relay doctor --check-release-state` to include that check with private readiness.
+
 Automatic `push` production runs remain hard-latched to dry-run mode. Manual `workflow_dispatch` publishes only with `publish=true`. Scheduled runs may publish only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate: the authorized upstream `hzoonp/clash-relay` deployment is enabled when the variable is unset, while public forks remain dry-run unless they explicitly set the repository variable to `true`. Setting it to `false` suspends unattended publication. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
 
 ## Public Config v2

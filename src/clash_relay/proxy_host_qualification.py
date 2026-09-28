@@ -28,7 +28,6 @@ runtime entries.
 
 from __future__ import annotations
 
-import ipaddress
 import time
 import urllib.parse
 from collections import Counter
@@ -38,6 +37,7 @@ from typing import Any
 from .classify import proxy_fingerprint
 from .dns_wire import ANSWER_CATEGORIES, probe_doh
 from .errors import ValidationError
+from .network_address_policy import is_global_address
 from .runtime_names import parse_runtime_source_name
 
 _REGIONS = frozenset({"hk", "tw", "sg", "jp", "us", "kr", "other"})
@@ -48,18 +48,7 @@ _UniqueKey = tuple[str, str]
 
 
 def _public_address(value: object) -> bool:
-    try:
-        address = ipaddress.ip_address(str(value))
-    except ValueError:
-        return False
-    return not (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_unspecified
-        or address.is_multicast
-        or address.is_reserved
-    )
+    return is_global_address(str(value))
 
 
 def _resolver_authority(endpoint: str) -> tuple[str, str, int, str] | None:

@@ -33,6 +33,24 @@ def test_validate_project_command(project_paths, capsys) -> None:
     assert output["enabled_subscriptions"] == 3
 
 
+def test_release_state_audit_command_blocks_on_pending_intent(
+    project_paths, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "audit_production_release_state",
+        lambda **_kwargs: {
+            "status": "ambiguous",
+            "transaction": "pending",
+            "mutation": "none",
+        },
+    )
+
+    assert cli.main(["audit-release-state", *_project_args(project_paths)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report == {"status": "ambiguous", "transaction": "pending", "mutation": "none"}
+
+
 def test_cloudflare_cli_uses_compensating_release_adapter(
     project_paths, monkeypatch, tmp_path, capsys
 ):

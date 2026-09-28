@@ -1,0 +1,9 @@
+uri: 'hy2://alice:secret@hy.invalid.example?obfs=salamander&obfs-password=hide&sni=cert.invalid.example#HY2'
+expected:
+  type: hysteria2
+  server: hy.invalid.example
+  port: 443
+  password: 'alice:secret'
+  sni: cert.invalid.example
+  obfs: salamander
+  obfs-password: hide

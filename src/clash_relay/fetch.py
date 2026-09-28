@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
 
 from .errors import FetchError
+from .network_address_policy import is_global_address
 from .redact import redact_text, redact_url
 
 _USER_AGENT = "clash-relay/0.1 (+https://github.com/)"
@@ -98,17 +99,10 @@ class _Deadline:
 
 def _is_private_literal(hostname: str) -> bool:
     try:
-        address = ipaddress.ip_address(hostname.strip("[]"))
+        ipaddress.ip_address(hostname.strip("[]"))
     except ValueError:
         return False
-    return bool(
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
-    )
+    return not is_global_address(hostname.strip("[]"))
 
 
 def validate_subscription_url(

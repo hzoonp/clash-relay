@@ -19,6 +19,7 @@ def plan_release_inventory(
     current_release_id: str | None,
     previous_release_id: str | None,
     production_release_id: str | None,
+    transaction_release_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Classify one KV listing; absence is provisional under KV eventual consistency."""
     keys = release_keys(production_key)
@@ -35,6 +36,7 @@ def plan_release_inventory(
         for item in (current_release_id, previous_release_id, production_release_id)
         if item is not None
     }
+    protected.update(transaction_release_ids or ())
     observed = set(objects)
     return {
         "status": "observed_once",
@@ -49,5 +51,5 @@ def plan_release_inventory(
         ),
         "journaled_but_unlisted_release_ids": sorted(journal_ids - observed),
         "observed_release_objects": sum(len(kinds) for kinds in objects.values()),
-        "review": "Repeat after KV propagation and recheck current, previous, and production before any cleanup.",
+        "review": "Repeat after KV propagation and recheck current, previous, production, and transaction before any cleanup.",
     }

@@ -59,7 +59,7 @@ The service-routing rewrite also checks its rule assumptions against the immutab
 All subscriptions are untrusted:
 
 - HTTPS is required by default;
-- URL userinfo, unsupported schemes, and private/special IP literals are rejected;
+- URL userinfo, unsupported schemes, and non-global IP literals (including shared and mapped addresses) are rejected;
 - every redirect destination is revalidated;
 - one monotonic total timeout budget covers each subscription fetch;
 - transfer and gzip-expanded sizes are bounded;
@@ -71,7 +71,7 @@ All subscriptions are untrusted:
 - subscription-supplied chain/interface/routing controls are stripped;
 - output names are regenerated and globally unique.
 
-Subscription HTTP(S) connections are bound to the exact public `getaddrinfo` results that passed destination validation. Redirects are revalidated and re-resolved before their connection is created, so a later ambient resolver lookup cannot silently rebind a validated subscription hostname to a private/special-use address.
+Subscription HTTP(S) connections are bound to the exact global `getaddrinfo` results that passed destination validation. Mixed global and non-global DNS answers fail together. Redirects are revalidated and re-resolved before their connection is created, so a later ambient resolver lookup cannot silently rebind a validated subscription hostname to a non-global address.
 
 ## DNS and TUN leak prevention
 

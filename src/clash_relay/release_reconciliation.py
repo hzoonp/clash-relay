@@ -14,6 +14,7 @@ from typing import Any
 
 from .errors import PublicationError
 from .release_bundle import PublisherFactory, parse_release_pointer, release_id_for, release_keys
+from .release_transaction import parse_release_transaction
 
 
 class ReconciliationStatus(StrEnum):
@@ -88,12 +89,14 @@ def reconcile_release_bundle(
         production = factory(keys.production).read()
         current_raw = factory(keys.current_pointer).read()
         previous_raw = factory(keys.previous_pointer).read()
+        transaction_raw = factory(keys.transaction).read()
     except PublicationError:
         return _unknown(release_id=candidate_id, reason="read_failed")
 
     try:
         current_id = parse_release_pointer(current_raw)
         observed_previous_id = parse_release_pointer(previous_raw)
+        transaction = parse_release_transaction(transaction_raw)
     except PublicationError:
         return _unknown(
             release_id=candidate_id,
@@ -103,6 +106,28 @@ def reconcile_release_bundle(
 
     production_matches_candidate = production == candidate_content
     current_matches_candidate = current_id == candidate_id
+
+    if transaction is not None:
+        if transaction.to_release_id != candidate_id or transaction.from_release_id != previous_id:
+            return _unknown(
+                release_id=candidate_id,
+                reason="transaction_targets_another_release",
+                production_matches_candidate=production_matches_candidate,
+                current_release_id=current_id,
+                previous_release_id=observed_previous_id,
+            )
+        if (
+            not production_matches_candidate
+            or not current_matches_candidate
+            or observed_previous_id != previous_id
+        ):
+            return _unknown(
+                release_id=candidate_id,
+                reason="transaction_incomplete_or_not_yet_visible",
+                production_matches_candidate=production_matches_candidate,
+                current_release_id=current_id,
+                previous_release_id=observed_previous_id,
+            )
 
     if production_matches_candidate and current_matches_candidate:
         if previous_content == candidate_content:

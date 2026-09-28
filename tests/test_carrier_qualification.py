@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 
 import pytest
+from jsonschema import Draft202012Validator
+from jsonschema import ValidationError as SchemaValidationError
 
 from clash_relay.carrier_qualification import (
     CarrierProbeResult,
@@ -195,3 +197,75 @@ def test_carrier_payload_timestamp_fails_closed() -> None:
     }
     with pytest.raises(ValidationError, match="integer epoch"):
         run_carrier_qualification(malformed)
+
+
+def _v2_payload() -> dict:
+    return {
+        "schema_version": 2,
+        "profile": "cn_three_net",
+        "collected_at_epoch": 10_000,
+        "window": {"start_epoch": 9_400, "end_epoch": 10_000},
+        "carriers": {
+            "telecom": {
+                "tested": 40,
+                "reachable": 38,
+                "median_latency_ms": 52.4,
+                "failures": {"suppressed": 2},
+                "by_region": {
+                    "hk": {"tested": 20, "reachable": 19},
+                    "jp": {"tested": 20, "reachable": 19},
+                },
+                "by_protocol": {"trojan": {"tested": 40, "reachable": 38}},
+            }
+        },
+    }
+
+
+def test_v2_carrier_evidence_is_aggregated_and_windowed() -> None:
+    report = run_carrier_qualification(_v2_payload(), now_epoch=10_060)
+    assert report["status"] == "passed"
+    assert report["schema_version"] == 2
+    assert report["profile"] == "cn_three_net"
+    assert report["window"] == {"start_epoch": 9_400, "end_epoch": 10_000}
+    assert report["carriers"]["telecom"]["failures"] == {"suppressed": 2}
+    assert report["carriers"]["telecom"]["by_region"]["hk"]["tested"] == 20
+
+
+@pytest.mark.parametrize(
+    ("change", "match"),
+    [
+        (lambda p: p.update(profile="secret-profile"), "known network profile"),
+        (lambda p: p["window"].update(end_epoch=10_001), "collection time"),
+        (lambda p: p["carriers"]["telecom"].update(server="1.2.3.4"), "unknown fields"),
+        (
+            lambda p: p["carriers"]["telecom"]["by_region"].update(
+                us={"tested": 1, "reachable": 1}
+            ),
+            "small or invalid cell",
+        ),
+        (lambda p: p["carriers"]["telecom"].update(failures={"timeout": 2}), "small cell"),
+        (lambda p: p.update(node_name="secret"), "unknown fields"),
+    ],
+)
+def test_v2_rejects_identity_and_small_detail_cells(change, match: str) -> None:
+    payload = _v2_payload()
+    change(payload)
+    with pytest.raises(ValidationError, match=match):
+        run_carrier_qualification(payload, now_epoch=10_060)
+
+
+def test_versioned_carrier_schema_accepts_legacy_and_v2_evidence(repo_root) -> None:
+    schema = json.loads((repo_root / "schemas/carrier-evidence.schema.json").read_text())
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    legacy = {
+        "schema_version": 1,
+        "collected_at_epoch": 10_000,
+        "carriers": {"telecom": {"tested": 10, "reachable": 9, "median_latency_ms": 20.0}},
+    }
+
+    validator.validate(legacy)
+    validator.validate(_v2_payload())
+    legacy["carriers"]["telecom"]["server"] = "private.invalid.example"
+    with pytest.raises(SchemaValidationError):
+        validator.validate(legacy)

@@ -1,0 +1,7 @@
+uri: 'anytls://pass@anytls.invalid.example:443?sni=cert.invalid.example#AnyTLS'
+expected:
+  type: anytls
+  server: anytls.invalid.example
+  port: 443
+  password: pass
+  sni: cert.invalid.example

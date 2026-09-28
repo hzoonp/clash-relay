@@ -136,6 +136,7 @@ def _inputs(candidate_path: Path) -> dict:
             },
         },
         "build_report": {
+            "network_profile": {"profile": "cn_three_net"},
             "subscriptions": [
                 {"id": "subscription_1", "url": "SHOULD-NOT-LEAK"},
                 {"id": "subscription_2", "url": "SHOULD-NOT-LEAK"},
@@ -178,6 +179,37 @@ def _inputs(candidate_path: Path) -> dict:
             "candidate": {"server": "SHOULD-NOT-LEAK"},
         },
     }
+
+
+def test_production_proof_separates_network_evidence_layers(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text(
+        "proxy-groups:\n  - name: auto\n    type: url-test\n    url: https://example.com/generate_204\n",
+        encoding="utf-8",
+    )
+    inputs = _inputs(candidate)
+    inputs["qualification"]["reachability"] = {
+        "carrier_qualification": {
+            "status": "passed",
+            "schema_version": 2,
+            "profile": "cn_three_net",
+            "carriers": {"telecom": {"server": "SHOULD-NOT-LEAK"}},
+        }
+    }
+    proof = build_production_proof(**inputs)
+    assert proof["network_evidence"] == {
+        "network_profile": "cn_three_net",
+        "static_eligible": "passed",
+        "runner_qualification": "passed",
+        "target_network_evidence": "observed",
+        "client_urltest": "enabled",
+    }
+    assert "SHOULD-NOT-LEAK" not in str(proof)
+    assert "Target-network evidence | observed" in render_production_proof_markdown(proof)
+    inputs["qualification"]["reachability"]["carrier_qualification"]["profile"] = "default"
+    assert build_production_proof(**inputs)["network_evidence"]["target_network_evidence"] == (
+        "profile_mismatch"
+    )
 
 
 def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: Path) -> None:

@@ -83,6 +83,7 @@ production-config.release-v1.<sha256>.manifest
 production-config.current-release-v1
 production-config.previous-release-v1
 production-config.release-journal-v1
+production-config.release-transaction-v1
 ```
 
 The `v1` suffix is the private storage schema version, not the clash-relay product major version. The release ID is the SHA-256 of the exact candidate bytes.
@@ -92,13 +93,16 @@ Publication:
 1. writes or verifies the immutable new config object;
 2. writes or verifies its exact immutable manifest;
 3. ensures the current production bytes have a versioned immutable object when a current value exists;
-4. updates and read-back verifies the fixed client-facing production key;
-5. commits the previous-release pointer;
-6. commits the current-release pointer.
+4. records a private intent containing only the previous, candidate, and former rollback release IDs;
+5. updates and read-back verifies the fixed client-facing production key;
+6. commits the previous-release pointer, then the current-release pointer;
+7. verifies all three observable values and clears the intent.
 
 There is no v2 `previous-v1` compatibility slot, write, or fallback.
 
-If a pointer commit fails after client-visible bytes changed, the release layer attempts compensating restoration of the previous exact bytes and pointer state. An ambiguous remote PUT is followed by exact read-back before it is treated as failed. Workers KV is therefore described as a **compensating transaction**, not a cross-key atomic database transaction.
+If a pointer commit fails after client-visible bytes changed, the release layer attempts compensating restoration of the previous exact bytes and pointer state. An ambiguous remote PUT is followed by exact read-back before it is treated as failed. When a process stops after production changes but before pointer completion, retrying the same candidate repairs `previous` to the exact predecessor recorded in the intent, then repairs `current`. A different candidate and rollback stop while an intent remains. If production still appears to contain the old bytes, KV propagation makes the outcome ambiguous; read-only reconciliation is required before further mutation. Workers KV is therefore described as a **compensating transaction**, not a cross-key atomic database transaction.
+
+The supported GitHub Actions production writers share one concurrency group. A direct CLI writer outside that group must be serialized by its operator; Workers KV offers no cross-key compare-and-swap lock. Transaction reads can also lag, so a contradictory or ambiguous observation stops mutation until reconciliation.
 
 ## Rollback
 
@@ -136,13 +140,15 @@ If activation has committed and a later proof/derived-state/SLO operation fails,
 
 When a release transaction reports an unknown commit state, preserve the exact candidate and the exact production bytes observed before that attempt in private storage. Run `clash-relay reconcile-release` with `--candidate` and `--previous` to read the production key and release pointers without publishing, retrying, or compensating. For an ambiguous first release, use `--first-release` instead of `--previous`.
 
-The command reports `committed`, `not_committed`, or `unknown`. Only `committed` and `not_committed` are conclusive; an `unknown` result requires investigation and must not be treated as permission to retry mutation automatically.
+The command reports `committed`, `not_committed`, or `unknown`. A pending intent with incomplete or lagging observable values is `unknown`. Only `committed` and `not_committed` are conclusive; an `unknown` result requires investigation and must not be treated as permission to retry mutation automatically.
+
+`clash-relay audit-release-state` reads the production value, version pointers, previous immutable object, and pending intent without writing. `clash-relay doctor --check-release-state` includes the same read-only consistency gate after Secret readiness; it reports a blocked status for an incomplete or inconsistent release. A single KV read is an observation rather than an atomic snapshot, so ambiguous results require later read-only reconciliation.
 
 ## Immutable release retention
 
 `release-journal-v1` is private derived state. It records each successfully observed immutable release ID and its first observation epoch; missing journal state is compatible with pre-journal releases and is initialized after a later successful publication. Journal persistence is best effort and cannot change the outcome of an already committed release.
 
-`clash-relay plan-release-retention --retention-days 30` reads the journal and both live pointers, then emits a read-only candidate list and plan digest. It always protects `current-release-v1`, `previous-release-v1`, and IDs inside the retention window. It never deletes a key.
+`clash-relay plan-release-retention --retention-days 30` reads the journal, live pointers, production identity, and pending intent, then emits a read-only candidate list and plan digest. It protects those references and IDs inside the retention window. Before each deletion it reads the intent again and stops if the candidate has become referenced. It never deletes a key while planning.
 
 To execute a reviewed plan, save that exact JSON privately and run `clash-relay apply-release-retention --plan PRIVATE_PLAN.json --confirm-retention-delete`. The command recomputes the plan before mutation and rejects a stale digest. It deletes only each approved immutable config/manifest pair, then removes those IDs from the journal. An ambiguous delete response stops execution and leaves the journal unchanged for the affected remainder.
 

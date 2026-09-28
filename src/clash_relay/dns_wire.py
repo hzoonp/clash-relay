@@ -19,12 +19,13 @@ No payload content, hostname, or resolver identity crosses this boundary.
 from __future__ import annotations
 
 import base64
-import ipaddress
 import socket
 import struct
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from .network_address_policy import is_global_address
 
 _TYPE_A = 1
 _TYPE_AAAA = 28
@@ -70,11 +71,7 @@ def build_query(hostname: str, qtype: int = _TYPE_A) -> bytes:
 
 
 def _public_address(value: bytes) -> bool:
-    try:
-        address = ipaddress.ip_address(value)
-    except ValueError:
-        return False
-    return address.is_global
+    return is_global_address(value)
 
 
 def _skip_name(payload: bytes, offset: int) -> int:

@@ -12,6 +12,7 @@ from clash_relay.production_application import (
     _load_json,
     apply_production_release_retention,
     audit_production_release_inventory,
+    audit_production_release_state,
     fetch_current_production_config,
     load_ai_qualification_cache_state,
     load_scheduler_history_state,
@@ -28,6 +29,7 @@ from clash_relay.release_journal import (
     record_release_observation,
     serialize_release_journal,
 )
+from clash_relay.release_transaction import ReleaseTransaction, serialize_release_transaction
 
 
 def _project(root: Path) -> ProjectDefinition:
@@ -166,6 +168,7 @@ def test_release_reconciliation_reads_only_the_versioned_release_state(
         ("read", keys.production),
         ("read", keys.current_pointer),
         ("read", keys.previous_pointer),
+        ("read", keys.transaction),
     ]
 
 
@@ -285,6 +288,77 @@ def test_release_inventory_application_lists_without_mutation(
     assert result["mutation"] == "none"
 
 
+def test_release_state_audit_checks_live_bytes_and_pending_intent_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live, previous, next_candidate = b"live\n", b"previous\n", b"next\n"
+    live_id, previous_id, next_id = map(release_id_for, (live, previous, next_candidate))
+    keys = release_keys("production-config")
+    values: dict[str, bytes | None] = {
+        keys.production: live,
+        keys.current_pointer: f"{live_id}\n".encode(),
+        keys.previous_pointer: f"{previous_id}\n".encode(),
+        keys.config(live_id): live,
+        keys.manifest(live_id): manifest_bytes(live),
+        keys.config(previous_id): previous,
+        keys.manifest(previous_id): manifest_bytes(previous),
+        keys.transaction: None,
+    }
+
+    class Reader:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def resolve_namespace_id(self) -> str:
+            return "namespace-id"
+
+        def read(self) -> bytes | None:
+            return values.get(self.key)
+
+        def publish(self, *, content: bytes) -> None:
+            raise AssertionError("release state audit must remain read-only")
+
+    monkeypatch.setattr(
+        "clash_relay.production_application._publisher",
+        lambda **kwargs: Reader(str(kwargs["key_name"])),
+    )
+    environment = {
+        "CLOUDFLARE_API_TOKEN": "private-token",
+        "CLOUDFLARE_ACCOUNT_ID": "account",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+    }
+    healthy = audit_production_release_state(project=_project(tmp_path), env=environment)
+    assert healthy["status"] == "healthy"
+    assert healthy["production_matches_current"] is True
+    assert healthy["current_available"] is True
+    assert healthy["previous_available"] is True
+    assert healthy["mutation"] == "none"
+
+    values[keys.transaction] = serialize_release_transaction(
+        ReleaseTransaction(live_id, next_id, previous_id)
+    )
+    pending = audit_production_release_state(project=_project(tmp_path), env=environment)
+    assert pending["status"] == "ambiguous"
+    assert pending["transaction"] == "pending"
+    assert pending["transaction_referenced_release_ids"] == sorted((live_id, previous_id, next_id))
+
+    values[keys.transaction] = None
+    values.pop(keys.config(live_id))
+    missing_current = audit_production_release_state(project=_project(tmp_path), env=environment)
+    assert missing_current["status"] == "inconsistent"
+    assert missing_current["current_available"] is False
+    values[keys.config(live_id)] = live
+    values.pop(keys.config(previous_id))
+    inconsistent = audit_production_release_state(project=_project(tmp_path), env=environment)
+    assert inconsistent["status"] == "inconsistent"
+    assert inconsistent["previous_available"] is False
+
+
+def test_release_state_audit_requires_private_credentials(tmp_path: Path) -> None:
+    with pytest.raises(PublicationError, match="credentials are required"):
+        audit_production_release_state(project=_project(tmp_path), env={})
+
+
 def test_release_retention_plan_also_protects_client_visible_production(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -331,7 +405,13 @@ def test_release_retention_plan_also_protects_client_visible_production(
 
     assert result["mutation"] == "none"
     assert result["deletion_candidate_ids"] == [expired]
-    assert calls == [keys.journal, keys.current_pointer, keys.previous_pointer, keys.production]
+    assert calls == [
+        keys.journal,
+        keys.current_pointer,
+        keys.previous_pointer,
+        keys.production,
+        keys.transaction,
+    ]
 
 
 def test_committed_release_records_an_append_only_journal_observation(

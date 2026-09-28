@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
 from .errors import SubscriptionError, UnsafeSubscriptionError
+from .network_address_policy import is_global_address
 from .uri_parser import decode_base64_text, parse_proxy_uri
 from .util import deep_size_guard, stable_json, yaml_load_no_aliases
 
@@ -51,6 +53,23 @@ _REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "anytls": ("password",),
 }
 _MAX_PROXIES = 20_000
+_URI_LINE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S+$")
+_SUPPORTED_URI_PREFIXES = (
+    "ss://",
+    "ssr://",
+    "vmess://",
+    "vless://",
+    "trojan://",
+    "hysteria://",
+    "hysteria2://",
+    "hy2://",
+    "tuic://",
+    "anytls://",
+    "socks://",
+    "socks5://",
+    "http://",
+    "https://",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,14 +90,7 @@ def _private_host(value: str) -> bool:
         address = ipaddress.ip_address(lowered)
     except ValueError:
         return False
-    return bool(
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
-    )
+    return not is_global_address(address)
 
 
 def _sanitize_mapping(proxy: dict[str, Any]) -> dict[str, Any]:
@@ -243,16 +255,30 @@ def _parse_payload(
         # string. URI subscriptions are line-oriented, so keep the original
         # source text whenever YAML produced only a scalar.
     lines = _uri_lines(stripped)
-    if lines and all("://" in line for line in lines):
+    # A supported URI at the start of a whole line identifies a list. Once
+    # identified, every non-comment line is processed independently. URI-like
+    # lists of unknown schemes are also processed so skip policy can report
+    # them without misclassifying HTML pages containing an embedded URL.
+    uri_candidate = any(line.lower().startswith(_SUPPORTED_URI_PREFIXES) for line in lines) or (
+        bool(lines) and all(_URI_LINE.fullmatch(line) for line in lines)
+    )
+    if uri_candidate:
+        if len(lines) > _MAX_PROXIES:
+            raise SubscriptionError(f"subscription contains more than {_MAX_PROXIES} proxies")
         entries: list[Any] = []
         skipped_reasons: Counter[str] = Counter()
         for line in lines:
+            if not _URI_LINE.fullmatch(line):
+                if invalid_policy == "error":
+                    raise SubscriptionError("subscription contains garbage URI line")
+                skipped_reasons["garbage_uri_line"] += 1
+                continue
             try:
                 entries.append(parse_proxy_uri(line))
             except (SubscriptionError, ValueError, TypeError) as exc:
                 if invalid_policy == "error":
                     raise SubscriptionError(
-                        f"subscription contains invalid proxy URI: {exc}"
+                        f"subscription contains invalid proxy URI: {_invalid_proxy_reason(exc)}"
                     ) from exc
                 skipped_reasons[_invalid_proxy_reason(exc)] += 1
         return entries, None, sum(skipped_reasons.values()), skipped_reasons
@@ -269,6 +295,24 @@ def _parse_payload(
 
 def _invalid_proxy_reason(error: BaseException) -> str:
     message = str(error)
+    if message.startswith("unsupported proxy URI scheme"):
+        return "unknown_uri_scheme"
+    if any(
+        marker in message
+        for marker in (
+            "unsupported URI parameter",
+            "unsupported TLS setting",
+            "unsupported transport",
+            "unsupported path",
+        )
+    ):
+        return "unsupported_uri_parameter"
+    if "invalid port" in message or "valid port" in message:
+        return "invalid_port"
+    if "no password" in message or "no UUID" in message or "requires UUID and password" in message:
+        return "invalid_auth"
+    if "URI" in message or "base64" in message:
+        return "malformed_uri"
     if message == "proxy entry must be a mapping":
         return "invalid_entry"
     if message == "proxy fields must use string keys":

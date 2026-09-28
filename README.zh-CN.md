@@ -24,6 +24,10 @@ Fork
 
 `clash-relay doctor` 会检查公共声明、订阅 Secret 是否齐全、Mihomo 版本清单，以及可选的 Cloudflare 只读连通性；它不会发布生产配置。
 
+`clash-relay effective-config` 展示网络 profile 生效后的公共 DNS 与 URLTest 声明及被覆盖字段，不读取订阅 Secret。
+
+`clash-relay audit-release-state` 只读检查私有 Cloudflare 发布状态；`clash-relay doctor --check-release-state` 将该检查纳入私有就绪诊断。
+
 自动 `push` 生产运行继续被硬锁为 dry-run；手动 `workflow_dispatch` 只有 `publish=true` 才发布。定时 `schedule` 只能通过专用 `CLASH_RELAY_SCHEDULE_PUBLISH` 门禁进入发布：已明确授权的上游 `hzoonp/clash-relay` 在该变量未设置时启用自动发布；公开 Fork 默认仍为 dry-run，只有显式把仓库变量设为精确小写 `true` 才启用。把变量设为 `false` 可立即暂停无人值守发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
 
 ## Public Config v2

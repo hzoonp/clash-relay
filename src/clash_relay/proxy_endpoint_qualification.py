@@ -14,7 +14,6 @@ from __future__ import annotations
 import copy
 import errno
 import hashlib
-import ipaddress
 import re
 import socket
 import time
@@ -24,6 +23,7 @@ from typing import Any
 
 from .classify import proxy_fingerprint
 from .errors import ValidationError
+from .network_address_policy import is_global_address
 from .runtime_names import parse_runtime_source_name
 
 _TCP_TYPES = frozenset(
@@ -55,11 +55,7 @@ _UNREACHABLE_ERRNOS = frozenset(
 
 
 def _public_ip(value: str) -> bool:
-    try:
-        address = ipaddress.ip_address(value)
-    except ValueError:
-        return False
-    return address.is_global
+    return is_global_address(value)
 
 
 def _failure_category(error: OSError) -> str:

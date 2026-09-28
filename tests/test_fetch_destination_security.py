@@ -5,7 +5,7 @@ import socket
 import pytest
 
 from clash_relay.errors import FetchError
-from clash_relay.fetch import _validate_resolved_destination
+from clash_relay.fetch import _validate_resolved_destination, validate_subscription_url
 
 
 def _answer(address: str):
@@ -27,6 +27,19 @@ def test_public_dns_answers_are_allowed(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://100.64.0.1/subscription",
+        "https://[::ffff:100.64.0.1]/subscription",
+        "https://[::ffff:127.0.0.1]/subscription",
+    ],
+)
+def test_non_global_literal_url_is_rejected(url: str) -> None:
+    with pytest.raises(FetchError, match="private or special-use"):
+        validate_subscription_url(url, allow_http=False, allow_file=False)
+
+
+@pytest.mark.parametrize(
     "address",
     [
         "127.0.0.1",
@@ -36,6 +49,9 @@ def test_public_dns_answers_are_allowed(monkeypatch) -> None:
         "::1",
         "fc00::1",
         "fe80::1",
+        "100.64.0.1",
+        "::ffff:100.64.0.1",
+        "::ffff:127.0.0.1",
     ],
 )
 def test_private_or_special_dns_answer_is_rejected(monkeypatch, address: str) -> None:
@@ -50,6 +66,17 @@ def test_mixed_public_and_private_dns_answers_fail_closed(monkeypatch) -> None:
         socket,
         "getaddrinfo",
         lambda *args, **kwargs: [_answer("93.184.216.34"), _answer("127.0.0.1")],
+    )
+
+    with pytest.raises(FetchError, match="private or special-use"):
+        _validate_resolved_destination("https://subscription.example/path")
+
+
+def test_mixed_global_and_shared_dns_answers_fail_closed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [_answer("93.184.216.34"), _answer("100.64.0.1")],
     )
 
     with pytest.raises(FetchError, match="private or special-use"):

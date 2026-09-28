@@ -63,6 +63,37 @@ def test_private_readiness_never_serializes_subscription_urls(repo_root: Path) -
         assert secret not in serialized
 
 
+def test_release_state_readiness_is_opt_in_and_blocks_inconsistent_state(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    environment = {
+        **_private_env(),
+        "CLOUDFLARE_API_TOKEN": "private-token",
+        "CLOUDFLARE_ACCOUNT_ID": "account",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+    }
+    observed: list[str] = []
+
+    def audit(*, project, env):
+        observed.append(str(project.config["publishing"]["cloudflare_kv"]["key"]))
+        assert env is environment
+        return {
+            "status": "inconsistent",
+            "production_matches_current": False,
+            "previous_available": True,
+            "transaction": "pending",
+            "mutation": "none",
+        }
+
+    monkeypatch.setattr(doctor_module, "audit_production_release_state", audit)
+    report = run_doctor(**_paths(repo_root), env=environment, check_release_state=True)
+
+    assert observed == ["production-config"]
+    assert report["status"] == "blocked"
+    assert report["release_state"]["transaction"] == "pending"
+    assert "private-token" not in json.dumps(report)
+
+
 def test_doctor_fails_early_on_missing_subscription_secret(repo_root: Path) -> None:
     environment = _private_env()
     mapping = json.loads(environment["CLASH_RELAY_SUBSCRIPTIONS"])

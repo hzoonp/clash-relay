@@ -15,11 +15,13 @@ from .builder import build_candidate
 from .config_loader import load_project
 from .diagnose import diagnose_candidate
 from .doctor import run_doctor
+from .effective_config import describe_effective_config
 from .errors import ClashRelayError, ValidationError
 from .mihomo import load_candidate, validate_with_mihomo
 from .production_application import (
     apply_production_release_retention,
     audit_production_release_inventory,
+    audit_production_release_state,
     plan_production_release_retention,
     publish_production_release,
     reconcile_production_release,
@@ -84,6 +86,16 @@ def _command_validate_project(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_effective_config(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    print(_json_text(describe_effective_config(project)), end="")
+    return 0
+
+
 def _command_doctor(args: argparse.Namespace) -> int:
     report = run_doctor(
         config_path=args.config,
@@ -94,9 +106,10 @@ def _command_doctor(args: argparse.Namespace) -> int:
         public_only=args.public_only,
         check_subscriptions=args.check_subscriptions,
         check_cloudflare=args.check_cloudflare,
+        check_release_state=args.check_release_state,
     )
     print(_json_text(report), end="")
-    return 0
+    return 0 if report["status"] == "passed" else 2
 
 
 def _command_diagnose(args: argparse.Namespace) -> int:
@@ -261,6 +274,17 @@ def _command_audit_release_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_audit_release_state(args: argparse.Namespace) -> int:
+    project = load_project(
+        config_path=args.config,
+        subscriptions_path=args.subscriptions,
+        policies_path=args.policies,
+    )
+    report = audit_production_release_state(project=project)
+    print(_json_text(report), end="")
+    return 0 if report["status"] in {"healthy", "first_release"} else 2
+
+
 def _command_apply_release_retention(args: argparse.Namespace) -> int:
     try:
         plan = json.loads(args.plan.read_text(encoding="utf-8"))
@@ -292,6 +316,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project_args(validate_project)
     validate_project.set_defaults(handler=_command_validate_project)
 
+    effective = subparsers.add_parser(
+        "effective-config", help="Explain public network profile overrides and effective DNS."
+    )
+    _add_project_args(effective)
+    effective.set_defaults(handler=_command_effective_config)
+
     doctor = subparsers.add_parser(
         "doctor", help="Preflight public declarations, private inputs, and optional connectivity."
     )
@@ -320,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--check-cloudflare",
         action="store_true",
         help="Verify Cloudflare KV read connectivity without publishing any bytes.",
+    )
+    doctor.add_argument(
+        "--check-release-state",
+        action="store_true",
+        help="Audit production, pointers, and pending release intent without writing.",
     )
     doctor.set_defaults(handler=_command_doctor)
 
@@ -435,6 +470,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_project_args(inventory)
     inventory.set_defaults(handler=_command_audit_release_inventory)
+
+    release_state = subparsers.add_parser(
+        "audit-release-state",
+        help="Read-only consistency audit of production, pointers, and release transaction.",
+    )
+    _add_project_args(release_state)
+    release_state.set_defaults(handler=_command_audit_release_state)
 
     apply_retention = subparsers.add_parser(
         "apply-release-retention",

@@ -177,7 +177,7 @@ def test_invalid_uri_skip_policy_keeps_valid_siblings() -> None:
 
     assert [proxy["name"] for proxy in result.proxies] == ["Good"]
     assert result.skipped_items == 1
-    assert result.skipped_reason_counts == (("other_invalid", 1),)
+    assert result.skipped_reason_counts == (("invalid_auth", 1),)
 
 
 def test_grpc_uri_preserves_service_name() -> None:

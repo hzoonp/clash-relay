@@ -1,0 +1,8 @@
+uri: 'tuic://00000000-0000-4000-8000-000000000010:pass@tuic.invalid.example:443?sni=cert.invalid.example#TUIC'
+expected:
+  type: tuic
+  server: tuic.invalid.example
+  port: 443
+  uuid: 00000000-0000-4000-8000-000000000010
+  password: pass
+  sni: cert.invalid.example

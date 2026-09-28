@@ -9,11 +9,13 @@ from typing import Any
 
 from .ai_application import load_registered_ai_probe_specs
 from .config_loader import load_project
+from .effective_config import describe_effective_config
 from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
 from .fork_lint import build_fork_lint
 from .mihomo_matrix import load_mihomo_tags
 from .policy_document import load_policy_document
+from .production_application import audit_production_release_state
 from .publishers.cloudflare_kv import CloudflareKVPublisher
 from .scheduler_policy import load_scheduler_policy
 from .secrets import resolve_subscription_urls
@@ -48,6 +50,7 @@ def _guidance(
     public_only: bool,
     check_subscriptions: bool,
     check_cloudflare: bool,
+    check_release_state: bool,
 ) -> dict[str, Any]:
     next_steps: list[str] = []
     if public_only:
@@ -66,6 +69,10 @@ def _guidance(
         if not check_cloudflare:
             next_steps.append(
                 "Optionally run `clash-relay doctor --check-cloudflare` for a read-only Cloudflare KV readiness check."
+            )
+        if not check_release_state:
+            next_steps.append(
+                "Optionally run `clash-relay doctor --check-release-state` for read-only release consistency."
             )
         next_steps.append(
             "Run the GitHub Actions workflow manually with `publish=false`; publish only after the dry run passes."
@@ -87,10 +94,11 @@ def run_doctor(
     public_only: bool = False,
     check_subscriptions: bool = False,
     check_cloudflare: bool = False,
+    check_release_state: bool = False,
     env: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Validate fork readiness without publishing or exposing private values."""
-    if public_only and (check_subscriptions or check_cloudflare):
+    if public_only and (check_subscriptions or check_cloudflare or check_release_state):
         raise ValidationError("--public-only cannot be combined with private connectivity checks")
 
     project = load_project(
@@ -105,6 +113,7 @@ def run_doctor(
     enabled = _enabled(project)
     enabled_secrets = [str(spec.secret_name) for spec in enabled]
     fork_lint = build_fork_lint(project)
+    effective_view = describe_effective_config(project)
 
     report: dict[str, Any] = {
         "status": "passed",
@@ -119,15 +128,19 @@ def run_doctor(
             "policy_model_status": "current",
             "service_qualification_status": "ready",
             "service_qualification_probes": len(service_probes),
+            "network_profile": effective_view["network_profile"],
+            "network_profile_overrides": effective_view["overrides"],
         },
         "subscriptions": {"status": "skipped", "enabled": len(enabled)},
         "cloudflare": {"status": "skipped"},
+        "release_state": {"status": "skipped"},
         "fork_lint": fork_lint,
         "guidance": _guidance(
             enabled_secrets=enabled_secrets,
             public_only=public_only,
             check_subscriptions=check_subscriptions,
             check_cloudflare=check_cloudflare,
+            check_release_state=check_release_state,
         ),
     }
     if public_only:
@@ -189,4 +202,13 @@ def run_doctor(
             "status": "ready",
             "production_key_present": current is not None,
         }
+    if check_release_state:
+        _cloudflare_values(environment)
+        try:
+            state = audit_production_release_state(project=project, env=environment)
+        except PublicationError as exc:
+            raise ValidationError("Cloudflare KV release state check failed") from exc
+        report["release_state"] = state
+        if state.get("status") not in {"healthy", "first_release"}:
+            report["status"] = "blocked"
     return report

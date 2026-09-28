@@ -1,0 +1,11 @@
+uri: 'ss://aes-256-gcm:pass@ss.invalid.example:8388?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dcdn.invalid.example#SS'
+expected:
+  type: ss
+  server: ss.invalid.example
+  port: 8388
+  cipher: aes-256-gcm
+  password: pass
+  plugin: obfs
+  plugin-opts:
+    mode: http
+    host: cdn.invalid.example

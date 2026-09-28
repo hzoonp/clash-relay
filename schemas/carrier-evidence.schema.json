@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aggregate carrier evidence",
+  "oneOf": [
+    {"$ref": "#/$defs/v1"},
+    {"$ref": "#/$defs/v2"}
+  ],
+  "$defs": {
+    "carrierNames": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 3,
+      "propertyNames": {"enum": ["telecom", "unicom", "mobile"]}
+    },
+    "baseRow": {
+      "type": "object",
+      "required": ["tested", "reachable", "median_latency_ms"],
+      "properties": {
+        "tested": {"type": "integer", "minimum": 1},
+        "reachable": {"type": "integer", "minimum": 0},
+        "median_latency_ms": {"type": "number", "minimum": 0}
+      }
+    },
+    "v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "collected_at_epoch", "carriers"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "collected_at_epoch": {"type": "integer", "minimum": 0},
+        "carriers": {
+          "allOf": [
+            {"$ref": "#/$defs/carrierNames"},
+            {"additionalProperties": {
+              "$ref": "#/$defs/baseRow",
+              "unevaluatedProperties": false
+            }}
+          ]
+        }
+      }
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tested", "reachable"],
+      "properties": {
+        "tested": {"type": "integer", "minimum": 10},
+        "reachable": {"type": "integer", "minimum": 0}
+      }
+    },
+    "v2Row": {
+      "allOf": [
+        {"$ref": "#/$defs/baseRow"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tested", "reachable", "median_latency_ms", "failures"],
+          "properties": {
+            "tested": {"type": "integer", "minimum": 10},
+            "reachable": {"type": "integer", "minimum": 0},
+            "median_latency_ms": {"type": "number", "minimum": 0},
+            "failures": {
+              "type": "object",
+              "propertyNames": {"enum": ["timeout", "dns", "tls", "connection", "http", "other", "suppressed"]},
+              "additionalProperties": {"type": "integer", "minimum": 0}
+            },
+            "by_region": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"enum": ["hk", "tw", "sg", "jp", "us", "kr", "uk", "other"]},
+              "additionalProperties": {"$ref": "#/$defs/detail"}
+            },
+            "by_protocol": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"enum": ["ss", "ssr", "vmess", "vless", "trojan", "http", "socks5", "snell", "hysteria", "hysteria2", "tuic", "anytls", "wireguard", "ssh", "mieru", "masque", "other"]},
+              "additionalProperties": {"$ref": "#/$defs/detail"}
+            }
+          }
+        }
+      ]
+    },
+    "v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "profile", "collected_at_epoch", "window", "carriers"],
+      "properties": {
+        "schema_version": {"const": 2},
+        "profile": {"enum": ["default", "cn_three_net"]},
+        "collected_at_epoch": {"type": "integer", "minimum": 0},
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_epoch", "end_epoch"],
+          "properties": {
+            "start_epoch": {"type": "integer", "minimum": 0},
+            "end_epoch": {"type": "integer", "minimum": 0}
+          }
+        },
+        "carriers": {
+          "allOf": [
+            {"$ref": "#/$defs/carrierNames"},
+            {"additionalProperties": {"$ref": "#/$defs/v2Row"}}
+          ]
+        }
+      }
+    }
+  }
+}

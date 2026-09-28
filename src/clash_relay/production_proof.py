@@ -164,6 +164,52 @@ def _safe_endpoint_qualification(value: dict[str, Any] | None) -> dict[str, Any]
     }
 
 
+def _safe_network_evidence(
+    *,
+    candidate: dict[str, Any],
+    qualification: dict[str, Any] | None,
+    build_report: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Project independent authorities without copying private probe input."""
+    declaration = build_report.get("network_profile") if isinstance(build_report, dict) else None
+    profile = declaration.get("profile") if isinstance(declaration, dict) else declaration
+    if profile not in {"default", "cn_three_net"}:
+        profile = "unknown"
+    reachability = qualification.get("reachability") if isinstance(qualification, dict) else None
+    carrier = reachability.get("carrier_qualification") if isinstance(reachability, dict) else None
+    target = "not_configured"
+    if isinstance(carrier, dict):
+        status = carrier.get("status")
+        if status in {"passed", "stale", "not_configured"}:
+            target = "observed" if status == "passed" else status
+            if (
+                status == "passed"
+                and carrier.get("schema_version") == 2
+                and carrier.get("profile") != profile
+            ):
+                target = "profile_mismatch"
+    groups = candidate.get("proxy-groups")
+    client = (
+        "enabled"
+        if isinstance(groups, list)
+        and any(
+            isinstance(group, dict)
+            and group.get("type") == "url-test"
+            and isinstance(group.get("url"), str)
+            and group["url"]
+            for group in groups
+        )
+        else "disabled"
+    )
+    return {
+        "network_profile": profile,
+        "static_eligible": "passed",
+        "runner_qualification": "passed" if qualification is not None else "unavailable",
+        "target_network_evidence": target,
+        "client_urltest": client,
+    }
+
+
 def _safe_promotion_guard(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -311,6 +357,9 @@ def build_production_proof(
         "ai": ai_proof,
         "validated_cores": list(validated_cores),
         "publication": publication_status,
+        "network_evidence": _safe_network_evidence(
+            candidate=candidate, qualification=qualification, build_report=build_report
+        ),
     }
     safe_qualification = _safe_qualification(
         qualification,
@@ -374,6 +423,16 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
         f"| AI tested | {ai['tested']} |",
         f"| AI selector failures | {ai['selector_failures']} |",
     ]
+    network_evidence = proof.get("network_evidence")
+    if isinstance(network_evidence, dict):
+        for label, key in (
+            ("Network profile", "network_profile"),
+            ("Static eligible", "static_eligible"),
+            ("Runner qualification", "runner_qualification"),
+            ("Target-network evidence", "target_network_evidence"),
+            ("Client URLTest", "client_urltest"),
+        ):
+            lines.append(f"| {label} | {network_evidence.get(key, 'unknown')} |")
     for name, count in service_counts.items():
         lines.append(f"| AI {name} qualified | {count} |")
     openai_app = ai.get("openai_app")

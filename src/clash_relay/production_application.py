@@ -35,6 +35,7 @@ from .release_journal import (
     serialize_release_journal,
 )
 from .release_reconciliation import reconcile_release_bundle
+from .release_transaction import inspect_release_state, parse_release_transaction
 from .scheduler_history import derive_fingerprint_key, parse_history_bytes
 from .util import atomic_write, atomic_write_bytes
 from .validator import validate_generated_config
@@ -487,6 +488,76 @@ def reconcile_production_release_ids(
     ).to_dict()
 
 
+def audit_production_release_state(
+    *, project: ProjectDefinition, env: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """Read-only, identity-only audit of production pointers and pending intent."""
+    token, account_id, namespace_title = _credentials(env)
+    if not token or not account_id or not namespace_title:
+        raise PublicationError("Cloudflare credentials are required for release state audit")
+    production_key = _production_key(project)
+    root = _publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        key_name=production_key,
+    )
+    namespace_id = root.resolve_namespace_id()
+
+    def factory(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    keys = release_keys(production_key)
+    production = factory(keys.production).read()
+    current = parse_release_pointer(factory(keys.current_pointer).read())
+    previous = parse_release_pointer(factory(keys.previous_pointer).read())
+    transaction = parse_release_transaction(factory(keys.transaction).read())
+    production_id = release_id_for(production) if production else None
+    status = inspect_release_state(
+        production_release_id=production_id,
+        current_release_id=current,
+        previous_release_id=previous,
+        transaction=transaction,
+    )
+    current_available = False
+    if current is not None:
+        current_content = factory(keys.config(current)).read()
+        current_available = (
+            current_content is not None
+            and release_id_for(current_content) == current
+            and factory(keys.manifest(current)).read() == manifest_bytes(current_content)
+        )
+    previous_available = False
+    if previous is not None:
+        previous_content = factory(keys.config(previous)).read()
+        previous_available = (
+            previous_content is not None
+            and release_id_for(previous_content) == previous
+            and factory(keys.manifest(previous)).read() == manifest_bytes(previous_content)
+        )
+    if status == "healthy" and (
+        not current_available or (previous is not None and not previous_available)
+    ):
+        status = "inconsistent"
+    return {
+        "status": status,
+        "production_matches_current": production_id is not None and production_id == current,
+        "current_available": current_available,
+        "previous_available": previous_available,
+        "transaction": "pending" if transaction is not None else "none",
+        "transaction_referenced_release_ids": sorted(transaction.referenced_release_ids)
+        if transaction is not None
+        else [],
+        "mutation": "none",
+    }
+
+
 def plan_production_release_retention(
     *,
     project: ProjectDefinition,
@@ -524,11 +595,13 @@ def plan_production_release_retention(
     current_release_id = parse_release_pointer(factory(keys.current_pointer).read())
     previous_release_id = parse_release_pointer(factory(keys.previous_pointer).read())
     production_content = factory(keys.production).read()
+    transaction = parse_release_transaction(factory(keys.transaction).read())
     plan = plan_release_retention(
         journal,
         current_release_id=current_release_id,
         previous_release_id=previous_release_id,
         production_release_id=release_id_for(production_content) if production_content else None,
+        transaction_release_ids=transaction.referenced_release_ids if transaction else None,
         retain_seconds=retention_days * 24 * 60 * 60,
     ).to_dict()
     plan["journal_status"] = journal_status
@@ -569,6 +642,7 @@ def audit_production_release_inventory(
     current = parse_release_pointer(factory(keys.current_pointer).read())
     previous = parse_release_pointer(factory(keys.previous_pointer).read())
     production = factory(keys.production).read()
+    transaction = parse_release_transaction(factory(keys.transaction).read())
     names = root.list_keys(prefix=f"{production_key}.release-v1.")
     plan = plan_release_inventory(
         production_key=production_key,
@@ -577,6 +651,7 @@ def audit_production_release_inventory(
         current_release_id=current,
         previous_release_id=previous,
         production_release_id=release_id_for(production) if production else None,
+        transaction_release_ids=transaction.referenced_release_ids if transaction else None,
     )
     plan["journal_status"] = journal_status
     return plan
@@ -633,6 +708,9 @@ def apply_production_release_retention(
 
     keys = release_keys(production_key)
     for release_id in candidates:
+        transaction = parse_release_transaction(factory(keys.transaction).read())
+        if transaction is not None and release_id in transaction.referenced_release_ids:
+            raise PublicationError("release retention references an active transaction")
         factory(keys.config(release_id)).delete()
         factory(keys.manifest(release_id)).delete()
     journal, journal_status = parse_release_journal(factory(keys.journal).read())
