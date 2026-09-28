@@ -128,6 +128,25 @@ def test_subscription_connectivity_reports_counts_only(
     assert "secret-one.example" not in serialized
 
 
+def test_subscription_connectivity_uses_each_source_client_profile(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, str] = {}
+
+    def fake_fetch(url: str, **kwargs) -> str:
+        seen[url] = kwargs["client_profile"]
+        if "secret-one.example" in url and kwargs["client_profile"] != "mihomo":
+            raise FetchError("Mihomo User-Agent required")
+        return "fictional subscription"
+
+    monkeypatch.setattr(doctor_module, "fetch_subscription", fake_fetch)
+    report = run_doctor(**_paths(repo_root), env=_private_env(), check_subscriptions=True)
+
+    assert report["subscriptions"]["reachable"] == 5
+    assert seen["https://secret-one.example/sub"] == "mihomo"
+    assert set(seen.values()) == {"mihomo", "default"}
+
+
 def test_subscription_connectivity_failure_redacts_private_hostname(
     repo_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

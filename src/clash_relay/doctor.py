@@ -177,6 +177,7 @@ def run_doctor(
                     max_bytes=int(generation["max_subscription_bytes"]),
                     allow_http=bool(generation["allow_http_subscription_urls"]),
                     allow_file=bool(generation["allow_file_subscription_urls"]),
+                    client_profile=spec.client_profile,
                 )
             except FetchError as exc:
                 raise ValidationError(

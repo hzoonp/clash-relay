@@ -207,6 +207,7 @@ def test_cn_three_net_widens_regional_tolerance_without_carrier_hardcoding() -> 
     )
 
     assert report["status"] == "applied"
+    assert report["regional"]["status"] == "applied"
     assert report["tolerance_overrides"] == {
         "香港节点": 120,
         "美国节点": 150,
@@ -222,6 +223,40 @@ def test_cn_three_net_widens_regional_tolerance_without_carrier_hardcoding() -> 
         "browsing": 1,
         "regional_and_other": 2,
     }
+
+
+def test_cn_three_net_dns_profile_survives_omitted_regional_groups() -> None:
+    config = _config(NETWORK_PROFILE_CN_THREE_NET)
+    dns_report = apply_network_profile(config)
+    output = {
+        "proxy-groups": [
+            {
+                "name": "自动选择",
+                "type": "url-test",
+                "url": "https://cp.cloudflare.com/generate_204",
+            }
+        ],
+        "proxy-providers": {},
+    }
+    original_groups = [dict(group) for group in output["proxy-groups"]]
+
+    urltest_report = apply_network_profile_urltest(
+        output,
+        config=config,
+        policies={},
+        group_specs=_group_specs(),
+    )
+
+    assert dns_report["status"] == "applied"
+    assert config["runtime"]["dns"]["proxy_server_nameservers"] == [
+        "system",
+        "https://dns.alidns.com/dns-query",
+        "https://doh.pub/dns-query",
+    ]
+    assert urltest_report["status"] == "not_applicable"
+    assert urltest_report["regional"] == {"status": "not_applicable"}
+    assert urltest_report["tolerance_overrides"] == {}
+    assert output["proxy-groups"] == original_groups
 
 
 def test_cn_three_net_rejects_regional_group_that_lost_the_regional_contract() -> None:

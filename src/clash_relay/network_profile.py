@@ -238,8 +238,6 @@ def _regional_overrides(
         tolerance = tolerance_by_region[region]
         group["tolerance"] = tolerance
         applied[str(spec["display_name"])] = tolerance
-    if not applied:
-        raise GenerationError("network profile cn_three_net found no regional groups to tune")
     return applied
 
 
@@ -287,11 +285,30 @@ def apply_network_profile_urltest(
     if profile == NETWORK_PROFILE_DEFAULT:
         return {"profile": NETWORK_PROFILE_DEFAULT, "status": "not_applicable"}
 
-    probe = _probe_contract(policies)
-
     groups = output.get("proxy-groups", [])
     if not isinstance(groups, list):
         raise GenerationError("network profile tuning requires generated proxy-groups")
+    existing_names = {
+        str(group["name"])
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("name"), str)
+    }
+    regional_present = any(
+        str(spec.get("id", "")) in _REGIONAL_GROUP_IDS
+        and str(spec.get("display_name", "")) in existing_names
+        for spec in group_specs
+    )
+    if not regional_present:
+        return {
+            "profile": NETWORK_PROFILE_CN_THREE_NET,
+            "status": "not_applicable",
+            "regional": {"status": "not_applicable"},
+            "tolerance_overrides": {},
+            "automatic_groups_checked": 0,
+            "provider_health_checks_checked": 0,
+        }
+
+    probe = _probe_contract(policies)
     automatic = [
         group for group in groups if isinstance(group, dict) and _is_non_ai_automatic(group)
     ]
@@ -332,6 +349,7 @@ def apply_network_profile_urltest(
         "status": "applied",
         "browsing_probe": probe,
         "regional": {
+            "status": "applied",
             "interval": _CN_THREE_NET_REGION_SWITCH_INTERVAL,
             "timeout": _CN_THREE_NET_BROWSING_PROBE["timeout"],
             "tolerance_ms": {
