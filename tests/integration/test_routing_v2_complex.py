@@ -151,8 +151,11 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert all("acl4ssr_netflix" not in rule for rule in rules)
     assert all("acl4ssr_proxy_gfwlist" not in rule for rule in rules)
     assert rules[-1] == "MATCH,漏网之鱼"
-    assert rules.index("RULE-SET,acl4ssr_proxy_media,流媒体") < rules.index(
-        "RULE-SET,acl4ssr_download,下载流量"
+    assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
+        "RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE"
+    )
+    assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
+        "RULE-SET,acl4ssr_proxy_media,流媒体"
     )
     assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
         "RULE-SET,acl4ssr_proxy_lite,网页浏览"
