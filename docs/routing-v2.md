@@ -64,7 +64,7 @@ Automatic schedulers are different from selectors. Netflix uses a hidden automat
 
 ## Web classification
 
-`ProxyGFWlist -> 网页浏览` remains the explicit generic foreign-web classification. China-domain/company-IP/GEOIP rules remain direct and are evaluated before the download rule.
+`ProxyLite -> 代理选择` is the generic foreign-web classification and uses General. Its targets can carry files or updates, so this classification never grants browsing/SUB_1 permission. `网页浏览` remains a separate visible selector for an explicitly controlled browsing surface. China-domain/company-IP/GEOIP rules retain their declared direct policy.
 
 Routing V2 deliberately does **not** claim that every non-China domain is web traffic. A domain not covered by an explicit browsing or application rule continues to the final route. This prevents a broad catch-all from accidentally granting `subscription_1` access to media, downloads, messaging, or unknown traffic.
 
@@ -89,10 +89,10 @@ Download is a first-class scenario. The canonical production mode is `general_au
 download-in listener / verified downloader process -> 下载流量
 known domestic classification -> DIRECT
 confirmed download host / Download.list -> 下载流量 -> 下载自动 -> general inventory
-ProxyLite -> 网页浏览 -> browsing inventory
+ProxyLite -> 代理选择 -> general inventory
 ```
 
-The ordering is intentional: the dedicated listener and downloader process rules run before all domain rules, while confirmed download hosts and `Download.list` run before AI, media, and `ProxyLite`. The final qualified graph audit proves `subscription_1` is unreachable from the download selector and every manual choice. A deployment-wide claim also requires verified client handoff of otherwise indistinguishable browser/AI downloads.
+The ordering is intentional: the dedicated listener has `proxy: 下载流量`, independently of rules. Download process rules run before all domain rules. Each download rule has an adjacent `REJECT` guard for Mihomo's unsupported-UDP continuation. Confirmed download hosts and `Download.list` run before AI, media, and `ProxyLite`. The final qualified graph audit proves `subscription_1` is unreachable from the download selector, every manual choice, nested providers and dialer paths. A deployment-wide claim still requires verified client handoff of otherwise indistinguishable browser/AI downloads.
 
 ACL4SSR `Download.list` includes process-name classifications. Process identity is a classification signal validated per client platform; `allowed_uses` and the final graph remain the source-permission boundary.
 
@@ -141,7 +141,7 @@ AI qualification has two audit stages. Before qualification, temporary AI countr
 
 ## Complex concurrent scenarios
 
-Tests explicitly cover simultaneous route intents for domestic web, explicit foreign web, YouTube, Netflix, domestic/foreign media, downloads, OpenAI, generic AI, and final unknown traffic. Specific application, AI, and download classifications stay ahead of generic `ProxyGFWlist`; final traffic remains separate.
+Tests explicitly cover simultaneous route intents for domestic web, generic ProxyLite, media, downloads, OpenAI, generic AI, and final unknown traffic. Specific application, AI, and download classifications stay ahead of generic `ProxyLite`; final traffic remains separate.
 
 The same complex generated graph is validated by both pinned Mihomo cores in integration CI.
 
@@ -159,7 +159,7 @@ A drift-guard failure cannot publish or replace production configuration. Produc
 - AI excludes Hong Kong and the United Kingdom before service qualification.
 - OpenAI, Claude, and Gemini remain independently qualified.
 - media and download use only the `general` permission domain.
-- `ProxyGFWlist -> 网页浏览` remains canonical.
+- `ProxyLite -> 代理选择` uses General; `网页浏览` remains a separate controlled selector.
 - final `MATCH -> 漏网之鱼` remains canonical.
 - no process-name rule is used as a source-permission or security boundary.
 - production publication remains fail-closed after source reachability audit and stable-Mihomo validation.

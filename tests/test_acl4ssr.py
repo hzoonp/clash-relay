@@ -71,7 +71,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "openai": "人工智能",
         "proxy_media": "流媒体",
         "download": "下载流量",
-        "proxy_lite": "网页浏览",
+        "proxy_lite": "代理选择",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
     }

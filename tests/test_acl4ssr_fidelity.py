@@ -90,6 +90,6 @@ def test_classification_extensions_are_only_ai_and_download(repo_root: Path) -> 
     sources = {row["id"]: row for row in manifest["sources"]}
     assert sources["proxy_media"]["target"] == "流媒体"
     assert sources["telegram"]["target"] == "消息通讯"
-    assert sources["proxy_lite"]["target"] == "网页浏览"
+    assert sources["proxy_lite"]["target"] == "代理选择"
     assert sources["download"]["target"] == "下载流量"
     assert "proxy_gfwlist" not in sources

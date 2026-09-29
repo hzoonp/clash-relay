@@ -25,7 +25,7 @@ def test_complex_concurrent_scenarios_have_independent_route_intent(
     expected = {
         "china_domain": ("direct", "domestic_web", "全球直连"),
         "china_company_ip": ("direct", "domestic_web", "全球直连"),
-        "proxy_lite": ("browsing", "foreign_web", "网页浏览"),
+        "proxy_lite": ("general", "foreign_web", "代理选择"),
         "telegram": ("general", "telegram", "消息通讯"),
         "proxy_media": ("media", "foreign_media", "流媒体"),
         "download": ("download", "download", "下载流量"),
@@ -91,7 +91,7 @@ def test_finalized_routing_v2_graph_has_no_declared_drift(repo_root) -> None:
 
     assert drift["status"] == "healthy"
     assert drift["foreign_web"] == {
-        "explicit_rule_sources": 1,
+        "explicit_rule_sources": 0,
         "classifier": "ProxyLite",
         "classifier_widened": False,
         "policy_applied": True,

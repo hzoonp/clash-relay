@@ -81,7 +81,7 @@ routing:
       download_play_gvt1: 下载流量
       download_play_gvt2: 下载流量
       download_github_release_assets: 下载流量
-      proxy_lite: 网页浏览
+      proxy_lite: 代理选择
       china_domain: 全球直连
       china_company_ip: 全球直连
       geoip_cn: 全球直连

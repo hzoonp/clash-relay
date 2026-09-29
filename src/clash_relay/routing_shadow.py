@@ -119,8 +119,10 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         and by_source.get("download", {}).get("target") == contract.binding_target("download")
     )
     browsing_applied = (
-        browsing_rules == 1
+        browsing_rules == 0
         and by_source.get("proxy_lite", {}).get("target") == contract.binding_target("proxy_lite")
+        and by_source.get("proxy_lite", {}).get("source_use") == "general"
+        and by_source.get("proxy_lite", {}).get("scenario") == "general"
         and "proxy_gfwlist" not in by_source
     )
     disabled_groups_applied = all(name not in groups for name in contract.disabled_groups)

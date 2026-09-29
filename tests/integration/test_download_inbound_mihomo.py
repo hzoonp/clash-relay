@@ -62,21 +62,39 @@ def test_download_listener_overrides_earlier_web_domain_classification(tmp_path:
     config = {
         "mixed-port": normal_port,
         "listeners": [
-            {"name": "download-in", "type": "mixed", "listen": "127.0.0.1", "port": download_port}
+            {
+                "name": "download-in",
+                "type": "mixed",
+                "listen": "127.0.0.1",
+                "port": download_port,
+                "proxy": "下载流量",
+            }
         ],
         "allow-lan": False,
-        "hosts": {"assets.gvt1.com": "127.0.0.1", "www.google.com": "127.0.0.1"},
+        "hosts": {
+            "assets.gvt1.com": "127.0.0.1",
+            "www.google.com": "127.0.0.1",
+            "generic-proxylite.test": "127.0.0.1",
+        },
         "mode": "rule",
         "log-level": "silent",
         "proxy-groups": [
             {"name": "下载流量", "type": "select", "proxies": ["DIRECT"]},
             {"name": "网页浏览", "type": "select", "proxies": ["REJECT"]},
+            {"name": "代理选择", "type": "select", "proxies": ["DIRECT"]},
         ],
+        "rule-providers": {
+            "acl4ssr_proxy_lite": {
+                "type": "inline",
+                "behavior": "classical",
+                "payload": ["DOMAIN-SUFFIX,generic-proxylite.test"],
+            }
+        },
         "rules": [
-            "IN-NAME,download-in,下载流量",
             "PROCESS-NAME,aria2c.exe,下载流量",
             "DOMAIN-SUFFIX,gvt1.com,下载流量",
             "DOMAIN-SUFFIX,google.com,网页浏览",
+            "RULE-SET,acl4ssr_proxy_lite,代理选择",
             "IP-CIDR,127.0.0.1/32,网页浏览,no-resolve",
             "MATCH,DIRECT",
         ],
@@ -109,6 +127,10 @@ def test_download_listener_overrides_earlier_web_domain_classification(tmp_path:
             b"download-inbound-reached",
         )
         assert _request(normal_port, server_port, "www.google.com")[0] != 200
+        assert _request(normal_port, server_port, "generic-proxylite.test") == (
+            200,
+            b"download-inbound-reached",
+        )
         if os.name == "nt":
             downloader = tmp_path / "aria2c.exe"
             shutil.copy2(sys.executable, downloader)
@@ -127,6 +149,68 @@ def test_download_listener_overrides_earlier_web_domain_classification(tmp_path:
             )
             assert result.returncode == 0, result.stderr
             assert result.stdout.strip() == "200"
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+        server.shutdown()
+        server.server_close()
+
+
+def test_download_listener_stays_bound_when_runtime_mode_is_global(tmp_path: Path) -> None:
+    binary = os.environ.get("MIHOMO_BIN")
+    if not binary:
+        pytest.skip("MIHOMO_BIN is not set")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FileHandler)
+    server_port = int(server.server_address[1])
+    normal_port = _port()
+    while normal_port == server_port:
+        normal_port = _port()
+    download_port = _port()
+    while len({server_port, normal_port, download_port}) != 3:
+        download_port = _port()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    config = {
+        "mixed-port": normal_port,
+        "listeners": [
+            {
+                "name": "download-in",
+                "type": "mixed",
+                "listen": "127.0.0.1",
+                "port": download_port,
+                "proxy": "下载流量",
+            }
+        ],
+        "mode": "global",
+        "log-level": "silent",
+        "proxy-groups": [
+            {"name": "GLOBAL", "type": "select", "proxies": ["REJECT"]},
+            {"name": "下载流量", "type": "select", "proxies": ["DIRECT"]},
+        ],
+        "rules": ["MATCH,GLOBAL"],
+    }
+    config_path = tmp_path / "global.yaml"
+    config_path.write_text(dump_yaml(config), encoding="utf-8")
+    process = subprocess.Popen(
+        [binary, "-d", str(tmp_path), "-f", str(config_path)],
+        cwd=tmp_path,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                pytest.fail("Mihomo exited before global-mode listener became ready")
+            try:
+                with socket.create_connection(("127.0.0.1", download_port), timeout=0.2):
+                    break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            pytest.fail("Mihomo global-mode listener did not become ready")
+        assert _request(normal_port, server_port)[0] != 200
+        assert _request(download_port, server_port) == (200, b"download-inbound-reached")
     finally:
         process.terminate()
         process.wait(timeout=5)

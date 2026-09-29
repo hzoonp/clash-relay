@@ -65,6 +65,9 @@ def _runtime_source_maps(
                 )
             runtime_sources[runtime_name] = source_id
         provider_sources[provider_name] = sources
+    unattributed = set(graph.proxies) - set(runtime_sources)
+    if unattributed:
+        raise ValidationError("production audit found unattributed runtime proxy leaves")
     return provider_sources, runtime_sources
 
 

@@ -26,7 +26,7 @@ reference:
     '🍎 苹果服务': 苹果服务
     '📲 电报信息': 消息通讯
     '🌍 国外媒体': 流媒体
-    '🚀 节点选择': 网页浏览
+    '🚀 节点选择': 代理选择
     '🐟 漏网之鱼': 漏网之鱼
   # These compatibility selectors keep the ACL4SSR default member order exactly
   # after names are mapped into clash-relay's source-aware control surface.
@@ -550,11 +550,11 @@ sources:
 
   - id: proxy_lite
     path: Clash/ProxyLite.list
-    target: 网页浏览
+    target: 代理选择
     priority: 120
     module: general
-    source_use: browsing
-    scenario: browsing
+    source_use: general
+    scenario: general
     service: foreign_web
 
   - id: china_domain

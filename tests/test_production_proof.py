@@ -22,11 +22,14 @@ def _inputs(candidate_path: Path) -> dict:
                 "runtime_rules_checked": 22,
             },
             "download_routing": {
+                "status": "passed",
                 "runtime_graph_check": "passed",
                 "subscription_1_reachable": False,
                 "inbound_configured": True,
                 "process_rules": 9,
                 "domain_rules": 3,
+                "download_listener_bound": True,
+                "terminal_guards": "passed",
             },
             "openai_client_path": {
                 "status": "passed",
@@ -246,6 +249,9 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "deployment_guarantee": "unverified",
         "subscription_1_reachable": False,
         "inbound_configured": True,
+        "download_listener_bound": True,
+        "terminal_guards": "passed",
+        "runtime_graph_check": "passed",
         "process_rules": 9,
         "domain_rules": 3,
     }
@@ -367,6 +373,29 @@ def test_production_proof_rejects_failed_reachability_audit(tmp_path: Path) -> N
     inputs["audit"]["reachability"]["status"] = "failed"
 
     with pytest.raises(ValidationError, match="passed source reachability audit"):
+        build_production_proof(**inputs)
+
+
+@pytest.mark.parametrize("missing_evidence", ["terminal_guards", "download_listener_bound"])
+def test_production_proof_rejects_incomplete_download_isolation(
+    tmp_path: Path, missing_evidence: str
+) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text("proxy-providers: {}\nproxy-groups: []\nrule-providers: {}\nrules: []\n")
+    inputs = _inputs(candidate)
+    del inputs["audit"]["download_routing"][missing_evidence]
+
+    with pytest.raises(ValidationError, match="incomplete download isolation evidence"):
+        build_production_proof(**inputs)
+
+
+def test_production_proof_requires_download_evidence_for_subscription_1(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text("proxy-providers: {}\nproxy-groups: []\nrule-providers: {}\nrules: []\n")
+    inputs = _inputs(candidate)
+    inputs["audit"]["subscriptions"].append({"id": "subscription_1"})
+    del inputs["audit"]["download_routing"]
+    with pytest.raises(ValidationError, match="requires download isolation evidence"):
         build_production_proof(**inputs)
 
 

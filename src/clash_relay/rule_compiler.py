@@ -85,6 +85,21 @@ class RuleCompiler:
                     rendered,
                 )
             )
+            if item.get("scenario") == "download" and target != "REJECT":
+                # Mihomo can continue matching when a selected adapter cannot
+                # carry UDP. Emit the terminal rule from the same classifier.
+                if "provider" in item:
+                    guard = f"RULE-SET,{item['provider']},REJECT"
+                else:
+                    guard = self._render_rule(item["rule"], "REJECT")
+                rule_rows.append(
+                    (
+                        int(item["priority"]),
+                        f"acl4ssr:{item['source_id']}",
+                        int(item["order"]) + 1,
+                        guard,
+                    )
+                )
 
         rendered_rules = [
             self._render_rule(rule, "DIRECT") for rule in self._load_rules("rules/direct.yaml")

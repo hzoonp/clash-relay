@@ -50,6 +50,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
             "name": "download-in",
             "type": "mixed",
             "listen": "127.0.0.1",
+            "proxy": "下载流量",
         }
         if (
             not isinstance(listeners, list)

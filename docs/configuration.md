@@ -178,7 +178,7 @@ A new configuration-only routed service is represented as a topology pool plus a
 
 `rules/acl4ssr.yaml` pins the ACL4SSR reference used by canonical production. `rules/direct.yaml` contains the project-owned direct-rule prelude. Pool-specific rule files are referenced from topology.
 
-The production browsing boundary routes generic foreign-web traffic to `网页浏览`, while application-specific general rules and `MATCH` remain outside that inventory so subscription 1 cannot leak into non-browsing application traffic.
+Generic foreign-web `ProxyLite` traffic routes to General because the same hosts can carry downloads. The separate `网页浏览` selector keeps SUB_1 available only for an explicitly controlled browsing surface; application-specific general rules and `MATCH` remain outside that inventory.
 
 ## Secret injection
 

@@ -76,6 +76,36 @@ def _safe_count(value: dict[str, Any], key: str) -> int:
     return max(0, int(raw))
 
 
+def _safe_download_routing(value: Any, *, required: bool) -> dict[str, Any]:
+    if value is None or (isinstance(value, dict) and value.get("status") == "not_applicable"):
+        if required:
+            raise ValidationError("production proof requires download isolation evidence")
+        return {
+            "configuration_guarantee": "not_applicable",
+            "deployment_guarantee": "unverified",
+        }
+    if not isinstance(value, dict) or value.get("status") != "passed":
+        raise ValidationError("production proof requires a passed download isolation audit")
+    if (
+        value.get("runtime_graph_check") != "passed"
+        or value.get("terminal_guards") != "passed"
+        or value.get("download_listener_bound") is not True
+        or value.get("subscription_1_reachable") is not False
+    ):
+        raise ValidationError("production proof found incomplete download isolation evidence")
+    return {
+        "configuration_guarantee": "passed",
+        "deployment_guarantee": "unverified",
+        "subscription_1_reachable": False,
+        "inbound_configured": value.get("inbound_configured") is True,
+        "download_listener_bound": True,
+        "terminal_guards": "passed",
+        "runtime_graph_check": "passed",
+        "process_rules": int(value.get("process_rules", 0)),
+        "domain_rules": int(value.get("domain_rules", 0)),
+    }
+
+
 def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -346,19 +376,13 @@ def build_production_proof(
             "routing_surfaces_checked": int(reachability.get("routing_surfaces_checked", 0)),
             "runtime_rules_checked": int(reachability.get("runtime_rules_checked", 0)),
         },
-        "download_routing": {
-            "configuration_guarantee": "passed"
-            if audit.get("download_routing", {}).get("runtime_graph_check") == "passed"
-            else "not_applicable",
-            "deployment_guarantee": "unverified",
-            "subscription_1_reachable": audit.get("download_routing", {}).get(
-                "subscription_1_reachable"
+        "download_routing": _safe_download_routing(
+            audit.get("download_routing"),
+            required=any(
+                isinstance(row, dict) and row.get("id") == "subscription_1"
+                for row in audit.get("subscriptions", [])
             ),
-            "inbound_configured": audit.get("download_routing", {}).get("inbound_configured", False)
-            is True,
-            "process_rules": int(audit.get("download_routing", {}).get("process_rules", 0)),
-            "domain_rules": int(audit.get("download_routing", {}).get("domain_rules", 0)),
-        },
+        ),
         "browsing": {
             "tested": int(browsing_diagnostics.get("tested_nodes", 0)),
             "qualified": int(browsing.get("qualified_nodes", 0)),

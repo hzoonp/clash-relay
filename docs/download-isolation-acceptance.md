@@ -1,13 +1,13 @@
 # Download isolation: client acceptance
 
-The generated Mihomo profile exposes the normal mixed port at `127.0.0.1:7890` and the download-only mixed listener at `127.0.0.1:7891` (`download-in`). The latter routes every connection through `下载流量` before domain rules. The production proof reports a passed **configuration guarantee** only after graph and emitted-rule audits. Its **deployment guarantee** stays `unverified` until the actual client workflow is checked.
+The generated Mihomo profile exposes the normal mixed port at `127.0.0.1:7890` and the download-only mixed listener at `127.0.0.1:7891` (`download-in`). The listener has `proxy: 下载流量`, so its route does not depend on ordinary rules. Download classifiers on the normal/TUN path have adjacent `REJECT` terminal guards for unsupported UDP. Generic ProxyLite traffic uses General. The production proof reports a passed **configuration guarantee** only after emitted-rule and graph audits. Its **deployment guarantee** stays `unverified` until the actual client workflow is checked.
 
 ## Desktop / FlClash
 
 1. Load the generated profile in the target client and confirm the core accepts the `download-in` listener. Check that both local ports are available.
 2. Configure the download manager to use HTTP/SOCKS proxy `127.0.0.1:7891`. If using a browser handoff, confirm that the downloaded file is requested by the manager or through that port; a browser click alone does not prove handoff.
-3. With the client connection view or Mihomo connection logs, download a test file. Record the matched rule (`IN-NAME,download-in` or a verified process rule), target `下载流量`, and selected source family. Do not record the file URL, hostname, node name or subscription URL in public artifacts.
-4. Repeat with a download from a domain that also matches an ordinary web or AI rule. The download must still match the ingress/process rule first. Separately confirm ordinary Google/GitHub pages retain their original route.
+3. With the client connection view or Mihomo connection logs, download a test file. Record the listener-bound target or matched process rule, `下载流量`, and selected source family. Do not record the file URL, hostname, node name or subscription URL in public artifacts.
+4. Repeat with a download from a domain that also matches an ordinary web or AI rule. The download must retain the listener or process route. Ordinary Google/GitHub pages may match ProxyLite, but then use General rather than browsing/SUB_1.
 5. Test every application that can initiate downloads. If any application can download over a normal SUB_1 browsing/AI connection without handoff, the deployment-wide guarantee is **not verified** for that client.
 
 ## Android / Google Play

@@ -42,6 +42,7 @@ class RuntimeConfigRenderer:
                     "type": "mixed",
                     "listen": "127.0.0.1",
                     "port": download_inbound["port"],
+                    "proxy": "下载流量",
                 }
             ]
 

@@ -18,9 +18,9 @@ def test_routing_model_v2_classifies_complex_scenarios(repo_root: Path) -> None:
     assert report is not None
     bindings = {row["source_id"]: row for row in report["bindings"]}
 
-    assert bindings["proxy_lite"]["scenario"] == "browsing"
+    assert bindings["proxy_lite"]["scenario"] == "general"
     assert bindings["proxy_lite"]["service"] == "foreign_web"
-    assert bindings["proxy_lite"]["source_use"] == "browsing"
+    assert bindings["proxy_lite"]["source_use"] == "general"
 
     assert bindings["proxy_media"]["scenario"] == "media"
     assert bindings["proxy_media"]["service"] == "foreign_media"

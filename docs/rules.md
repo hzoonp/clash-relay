@@ -23,7 +23,7 @@ Only the following canonical deviations are allowed:
 
 1. `BanProgramAD.list` / `应用净化` is disabled because it caused confirmed mobile image/CDN failures. `BanAD.list` remains enabled.
 2. AI/OpenAI rules run before `ProxyMedia.list` so protected AI traffic reaches service-specific qualification instead of being swallowed by the broad media list.
-3. The download-only inbound and downloader process rules run before every baseline rule. Confirmed download domains and `Download.list` run before AI, media, and generic browsing so they cannot be intercepted by a SUB_1 route.
+3. The download-only inbound and downloader process rules run before every baseline rule. Each download classifier emits an adjacent `REJECT` terminal guard for unsupported UDP. Confirmed download domains and `Download.list` run before AI, media, and generic ProxyLite.
 4. ACL4SSR raw-node wildcards are adapted to source-aware scenario selectors. Raw nodes are not copied directly into public selectors because doing so would break multi-subscription source isolation.
 
 Any additional classification source or compatibility change must be declared in `rules/acl4ssr.yaml` and pass the parity gate.
@@ -34,6 +34,7 @@ Any additional classification source or compatibility change must be declared in
 | ---: | --- | --- |
 | 1 | `IN-NAME,download-in` | `下载流量` |
 | 2 | declared downloader / Play processes | `下载流量` |
+| paired | each download classifier's terminal guard | `REJECT` |
 | 10 | `LocalAreaNetwork` | `全球直连` |
 | 20 | `UnBan` | `全球直连` |
 | 30 | `BanAD` | `广告拦截` |
@@ -50,7 +51,7 @@ Any additional classification source or compatibility change must be declared in
 | 105 | `AI` | `人工智能` extension |
 | 106 | `OpenAi` | `人工智能` extension |
 | 110 | `ProxyMedia` | `流媒体` |
-| 120 | `ProxyLite` | `网页浏览` |
+| 120 | `ProxyLite` | `代理选择` (General) |
 | 130 | `ChinaDomain` | `全球直连` |
 | 140 | `ChinaCompanyIp` | `全球直连` |
 | 150 | `GEOIP,CN` | `全球直连` |
@@ -148,7 +149,7 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 ## Browsing scheduling
 
-`ProxyLite -> 网页浏览` uses the browsing inventory. `网页自动` compares regional candidates with `url-test` on the client network, using a 300-second interval and the browsing probe tolerance (150 ms). Policy ordering controls display and initial candidates rather than forcing US-first selection. Each regional candidate retains Stable-to-Reserve fallback.
+Generic `ProxyLite` traffic uses `代理选择` and the general inventory. Its domain list does not establish that a connection is only a web page; it may also carry a download. The separate `网页浏览` selector remains available for explicitly controlled browsing traffic and may use SUB_1. `网页自动` compares regional candidates with `url-test` on the client network, using a 300-second interval and the browsing probe tolerance (150 ms). Each regional candidate retains Stable-to-Reserve fallback.
 
 Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 
@@ -162,13 +163,13 @@ General-pool country `url-test` groups declare `on_empty: omit`. The compiler co
 
 ### Download isolation guarantee
 
-The generated config binds a local mixed listener named `download-in` to `127.0.0.1:7891`. A client that sends a connection to this listener is routed to `下载流量` before any domain rule. Downloader and Google Play process rules have the same precedence when the target client exposes a verified process name. The download selector, its automatic general pool, and every manual regional choice are audited on the final qualified RuntimeGraph; SUB_1 must be unreachable. `doctor --public-only` checks declarations, while production audit checks the emitted rules and graph.
+The generated config binds a local mixed listener named `download-in` to `127.0.0.1:7891` with `proxy: 下载流量`. This listener binding sends traffic to the download selector independently of ordinary rule matching, including if the runtime mode changes to Global. `IN-NAME` remains as a checked compatibility rule. Every download process, domain, and ACL4SSR Download classifier also emits an adjacent `REJECT` guard: if Mihomo skips its primary route because the selected adapter cannot carry UDP, the same classifier terminates before AI or browsing rules. The download selector, its automatic general pool, and every manual regional choice are audited on the final qualified RuntimeGraph, including provider and dialer-proxy paths. `doctor --public-only` checks declarations; production audit checks emitted rules and the graph.
 
 This guarantees isolation for connections that enter a download path. A browser or AI app may download a file over a connection indistinguishable from normal web traffic. A deployment may claim **all downloads avoid SUB_1** only after it verifies that its clients hand off every download to the dedicated listener or a verified downloader, or prevents those clients from using SUB_1. An enabled listener alone does not establish that client behavior. Production proof records the configuration guarantee separately from deployment verification.
 
 Follow [Download isolation client acceptance](download-isolation-acceptance.md) on each target device before asserting the deployment guarantee.
 
-The project-maintained domain list is deliberately narrow: `gvt1.com`, `gvt2.com`, and `release-assets.githubusercontent.com`. Ordinary `google.com`, `github.com`, and generic CDN hosts keep their prior classification. Domestic DIRECT or other earlier general-only matches are documented exceptions; they still cannot reach SUB_1.
+The project-maintained domain list is deliberately narrow: `gvt1.com`, `gvt2.com`, and `release-assets.githubusercontent.com`. Ordinary `google.com`, `github.com`, and generic CDN hosts are not treated as confirmed downloads; if they match ProxyLite or final fallback they use General, not SUB_1. Domestic DIRECT or other earlier general-only matches still cannot reach SUB_1.
 
 Media service capability checks may influence node scheduling inside `流媒体`, but they must not redefine the ACL4SSR Online classification order. In particular, canonical routing no longer inserts standalone YouTube or Netflix rules ahead of `ProxyMedia`.
 

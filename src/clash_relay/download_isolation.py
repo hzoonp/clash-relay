@@ -7,6 +7,7 @@ from typing import Any
 from .errors import ConfigurationError, ValidationError
 from .policy_contract import load_policy_contract
 from .routing_policy_v2 import load_routing_policy_v2
+from .runtime_config_renderer import RuntimeConfigRenderer
 
 _PROCESS_IDS = frozenset(
     {
@@ -84,6 +85,14 @@ def audit_download_declarations(project: Any) -> dict[str, Any]:
         or download.get("source_use") != "general"
     ):
         raise ConfigurationError("ACL4SSR download source must target general-only download")
+    proxy_lite = sources.get("proxy_lite")
+    if (
+        not isinstance(proxy_lite, dict)
+        or proxy_lite.get("target") != contract.public_group("general")
+        or proxy_lite.get("source_use") != "general"
+        or proxy_lite.get("scenario") != "general"
+    ):
+        raise ConfigurationError("generic ProxyLite must use general inventory")
     inline = {str(row["id"]): row for row in manifest.get("inline_rules", [])}
     if not inline.keys() >= _INLINE_IDS:
         raise ConfigurationError("download isolation inline rules are incomplete")
@@ -126,19 +135,27 @@ def audit_download_declarations(project: Any) -> dict[str, Any]:
         raise ConfigurationError("ACL4SSR Download must precede AI rules")
 
     inbound = project.config["runtime"].get("download_inbound")
-    if inbound is not None:
-        if inbound.get("enabled") is True and project.config["runtime"]["mode"] != "rule":
-            raise ConfigurationError("download inbound requires rule mode")
-        if (
-            inbound.get("enabled") is True
-            and inbound["port"] == project.config["runtime"]["mixed_port"]
-        ):
-            raise ConfigurationError("download inbound port must differ from mixed port")
+    if not isinstance(inbound, dict) or inbound.get("enabled") is not True:
+        raise ConfigurationError("download isolation requires an enabled download inbound")
+    if project.config["runtime"]["mode"] != "rule":
+        raise ConfigurationError("download inbound requires rule mode")
+    if inbound["port"] == project.config["runtime"]["mixed_port"]:
+        raise ConfigurationError("download inbound port must differ from mixed port")
+    expected_listener = {
+        "name": "download-in",
+        "type": "mixed",
+        "listen": "127.0.0.1",
+        "port": inbound["port"],
+        "proxy": contract.public_group("download"),
+    }
+    if RuntimeConfigRenderer().render(project.config).get("listeners") != [expected_listener]:
+        raise ConfigurationError("download listener must bind directly to download selector")
     return {
         "status": "passed",
         "source_use": "general",
         "classifiers_declared": len(_INLINE_IDS) + 1,
         "inbound_enabled": bool(inbound and inbound.get("enabled")),
+        "listener_binding_declared": True,
     }
 
 
@@ -148,6 +165,8 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
     declaration = audit_download_declarations(project)
     if declaration["status"] == "not_applicable":
         return declaration
+    if candidate.get("mode") != "rule":
+        raise ValidationError("download classifier isolation requires rule mode")
     rules = candidate.get("rules")
     if not isinstance(rules, list) or not all(isinstance(rule, str) for rule in rules):
         raise ValidationError("download isolation requires emitted routing rules")
@@ -169,7 +188,7 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
         if rules.count(expected) != 1:
             raise ValidationError(f"download process rule {source_id!r} is missing or duplicated")
         process_positions.append(rules.index(expected))
-    if sorted(process_positions) != list(range(1, len(_PROCESS_IDS) + 1)):
+    if sorted(process_positions) != list(range(2, 2 * len(_PROCESS_IDS) + 2, 2)):
         raise ValidationError("download processes must precede every domain rule")
 
     download_rule = f"RULE-SET,acl4ssr_download,{target}"
@@ -192,6 +211,33 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
             raise ValidationError(f"download domain rule {source_id!r} must precede AI")
     if rules.index(download_rule) >= first_ai:
         raise ValidationError("ACL4SSR Download must precede AI")
+    media_rule = "RULE-SET,acl4ssr_proxy_media,流媒体"
+    generic_rule = f"RULE-SET,acl4ssr_proxy_lite,{load_policy_contract(project.policies).public_group('general')}"
+    if rules.count(media_rule) != 1 or rules.count(generic_rule) != 1:
+        raise ValidationError("media or generic routing rule is missing or duplicated")
+    if not first_ai < rules.index(media_rule) < rules.index(generic_rule):
+        raise ValidationError("AI, media, and generic routing order drifted")
+
+    # Every classified download is terminal, including unsupported-UDP retries.
+    # One declaration emits a primary rule and its adjacent REJECT guard.
+    download_rows = [
+        *(
+            (str(row["id"]), rule_for(str(row["id"])))
+            for row in manifest["inline_rules"]
+            if row.get("scenario") == "download"
+        ),
+        *(
+            (str(row["id"]), f"RULE-SET,acl4ssr_{row['id']},{target}")
+            for row in manifest["sources"]
+            if row.get("scenario") == "download"
+        ),
+    ]
+    for source_id, primary in download_rows:
+        guard = primary.rsplit(",", 1)[0] + ",REJECT"
+        if rules.count(primary) != 1 or rules.count(guard) != 1:
+            raise ValidationError(f"download terminal guard {source_id!r} is missing or duplicated")
+        if rules.index(guard) != rules.index(primary) + 1:
+            raise ValidationError(f"download terminal guard {source_id!r} is not adjacent")
 
     inbound = project.config["runtime"].get("download_inbound")
     if inbound and inbound.get("enabled") is True:
@@ -201,6 +247,7 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
             "type": "mixed",
             "listen": "127.0.0.1",
             "port": inbound["port"],
+            "proxy": target,
         }
         if not isinstance(listeners, list) or listeners.count(expected_listener) != 1:
             raise ValidationError("download-only listener is missing or changed")
@@ -211,4 +258,7 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
         "domain_rules": len(_DOMAIN_IDS),
         "acl4ssr_download_before_ai": True,
         "inbound_configured": bool(inbound and inbound.get("enabled")),
+        "download_listener_bound": bool(inbound and inbound.get("enabled")),
+        "terminal_guards": "passed",
+        "terminal_guards_checked": len(download_rows),
     }
