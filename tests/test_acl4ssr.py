@@ -71,7 +71,7 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "openai": "人工智能",
         "proxy_media": "流媒体",
         "download": "下载流量",
-        "proxy_lite": "代理选择",
+        "proxy_lite": "网页通用自动",
         "china_domain": "全球直连",
         "china_company_ip": "全球直连",
     }
@@ -212,7 +212,8 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
         "英国节点",
     }
     assert all(
-        group["timeout"] == (8000 if name in region_names or name == "网页自动" else 5000)
+        group["timeout"]
+        == (8000 if name in region_names or name in {"网页自动", "网页通用自动"} else 5000)
         for name, group in automatic_groups
     )
 
@@ -266,6 +267,7 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     assert set(pools) == {
         "general",
         "browsing",
+        "web_general",
         "ai_sg",
         "ai_jp",
         "ai_us",
@@ -275,6 +277,10 @@ def test_canonical_production_uses_separate_general_browsing_and_ai_pools(
     }
     general = pools["general"]
     browsing = pools["browsing"]
+    web_general = pools["web_general"]
+    assert web_general["source_use"] == "general"
+    assert web_general["probe"] == "browsing"
+    assert web_general["regions"] == browsing["regions"]
     assert general["display_name"] == "__CR_GENERAL_INVENTORY"
     assert general["source_use"] == "general"
     assert general["excluded_capabilities"] == []

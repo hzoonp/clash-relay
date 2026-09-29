@@ -1,6 +1,6 @@
 # Download isolation: client acceptance
 
-The generated Mihomo profile exposes the normal mixed port at `127.0.0.1:7890` and the download-only mixed listener at `127.0.0.1:7891` (`download-in`). The listener has `proxy: 下载流量`, so its route does not depend on ordinary rules. Download classifiers on the normal/TUN path have adjacent `REJECT` terminal guards for unsupported UDP. Generic ProxyLite traffic uses General. The production proof reports a passed **configuration guarantee** only after emitted-rule and graph audits. Its **deployment guarantee** stays `unverified` until the actual client workflow is checked.
+The generated Mihomo profile exposes the normal mixed port at `127.0.0.1:7890` and the download-only mixed listener at `127.0.0.1:7891` (`download-in`). The listener has `proxy: 下载流量`, so its route does not depend on ordinary rules. Download classifiers on the normal/TUN path have adjacent `REJECT` terminal guards for unsupported UDP. Generic ProxyLite traffic uses the General-only `网页通用自动` path. The production proof reports a passed **configuration guarantee** only after emitted-rule and graph audits. Its **deployment guarantee** stays `unverified` until the actual client workflow is checked.
 
 ## Desktop / FlClash
 

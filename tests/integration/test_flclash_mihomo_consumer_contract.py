@@ -181,9 +181,14 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
         == (
             8000
             if group.get("name") in region_names
-            or group.get("name") == "网页自动"
-            or str(group.get("name", "")).startswith(("网页 · ", "__CR_BROWSING_"))
-            or any(str(provider).startswith("cr_browsing_") for provider in group.get("use", []))
+            or group.get("name") in {"网页自动", "网页通用自动"}
+            or str(group.get("name", "")).startswith(
+                ("网页 · ", "__CR_BROWSING_", "网页通用 · ", "__CR_WEB_GENERAL_")
+            )
+            or any(
+                str(provider).startswith(("cr_browsing_", "cr_web_general_"))
+                for provider in group.get("use", [])
+            )
             else 5000
         )
         for group in urltest_groups

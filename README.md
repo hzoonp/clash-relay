@@ -112,7 +112,7 @@ Intentional deviations are explicit and audited:
 
 - `BanProgramAD / 应用净化` remains disabled because it caused confirmed mobile image/CDN breakage.
 - AI/OpenAI runs before broad `ProxyMedia` classification.
-- The `download-in` listener binds directly to `下载流量`. Download classifiers run before AI/media/ProxyLite and emit adjacent `REJECT` guards for unsupported UDP. Generic `ProxyLite` uses General, while controlled `网页浏览` and AI retain SUB_1 eligibility.
+- The `download-in` listener binds directly to `下载流量`. Download classifiers run before AI/media/ProxyLite and emit adjacent `REJECT` guards for unsupported UDP. Generic `ProxyLite` uses the hidden General-only `网页通用自动` regional web scheduler; controlled `网页浏览` and AI retain SUB_1 eligibility.
 - ACL4SSR's single-subscription raw-node wildcard is adapted to source-aware scenario selectors.
 
 ## Qualification and scheduling

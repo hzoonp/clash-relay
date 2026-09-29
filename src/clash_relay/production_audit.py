@@ -12,6 +12,7 @@ from .policy_contract import load_policy_contract
 from .runtime_graph import RuntimeGraph
 from .runtime_names import canonical_source_id, parse_runtime_source_name
 from .util import safe_identifier
+from .web_general_runtime import WEB_GENERAL_AUTO_GROUP, validate_web_general_runtime
 
 _DEFAULT_SOURCE_USE = "general"
 
@@ -318,6 +319,7 @@ def audit_production_candidate(
     )
 
     download_routing = audit_download_rule_order(project, candidate)
+    web_general: dict[str, Any] = {"status": "not_applicable"}
     if download_routing.get("status") == "passed":
         provider_sources, runtime_sources = _runtime_source_maps(
             graph, known_source_ids=set(subscriptions)
@@ -348,6 +350,26 @@ def audit_production_candidate(
         download_routing["runtime_graph_check"] = "passed"
         download_routing["subscription_1_reachable"] = False
         download_routing["targets_checked"] = len(set(targets))
+        validate_web_general_runtime(candidate)
+        web_sources = graph.reachable_sources(
+            WEB_GENERAL_AUTO_GROUP,
+            proxy_sources=runtime_sources,
+            provider_sources=provider_sources,
+            require_resolved=True,
+        )
+        if "subscription_1" in web_sources:
+            raise ValidationError("general web automatic route can reach subscription_1")
+        _assert_use_allowed(
+            web_sources,
+            "general",
+            subscriptions=subscriptions,
+            surface="general-web-auto",
+        )
+        web_general = {
+            "status": "passed",
+            "source_use": "general",
+            "subscription_1_reachable": False,
+        }
 
     source_reports = {}
     if build_report is not None:
@@ -398,6 +420,7 @@ def audit_production_candidate(
         "pools": pool_rows,
         "reachability": reachability,
         "download_routing": download_routing,
+        "web_general": web_general,
     }
 
 

@@ -19,7 +19,7 @@ There is no runtime Policy Model v1 fallback and no runtime alias for removed Pu
 - A source declaring `allowed_uses: [browsing, ai]` cannot become reachable from a `general`, media, messaging, download, or final route, including through nested groups, fallback groups, provider indirection, or `dialer-proxy`.
 - The canonical first subscription rejects EMBY-labelled nodes and only explicit multipliers strictly greater than `2.0`; exactly `2.0` and unmarked nodes remain eligible.
 - `ingest_order` controls deterministic source ingestion/deduplication order only. It is not a routing or node-quality priority.
-- The pinned `ACL4SSR_Online.ini` profile is the canonical classification baseline. `ProxyLite.list` is the generic foreign-web classifier; `ProxyGFWlist` is not the canonical browser classifier.
+- The pinned `ACL4SSR_Online.ini` profile is the canonical classification baseline. `ProxyLite.list` targets the General-only `网页通用自动` web scheduler; `ProxyGFWlist` is not the canonical browser classifier.
 - The download-only inbound and verified downloader processes precede domain classification; `Download.list` and confirmed download hosts precede AI, `ProxyMedia`, and `ProxyLite`. These are explicit declared extensions. Undeclared classification drift fails closed.
 - Final `MATCH` remains `漏网之鱼` on the general graph.
 - The canonical top-level user-facing groups are exactly `代理选择`, `网页浏览`, `人工智能`, `流媒体`, `消息通讯`, and `下载流量`. Public scenario groups do not attach proxy providers directly.

@@ -22,6 +22,7 @@ from typing import Any
 
 from .browsing_runtime import BROWSING_AUTO_GROUP
 from .errors import ConfigurationError, GenerationError
+from .web_general_runtime import WEB_GENERAL_AUTO_GROUP
 
 NETWORK_PROFILE_DEFAULT = "default"
 NETWORK_PROFILE_CN_THREE_NET = "cn_three_net"
@@ -333,13 +334,14 @@ def apply_network_profile_urltest(
                 )
 
     automatic_by_name = {str(group.get("name")): group for group in automatic}
-    regional_switch = automatic_by_name.get(BROWSING_AUTO_GROUP)
-    if regional_switch is not None and regional_switch.get("interval") != (
-        _CN_THREE_NET_REGION_SWITCH_INTERVAL
-    ):
-        raise GenerationError(
-            "network profile cn_three_net requires the browsing regional switch to stay at 300s"
-        )
+    for name in (BROWSING_AUTO_GROUP, WEB_GENERAL_AUTO_GROUP):
+        regional_switch = automatic_by_name.get(name)
+        if regional_switch is not None and regional_switch.get("interval") != (
+            _CN_THREE_NET_REGION_SWITCH_INTERVAL
+        ):
+            raise GenerationError(
+                "network profile cn_three_net requires each web regional switch to stay at 300s"
+            )
 
     applied = _regional_overrides(output, group_specs)
     _download_contract(output, group_specs)

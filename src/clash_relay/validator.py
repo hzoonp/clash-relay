@@ -203,7 +203,7 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
                 errors.append(f"group {name!r} leaf expansion failed: {exc}")
             else:
                 explicit_empty_stable = (
-                    str(name).startswith("__CR_BROWSING_")
+                    str(name).startswith(("__CR_BROWSING_", "__CR_WEB_GENERAL_"))
                     and str(name).endswith("_STABLE_AUTO")
                     and group.get("hidden") is True
                     and group.get("filter") == "^$"

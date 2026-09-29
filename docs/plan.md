@@ -2,7 +2,7 @@
 
 ## 目标与验收范围
 
-**所有进入项目下载路径的连接，最终可达来源集合中绝无 `subscription_1`（SUB_1）。** 通用 ProxyLite 和用途未知的流量使用 General，不因域名貌似网页而自动取得 SUB_1 权限。验收同时检查 listener 强绑定、UDP terminal guard、规则顺序、公开 selector、provider、dialer-proxy、最终 RuntimeGraph 和实际 Mihomo 行为。
+**所有进入项目下载路径的连接，最终可达来源集合中绝无 `subscription_1`（SUB_1）。** 通用 ProxyLite 使用 `网页通用自动` 的 General-only 区域池；它复用浏览资格筛选和 Stable/Reserve/URLTest 性能模型，不继承 `代理选择` 手动状态，也不取得 SUB_1 权限。验收同时检查 listener 强绑定、UDP terminal guard、规则顺序、公开 selector、provider、dialer-proxy、最终 RuntimeGraph 和实际 Mihomo 行为。
 
 下载路径包括下载专用入站、已在目标平台验证的下载进程、ACL4SSR `Download.list`、经确认的 Play/release/update 下载域名。
 
@@ -24,6 +24,7 @@ E  每个普通入口下载 classifier 都由同一声明生成 primary + 相邻
    不支持 UDP 时不能继续匹配 browsing/ai/ProxyLite
 F  编译、资格筛选和发布前审计失败时停止生成/发布
 G  ProxyLite、MATCH 和 General 的所有可达来源均不含 subscription_1
+H  reachable_sources(网页通用自动) 不含 subscription_1，且其 provider_pool.source_use == general
 ```
 
 `DIRECT`/`REJECT` 不使用 SUB_1；更早的 general-only 目标也可能满足隔离，但都不能报告成“进入下载 selector”。每个例外需列明首次命中、最终目标和图审计结果。如要求全部下载都代理，应另行确定；本计划的硬约束是 SUB_1 不可达。
@@ -60,7 +61,7 @@ G  ProxyLite、MATCH 和 General 的所有可达来源均不含 subscription_1
 105  AI                           → 人工智能
 106  OpenAI                       → 人工智能
 110  ProxyMedia                   → 流媒体
-120  ProxyLite                    → 代理选择 / General
+120  ProxyLite                    → 网页通用自动 / General-only regional pool
 130+ China rules / MATCH           → 原目标
 ```
 
@@ -108,10 +109,10 @@ Play 域名从 fixture 中的 `play.googleapis.com`、`android.clients.google.co
 | 普通进程 + `dl.google.com` | GoogleCN → DIRECT | 不可达 |
 | ACL4SSR Download 样本 | 下载流量或已批准的 general-only/DIRECT/REJECT 目标 | 不可达 |
 | 确认的 Play/bulk 下载域名 | 下载流量或已批准的 general-only/DIRECT/REJECT 目标 | 不可达 |
-| 普通 Google/GitHub 网页 | ProxyLite/General 或原通用规则 | 不可达 |
+| 普通 Google/GitHub 网页 | ProxyLite → 网页通用自动 / General | 不可达 |
 | ChatGPT/Claude/Gemini 普通请求 | 人工智能 | 可达 |
 | 流媒体、Telegram、MATCH | 原 general 路径 | 不可达 |
-| 普通 `github.com`、`google.com`、`cloudfront.net` | 不因下载扩展整体改道；ProxyLite 用 General | 不可达 |
+| 普通 `github.com`、`google.com`、`cloudfront.net` | 不因下载扩展整体改道；ProxyLite 用网页通用自动 / General | 不可达 |
 
 声明与图测试用含 SUB_1、SUB_2～5 的 fixture 编译并资格筛选。固定稳定版 `v1.19.30`、`v1.19.29` 均运行 `mihomo -t` 和真实连接测试；`mihomo -t` 仅证明配置可加载，不证明分类语义。Android/FlClash/桌面进程识别与入口交接应在实际客户端验收，CI 无法覆盖的平台必须留下人工验收记录。
 
@@ -131,7 +132,7 @@ Play 域名从 fixture 中的 `play.googleapis.com`、`android.clients.google.co
 1. SUB_1 只允许 browsing、ai；download scenario 固定为 general。
 2. 最终图中的 `下载流量` 及自动、手动路径均无法到达 SUB_1，未解析引用直接失败。
 3. download-in listener 强绑定下载流量；已承诺的下载进程在真实 Mihomo 中先于 GoogleCN、AI、OpenAI、ProxyMedia 或 ProxyLite。
-4. ACL4SSR 和项目下载域名拥有相邻 terminal guard；UDP 不支持下载出口时 REJECT。普通 ProxyLite 用 General，AI 与受控网页浏览 selector 仍可合法使用 SUB_1。
+4. ACL4SSR 和项目下载域名拥有相邻 terminal guard；UDP 不支持下载出口时 REJECT。普通 ProxyLite 用 General-only 网页通用自动，AI 与受控网页浏览 selector 仍可合法使用 SUB_1。
 5. 固定稳定版 Mihomo、Drift Guard、负向回归及生产审计全部通过。
 6. 生产 proof 分列配置保证和各平台部署保证；下载交接未验证的客户端不得标为“所有下载绝不使用 SUB_1”。
 

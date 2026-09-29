@@ -272,7 +272,7 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
     assert "RULE-SET,acl4ssr_telegram,消息通讯" in result.config["rules"]
     assert "RULE-SET,acl4ssr_proxy_media,流媒体" in result.config["rules"]
     assert "RULE-SET,acl4ssr_download,下载流量" in result.config["rules"]
-    assert "RULE-SET,acl4ssr_proxy_lite,代理选择" in result.config["rules"]
+    assert "RULE-SET,acl4ssr_proxy_lite,网页通用自动" in result.config["rules"]
     assert all("acl4ssr_proxy_gfwlist" not in rule for rule in result.config["rules"])
     assert all("acl4ssr_youtube" not in rule for rule in result.config["rules"])
     assert all("acl4ssr_netflix" not in rule for rule in result.config["rules"])
@@ -288,9 +288,9 @@ def test_canonical_strict_acl4ssr_profile_validates_with_real_mihomo(
         "RULE-SET,acl4ssr_proxy_media,流媒体"
     )
     assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
-        "RULE-SET,acl4ssr_proxy_lite,代理选择"
+        "RULE-SET,acl4ssr_proxy_lite,网页通用自动"
     )
-    assert rules.index("RULE-SET,acl4ssr_proxy_lite,代理选择") < rules.index(
+    assert rules.index("RULE-SET,acl4ssr_proxy_lite,网页通用自动") < rules.index(
         "RULE-SET,acl4ssr_china_domain,全球直连"
     )
 

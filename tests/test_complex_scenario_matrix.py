@@ -25,7 +25,7 @@ def test_complex_concurrent_scenarios_have_independent_route_intent(
     expected = {
         "china_domain": ("direct", "domestic_web", "全球直连"),
         "china_company_ip": ("direct", "domestic_web", "全球直连"),
-        "proxy_lite": ("general", "foreign_web", "代理选择"),
+        "proxy_lite": ("general", "foreign_web", "网页通用自动"),
         "telegram": ("general", "telegram", "消息通讯"),
         "proxy_media": ("media", "foreign_media", "流媒体"),
         "download": ("download", "download", "下载流量"),

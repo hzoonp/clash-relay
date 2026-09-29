@@ -143,7 +143,7 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
     assert "RULE-SET,acl4ssr_telegram,消息通讯" in rules
     assert "RULE-SET,acl4ssr_proxy_media,流媒体" in rules
     assert "RULE-SET,acl4ssr_download,下载流量" in rules
-    assert "RULE-SET,acl4ssr_proxy_lite,代理选择" in rules
+    assert "RULE-SET,acl4ssr_proxy_lite,网页通用自动" in rules
     assert "RULE-SET,acl4ssr_openai,__CR_AI_SERVICE_OPENAI" in rules
     assert "RULE-SET,cr_ai_rules_claude,__CR_AI_SERVICE_CLAUDE" in rules
     assert "RULE-SET,cr_ai_rules_gemini,__CR_AI_SERVICE_GEMINI" in rules
@@ -158,9 +158,9 @@ def test_complex_routing_v2_candidate_is_accepted_by_real_mihomo(
         "RULE-SET,acl4ssr_proxy_media,流媒体"
     )
     assert rules.index("RULE-SET,acl4ssr_download,下载流量") < rules.index(
-        "RULE-SET,acl4ssr_proxy_lite,代理选择"
+        "RULE-SET,acl4ssr_proxy_lite,网页通用自动"
     )
-    assert rules.index("RULE-SET,acl4ssr_proxy_lite,代理选择") < rules.index(
+    assert rules.index("RULE-SET,acl4ssr_proxy_lite,网页通用自动") < rules.index(
         "RULE-SET,acl4ssr_china_domain,全球直连"
     )
 

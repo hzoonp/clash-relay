@@ -26,7 +26,7 @@ reference:
     '🍎 苹果服务': 苹果服务
     '📲 电报信息': 消息通讯
     '🌍 国外媒体': 流媒体
-    '🚀 节点选择': 代理选择
+    '🚀 节点选择': 网页通用自动
     '🐟 漏网之鱼': 漏网之鱼
   # These compatibility selectors keep the ACL4SSR default member order exactly
   # after names are mapped into clash-relay's source-aware control surface.
@@ -91,6 +91,25 @@ groups:
     timeout: 8000
     expected_status: "204"
     tolerance: 150
+    members: []
+
+  # Generic foreign-web traffic uses the browsing performance model over
+  # general-only regional providers. It never inherits a manual selector.
+  - id: policy_web_general_auto
+    display_name: 网页通用自动
+    module: general
+    hidden: true
+    type: url-test
+    provider_pool: web_general
+    filter: '.*'
+    url: https://cp.cloudflare.com/generate_204
+    interval: 180
+    timeout: 8000
+    expected_status: "204"
+    tolerance: 150
+    route:
+      scenario: general
+      profile: browsing
     members: []
 
   - id: policy_browsing
@@ -550,7 +569,7 @@ sources:
 
   - id: proxy_lite
     path: Clash/ProxyLite.list
-    target: 代理选择
+    target: 网页通用自动
     priority: 120
     module: general
     source_use: general

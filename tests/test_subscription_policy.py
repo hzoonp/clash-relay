@@ -296,7 +296,7 @@ def test_canonical_browsing_route_is_separate_from_application_routes(repo_root:
     assert groups["policy_browsing_auto"]["provider_pool"] == "browsing"
     assert groups["policy_browsing"]["provider_pool"] == "browsing"
     assert groups["policy_browsing"]["display_name"] == "网页浏览"
-    assert sources["proxy_lite"]["target"] == "代理选择"
+    assert sources["proxy_lite"]["target"] == "网页通用自动"
     assert sources["proxy_lite"]["source_use"] == "general"
 
     application_sources = {

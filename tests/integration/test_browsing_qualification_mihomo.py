@@ -53,7 +53,11 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
                 "cr_browsing_any": {
                     "type": "inline",
                     "payload": [{"name": "Browsing Direct", "type": "direct"}],
-                }
+                },
+                "cr_web_general_any": {
+                    "type": "inline",
+                    "payload": [{"name": "General Web Direct", "type": "direct"}],
+                },
             },
             "proxy-groups": [
                 {
@@ -84,20 +88,20 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
             diagnostics=diagnostics,
         )
 
-        assert qualified == {"Browsing Direct"}, {
+        assert qualified == {"Browsing Direct", "General Web Direct"}, {
             "diagnostics": diagnostics,
             "requests": requests,
         }
-        assert stable == {"Browsing Direct"}
-        assert len(requests) == 3
-        assert diagnostics["tested_nodes"] == 1
-        assert diagnostics["qualified_nodes"] == 1
-        assert diagnostics["stable_nodes"] == 1
+        assert stable == {"Browsing Direct", "General Web Direct"}
+        assert len(requests) == 6
+        assert diagnostics["tested_nodes"] == 2
+        assert diagnostics["qualified_nodes"] == 2
+        assert diagnostics["stable_nodes"] == 2
         assert diagnostics["reserve_nodes"] == 0
         assert diagnostics["failed_nodes"] == 0
-        assert diagnostics["successful_samples"] == 3
+        assert diagnostics["successful_samples"] == 6
         assert diagnostics["failed_samples"] == 0
-        assert diagnostics["outcomes"]["success"] == 3
+        assert diagnostics["outcomes"]["success"] == 6
         assert diagnostics["qualified_latency_ms"]["p50"] >= 0
     finally:
         server.shutdown()

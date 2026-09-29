@@ -23,6 +23,7 @@ from .policy_document import load_policy_document
 from .runtime_names import parse_runtime_source_name
 from .util import atomic_write, dump_yaml, load_yaml_file, stable_json
 from .validator import validate_generated_config
+from .web_general_runtime import WEB_GENERAL_PROVIDER_PREFIX
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
 BROWSING_POOL_ID = "browsing"
@@ -70,7 +71,7 @@ def _comment_header(text: str) -> str:
 
 
 def _is_canonical_browsing_provider(name: str) -> bool:
-    return name.startswith(BROWSING_PROVIDER_PREFIX)
+    return name.startswith((BROWSING_PROVIDER_PREFIX, WEB_GENERAL_PROVIDER_PREFIX))
 
 
 def _quote_re2_literal(value: str) -> str:
@@ -751,13 +752,19 @@ def probe_browsing_nodes(
                     outcomes[outcome] = outcomes.get(outcome, 0) + failures
         finally:
             if process.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGTERM)
+                if hasattr(os, "killpg"):
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
                 try:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(process.pid, signal.SIGKILL)
+                    if hasattr(os, "killpg"):
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(process.pid, signal.SIGKILL)
+                    else:
+                        process.kill()
                     process.wait(timeout=5)
 
     qualified, stable, qualified_medians = _stability_tiers_from_group_samples(

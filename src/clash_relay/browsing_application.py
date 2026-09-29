@@ -31,6 +31,7 @@ from .transport_qualification import (
     rewrite_transport_qualified_candidate,
 )
 from .util import load_yaml_file
+from .web_general_runtime import rewrite_web_general_qualified_candidate
 
 _MIN_PREFERRED_STABLE_NODES = 3
 
@@ -292,6 +293,13 @@ def run_browsing_qualification(
                     stable=stable,
                     preferred=preferred,
                 )
+
+        report["web_general"] = rewrite_web_general_qualified_candidate(
+            candidate,
+            qualified_names=qualified,
+            stable_names=stable,
+            preferred_names=preferred,
+        )
 
         failure_stage = "transport"
         tcp_qualified, udp_qualified, _ = probe_transport_nodes(

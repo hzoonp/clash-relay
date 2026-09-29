@@ -64,7 +64,7 @@ Automatic schedulers are different from selectors. Netflix uses a hidden automat
 
 ## Web classification
 
-`ProxyLite -> 代理选择` is the generic foreign-web classification and uses General. Its targets can carry files or updates, so this classification never grants browsing/SUB_1 permission. `网页浏览` remains a separate visible selector for an explicitly controlled browsing surface. China-domain/company-IP/GEOIP rules retain their declared direct policy.
+`ProxyLite -> 网页通用自动` is the generic foreign-web classification. This hidden automatic route uses a General-only regional pool with browsing-grade qualification, Stable/Reserve failover and client URLTest. It cannot reach browsing/SUB_1 or inherit manual `代理选择` state. `网页浏览` remains a separate visible selector for an explicitly controlled browsing surface. China-domain/company-IP/GEOIP rules retain their declared direct policy.
 
 Routing V2 deliberately does **not** claim that every non-China domain is web traffic. A domain not covered by an explicit browsing or application rule continues to the final route. This prevents a broad catch-all from accidentally granting `subscription_1` access to media, downloads, messaging, or unknown traffic.
 
@@ -89,7 +89,7 @@ Download is a first-class scenario. The canonical production mode is `general_au
 download-in listener / verified downloader process -> 下载流量
 known domestic classification -> DIRECT
 confirmed download host / Download.list -> 下载流量 -> 下载自动 -> general inventory
-ProxyLite -> 代理选择 -> general inventory
+ProxyLite -> 网页通用自动 -> general-only regional inventory
 ```
 
 The ordering is intentional: the dedicated listener has `proxy: 下载流量`, independently of rules. Download process rules run before all domain rules. Each download rule has an adjacent `REJECT` guard for Mihomo's unsupported-UDP continuation. Confirmed download hosts and `Download.list` run before AI, media, and `ProxyLite`. The final qualified graph audit proves `subscription_1` is unreachable from the download selector, every manual choice, nested providers and dialer paths. A deployment-wide claim still requires verified client handoff of otherwise indistinguishable browser/AI downloads.
@@ -159,7 +159,7 @@ A drift-guard failure cannot publish or replace production configuration. Produc
 - AI excludes Hong Kong and the United Kingdom before service qualification.
 - OpenAI, Claude, and Gemini remain independently qualified.
 - media and download use only the `general` permission domain.
-- `ProxyLite -> 代理选择` uses General; `网页浏览` remains a separate controlled selector.
+- `ProxyLite -> 网页通用自动` uses General-only regional providers; `网页浏览` remains a separate controlled selector.
 - final `MATCH -> 漏网之鱼` remains canonical.
 - no process-name rule is used as a source-permission or security boundary.
 - production publication remains fail-closed after source reachability audit and stable-Mihomo validation.

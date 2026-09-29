@@ -25,7 +25,7 @@ _DEMOTE_AFTER_FAILURES = 2
 _MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _MAX_RECORDS = 4096
 _MIN_PREFERRED_AUTO_NODES = 3
-_BROWSING_PROVIDER_PREFIX = "cr_browsing_"
+_BROWSING_PROVIDER_PREFIXES = ("cr_browsing_", "cr_web_general_")
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
 
 
@@ -145,7 +145,7 @@ def browsing_runtime_names(candidate: dict[str, Any]) -> set[str]:
         raise ValidationError("scheduler history requires candidate proxy-providers")
     names: set[str] = set()
     for provider_name, provider in providers.items():
-        if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIX):
+        if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIXES):
             continue
         payload = provider.get("payload") if isinstance(provider, dict) else None
         if not isinstance(payload, list):
@@ -363,7 +363,7 @@ def apply_history_preference(candidate_path: Path, preferred_names: set[str]) ->
 
     provider_names: dict[str, set[str]] = {}
     for provider_name, provider in providers.items():
-        if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIX):
+        if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIXES):
             continue
         payload = provider.get("payload") if isinstance(provider, dict) else None
         if not isinstance(payload, list):

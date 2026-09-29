@@ -7,12 +7,17 @@ from pathlib import Path
 
 import pytest
 
+import clash_relay.browsing_application as browsing_application
 from clash_relay.builder import build_candidate
 from clash_relay.config_loader import load_project
 from clash_relay.download_isolation import audit_download_declarations, audit_download_rule_order
 from clash_relay.errors import ConfigurationError, ValidationError
 from clash_relay.production_audit import _runtime_source_maps, audit_production_candidate
+from clash_relay.proxy_endpoint_qualification import accelerate_client_health_checks
 from clash_relay.runtime_graph import RuntimeGraph
+from clash_relay.scheduler_history import browsing_runtime_names
+from clash_relay.util import dump_yaml, load_yaml_file
+from clash_relay.web_general_runtime import rewrite_web_general_qualified_candidate
 
 
 def _candidate(repo_root: Path):
@@ -72,8 +77,11 @@ def test_compiled_download_paths_exclude_subscription_1(repo_root: Path) -> None
     assert report["download_routing"]["subscription_1_reachable"] is False
     assert report["download_routing"]["terminal_guards"] == "passed"
     assert candidate["rules"][1] == "IN-NAME,download-in,REJECT"
-    generic_rule = "RULE-SET,acl4ssr_proxy_lite,代理选择"
+    generic_rule = "RULE-SET,acl4ssr_proxy_lite,网页通用自动"
     assert generic_rule in candidate["rules"]
+    web_auto = next(row for row in candidate["proxy-groups"] if row["name"] == "网页通用自动")
+    assert web_auto["type"] == "url-test" and web_auto["hidden"] is True
+    assert "代理选择" not in web_auto["proxies"]
     graph = RuntimeGraph.from_candidate(candidate)
     provider_sources, proxy_sources = _runtime_source_maps(
         graph, known_source_ids={f"subscription_{index}" for index in range(1, 6)}
@@ -81,6 +89,10 @@ def test_compiled_download_paths_exclude_subscription_1(repo_root: Path) -> None
     assert "subscription_1" not in graph.reachable_sources(
         "代理选择", proxy_sources=proxy_sources, provider_sources=provider_sources
     )
+    assert "subscription_1" not in graph.reachable_sources(
+        "网页通用自动", proxy_sources=proxy_sources, provider_sources=provider_sources
+    )
+    assert report["web_general"]["subscription_1_reachable"] is False
     assert "subscription_1" in graph.reachable_sources(
         "网页浏览", proxy_sources=proxy_sources, provider_sources=provider_sources
     )
@@ -125,6 +137,133 @@ def test_download_domain_cannot_be_broadened_silently(repo_root: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="drifted from its review"):
         audit_download_declarations(replace(project, acl4ssr=manifest))
+
+
+def test_proxy_lite_cannot_rejoin_manual_general_selector(repo_root: Path) -> None:
+    project, _candidate_config = _candidate(repo_root)
+    manifest = copy.deepcopy(project.acl4ssr)
+    assert isinstance(manifest, dict)
+    row = next(item for item in manifest["sources"] if item["id"] == "proxy_lite")
+    row["target"] = "代理选择"
+    with pytest.raises(ConfigurationError, match="generic ProxyLite"):
+        audit_download_declarations(replace(project, acl4ssr=manifest))
+
+
+def test_general_web_auto_keeps_browsing_tiers_and_fast_failover(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    project, candidate = _candidate(repo_root)
+    names = {
+        proxy["name"]
+        for provider_name, provider in candidate["proxy-providers"].items()
+        if provider_name.startswith("cr_web_general_")
+        for proxy in provider["payload"]
+    }
+    assert names
+    path = tmp_path / "candidate.yaml"
+    path.write_text(dump_yaml(candidate), encoding="utf-8")
+    report = rewrite_web_general_qualified_candidate(path, names, names, names)
+    rewritten = load_yaml_file(path)
+    assert report["qualified_nodes"] == len(names)
+    groups = {row["name"]: row for row in rewritten["proxy-groups"]}
+    web = groups["网页通用自动"]
+    assert web["type"] == "url-test" and web["interval"] == 300
+    assert web["timeout"] == 8000 and web["tolerance"] == 150
+    assert web["proxies"] == ["网页通用 · 美国"]
+    region = groups["网页通用 · 美国"]
+    assert region["type"] == "fallback"
+    assert region["proxies"] == [
+        "__CR_WEB_GENERAL_US_STABLE_AUTO",
+        "__CR_WEB_GENERAL_US_RESERVE_AUTO",
+    ]
+    for tier_name in region["proxies"]:
+        tier = groups[tier_name]
+        assert tier["type"] == "url-test"
+        assert tier["use"] == ["cr_web_general_us"]
+        assert tier["filter"].startswith("^(")
+    accelerate_client_health_checks(rewritten)
+    assert all(
+        groups[name]["max-failed-times"] == 1 for name in [*region["proxies"], "网页通用自动"]
+    )
+    assert (
+        audit_production_candidate(project, rewritten)["web_general"]["subscription_1_reachable"]
+        is False
+    )
+
+
+def test_general_web_auto_cannot_reference_controlled_browsing(repo_root: Path) -> None:
+    project, candidate = _candidate(repo_root)
+    changed = copy.deepcopy(candidate)
+    group = next(row for row in changed["proxy-groups"] if row["name"] == "网页通用自动")
+    group["proxies"].append("网页浏览")
+    with pytest.raises(ValidationError, match="reachability boundary"):
+        audit_production_candidate(project, changed)
+
+
+def test_general_web_endpoint_cap_preserves_reject_and_reserve(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    project, candidate = _candidate(repo_root)
+    names = {
+        proxy["name"]
+        for key, provider in candidate["proxy-providers"].items()
+        if key.startswith("cr_web_general_")
+        for proxy in provider["payload"]
+    }
+    stable = next(
+        group
+        for group in candidate["proxy-groups"]
+        if group["name"] == "__CR_WEB_GENERAL_US_STABLE_AUTO"
+    )
+    stable["filter"] = "^$"
+    stable["proxies"] = ["REJECT"]
+    path = tmp_path / "candidate.yaml"
+    path.write_text(dump_yaml(candidate), encoding="utf-8")
+    rewrite_web_general_qualified_candidate(path, names, names, names)
+    rewritten = load_yaml_file(path)
+    groups = {group["name"]: group for group in rewritten["proxy-groups"]}
+    assert groups["__CR_WEB_GENERAL_US_STABLE_AUTO"]["filter"] == "^$"
+    assert groups["__CR_WEB_GENERAL_US_STABLE_AUTO"]["proxies"] == ["REJECT"]
+    assert groups["__CR_WEB_GENERAL_US_RESERVE_AUTO"]["filter"].startswith("^(")
+    assert audit_production_candidate(project, rewritten)["web_general"]["status"] == "passed"
+
+
+def test_browsing_qualification_rewrites_general_web_without_sub_1(
+    repo_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, candidate = _candidate(repo_root)
+    names = browsing_runtime_names(candidate)
+    web_names = {
+        proxy["name"]
+        for key, provider in candidate["proxy-providers"].items()
+        if key.startswith("cr_web_general_")
+        for proxy in provider["payload"]
+    }
+    assert web_names and web_names <= names
+    path = tmp_path / "candidate.yaml"
+    path.write_text(dump_yaml(candidate), encoding="utf-8")
+    monkeypatch.setattr(
+        browsing_application, "probe_browsing_nodes", lambda *_a, **_k: (names, names)
+    )
+    monkeypatch.setattr(
+        browsing_application, "probe_transport_nodes", lambda *_a, **_k: (names, names, {})
+    )
+    monkeypatch.setattr(
+        browsing_application,
+        "rewrite_transport_qualified_candidate",
+        lambda *_a, **_k: {"status": "fixture"},
+    )
+    summary = browsing_application.run_browsing_qualification(
+        candidate=path,
+        policies=repo_root / "policies.yaml",
+        mihomo_bin=tmp_path / "unused-mihomo",
+    )
+    qualified = load_yaml_file(path)
+    assert summary["web_general"]["qualified_nodes"] == len(web_names)
+    assert (
+        audit_production_candidate(project, qualified)["web_general"]["subscription_1_reachable"]
+        is False
+    )
 
 
 @pytest.mark.parametrize("target", ["网页浏览", "人工智能"])

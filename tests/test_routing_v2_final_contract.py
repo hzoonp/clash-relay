@@ -111,7 +111,7 @@ def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> N
     sources = {row["id"]: row for row in manifest["sources"]}
     inline = {row["id"]: row for row in manifest["inline_rules"]}
 
-    assert sources["proxy_lite"]["target"] == "代理选择"
+    assert sources["proxy_lite"]["target"] == "网页通用自动"
     assert sources["proxy_media"]["target"] == "流媒体"
     assert sources["download"]["target"] == "下载流量"
     assert sources["telegram"]["target"] == "消息通讯"

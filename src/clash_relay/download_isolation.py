@@ -8,6 +8,7 @@ from .errors import ConfigurationError, ValidationError
 from .policy_contract import load_policy_contract
 from .routing_policy_v2 import load_routing_policy_v2
 from .runtime_config_renderer import RuntimeConfigRenderer
+from .web_general_runtime import WEB_GENERAL_AUTO_GROUP
 
 _PROCESS_IDS = frozenset(
     {
@@ -88,11 +89,25 @@ def audit_download_declarations(project: Any) -> dict[str, Any]:
     proxy_lite = sources.get("proxy_lite")
     if (
         not isinstance(proxy_lite, dict)
-        or proxy_lite.get("target") != contract.public_group("general")
+        or proxy_lite.get("target") != WEB_GENERAL_AUTO_GROUP
         or proxy_lite.get("source_use") != "general"
         or proxy_lite.get("scenario") != "general"
     ):
         raise ConfigurationError("generic ProxyLite must use general inventory")
+    web_auto = groups.get(WEB_GENERAL_AUTO_GROUP)
+    web_pool = next(
+        (row for row in project.policies["pools"] if row.get("id") == "web_general"), None
+    )
+    if (
+        not isinstance(web_auto, dict)
+        or web_auto.get("hidden") is not True
+        or web_auto.get("provider_pool") != "web_general"
+        or web_auto.get("type") != "url-test"
+        or not isinstance(web_pool, dict)
+        or web_pool.get("source_use") != "general"
+        or web_pool.get("probe") != "browsing"
+    ):
+        raise ConfigurationError("generic ProxyLite requires general-only web URLTest")
     inline = {str(row["id"]): row for row in manifest.get("inline_rules", [])}
     if not inline.keys() >= _INLINE_IDS:
         raise ConfigurationError("download isolation inline rules are incomplete")
@@ -212,7 +227,7 @@ def audit_download_rule_order(project: Any, candidate: dict[str, Any]) -> dict[s
     if rules.index(download_rule) >= first_ai:
         raise ValidationError("ACL4SSR Download must precede AI")
     media_rule = "RULE-SET,acl4ssr_proxy_media,流媒体"
-    generic_rule = f"RULE-SET,acl4ssr_proxy_lite,{load_policy_contract(project.policies).public_group('general')}"
+    generic_rule = f"RULE-SET,acl4ssr_proxy_lite,{WEB_GENERAL_AUTO_GROUP}"
     if rules.count(media_rule) != 1 or rules.count(generic_rule) != 1:
         raise ValidationError("media or generic routing rule is missing or duplicated")
     if not first_ai < rules.index(media_rule) < rules.index(generic_rule):

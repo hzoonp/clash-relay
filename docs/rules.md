@@ -51,7 +51,7 @@ Any additional classification source or compatibility change must be declared in
 | 105 | `AI` | `人工智能` extension |
 | 106 | `OpenAi` | `人工智能` extension |
 | 110 | `ProxyMedia` | `流媒体` |
-| 120 | `ProxyLite` | `代理选择` (General) |
+| 120 | `ProxyLite` | `网页通用自动` (General only) |
 | 130 | `ChinaDomain` | `全球直连` |
 | 140 | `ChinaCompanyIp` | `全球直连` |
 | 150 | `GEOIP,CN` | `全球直连` |
@@ -149,7 +149,7 @@ This keeps ACL4SSR classification fidelity without weakening source permissions.
 
 ## Browsing scheduling
 
-Generic `ProxyLite` traffic uses `代理选择` and the general inventory. Its domain list does not establish that a connection is only a web page; it may also carry a download. The separate `网页浏览` selector remains available for explicitly controlled browsing traffic and may use SUB_1. `网页自动` compares regional candidates with `url-test` on the client network, using a 300-second interval and the browsing probe tolerance (150 ms). Each regional candidate retains Stable-to-Reserve fallback.
+Generic `ProxyLite` traffic uses hidden `网页通用自动`, backed by the General-only `web_general` regional pool. It cannot inherit the manual state of `代理选择` or reach SUB_1. Its provider nodes undergo the browsing probe and qualification, regional Stable/Reserve filtering, history preference, and client URLTest with the same 300-second region switch and 150 ms tolerance as the controlled browsing route. The separate `网页浏览` selector remains available for explicitly controlled browsing traffic and may use SUB_1.
 
 Manual regional choices stay pinned to their selected region. History demotion remains region-local and does not remove a currently qualified node from Reserve eligibility.
 

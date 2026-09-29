@@ -101,7 +101,7 @@ def test_download_listener_overrides_earlier_web_domain_classification(
             "proxy-groups": [
                 {"name": "下载流量", "type": "select", "proxies": ["DIRECT"]},
                 {"name": "网页浏览", "type": "select", "proxies": ["REJECT"]},
-                {"name": "代理选择", "type": "select", "proxies": ["DIRECT"]},
+                {"name": "网页通用自动", "type": "select", "hidden": True, "proxies": ["DIRECT"]},
             ],
             "rule-providers": {
                 "acl4ssr_proxy_lite": {
@@ -114,7 +114,7 @@ def test_download_listener_overrides_earlier_web_domain_classification(
                 "PROCESS-NAME,aria2c.exe,下载流量",
                 "DOMAIN-SUFFIX,gvt1.com,下载流量",
                 "DOMAIN-SUFFIX,google.com,网页浏览",
-                "RULE-SET,acl4ssr_proxy_lite,代理选择",
+                "RULE-SET,acl4ssr_proxy_lite,网页通用自动",
                 "IP-CIDR,127.0.0.1/32,网页浏览,no-resolve",
                 "MATCH,DIRECT",
             ],

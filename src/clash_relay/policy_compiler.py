@@ -18,6 +18,7 @@ from .models import Node
 from .network_profile import apply_network_profile_urltest
 from .routing_policy import apply_acl4ssr_source_exclusions
 from .runtime_graph import RuntimeGraph
+from .web_general_runtime import harden_web_general_runtime, validate_web_general_runtime
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +117,9 @@ def compile_runtime_graph(
     # Browsing hardening is a core runtime policy, not an ACL4SSR feature.  It
     # must therefore run for forks that disable external ACL groups as well.
     browsing_runtime = harden_browsing_runtime(output, policies)
+    web_general_runtime = harden_web_general_runtime(output, policies)
     validate_browsing_public_surface(output)
+    validate_web_general_runtime(output)
     # Network-profile tuning is the last topology pass so it observes the
     # final group graph; it never changes topology, only tuning fields.
     urltest_profile = apply_network_profile_urltest(
@@ -135,6 +138,8 @@ def compile_runtime_graph(
         report["manual_provider_exposure"] = manual_exposure
     if browsing_runtime.get("status") != "not_applicable":
         report["browsing_runtime"] = browsing_runtime
+    if web_general_runtime.get("status") != "not_applicable":
+        report["web_general_runtime"] = web_general_runtime
     if urltest_profile.get("status") != "not_applicable":
         report["network_profile_urltest"] = urltest_profile
 
