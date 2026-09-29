@@ -439,10 +439,10 @@ final_target: 漏网之鱼
 final_source_use: general
 final_scenario: final
 
-# Baseline order follows pinned ACL4SSR_Online.ini. AI is inserted immediately
-# before ProxyMedia because the upstream media list also matches AI domains;
-# Download is inserted immediately before ProxyLite. No other source extension
-# is permitted by the fidelity contract.
+# Baseline order follows pinned ACL4SSR_Online.ini. Download ingress/process
+# rules precede baseline domains; confirmed download hosts and Download.list
+# precede AI/OpenAI, ProxyMedia, and ProxyLite. AI/OpenAI still precede media.
+# Every download classifier receives an adjacent terminal REJECT at compilation.
 sources:
   - id: local_area_network
     path: Clash/LocalAreaNetwork.list

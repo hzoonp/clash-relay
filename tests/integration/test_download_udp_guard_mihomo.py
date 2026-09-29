@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
-import time
 from pathlib import Path
 from socketserver import BaseRequestHandler, ThreadingUDPServer
 from threading import Thread
 
 import pytest
+from _mihomo import mihomo_session, serving_udp, wait_until
 
 from clash_relay.util import dump_yaml
 
@@ -93,7 +92,8 @@ def _run_case(
     config = {
         "mixed-port": proxy_port,
         "mode": "rule",
-        "log-level": "silent",
+        "log-level": "debug",
+        "profile": {"store-selected": False},
         "hosts": {"assets.gvt1.com": "127.0.0.1", "safe.example.test": "127.0.0.1"},
         "proxies": [{"name": "http-only", "type": "http", "server": "127.0.0.1", "port": 29999}],
         "proxy-groups": [
@@ -104,30 +104,24 @@ def _run_case(
     }
     path = root / "config.yaml"
     path.write_text(dump_yaml(config), encoding="utf-8")
-    process = subprocess.Popen(
-        [binary, "-d", str(root), "-f", str(path)],
-        cwd=root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-    )
-    try:
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                pytest.fail("Mihomo exited before SOCKS5 UDP relay became ready")
-            try:
-                with socket.create_connection(("127.0.0.1", proxy_port), timeout=0.2):
-                    break
-            except OSError:
-                time.sleep(0.05)
-        else:
-            pytest.fail("Mihomo SOCKS5 UDP relay did not become ready")
+    with mihomo_session(binary, path, root) as mihomo:
+
+        def ready() -> bool:
+            result = _udp_request(proxy_port, "safe.example.test", destination_port)
+            if result != b"udp-download-isolation":
+                raise AssertionError(f"safe SOCKS5 UDP probe returned {result!r}")
+            return True
+
+        wait_until(
+            ready,
+            timeout=12,
+            label=f"Mihomo SOCKS5 UDP route 127.0.0.1:{proxy_port}",
+            mihomo=mihomo,
+        )
         control = _udp_request(proxy_port, "safe.example.test", destination_port)
         classified = _udp_request(proxy_port, "assets.gvt1.com", destination_port)
+        assert control == b"udp-download-isolation", mihomo.failure_context()
         return control, classified
-    finally:
-        process.terminate()
-        process.wait(timeout=5)
 
 
 def test_unsupported_udp_download_cannot_continue_to_browsing(tmp_path: Path) -> None:
@@ -136,13 +130,9 @@ def test_unsupported_udp_download_cannot_continue_to_browsing(tmp_path: Path) ->
         pytest.skip("MIHOMO_BIN is not set")
     server = ThreadingUDPServer(("127.0.0.1", 0), _UdpEcho)
     thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
+    with serving_udp(server, thread):
         port = int(server.server_address[1])
         without_guard = _run_case(binary, tmp_path / "without-guard", port, guard=False)
         with_guard = _run_case(binary, tmp_path / "with-guard", port, guard=True)
         assert without_guard == (b"udp-download-isolation", b"udp-download-isolation")
         assert with_guard == (b"udp-download-isolation", None)
-    finally:
-        server.shutdown()
-        server.server_close()

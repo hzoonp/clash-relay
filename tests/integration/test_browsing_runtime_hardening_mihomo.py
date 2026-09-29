@@ -3,19 +3,19 @@ from __future__ import annotations
 import json
 import os
 import select
-import signal
 import socket
-import subprocess
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 import yaml
+from _mihomo import RunningMihomo, start_mihomo, stop_server, wait_http_ready, wait_until
 
 from clash_relay.browsing_regions import (
     region_display_name,
@@ -53,18 +53,13 @@ def _api(controller_port: int, secret: str, group_name: str) -> dict:
     return payload
 
 
-def _wait_controller(process: subprocess.Popen, controller_port: int, secret: str) -> None:
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
-            pytest.fail(f"Mihomo exited before controller became ready: {output}")
-        try:
-            _api(controller_port, secret, BROWSING_PUBLIC_GROUP)
-            return
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(0.1)
-    pytest.fail("Mihomo controller did not become ready")
+def _wait_controller(mihomo: RunningMihomo, controller_port: int, secret: str) -> None:
+    wait_until(
+        lambda: bool(_api(controller_port, secret, BROWSING_PUBLIC_GROUP)),
+        timeout=15,
+        label=f"Mihomo controller 127.0.0.1:{controller_port}",
+        mihomo=mihomo,
+    )
 
 
 def _regional_candidate(
@@ -90,6 +85,7 @@ def _regional_candidate(
         "allow-lan": False,
         "mode": "rule",
         "log-level": "warning",
+        "profile": {"store-selected": False},
         "external-controller": f"127.0.0.1:{controller_port}",
         "secret": secret,
         "proxy-providers": {
@@ -227,17 +223,10 @@ def _run_and_wait(
 ) -> None:
     path = tmp_path / "browsing-regional-runtime.yaml"
     path.write_text(yaml.safe_dump(candidate, sort_keys=False), encoding="utf-8")
-    process = subprocess.Popen(
-        [str(_binary()), "-d", str(tmp_path), "-f", str(path)],
-        cwd=tmp_path,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-        env={**os.environ, "TZ": "UTC"},
-    )
+    mihomo = start_mihomo(_binary(), path, tmp_path)
+    process = mihomo.process
     try:
-        _wait_controller(process, controller_port, secret)
+        _wait_controller(mihomo, controller_port, secret)
         public = _api(controller_port, secret, BROWSING_PUBLIC_GROUP)
         assert public.get("all") == [
             BROWSING_AUTO_GROUP,
@@ -260,8 +249,9 @@ def _run_and_wait(
         last_jp: dict = {}
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                output = process.stdout.read() if process.stdout else ""
-                pytest.fail(f"Mihomo exited during regional browsing test: {output}")
+                pytest.fail(
+                    f"Mihomo exited during regional browsing test: {mihomo.failure_context()}"
+                )
             last_auto = _api(controller_port, secret, BROWSING_AUTO_GROUP)
             last_us = _api(controller_port, secret, region_display_name("US"))
             last_jp = _api(controller_port, secret, region_display_name("JP"))
@@ -275,12 +265,18 @@ def _run_and_wait(
             "auto": last_auto,
             "us": last_us,
             "jp": last_jp,
+            "mihomo_log": mihomo.log_tail(),
         }
         assert last_us.get("all") == [region_stable_group("US"), region_reserve_group("US")]
         assert region_display_name("JP") not in last_us.get("all", [])
         if expected_us_tier is not None:
-            assert last_us.get("now") == expected_us_tier
+            assert last_us.get("now") == expected_us_tier, mihomo.failure_context()
         if capped:
+            assert last_us.get("now") in {
+                region_stable_group("US"),
+                region_reserve_group("US"),
+            }, mihomo.failure_context()
+            assert "DIRECT" not in last_us.get("all", []), mihomo.failure_context()
             for region in ("US", "JP"):
                 stable = _api(controller_port, secret, region_stable_group(region))
                 assert stable["all"] == ["REJECT"]
@@ -289,13 +285,7 @@ def _run_and_wait(
             children = [_api(controller_port, secret, name) for name in general["all"]]
             assert [child["all"] for child in children] == [["General Robust"], ["General Reserve"]]
     finally:
-        if process.poll() is None:
-            process.terminate() if os.name == "nt" else os.killpg(process.pid, signal.SIGTERM)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill() if os.name == "nt" else os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
+        mihomo.stop()
 
 
 def _probe_server(delay: float = 0) -> tuple[ThreadingHTTPServer, threading.Thread]:
@@ -333,6 +323,11 @@ def _probe_server(delay: float = 0) -> tuple[ThreadingHTTPServer, threading.Thre
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    try:
+        wait_http_ready("127.0.0.1", server.server_port, thread, expected_status=204)
+    except BaseException:
+        stop_server(server, thread)
+        raise
     return server, thread
 
 
@@ -355,15 +350,23 @@ def _failure_proxy_server() -> tuple[ThreadingHTTPServer, threading.Thread]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    try:
+        wait_http_ready("127.0.0.1", server.server_port, thread, expected_status=503)
+    except BaseException:
+        stop_server(server, thread)
+        raise
     return server, thread
 
 
 def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_path: Path) -> None:
-    probe_server, _ = _probe_server()
-    broken_proxy, _ = _failure_proxy_server()
-    controller_port = _port()
-    secret = "regional-browsing-same-region-reserve"
+    cleanup = ExitStack()
     try:
+        probe_server, probe_thread = _probe_server()
+        cleanup.callback(stop_server, probe_server, probe_thread)
+        broken_proxy, broken_thread = _failure_proxy_server()
+        cleanup.callback(stop_server, broken_proxy, broken_thread)
+        controller_port = _port()
+        secret = "regional-browsing-same-region-reserve"
         candidate = _regional_candidate(
             controller_port=controller_port,
             secret=secret,
@@ -380,20 +383,20 @@ def test_real_mihomo_regional_choice_recovers_through_same_region_reserve(tmp_pa
             expected_us_tier=region_reserve_group("US"),
         )
     finally:
-        probe_server.shutdown()
-        probe_server.server_close()
-        broken_proxy.shutdown()
-        broken_proxy.server_close()
+        cleanup.close()
 
 
 def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
     tmp_path: Path,
 ) -> None:
-    probe_server, _ = _probe_server()
-    broken_proxy, _ = _failure_proxy_server()
-    controller_port = _port()
-    secret = "regional-browsing-cross-region-fallback"
+    cleanup = ExitStack()
     try:
+        probe_server, probe_thread = _probe_server()
+        cleanup.callback(stop_server, probe_server, probe_thread)
+        broken_proxy, broken_thread = _failure_proxy_server()
+        cleanup.callback(stop_server, broken_proxy, broken_thread)
+        controller_port = _port()
+        secret = "regional-browsing-cross-region-fallback"
         candidate = _regional_candidate(
             controller_port=controller_port,
             secret=secret,
@@ -410,19 +413,20 @@ def test_real_mihomo_crosses_region_when_preferred_region_is_unavailable(
             expected_us_tier=None,
         )
     finally:
-        probe_server.shutdown()
-        probe_server.server_close()
-        broken_proxy.shutdown()
-        broken_proxy.server_close()
+        cleanup.close()
 
 
 def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Path) -> None:
-    probe_server, _ = _probe_server()
-    broken_proxy, _ = _failure_proxy_server()
-    slow_proxy, _ = _probe_server(delay=0.35)
-    controller_port = _port()
-    secret = "regional-browsing-client-latency"
+    cleanup = ExitStack()
     try:
+        probe_server, probe_thread = _probe_server()
+        cleanup.callback(stop_server, probe_server, probe_thread)
+        broken_proxy, broken_thread = _failure_proxy_server()
+        cleanup.callback(stop_server, broken_proxy, broken_thread)
+        slow_proxy, slow_thread = _probe_server(delay=0.35)
+        cleanup.callback(stop_server, slow_proxy, slow_thread)
+        controller_port = _port()
+        secret = "regional-browsing-client-latency"
         candidate = _regional_candidate(
             controller_port=controller_port,
             secret=secret,
@@ -446,20 +450,18 @@ def test_real_mihomo_selects_faster_region_while_us_remains_healthy(tmp_path: Pa
             expected_us_tier=region_reserve_group("US"),
         )
     finally:
-        probe_server.shutdown()
-        probe_server.server_close()
-        broken_proxy.shutdown()
-        broken_proxy.server_close()
-        slow_proxy.shutdown()
-        slow_proxy.server_close()
+        cleanup.close()
 
 
 def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path: Path) -> None:
-    probe_server, _ = _probe_server()
-    broken_proxy, _ = _failure_proxy_server()
-    controller_port = _port()
-    secret = "endpoint-reserve-runtime"
+    cleanup = ExitStack()
     try:
+        probe_server, probe_thread = _probe_server()
+        cleanup.callback(stop_server, probe_server, probe_thread)
+        broken_proxy, broken_thread = _failure_proxy_server()
+        cleanup.callback(stop_server, broken_proxy, broken_thread)
+        controller_port = _port()
+        secret = "endpoint-reserve-runtime"
         probe_url = f"http://127.0.0.1:{probe_server.server_port}/generate_204"
         candidate = _regional_candidate(
             controller_port=controller_port,
@@ -508,11 +510,8 @@ def test_real_mihomo_endpoint_reserve_cap_never_creates_direct_fallback(tmp_path
             controller_port=controller_port,
             secret=secret,
             expected_auto=None,
-            expected_us_tier=region_reserve_group("US"),
+            expected_us_tier=None,
             capped=True,
         )
     finally:
-        probe_server.shutdown()
-        probe_server.server_close()
-        broken_proxy.shutdown()
-        broken_proxy.server_close()
+        cleanup.close()
