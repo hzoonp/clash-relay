@@ -52,7 +52,7 @@ reference:
   extensions:
     - {source_id: ai, before_path: Clash/ProxyMedia.list}
     - {source_id: openai, before_path: Clash/ProxyMedia.list}
-    - {source_id: download, before_path: Clash/ProxyLite.list}
+    - {source_id: download, before_path: Clash/ProxyMedia.list}
 
 groups:
   # Source-aware inventory helpers -------------------------------------------
@@ -542,7 +542,7 @@ sources:
   - id: download
     path: Clash/Download.list
     target: 下载流量
-    priority: 115
+    priority: 103
     module: general
     source_use: general
     scenario: download
@@ -574,6 +574,21 @@ sources:
     service: domestic_web
 
 inline_rules:
+  # Dedicated ingress and verified downloader processes outrank all domain rules.
+  - {id: download_inbound, type: IN-NAME, value: download-in, target: 下载流量, priority: 1, module: general, source_use: general, scenario: download}
+  - {id: download_android_play, type: PROCESS-NAME, value: com.android.vending, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_aria2, type: PROCESS-NAME, value: aria2c, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_aria2_windows, type: PROCESS-NAME, value: aria2c.exe, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_idm, type: PROCESS-NAME, value: IDMan.exe, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_fdm, type: PROCESS-NAME, value: fdm.exe, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_qbittorrent, type: PROCESS-NAME, value: qbittorrent.exe, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_qbittorrent_unix, type: PROCESS-NAME, value: qbittorrent, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_transmission, type: PROCESS-NAME, value: transmission-gtk, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  - {id: download_thunder, type: PROCESS-NAME, value: Thunder.exe, target: 下载流量, priority: 2, module: general, source_use: general, scenario: download}
+  # Narrow project-maintained domain extensions. Ordinary Google/GitHub pages stay upstream.
+  - {id: download_play_gvt1, type: DOMAIN-SUFFIX, value: gvt1.com, target: 下载流量, priority: 101, module: general, source_use: general, scenario: download}
+  - {id: download_play_gvt2, type: DOMAIN-SUFFIX, value: gvt2.com, target: 下载流量, priority: 101, module: general, source_use: general, scenario: download}
+  - {id: download_github_release_assets, type: DOMAIN, value: release-assets.githubusercontent.com, target: 下载流量, priority: 102, module: general, source_use: general, scenario: download}
   - id: geoip_cn
     type: GEOIP
     value: CN

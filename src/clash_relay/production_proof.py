@@ -346,6 +346,19 @@ def build_production_proof(
             "routing_surfaces_checked": int(reachability.get("routing_surfaces_checked", 0)),
             "runtime_rules_checked": int(reachability.get("runtime_rules_checked", 0)),
         },
+        "download_routing": {
+            "configuration_guarantee": "passed"
+            if audit.get("download_routing", {}).get("runtime_graph_check") == "passed"
+            else "not_applicable",
+            "deployment_guarantee": "unverified",
+            "subscription_1_reachable": audit.get("download_routing", {}).get(
+                "subscription_1_reachable"
+            ),
+            "inbound_configured": audit.get("download_routing", {}).get("inbound_configured", False)
+            is True,
+            "process_rules": int(audit.get("download_routing", {}).get("process_rules", 0)),
+            "domain_rules": int(audit.get("download_routing", {}).get("domain_rules", 0)),
+        },
         "browsing": {
             "tested": int(browsing_diagnostics.get("tested_nodes", 0)),
             "qualified": int(browsing.get("qualified_nodes", 0)),

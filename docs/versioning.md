@@ -20,7 +20,7 @@ There is no runtime Policy Model v1 fallback and no runtime alias for removed Pu
 - The canonical first subscription rejects EMBY-labelled nodes and only explicit multipliers strictly greater than `2.0`; exactly `2.0` and unmarked nodes remain eligible.
 - `ingest_order` controls deterministic source ingestion/deduplication order only. It is not a routing or node-quality priority.
 - The pinned `ACL4SSR_Online.ini` profile is the canonical classification baseline. `ProxyLite.list` is the generic foreign-web classifier; `ProxyGFWlist` is not the canonical browser classifier.
-- AI/OpenAI before `ProxyMedia` and `Download.list` before `ProxyLite` are explicit declared extensions. Undeclared classification drift fails closed.
+- The download-only inbound and verified downloader processes precede domain classification; `Download.list` and confirmed download hosts precede AI, `ProxyMedia`, and `ProxyLite`. These are explicit declared extensions. Undeclared classification drift fails closed.
 - Final `MATCH` remains `漏网之鱼` on the general graph.
 - The canonical top-level user-facing groups are exactly `代理选择`, `网页浏览`, `人工智能`, `流媒体`, `消息通讯`, and `下载流量`. Public scenario groups do not attach proxy providers directly.
 - Production selector names, compatibility members, AI display names/exclusions, ACL4SSR binding targets, and ordering edges are declared under `routing.contract`; the Routing V2 audit consumes that declaration rather than a second hard-coded policy.

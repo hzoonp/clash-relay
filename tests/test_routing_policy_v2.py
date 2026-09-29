@@ -61,3 +61,11 @@ def test_routing_v2_rejects_unknown_download_mode() -> None:
 
     with pytest.raises(ConfigurationError, match="download mode"):
         load_routing_policy_v2(policies)
+
+
+def test_routing_v2_rejects_download_browsing_inventory() -> None:
+    policies = copy.deepcopy(_policies())
+    policies["routing"]["scenarios"]["download"]["source_use"] = "browsing"
+
+    with pytest.raises(ConfigurationError, match="download scenario must use general"):
+        load_routing_policy_v2(policies)

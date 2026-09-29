@@ -18,7 +18,6 @@ _FORBIDDEN_TOP_LEVEL = {
     "external-controller-tls",
     "secret",
     "authentication",
-    "listeners",
     "tunnels",
 }
 _SAFE_SHARED_ANCHOR_PREFIXES = ("__CR_AUTO_", "__CR_FALLBACK_", "__CR_FAIL_CLOSED_")
@@ -45,6 +44,24 @@ def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str,
     forbidden = sorted(_FORBIDDEN_TOP_LEVEL & set(config))
     if forbidden:
         errors.append(f"forbidden private/control fields are present: {forbidden}")
+    listeners = config.get("listeners")
+    if listeners is not None:
+        expected = {
+            "name": "download-in",
+            "type": "mixed",
+            "listen": "127.0.0.1",
+        }
+        if (
+            not isinstance(listeners, list)
+            or len(listeners) != 1
+            or not isinstance(listeners[0], dict)
+            or {key: listeners[0].get(key) for key in expected} != expected
+            or set(listeners[0]) != {*expected, "port"}
+            or not isinstance(listeners[0].get("port"), int)
+            or not 1 <= listeners[0]["port"] <= 65535
+            or listeners[0]["port"] == config.get("mixed-port")
+        ):
+            errors.append("forbidden private/control listener configuration")
 
     providers = config.get("proxy-providers", {})
     rule_providers = config.get("rule-providers", {})

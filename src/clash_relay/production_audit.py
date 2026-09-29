@@ -6,7 +6,9 @@ from collections import Counter
 from typing import Any
 
 from .config_loader import ProjectDefinition
+from .download_isolation import audit_download_rule_order
 from .errors import ValidationError
+from .policy_contract import load_policy_contract
 from .runtime_graph import RuntimeGraph
 from .runtime_names import canonical_source_id, parse_runtime_source_name
 from .util import safe_identifier
@@ -312,6 +314,38 @@ def audit_production_candidate(
         graph=graph,
     )
 
+    download_routing = audit_download_rule_order(project, candidate)
+    if download_routing.get("status") == "passed":
+        provider_sources, runtime_sources = _runtime_source_maps(
+            graph, known_source_ids=set(subscriptions)
+        )
+        contract = load_policy_contract(project.policies)
+        download_group = contract.public_group("download")
+        automatic_group = contract.automatic_group("download")
+        selector = graph.groups.get(download_group)
+        if not isinstance(selector, dict):
+            raise ValidationError("download selector is absent from final graph")
+        targets = [download_group, automatic_group]
+        targets.extend(str(name) for name in selector.get("proxies", []) if name != "DIRECT")
+        for target in set(targets):
+            reachable_sources = graph.reachable_sources(
+                target,
+                proxy_sources=runtime_sources,
+                provider_sources=provider_sources,
+                require_resolved=True,
+            )
+            if "subscription_1" in reachable_sources:
+                raise ValidationError("download routing can reach subscription_1")
+            _assert_use_allowed(
+                reachable_sources,
+                "general",
+                subscriptions=subscriptions,
+                surface=f"download:{target}",
+            )
+        download_routing["runtime_graph_check"] = "passed"
+        download_routing["subscription_1_reachable"] = False
+        download_routing["targets_checked"] = len(set(targets))
+
     source_reports = {}
     if build_report is not None:
         raw_reports = build_report.get("subscriptions", [])
@@ -360,6 +394,7 @@ def audit_production_candidate(
         "subscriptions": subscription_rows,
         "pools": pool_rows,
         "reachability": reachability,
+        "download_routing": download_routing,
     }
 
 

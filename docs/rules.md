@@ -1,6 +1,6 @@
 # Routing rules and ACL4SSR
 
-Canonical production treats the pinned ACL4SSR Online profile as the classification source of truth. clash-relay adds source isolation, live qualification, regional scheduling, and exactly two classification extensions: AI and downloads.
+Canonical production treats the pinned ACL4SSR Online profile as the classification baseline. clash-relay adds source isolation, live qualification, regional scheduling, and declared AI and download extensions.
 
 ## Canonical ACL4SSR reference
 
@@ -23,7 +23,7 @@ Only the following canonical deviations are allowed:
 
 1. `BanProgramAD.list` / `应用净化` is disabled because it caused confirmed mobile image/CDN failures. `BanAD.list` remains enabled.
 2. AI/OpenAI rules run before `ProxyMedia.list` so protected AI traffic reaches service-specific qualification instead of being swallowed by the broad media list.
-3. `Download.list` runs before `ProxyLite.list` so known download traffic reaches `下载流量` instead of generic browsing.
+3. The download-only inbound and downloader process rules run before every baseline rule. Confirmed download domains and `Download.list` run before AI, media, and generic browsing so they cannot be intercepted by a SUB_1 route.
 4. ACL4SSR raw-node wildcards are adapted to source-aware scenario selectors. Raw nodes are not copied directly into public selectors because doing so would break multi-subscription source isolation.
 
 Any additional classification source or compatibility change must be declared in `rules/acl4ssr.yaml` and pass the parity gate.
@@ -32,6 +32,8 @@ Any additional classification source or compatibility change must be declared in
 
 | Order | Source | Production target |
 | ---: | --- | --- |
+| 1 | `IN-NAME,download-in` | `下载流量` |
+| 2 | declared downloader / Play processes | `下载流量` |
 | 10 | `LocalAreaNetwork` | `全球直连` |
 | 20 | `UnBan` | `全球直连` |
 | 30 | `BanAD` | `广告拦截` |
@@ -42,10 +44,12 @@ Any additional classification source or compatibility change must be declared in
 | 80 | `Microsoft` | `微软服务` |
 | 90 | `Apple` | `苹果服务` |
 | 100 | `Telegram` | `消息通讯` |
+| 101 | confirmed Play delivery hosts | `下载流量` |
+| 102 | confirmed release asset hosts | `下载流量` |
+| 103 | `Download` | `下载流量` extension |
 | 105 | `AI` | `人工智能` extension |
 | 106 | `OpenAi` | `人工智能` extension |
 | 110 | `ProxyMedia` | `流媒体` |
-| 115 | `Download` | `下载流量` extension |
 | 120 | `ProxyLite` | `网页浏览` |
 | 130 | `ChinaDomain` | `全球直连` |
 | 140 | `ChinaCompanyIp` | `全球直连` |
@@ -155,6 +159,16 @@ General-pool country `url-test` groups declare `on_empty: omit`. The compiler co
 ## Media, messaging, and download
 
 `ProxyMedia -> 流媒体`, `Telegram -> 消息通讯`, and `Download -> 下载流量` all use general-only schedulers. They cannot select subscription 1.
+
+### Download isolation guarantee
+
+The generated config binds a local mixed listener named `download-in` to `127.0.0.1:7891`. A client that sends a connection to this listener is routed to `下载流量` before any domain rule. Downloader and Google Play process rules have the same precedence when the target client exposes a verified process name. The download selector, its automatic general pool, and every manual regional choice are audited on the final qualified RuntimeGraph; SUB_1 must be unreachable. `doctor --public-only` checks declarations, while production audit checks the emitted rules and graph.
+
+This guarantees isolation for connections that enter a download path. A browser or AI app may download a file over a connection indistinguishable from normal web traffic. A deployment may claim **all downloads avoid SUB_1** only after it verifies that its clients hand off every download to the dedicated listener or a verified downloader, or prevents those clients from using SUB_1. An enabled listener alone does not establish that client behavior. Production proof records the configuration guarantee separately from deployment verification.
+
+Follow [Download isolation client acceptance](download-isolation-acceptance.md) on each target device before asserting the deployment guarantee.
+
+The project-maintained domain list is deliberately narrow: `gvt1.com`, `gvt2.com`, and `release-assets.githubusercontent.com`. Ordinary `google.com`, `github.com`, and generic CDN hosts keep their prior classification. Domestic DIRECT or other earlier general-only matches are documented exceptions; they still cannot reach SUB_1.
 
 Media service capability checks may influence node scheduling inside `流媒体`, but they must not redefine the ACL4SSR Online classification order. In particular, canonical routing no longer inserts standalone YouTube or Netflix rules ahead of `ProxyMedia`.
 

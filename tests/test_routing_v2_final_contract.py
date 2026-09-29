@@ -134,8 +134,9 @@ def test_final_routing_v2_classification_order_and_targets(repo_root: Path) -> N
         < sources["proxy_media"]["priority"]
     )
     assert (
-        sources["proxy_media"]["priority"]
-        < sources["download"]["priority"]
+        sources["download"]["priority"]
+        < sources["ai"]["priority"]
+        < sources["proxy_media"]["priority"]
         < sources["proxy_lite"]["priority"]
         < sources["china_domain"]["priority"]
         < sources["china_company_ip"]["priority"]

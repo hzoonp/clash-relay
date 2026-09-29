@@ -2,6 +2,9 @@ version: 2
 
 runtime:
   mixed_port: 7890
+  download_inbound:
+    enabled: true
+    port: 7891
   allow_lan: false
   bind_address: 127.0.0.1
   mode: rule

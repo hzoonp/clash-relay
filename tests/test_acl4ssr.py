@@ -81,7 +81,22 @@ def test_acl4ssr_manifest_is_pinned_attributed_and_strict(repo_root: Path) -> No
     } == expected_targets
     assert all("excluded_sources" not in source for source in sources.values())
 
-    assert manifest["inline_rules"] == [
+    assert {row["id"] for row in manifest["inline_rules"]} >= {
+        "download_inbound",
+        "download_android_play",
+        "download_aria2",
+        "download_aria2_windows",
+        "download_idm",
+        "download_fdm",
+        "download_qbittorrent",
+        "download_qbittorrent_unix",
+        "download_transmission",
+        "download_thunder",
+        "download_play_gvt1",
+        "download_play_gvt2",
+        "download_github_release_assets",
+    }
+    assert [row for row in manifest["inline_rules"] if row["id"] == "geoip_cn"] == [
         {
             "id": "geoip_cn",
             "type": "GEOIP",

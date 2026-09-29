@@ -42,6 +42,7 @@ def test_public_only_doctor_validates_tracked_contract(repo_root: Path) -> None:
     assert report["public"]["scheduler_policy_declared"] is True
     assert report["public"]["policy_model_version"] == 2
     assert report["public"]["policy_model_status"] == "current"
+    assert report["download_routing"]["declaration_check"]["status"] == "passed"
     assert report["subscriptions"]["status"] == "skipped"
     assert report["cloudflare"]["status"] == "skipped"
 

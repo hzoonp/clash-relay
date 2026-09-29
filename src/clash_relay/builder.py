@@ -16,6 +16,7 @@ from .config_loader import ProjectDefinition, load_project
 from .dns_compatibility import audit_fake_ip_compatibility
 from .dns_leak_audit import audit_dns_leak_protection
 from .dns_runtime_audit import audit_dns_runtime_dependencies
+from .download_isolation import audit_download_declarations
 from .errors import FetchError, GenerationError, SubscriptionError, UnsafeSubscriptionError
 from .fetch import fetch_subscription
 from .mihomo_serializer import serialize_runtime_graph
@@ -27,6 +28,7 @@ from .node_policy import (
 )
 from .pinned_fetch import fetch_pinned_text
 from .policy_compiler import compile_runtime_graph
+from .production_audit import audit_production_candidate
 from .redact import redact_text
 from .secrets import resolve_subscription_urls
 from .subscription_parser import ParsedSubscription, parse_subscription
@@ -225,6 +227,7 @@ def build_candidate(
         subscriptions_path=subscriptions_path,
         policies_path=policies_path,
     )
+    download_declarations = audit_download_declarations(project)
     enabled_specs = [spec for spec in project.subscriptions if spec.enabled]
     urls, secret_values = resolve_subscription_urls(enabled_specs, secret_file=secret_file, env=env)
     generation = project.config["generation"]
@@ -374,6 +377,8 @@ def build_candidate(
     output = serialize_runtime_graph(compiled.graph)
 
     validate_generated_config(output, secret_urls=secret_values)
+    if download_declarations["status"] == "passed":
+        audit_production_candidate(project, output)
     dns_compatibility_report = audit_fake_ip_compatibility(output)
     dns_leak_report = audit_dns_leak_protection(output)
     dns_runtime_report = audit_dns_runtime_dependencies(output)

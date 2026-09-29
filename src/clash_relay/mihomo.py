@@ -51,6 +51,14 @@ def _validation_copy(config_path: Path, workdir: Path) -> Path:
         raise ValidationError("candidate is not a YAML mapping")
     config = dict(config)
     config["mixed-port"] = _free_port()
+    listeners = config.get("listeners")
+    if isinstance(listeners, list):
+        config["listeners"] = [
+            {**listener, "port": _free_port()}
+            if isinstance(listener, dict) and listener.get("port") is not None
+            else listener
+            for listener in listeners
+        ]
     config["external-controller"] = f"127.0.0.1:{_free_port()}"
     config["secret"] = "clash-relay-validation-only"
     dns = dict(config.get("dns", {}))

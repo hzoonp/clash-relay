@@ -21,6 +21,13 @@ def _inputs(candidate_path: Path) -> dict:
                 "routing_surfaces_checked": 25,
                 "runtime_rules_checked": 22,
             },
+            "download_routing": {
+                "runtime_graph_check": "passed",
+                "subscription_1_reachable": False,
+                "inbound_configured": True,
+                "process_rules": 9,
+                "domain_rules": 3,
+            },
             "openai_client_path": {
                 "status": "passed",
                 "selection": "stable_first_fallback",
@@ -234,6 +241,14 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     markdown = render_production_proof_markdown(proof)
 
     assert proof["status"] == "passed"
+    assert proof["download_routing"] == {
+        "configuration_guarantee": "passed",
+        "deployment_guarantee": "unverified",
+        "subscription_1_reachable": False,
+        "inbound_configured": True,
+        "process_rules": 9,
+        "domain_rules": 3,
+    }
     assert proof["candidate"]["bytes"] == len(content)
     assert proof["candidate"]["sha256"] == hashlib.sha256(content).hexdigest()
     assert proof["browsing"] == {

@@ -85,7 +85,7 @@ def test_classification_extensions_are_only_ai_and_download(repo_root: Path) -> 
     assert manifest["reference"]["extensions"] == [
         {"source_id": "ai", "before_path": "Clash/ProxyMedia.list"},
         {"source_id": "openai", "before_path": "Clash/ProxyMedia.list"},
-        {"source_id": "download", "before_path": "Clash/ProxyLite.list"},
+        {"source_id": "download", "before_path": "Clash/ProxyMedia.list"},
     ]
     sources = {row["id"]: row for row in manifest["sources"]}
     assert sources["proxy_media"]["target"] == "流媒体"

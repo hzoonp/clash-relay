@@ -76,8 +76,9 @@ def test_acl4ssr_baseline_extensions_have_explicit_order(repo_root) -> None:
         rows["telegram"]["priority"] < rows["openai"]["priority"] < rows["proxy_media"]["priority"]
     )
     assert (
-        rows["proxy_media"]["priority"]
-        < rows["download"]["priority"]
+        rows["download"]["priority"]
+        < rows["ai"]["priority"]
+        < rows["proxy_media"]["priority"]
         < rows["proxy_lite"]["priority"]
         < rows["china_domain"]["priority"]
         < rows["china_company_ip"]["priority"]
@@ -97,8 +98,9 @@ def test_finalized_routing_v2_graph_has_no_declared_drift(repo_root) -> None:
     }
     assert drift["download"] == {
         "mode": "general_auto",
-        "rule_sources": 1,
+        "rule_sources": 14,
         "scheduler_applied": True,
+        "declaration_check": "passed",
     }
     assert drift["media"] == {
         "rule_sources": 1,

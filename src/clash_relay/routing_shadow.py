@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .config_loader import ProjectDefinition
+from .download_isolation import audit_download_declarations
 from .policy_contract import RuntimePolicyContract, load_policy_contract
 from .routing_model import compile_routing_model
 from .routing_policy_v2 import load_routing_policy_v2
@@ -65,6 +66,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
         return {"status": "disabled"}
     policy = load_routing_policy_v2(project.policies)
     contract = load_policy_contract(project.policies)
+    download_contract = audit_download_declarations(project)
 
     bindings = model["bindings"]
     by_source = {str(row["source_id"]): row for row in bindings}
@@ -134,6 +136,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
             media_applied,
             messaging_applied,
             download_applied,
+            download_contract["status"] in {"passed", "not_applicable"},
             browsing_applied,
             compatibility_applied,
             order_applied,
@@ -155,6 +158,7 @@ def routing_drift_summary(project: ProjectDefinition) -> dict[str, Any]:
             "mode": policy.download.mode,
             "rule_sources": download_rules,
             "scheduler_applied": download_applied,
+            "declaration_check": download_contract["status"],
         },
         "media": {
             "rule_sources": media_rules,

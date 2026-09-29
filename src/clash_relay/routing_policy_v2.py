@@ -76,6 +76,9 @@ def load_routing_policy_v2(policies: dict[str, Any]) -> RoutingPolicyV2:
             )
         scenarios[name] = ScenarioPolicy(source_use=source_use, scheduler_profile=profile)
 
+    if scenarios["download"].source_use != "general":
+        raise ConfigurationError("routing download scenario must use general inventory")
+
     raw_ai = document.get("ai")
     if not isinstance(raw_ai, dict):
         raise ConfigurationError("routing ai policy must be a mapping")

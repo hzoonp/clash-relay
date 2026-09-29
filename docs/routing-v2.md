@@ -86,14 +86,15 @@ The scheduler profile is declared separately from classification, so later laten
 Download is a first-class scenario. The canonical production mode is `general_auto`:
 
 ```text
+download-in listener / verified downloader process -> 下载流量
 known domestic classification -> DIRECT
-Download.list -> 下载流量 -> 下载自动 -> general inventory
-ProxyGFWlist -> 网页浏览 -> browsing inventory
+confirmed download host / Download.list -> 下载流量 -> 下载自动 -> general inventory
+ProxyLite -> 网页浏览 -> browsing inventory
 ```
 
-The ordering is intentional: known domestic rules run before `Download.list`, and `Download.list` runs before generic `ProxyGFWlist`. Matched download traffic therefore uses the general automatic inventory rather than the browsing inventory. `subscription_1` remains unreachable from the download scenario.
+The ordering is intentional: the dedicated listener and downloader process rules run before all domain rules, while confirmed download hosts and `Download.list` run before AI, media, and `ProxyLite`. The final qualified graph audit proves `subscription_1` is unreachable from the download selector and every manual choice. A deployment-wide claim also requires verified client handoff of otherwise indistinguishable browser/AI downloads.
 
-ACL4SSR `Download.list` includes process-name classifications. These are ordinary routing hints only; process names are never a source-permission or security boundary.
+ACL4SSR `Download.list` includes process-name classifications. Process identity is a classification signal validated per client platform; `allowed_uses` and the final graph remain the source-permission boundary.
 
 ## AI service and region model
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from .ai_application import load_registered_ai_probe_specs
 from .config_loader import load_project
+from .download_isolation import audit_download_declarations
 from .effective_config import describe_effective_config
 from .errors import FetchError, PublicationError, ValidationError
 from .fetch import fetch_subscription
@@ -114,6 +115,7 @@ def run_doctor(
     enabled_secrets = [str(spec.secret_name) for spec in enabled]
     fork_lint = build_fork_lint(project)
     effective_view = describe_effective_config(project)
+    download_declarations = audit_download_declarations(project)
 
     report: dict[str, Any] = {
         "status": "passed",
@@ -135,6 +137,7 @@ def run_doctor(
         "cloudflare": {"status": "skipped"},
         "release_state": {"status": "skipped"},
         "fork_lint": fork_lint,
+        "download_routing": {"declaration_check": download_declarations},
         "guidance": _guidance(
             enabled_secrets=enabled_secrets,
             public_only=public_only,

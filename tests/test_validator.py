@@ -295,7 +295,6 @@ def test_subscription_secret_url_leak_rejected(built_candidate) -> None:
         "external-controller-tls",
         "secret",
         "authentication",
-        "listeners",
         "tunnels",
     ],
 )
@@ -303,4 +302,11 @@ def test_private_control_top_level_fields_rejected(built_candidate, field: str) 
     config = _candidate(built_candidate)
     config[field] = "not allowed"
     with pytest.raises(ValidationError, match="forbidden private/control"):
+        validate_generated_config(config)
+
+
+def test_arbitrary_listener_configuration_rejected(built_candidate) -> None:
+    config = _candidate(built_candidate)
+    config["listeners"] = [{"name": "unsafe", "type": "mixed", "listen": "0.0.0.0", "port": 7891}]
+    with pytest.raises(ValidationError):
         validate_generated_config(config)

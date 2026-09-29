@@ -5,6 +5,21 @@
   "required": ["mixed-port", "mode", "proxy-providers", "proxy-groups", "rules"],
   "properties": {
     "mixed-port": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "listeners": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "listen", "port"],
+        "properties": {
+          "name": {"const": "download-in"},
+          "type": {"const": "mixed"},
+          "listen": {"const": "127.0.0.1"},
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+        }
+      }
+    },
     "mode": {"type": "string"},
     "proxy-providers": {"type": "object"},
     "rule-providers": {"type": "object"},

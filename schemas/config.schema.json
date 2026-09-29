@@ -12,6 +12,15 @@
       "required": ["mixed_port", "allow_lan", "bind_address", "mode", "log_level", "ipv6", "unified_delay", "tcp_concurrent", "profile", "dns"],
       "properties": {
         "mixed_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "download_inbound": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "port"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+          }
+        },
         "allow_lan": {"type": "boolean"},
         "bind_address": {"type": "string", "minLength": 1},
         "mode": {"enum": ["rule", "global", "direct"]},

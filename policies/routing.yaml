@@ -68,6 +68,19 @@ routing:
       openai: 人工智能
       proxy_media: 流媒体
       download: 下载流量
+      download_inbound: 下载流量
+      download_android_play: 下载流量
+      download_aria2: 下载流量
+      download_aria2_windows: 下载流量
+      download_idm: 下载流量
+      download_fdm: 下载流量
+      download_qbittorrent: 下载流量
+      download_qbittorrent_unix: 下载流量
+      download_transmission: 下载流量
+      download_thunder: 下载流量
+      download_play_gvt1: 下载流量
+      download_play_gvt2: 下载流量
+      download_github_release_assets: 下载流量
       proxy_lite: 网页浏览
       china_domain: 全球直连
       china_company_ip: 全球直连
@@ -77,7 +90,9 @@ routing:
       - [telegram, openai]
       - [ai, proxy_media]
       - [openai, proxy_media]
-      - [proxy_media, download]
+      - [download, ai]
+      - [download, openai]
+      - [download, proxy_media]
       - [download, proxy_lite]
       - [proxy_lite, china_domain]
       - [china_domain, china_company_ip]

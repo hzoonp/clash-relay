@@ -34,6 +34,17 @@ class RuntimeConfigRenderer:
             "profile": profile,
         }
 
+        download_inbound = runtime.get("download_inbound")
+        if isinstance(download_inbound, dict) and download_inbound.get("enabled") is True:
+            output["listeners"] = [
+                {
+                    "name": "download-in",
+                    "type": "mixed",
+                    "listen": "127.0.0.1",
+                    "port": download_inbound["port"],
+                }
+            ]
+
         tun = runtime.get("tun")
         if tun is not None and str(tun.get("mode", "managed")) != "client":
             output["tun"] = {
