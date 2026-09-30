@@ -12,6 +12,8 @@
 
 日常 Fork **不需要**先理解或修改 RuntimeGraph 内部实现、qualification 实现、scheduler history、release transaction 或 Mihomo 固定版本。需要判断“某个需求到底该改哪个文件”时，直接看 [Fork 配置边界](fork-configuration.zh-CN.md)。
 
+精确契约统一查看 [Publishing](publishing.md)、[Routing V2](routing-v2.md) 和 [Rules/source policy](rules.md)；本快速上手只保留操作流程。
+
 ## 10 分钟检查清单
 
 ```text
@@ -29,7 +31,7 @@
 
 ## 1. Fork 时不要加入任何凭据
 
-`config.yaml`、`subscriptions.yaml`、`policies.yaml`、policy fragments、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节不能提交进仓库。私有凭据和生成后的生产配置从不 commit，也不会上传到 GitHub Artifact / Release / Gist。
+`config.yaml`、`subscriptions.yaml`、`policies.yaml`、policy fragments、schema、rules、源代码和 Workflow 可以公开；真实订阅 URL 与生成后的生产 `config.yaml` 字节不能提交进仓库。私有凭据和生成后的生产配置从不 commit，也不会上传到 GitHub Artifact 或包含凭据的 Release。
 
 Canonical production 只接受 Policy Model v2：`policies.yaml` 只作为 manifest，routing、scheduling、classification、topology 分别由独立 fragment 持有。旧的单文件 Policy Model v1 不再是运行时输入；如需迁移，先离线运行 `scripts/migrate_policy_v2.py` 转换后再使用 clash-relay。
 
