@@ -56,9 +56,6 @@ publishing:
   github_release:
     enabled: false
     allow_sensitive_public_release: false
-  gist:
-    enabled: false
-    allow_sensitive_unlisted_gist: false
   cloudflare_kv:
     enabled: true
     key: production-config
