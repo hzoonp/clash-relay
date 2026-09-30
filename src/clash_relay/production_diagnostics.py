@@ -78,6 +78,19 @@ _SAFE_QUALIFICATION_STAGES = frozenset(
         "service",
     }
 )
+_SAFE_AI_PROBE_REASONS = frozenset(
+    {
+        "probe_runtime_error",
+        "probe_validation_error",
+        "sentinel_probe_runtime_error",
+        "sentinel_probe_validation_error",
+        "candidate_count_drift",
+        "selector_diagnostics_invalid",
+        "supporting_probe_runtime_error",
+        "supporting_probe_validation_error",
+    }
+)
+_SAFE_AI_SERVICES = frozenset({"openai", "claude", "gemini"})
 _SAFE_SOURCE_FAILURE_CATEGORIES = frozenset(
     {
         "subscription_fetch",
@@ -397,6 +410,22 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
                 "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
                 "validation_stage": _safe_candidate_validation_stage(stage),
             }
+            probe_error = item if isinstance(item, CandidateValidationStageError) else None
+            if stage != "ai_service_probe":
+                probe_error = None
+            if probe_error is not None:
+                reason = probe_error.reason
+                service = probe_error.service
+                retryable = probe_error.retryable
+                attempts = probe_error.attempts
+                if reason in _SAFE_AI_PROBE_REASONS:
+                    diagnostic["validation_reason"] = reason
+                if service in _SAFE_AI_SERVICES:
+                    diagnostic["service"] = service
+                if isinstance(retryable, bool):
+                    diagnostic["retryable"] = retryable
+                if isinstance(attempts, int) and 1 <= attempts <= 2:
+                    diagnostic["attempts"] = attempts
             if stage == "promotion_guard":
                 report = _safe_promotion_guard_report(item)
                 if report is not None:

@@ -33,11 +33,27 @@ class ValidationError(ClashRelayError):
     """A candidate failed static or real-core validation."""
 
 
-class CandidateValidationStageError(ValidationError):
-    """A validation failure annotated with one static privacy-safe stage identifier."""
+class AIProbeRuntimeError(ValidationError):
+    """A transient Mihomo probe-runtime failure that may be retried once."""
 
-    def __init__(self, stage: str) -> None:
+
+class CandidateValidationStageError(ValidationError):
+    """A validation failure annotated with privacy-safe static diagnostics."""
+
+    def __init__(
+        self,
+        stage: str,
+        *,
+        reason: str | None = None,
+        service: str | None = None,
+        retryable: bool | None = None,
+        attempts: int | None = None,
+    ) -> None:
         self.stage = stage
+        self.reason = reason
+        self.service = service
+        self.retryable = retryable
+        self.attempts = attempts
         super().__init__("candidate validation failed in a classified stage")
 
 

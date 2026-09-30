@@ -10,8 +10,13 @@ from clash_relay.ai_application import (
     _empty_probe_summary,
     _filtered_candidate,
     _probe_names,
+    _probe_names_with_runtime_retry,
 )
-from clash_relay.errors import ValidationError
+from clash_relay.errors import (
+    AIProbeRuntimeError,
+    CandidateValidationStageError,
+    ValidationError,
+)
 from clash_relay.util import dump_yaml, load_yaml_file
 
 
@@ -201,3 +206,92 @@ def test_probe_names_removes_temporary_filtered_candidate(
     assert seen["names"] == {"node-a"}
     assert seen["workers"] == 3
     assert not temporary.exists()
+
+
+def test_probe_runtime_retry_succeeds_on_second_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def flaky_probe(**_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise AIProbeRuntimeError("transient runtime failure")
+        return {"node-a"}, {"tested_nodes": 1}
+
+    monkeypatch.setattr(ai_application, "_probe_names", flaky_probe)
+
+    qualified, diagnostics = _probe_names_with_runtime_retry(
+        binary=tmp_path / "mihomo",
+        candidate=tmp_path / "candidate.yaml",
+        names={"node-a"},
+        probes=({"name": "ai_openai"},),
+        workers=1,
+        service_label="openai",
+        runtime_reason="probe_runtime_error",
+    )
+
+    assert calls == 2
+    assert qualified == {"node-a"}
+    assert diagnostics == {"tested_nodes": 1}
+
+
+def test_probe_runtime_retry_reports_safe_reason_after_second_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def broken_probe(**_kwargs):
+        nonlocal calls
+        calls += 1
+        raise AIProbeRuntimeError("private runtime detail")
+
+    monkeypatch.setattr(ai_application, "_probe_names", broken_probe)
+
+    with pytest.raises(CandidateValidationStageError) as captured:
+        _probe_names_with_runtime_retry(
+            binary=tmp_path / "mihomo",
+            candidate=tmp_path / "candidate.yaml",
+            names={"node-a"},
+            probes=({"name": "ai_openai"},),
+            workers=1,
+            service_label="openai",
+            runtime_reason="probe_runtime_error",
+        )
+
+    assert calls == 2
+    assert captured.value.stage == "ai_service_probe"
+    assert captured.value.reason == "probe_runtime_error"
+    assert captured.value.service == "openai"
+    assert captured.value.retryable is True
+    assert captured.value.attempts == 2
+
+
+def test_probe_runtime_retry_does_not_retry_deterministic_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def invalid_probe(**_kwargs):
+        nonlocal calls
+        calls += 1
+        raise ValidationError("deterministic candidate error")
+
+    monkeypatch.setattr(ai_application, "_probe_names", invalid_probe)
+
+    with pytest.raises(ValidationError, match="deterministic candidate error"):
+        _probe_names_with_runtime_retry(
+            binary=tmp_path / "mihomo",
+            candidate=tmp_path / "candidate.yaml",
+            names={"node-a"},
+            probes=({"name": "ai_openai"},),
+            workers=1,
+            service_label="openai",
+            runtime_reason="probe_runtime_error",
+        )
+
+    assert calls == 1
