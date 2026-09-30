@@ -59,11 +59,11 @@ def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
     assert "CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}" in text
 
 
-def test_push_remains_a_production_preflight() -> None:
+def test_push_runs_full_code_validation_without_production_secrets() -> None:
     text = WORKFLOW.read_text()
-    assert "CLASH_RELAY_ONE_SHOT_PUBLISH:" not in text
-    assert "--manual-publish true" not in text
-    assert 'if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then' in text
+    assert "github.event_name != 'push'" in text
+    assert "CLASH_RELAY_PRODUCTION_PREFLIGHT" not in text
+    assert "--production-preflight" not in text
     assert "export CLASH_RELAY_MANUAL_PUBLISH=true" not in text
 
 
