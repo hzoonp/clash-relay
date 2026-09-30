@@ -3,21 +3,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "config.yaml"
-      - "subscriptions.yaml"
-      - "policies.yaml"
-      - "policies/**"
-      - "promotion-guard.yaml"
-      - "rules/**"
-      - "schemas/**"
-      - "src/**"
-      - "scripts/**"
-      - "requirements.lock"
-      - "requirements-dev.lock"
-      - "tools/mihomo-versions.json"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/publish.yml"
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
@@ -29,6 +14,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -43,7 +29,10 @@ jobs:
   validate:
     name: Validate production SHA
     uses: ./.github/workflows/ci.yml
+    with:
+      reuse_main_validation: ${{ github.event_name != 'push' }}
     permissions:
+      actions: read
       contents: read
 
   deploy:
