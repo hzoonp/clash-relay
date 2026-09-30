@@ -64,7 +64,7 @@ def test_quickstart_examples_never_embed_real_subscription_urls() -> None:
 def test_quickstart_warns_against_public_credential_storage() -> None:
     english, chinese = _docs()
     assert "must never be committed" in english
-    assert "never committed or uploaded as an Artifact/Release/Gist" in english
+    assert "never committed or uploaded as a GitHub Artifact" in english
     assert "不能提交进仓库" in chinese
     assert "从不 commit" in chinese
-    assert "Artifact / Release / Gist" in chinese
+    assert "GitHub Artifact" in chinese
