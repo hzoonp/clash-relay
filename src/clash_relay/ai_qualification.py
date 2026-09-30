@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from .errors import ValidationError
+from .errors import AIProbeRuntimeError, ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
@@ -122,10 +122,21 @@ def _ai_provider_payloads(config: dict[str, Any]) -> dict[str, tuple[dict[str, A
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
             raise ValidationError("AI qualification provider payload is invalid")
         payload: list[dict[str, Any]] = []
+        by_name: dict[str, dict[str, Any]] = {}
         for proxy in provider["payload"]:
             if not isinstance(proxy, dict) or not isinstance(proxy.get("name"), str):
                 raise ValidationError("AI qualification provider contains an unnamed proxy")
-            payload.append(dict(proxy))
+            normalized = dict(proxy)
+            name = str(normalized["name"])
+            previous = by_name.get(name)
+            if previous is not None:
+                if previous != normalized:
+                    raise ValidationError(
+                        "AI qualification provider contains conflicting duplicate runtime names"
+                    )
+                continue
+            by_name[name] = normalized
+            payload.append(normalized)
         if payload:
             result[provider_name] = tuple(payload)
     if not result:
@@ -205,9 +216,14 @@ def _controller_json(
         headers={"Authorization": f"Bearer {secret}"},
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.load(response)
+        try:
+            payload = json.load(response)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AIProbeRuntimeError(
+                "Mihomo AI qualification API returned an invalid response"
+            ) from exc
     if not isinstance(payload, dict):
-        raise ValidationError("Mihomo AI qualification API returned an invalid response")
+        raise AIProbeRuntimeError("Mihomo AI qualification API returned an invalid response")
     return payload
 
 
@@ -215,13 +231,13 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise ValidationError("Mihomo exited before AI qualification could start")
+            raise AIProbeRuntimeError("Mihomo exited before AI qualification could start")
         try:
             _controller_json(port, secret, "/version", timeout=0.5)
             return
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
             time.sleep(0.1)
-    raise ValidationError("Mihomo controller did not become ready for AI qualification")
+    raise AIProbeRuntimeError("Mihomo controller did not become ready for AI qualification")
 
 
 def _wait_for_selector_members(
@@ -234,7 +250,7 @@ def _wait_for_selector_members(
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise ValidationError("Mihomo exited while loading AI qualification provider")
+            raise AIProbeRuntimeError("Mihomo exited while loading AI qualification provider")
         try:
             group = _controller_json(port, secret, f"/proxies/{encoded_group}", timeout=0.5)
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
@@ -246,7 +262,7 @@ def _wait_for_selector_members(
         ):
             return
         time.sleep(0.1)
-    raise ValidationError("AI qualification provider did not populate its selector")
+    raise AIProbeRuntimeError("AI qualification provider did not populate its selector")
 
 
 def _select_node(port: int, secret: str, node_name: str) -> bool:
@@ -508,7 +524,7 @@ def _qualify_shard(
                 env={**os.environ, "TZ": "UTC"},
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise ValidationError("failed to execute Mihomo for AI qualification") from exc
+            raise AIProbeRuntimeError("failed to execute Mihomo for AI qualification") from exc
         if test.returncode != 0:
             raise ValidationError("Mihomo rejected a temporary AI qualification configuration")
 
@@ -522,7 +538,7 @@ def _qualify_shard(
                 start_new_session=True,
             )
         except OSError as exc:
-            raise ValidationError("failed to start Mihomo for AI qualification") from exc
+            raise AIProbeRuntimeError("failed to start Mihomo for AI qualification") from exc
 
         try:
             _wait_for_controller(process, controller_port, secret)
@@ -533,7 +549,7 @@ def _qualify_shard(
             for proxy in payload:
                 name = str(proxy["name"])
                 if process.poll() is not None:
-                    raise ValidationError("Mihomo exited during AI qualification")
+                    raise AIProbeRuntimeError("Mihomo exited during AI qualification")
                 if not _select_node(controller_port, secret, name):
                     diagnostics["selector_failures"] += 1
                     continue

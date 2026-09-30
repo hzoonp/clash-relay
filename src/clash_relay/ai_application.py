@@ -22,7 +22,12 @@ from .ai_qualification_cache import (
     update_ai_cache_service,
 )
 from .ai_service_qualification import rewrite_ai_service_qualified_candidate
-from .errors import CandidateValidationStageError, ConfigurationError, ValidationError
+from .errors import (
+    AIProbeRuntimeError,
+    CandidateValidationStageError,
+    ConfigurationError,
+    ValidationError,
+)
 from .policy_document import load_policy_document, policy_fragment_path
 from .routing_policy_v2 import load_routing_policy_v2
 from .runtime_identity import provider_name_for
@@ -215,6 +220,7 @@ def _run_sentinel_gate(
     node_regions: dict[str, str],
     provider_regions: dict[str, str],
     workers: int,
+    service_label: str,
 ) -> dict[str, Any]:
     """Run the bounded sentinel sweep for one systemic-capable service.
 
@@ -248,24 +254,36 @@ def _run_sentinel_gate(
     report["control_tested"] = len(sentinels)
 
     try:
-        _openai_qualified, openai_diagnostics = _probe_names(
+        _openai_qualified, openai_diagnostics = _probe_names_with_runtime_retry(
             binary=mihomo_bin,
             candidate=candidate,
             names=set(sentinels),
             probes=qualification_probes,
             workers=workers,
+            service_label=service_label,
+            runtime_reason="sentinel_probe_runtime_error",
             provider_regions=provider_regions,
         )
-        _control_qualified, control_diagnostics = _probe_names(
+        _control_qualified, control_diagnostics = _probe_names_with_runtime_retry(
             binary=mihomo_bin,
             candidate=candidate,
             names=set(sentinels),
             probes=(control_probe,),
             workers=workers,
+            service_label=service_label,
+            runtime_reason="sentinel_probe_runtime_error",
             provider_regions=provider_regions,
         )
+    except CandidateValidationStageError:
+        raise
     except ValidationError as exc:
-        raise CandidateValidationStageError("ai_service_probe") from exc
+        raise CandidateValidationStageError(
+            "ai_service_probe",
+            reason="sentinel_probe_validation_error",
+            service=service_label,
+            retryable=False,
+            attempts=1,
+        ) from exc
 
     control_endpoint = str(control_probe["name"])
     region_stats = {
@@ -339,6 +357,41 @@ def _probe_names(
         if temporary is not None:
             with contextlib.suppress(OSError):
                 temporary.unlink()
+
+
+def _probe_names_with_runtime_retry(
+    *,
+    binary: Path,
+    candidate: Path,
+    names: set[str] | None,
+    probes: tuple[dict[str, Any], ...],
+    workers: int,
+    service_label: str,
+    runtime_reason: str,
+    provider_regions: dict[str, str] | None = None,
+) -> tuple[set[str], dict[str, Any]]:
+    """Retry exactly once only for typed transient Mihomo runtime failures."""
+
+    for attempt in (1, 2):
+        try:
+            return _probe_names(
+                binary=binary,
+                candidate=candidate,
+                names=names,
+                probes=probes,
+                workers=workers,
+                provider_regions=provider_regions,
+            )
+        except AIProbeRuntimeError as exc:
+            if attempt == 2:
+                raise CandidateValidationStageError(
+                    "ai_service_probe",
+                    reason=runtime_reason,
+                    service=service_label,
+                    retryable=True,
+                    attempts=attempt,
+                ) from exc
+    raise AssertionError("unreachable AI probe retry state")
 
 
 def run_ai_qualification(
@@ -435,6 +488,7 @@ def run_ai_qualification(
                 node_regions=node_regions,
                 provider_regions=provider_regions,
                 workers=workers,
+                service_label=service.label,
             )
         systemic: bool = bool(sentinel_gate.get("systemic"))
         dominant_failure: str | None = (
@@ -453,16 +507,26 @@ def run_ai_qualification(
             live_tested = int(sentinel_gate.get("sentinel_count", 0))
         else:
             try:
-                live_qualified, probe_diagnostics = _probe_names(
+                live_qualified, probe_diagnostics = _probe_names_with_runtime_retry(
                     binary=mihomo_bin,
                     candidate=candidate,
                     names=live_names,
                     probes=qualification_probes,
                     workers=workers,
+                    service_label=service.label,
+                    runtime_reason="probe_runtime_error",
                     provider_regions=provider_regions,
                 )
+            except CandidateValidationStageError:
+                raise
             except ValidationError as exc:
-                raise CandidateValidationStageError("ai_service_probe") from exc
+                raise CandidateValidationStageError(
+                    "ai_service_probe",
+                    reason="probe_validation_error",
+                    service=service.label,
+                    retryable=False,
+                    attempts=1,
+                ) from exc
 
             if live_names is None:
                 live_tested = int(probe_diagnostics.get("tested_nodes", 0))
@@ -470,7 +534,13 @@ def run_ai_qualification(
                     expected_candidate_nodes = live_tested
                     diagnostics["tested_nodes"] = live_tested
                 elif live_tested != expected_candidate_nodes:
-                    raise CandidateValidationStageError("ai_service_probe")
+                    raise CandidateValidationStageError(
+                        "ai_service_probe",
+                        reason="candidate_count_drift",
+                        service=service.label,
+                        retryable=False,
+                        attempts=1,
+                    )
             else:
                 live_tested = len(live_names)
                 live_names_for_cache = live_names
@@ -503,7 +573,13 @@ def run_ai_qualification(
 
         selector_failures = diagnostics["selector_failures"]
         if not isinstance(selector_failures, int) or isinstance(selector_failures, bool):
-            raise CandidateValidationStageError("ai_service_probe")
+            raise CandidateValidationStageError(
+                "ai_service_probe",
+                reason="selector_diagnostics_invalid",
+                service=service.label,
+                retryable=False,
+                attempts=1,
+            )
         diagnostics["selector_failures"] = selector_failures + int(
             probe_diagnostics.get("selector_failures", 0)
         )
@@ -529,15 +605,25 @@ def run_ai_qualification(
         supporting_probes = service.supporting_probes()
         if supporting_probes and live_qualified:
             try:
-                supporting_qualified, supporting_diagnostics = _probe_names(
+                supporting_qualified, supporting_diagnostics = _probe_names_with_runtime_retry(
                     binary=mihomo_bin,
                     candidate=candidate,
                     names=live_qualified,
                     probes=supporting_probes,
                     workers=workers,
+                    service_label=service.label,
+                    runtime_reason="supporting_probe_runtime_error",
                 )
+            except CandidateValidationStageError:
+                raise
             except ValidationError as exc:
-                raise CandidateValidationStageError("ai_service_probe") from exc
+                raise CandidateValidationStageError(
+                    "ai_service_probe",
+                    reason="supporting_probe_validation_error",
+                    service=service.label,
+                    retryable=False,
+                    attempts=1,
+                ) from exc
         extended = service.build_extended_diagnostics(
             live_tested=live_tested,
             live_qualified=live_qualified,

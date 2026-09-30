@@ -6,6 +6,7 @@ import pytest
 
 import clash_relay.ai_qualification as ai_qualification
 from clash_relay.ai_qualification import (
+    _ai_provider_payloads,
     _new_diagnostics,
     _record_region_results,
     apply_ai_qualification,
@@ -94,6 +95,54 @@ def _config() -> dict:
             },
         ],
     }
+
+
+def test_ai_provider_payloads_deduplicate_identical_runtime_entries() -> None:
+    duplicate = {
+        "name": "same-runtime-name",
+        "type": "http",
+        "server": "duplicate.invalid.example",
+        "port": 443,
+    }
+    config = {
+        "proxy-providers": {
+            "cr_ai_us_us": {
+                "type": "inline",
+                "payload": [duplicate, dict(duplicate)],
+            }
+        }
+    }
+
+    payloads = _ai_provider_payloads(config)
+
+    assert payloads["cr_ai_us_us"] == (duplicate,)
+
+
+def test_ai_provider_payloads_reject_conflicting_duplicate_runtime_names() -> None:
+    config = {
+        "proxy-providers": {
+            "cr_ai_us_us": {
+                "type": "inline",
+                "payload": [
+                    {
+                        "name": "same-runtime-name",
+                        "type": "http",
+                        "server": "one.invalid.example",
+                        "port": 443,
+                    },
+                    {
+                        "name": "same-runtime-name",
+                        "type": "http",
+                        "server": "two.invalid.example",
+                        "port": 443,
+                    },
+                ],
+            }
+        }
+    }
+
+    with pytest.raises(ValidationError, match="conflicting duplicate runtime names"):
+        _ai_provider_payloads(config)
 
 
 def test_ai_probe_loader_preserves_declared_head_method(tmp_path) -> None:

@@ -229,6 +229,52 @@ def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
     assert "secret" not in repr(safe_failure_diagnostic(error))
 
 
+
+def test_ai_service_probe_diagnostic_exposes_only_allowlisted_reason_and_service() -> None:
+    error = CandidateValidationStageError(
+        "ai_service_probe",
+        reason="probe_runtime_error",
+        service="openai",
+        retryable=True,
+        attempts=2,
+    )
+    error.__cause__ = ValidationError("private-node.example token=secret")
+
+    result = safe_failure_diagnostic(error)
+
+    assert result == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "ai_service_probe",
+        "validation_reason": "probe_runtime_error",
+        "service": "openai",
+        "retryable": True,
+        "attempts": 2,
+    }
+    assert "private-node.example" not in repr(result)
+    assert "secret" not in repr(result)
+
+
+def test_ai_service_probe_diagnostic_drops_unrecognized_metadata() -> None:
+    error = CandidateValidationStageError(
+        "ai_service_probe",
+        reason="https://private.example/reason",
+        service="private-service",
+        retryable=False,
+        attempts=99,
+    )
+
+    result = safe_failure_diagnostic(error)
+
+    assert result == {
+        "status": "failed",
+        "category": "candidate_validation",
+        "validation_stage": "ai_service_probe",
+        "retryable": False,
+    }
+    assert "private" not in repr(result)
+
+
 @pytest.mark.parametrize(
     ("message", "expected_stage"),
     [
