@@ -208,7 +208,6 @@ def test_probe_names_removes_temporary_filtered_candidate(
     assert not temporary.exists()
 
 
-
 def test_probe_runtime_retry_succeeds_on_second_attempt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

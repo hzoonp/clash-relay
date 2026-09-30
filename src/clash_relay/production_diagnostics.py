@@ -410,8 +410,9 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
                 "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
                 "validation_stage": _safe_candidate_validation_stage(stage),
             }
-            if stage == "ai_service_probe" and isinstance(
-                item, CandidateValidationStageError
+            if (
+                stage == "ai_service_probe"
+                and isinstance(item, CandidateValidationStageError)
             ):
                 reason = item.reason
                 service = item.service
