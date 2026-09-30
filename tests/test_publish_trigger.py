@@ -91,8 +91,6 @@ def test_public_production_uses_one_ephemeral_job_and_no_sensitive_github_storag
     assert "actions/upload-artifact" not in text
     assert "actions/download-artifact" not in text
     assert "gh release" not in text
-    assert "publish-gist" not in text
-    assert "GITHUB_GIST_TOKEN" not in text
 
 
 def test_individual_subscription_urls_are_masked_before_pipeline() -> None:
@@ -203,6 +201,15 @@ def test_sensitive_github_backends_are_disabled_by_default() -> None:
     assert publishing["artifact"] is False
     assert publishing["github_release"]["enabled"] is False
     assert publishing["github_release"]["allow_sensitive_public_release"] is False
-    assert publishing["gist"]["enabled"] is False
-    assert publishing["gist"]["allow_sensitive_unlisted_gist"] is False
+    assert "gist" not in publishing
     assert publishing["cloudflare_kv"] == {"enabled": True, "key": "production-config"}
+
+
+def test_retired_gist_backend_is_absent_from_public_surface() -> None:
+    schema = (ROOT / "schemas" / "config.schema.json").read_text(encoding="utf-8")
+    cli = (ROOT / "src" / "clash_relay" / "cli.py").read_text(encoding="utf-8")
+    publication = (ROOT / "src" / "clash_relay" / "publication.py").read_text(encoding="utf-8")
+    assert "publish-gist" not in cli
+    assert "GITHUB_GIST_TOKEN" not in cli
+    assert '"gist"' not in schema
+    assert 'mode == "gist"' not in publication

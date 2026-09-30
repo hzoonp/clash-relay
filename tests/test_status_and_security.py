@@ -163,7 +163,6 @@ def _publishing_config() -> dict:
                 "enabled": False,
                 "allow_sensitive_public_release": False,
             },
-            "gist": {"enabled": False, "allow_sensitive_unlisted_gist": False},
             "cloudflare_kv": {"enabled": False, "key": "production-config"},
         }
     }
@@ -192,10 +191,6 @@ def test_cloudflare_kv_requires_enablement_and_disables_github_sensitive_backend
         publication_gate(config, "cloudflare_kv")
     config["publishing"]["github_release"]["enabled"] = False
 
-    config["publishing"]["gist"]["enabled"] = True
-    with pytest.raises(PublicationError, match="Gist"):
-        publication_gate(config, "cloudflare_kv")
-
 
 def test_release_requires_enablement_and_acknowledgement() -> None:
     config = _publishing_config()
@@ -203,13 +198,6 @@ def test_release_requires_enablement_and_acknowledgement() -> None:
         publication_gate(config, "github_release", "")
     config["publishing"]["github_release"].update(enabled=True, allow_sensitive_public_release=True)
     publication_gate(config, "github_release", ACKNOWLEDGEMENT)
-
-
-def test_gist_requires_explicit_sensitive_opt_in() -> None:
-    config = _publishing_config()
-    config["publishing"]["gist"]["enabled"] = True
-    with pytest.raises(PublicationError, match="allow_sensitive"):
-        publication_gate(config, "gist", ACKNOWLEDGEMENT)
 
 
 def test_optional_subscription_failure_is_skipped(

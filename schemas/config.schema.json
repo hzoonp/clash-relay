@@ -173,7 +173,7 @@
     "publishing": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifact", "github_release", "gist", "cloudflare_kv"],
+      "required": ["artifact", "github_release", "cloudflare_kv"],
       "properties": {
         "artifact": {"type": "boolean"},
         "github_release": {
@@ -183,15 +183,6 @@
           "properties": {
             "enabled": {"type": "boolean"},
             "allow_sensitive_public_release": {"type": "boolean"}
-          }
-        },
-        "gist": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "allow_sensitive_unlisted_gist"],
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "allow_sensitive_unlisted_gist": {"type": "boolean"}
           }
         },
         "cloudflare_kv": {

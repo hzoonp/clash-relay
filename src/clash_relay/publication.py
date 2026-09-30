@@ -27,8 +27,6 @@ def publication_gate(config: dict[str, Any], mode: str, acknowledgement: str = "
             raise PublicationError(
                 "Cloudflare KV mode requires GitHub Release publication to stay disabled"
             )
-        if publishing["gist"]["enabled"]:
-            raise PublicationError("Cloudflare KV mode requires Gist publication to stay disabled")
         return
     if acknowledgement != ACKNOWLEDGEMENT:
         raise PublicationError(
@@ -41,15 +39,6 @@ def publication_gate(config: dict[str, Any], mode: str, acknowledgement: str = "
         if not settings["allow_sensitive_public_release"]:
             raise PublicationError(
                 "public Release publication is blocked until allow_sensitive_public_release is true"
-            )
-        return
-    if mode == "gist":
-        settings = publishing["gist"]
-        if not settings["enabled"]:
-            raise PublicationError("Gist publication is disabled")
-        if not settings["allow_sensitive_unlisted_gist"]:
-            raise PublicationError(
-                "Gist publication is blocked until allow_sensitive_unlisted_gist is true"
             )
         return
     raise PublicationError(f"unknown publication mode: {mode}")

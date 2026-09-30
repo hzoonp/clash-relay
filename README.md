@@ -4,7 +4,9 @@
 
 `clash-relay` 2.x is a deterministic, fail-closed Mihomo / FlClash configuration builder for merging private subscriptions into one standalone `config.yaml` while preserving hard source-to-scenario permissions.
 
-Generated production configuration contains proxy credentials and is highest-sensitivity data. Production publishes validated bytes only to private Cloudflare Workers KV. Credential-bearing configuration is never uploaded to GitHub Artifacts, Releases, Gists, Pages, or commits.
+Generated production configuration contains proxy credentials and is highest-sensitivity data. Production publishes validated bytes only to private Cloudflare Workers KV. Credential-bearing configuration is never uploaded to GitHub Artifacts, Releases, Pages, or commits.
+
+Canonical behavior contracts live in [Publishing](docs/publishing.md), [Routing V2](docs/routing-v2.md), and [Rules/source policy](docs/rules.md). Other pages are usage guides rather than duplicate policy authorities.
 
 ## Start with a fork
 

@@ -4,7 +4,9 @@
 
 `clash-relay` 2.x 是面向 Mihomo / FlClash 的确定性、fail-closed 配置生成项目：把多个私有订阅合并为一个独立 `config.yaml`，同时严格保留“订阅源 → 使用场景”的权限边界。
 
-生成后的生产配置包含代理凭据，按最高敏感级别处理。生产环境只把经过完整验证的精确字节发布到私有 Cloudflare Workers KV；带凭据的配置不会进入 GitHub Artifact、Release、Gist、Pages 或 Git 历史。
+生成后的生产配置包含代理凭据，按最高敏感级别处理。生产环境只把经过完整验证的精确字节发布到私有 Cloudflare Workers KV；带凭据的配置不会进入 GitHub Artifact、Release、Pages 或 Git 历史。
+
+权威行为契约集中在 [Publishing](docs/publishing.md)、[Routing V2](docs/routing-v2.md) 和 [Rules/source policy](docs/rules.md)；其他页面只作为使用指南，不再重复承担策略权威。
 
 ## 从 Fork 开始
 

@@ -27,8 +27,7 @@ from .production_application import (
     reconcile_production_release,
     reconcile_production_release_ids,
 )
-from .publication import ACKNOWLEDGEMENT, publication_gate
-from .publishers.gist import GistPublisher
+from .publication import publication_gate
 from .util import atomic_write
 from .validator import validate_generated_config
 
@@ -201,24 +200,6 @@ def _command_publish_cloudflare_kv(args: argparse.Namespace) -> int:
         env=environment,
     )
     print(_json_text(result), end="")
-    return 0
-
-
-def _command_publish_gist(args: argparse.Namespace) -> int:
-    project = load_project(
-        config_path=args.config,
-        subscriptions_path=args.subscriptions,
-        policies_path=args.policies,
-    )
-    publication_gate(project.config, "gist", args.acknowledgement)
-    token = args.token or os.environ.get("GITHUB_GIST_TOKEN", "")
-    gist_id = args.gist_id or os.environ.get("GITHUB_GIST_ID", "")
-    content = args.candidate.read_text(encoding="utf-8")
-    identifier = GistPublisher(token=token, gist_id=gist_id).publish(
-        filename=args.filename,
-        content=content,
-    )
-    print(_json_text({"status": "published", "backend": "gist", "id": identifier}), end="")
     return 0
 
 
@@ -400,12 +381,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     gate = subparsers.add_parser(
         "publication-gate",
-        help="Enforce Artifact/Release/Gist/Cloudflare KV publication policy.",
+        help="Enforce Artifact/Release/Cloudflare KV publication policy.",
     )
     _add_project_args(gate)
     gate.add_argument(
         "--mode",
-        choices=["artifact", "github_release", "gist", "cloudflare_kv"],
+        choices=["artifact", "github_release", "cloudflare_kv"],
         required=True,
     )
     gate.add_argument("--acknowledgement", default="")
@@ -421,15 +402,6 @@ def build_parser() -> argparse.ArgumentParser:
     cloudflare.add_argument("--namespace-title")
     cloudflare.add_argument("--key")
     cloudflare.set_defaults(handler=_command_publish_cloudflare_kv)
-
-    gist = subparsers.add_parser("publish-gist", help="Publish a validated candidate to a Gist.")
-    _add_project_args(gist)
-    gist.add_argument("--candidate", type=_path, required=True)
-    gist.add_argument("--filename", default="config.yaml")
-    gist.add_argument("--token")
-    gist.add_argument("--gist-id")
-    gist.add_argument("--acknowledgement", default=ACKNOWLEDGEMENT)
-    gist.set_defaults(handler=_command_publish_gist)
 
     reconcile = subparsers.add_parser(
         "reconcile-release",
