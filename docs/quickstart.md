@@ -12,6 +12,8 @@ For a routine fork, you only need to own three surfaces:
 
 You do **not** need to understand or edit RuntimeGraph internals, qualification implementations, scheduler history, release transactions, or Mihomo pins for a normal fork. See [Fork configuration surface](fork-configuration.md) for the goal-to-file decision table and the boundary between routine and advanced changes.
 
+For exact contracts, use [Publishing](publishing.md), [Routing V2](routing-v2.md), and [Rules/source policy](rules.md); this quickstart intentionally stays procedural.
+
 ## 10-minute checklist
 
 ```text
@@ -29,7 +31,7 @@ The first manual workflow defaults to `publish=false`. Treat a successful dry ru
 
 ## 1. Fork without adding credentials
 
-Keep `config.yaml`, `subscriptions.yaml`, `policies.yaml`, policy fragments, schemas, rules, source code, and workflows public. Real subscription URLs and generated production `config.yaml` bytes **must never be committed**. Private credentials and generated config are never committed or uploaded as an Artifact/Release/Gist.
+Keep `config.yaml`, `subscriptions.yaml`, `policies.yaml`, policy fragments, schemas, rules, source code, and workflows public. Real subscription URLs and generated production `config.yaml` bytes **must never be committed**. Private credentials and generated config are never committed or uploaded as a GitHub Artifact or credential-bearing Release.
 
 Canonical production requires Policy Model v2. `policies.yaml` is only the manifest; routing, scheduling, classification, and topology have separate owned fragments. A legacy monolithic policy file is not a runtime input. Convert it offline with `scripts/migrate_policy_v2.py` before running clash-relay.
 
