@@ -26,6 +26,8 @@ def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
     assert "clash-relay-production-commit-{0}" in text
     assert "clash-relay-production-dry-run-{0}" in text
     assert "github.ref == 'refs/heads/main'" in text
+    assert "reuse_main_validation: ${{ github.event_name != 'push' }}" in text
+    assert "    paths:" not in text
 
 
 def test_concurrency_domains_separate_read_only_and_writer_runs() -> None:
@@ -67,7 +69,7 @@ def test_push_remains_a_production_preflight() -> None:
 
 def test_workflow_is_a_thin_adapter_to_one_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
-    assert len(text.splitlines()) < 100
+    assert len(text.splitlines()) < 90
     assert text.count("python scripts/run_production_release.py") == 1
     assert "python scripts/publish_scheduler_observation.py" not in text
     assert "Resolve publication mode" not in text
