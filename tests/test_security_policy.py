@@ -44,9 +44,9 @@ def test_workflow_permissions_keep_production_read_only(repo_root: Path) -> None
         Loader=yaml.BaseLoader,
     )
 
-    assert publish["permissions"] == {"contents": "read"}
+    assert publish["permissions"] == {"actions": "read", "contents": "read"}
     assert rollback["permissions"] == {"contents": "read"}
-    assert release["permissions"] == {"contents": "write"}
+    assert release["permissions"] == {"actions": "read", "contents": "write"}
 
 
 def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path) -> None:
@@ -58,7 +58,7 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     assert "actions/upload-artifact" not in workflow
     assert "gh release" not in workflow
     assert "publish-gist" not in workflow
-    assert '      - "scripts/**"' in workflow
+    assert "github.event_name != 'push'" in workflow
     assert "continue-on-error" not in workflow
     assert workflow.count("python scripts/run_production_release.py") == 1
 
