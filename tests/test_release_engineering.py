@@ -21,7 +21,7 @@ def test_release_workflow_is_source_only_and_exact_sha_bound(repo_root: Path) ->
     assert isinstance(workflow, dict)
     assert workflow["permissions"]["contents"] == "write"
     assert workflow["permissions"]["actions"] == "read"
-    assert workflow["on"] == {"workflow_dispatch": None}
+    assert workflow["on"] == {"workflow_dispatch": ""}
     assert "uses: ./.github/workflows/ci.yml" in text
     assert "reuse_main_validation: true" in text
     assert "needs.validate.outputs.validated_sha == github.sha" in text
