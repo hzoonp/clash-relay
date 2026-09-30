@@ -199,6 +199,7 @@ def test_release_requires_enablement_and_acknowledgement() -> None:
     config["publishing"]["github_release"].update(enabled=True, allow_sensitive_public_release=True)
     publication_gate(config, "github_release", ACKNOWLEDGEMENT)
 
+
 def test_optional_subscription_failure_is_skipped(
     project_factory, fixture_env, yaml_editor
 ) -> None:
