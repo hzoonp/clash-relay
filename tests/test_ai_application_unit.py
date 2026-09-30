@@ -12,7 +12,11 @@ from clash_relay.ai_application import (
     _probe_names,
     _probe_names_with_runtime_retry,
 )
-from clash_relay.errors import AIProbeRuntimeError, CandidateValidationStageError, ValidationError
+from clash_relay.errors import (
+    AIProbeRuntimeError,
+    CandidateValidationStageError,
+    ValidationError,
+)
 from clash_relay.util import dump_yaml, load_yaml_file
 
 

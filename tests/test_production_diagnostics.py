@@ -230,7 +230,8 @@ def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
 
 
 
-def test_ai_service_probe_diagnostic_exposes_only_allowlisted_reason_and_service() -> None:
+def test_ai_service_probe_diagnostic_exposes_only_allowlisted_reason_and_service(
+) -> None:
     error = CandidateValidationStageError(
         "ai_service_probe",
         reason="probe_runtime_error",
