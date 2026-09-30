@@ -229,8 +229,7 @@ def test_candidate_validation_stage_is_static_and_privacy_safe() -> None:
     assert "secret" not in repr(safe_failure_diagnostic(error))
 
 
-def test_ai_service_probe_diagnostic_exposes_only_allowlisted_reason_and_service(
-) -> None:
+def test_ai_service_probe_diagnostic_is_allowlisted() -> None:
     error = CandidateValidationStageError(
         "ai_service_probe",
         reason="probe_runtime_error",
