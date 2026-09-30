@@ -410,16 +410,14 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
                 "category": ProductionFailureCategory.CANDIDATE_VALIDATION.value,
                 "validation_stage": _safe_candidate_validation_stage(stage),
             }
-            ai_probe_error: CandidateValidationStageError | None = None
-            if stage == "ai_service_probe" and isinstance(
-                item, CandidateValidationStageError
-            ):
-                ai_probe_error = item
-            if ai_probe_error is not None:
-                reason = ai_probe_error.reason
-                service = ai_probe_error.service
-                retryable = ai_probe_error.retryable
-                attempts = ai_probe_error.attempts
+            probe_error = item if isinstance(item, CandidateValidationStageError) else None
+            if stage != "ai_service_probe":
+                probe_error = None
+            if probe_error is not None:
+                reason = probe_error.reason
+                service = probe_error.service
+                retryable = probe_error.retryable
+                attempts = probe_error.attempts
                 if reason in _SAFE_AI_PROBE_REASONS:
                     diagnostic["validation_reason"] = reason
                 if service in _SAFE_AI_SERVICES:
