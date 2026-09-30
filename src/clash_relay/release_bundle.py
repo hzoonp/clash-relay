@@ -395,7 +395,32 @@ def publish_release_bundle(
     if observed_transaction is not None and observed_transaction.to_release_id != release_id_for(
         content
     ):
-        raise PublicationError("unfinished release transaction targets another candidate")
+        # A process can stop after committing both pointers but before clearing
+        # its intent. Fresh qualification produces different candidate bytes, so
+        # requiring the old candidate forever would strand an otherwise complete
+        # release. Only retire an intent whose entire committed state is proven.
+        committed = _safe_read(factory, keys.production)
+        committed_id = observed_transaction.to_release_id
+        predecessor_id = observed_transaction.from_release_id
+        if (
+            committed is None
+            or release_id_for(committed) != committed_id
+            or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != committed_id
+            or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) != predecessor_id
+            or _safe_read(factory, keys.config(committed_id)) != committed
+            or _safe_read(factory, keys.manifest(committed_id)) != manifest_bytes(committed)
+        ):
+            raise PublicationError("unfinished release transaction targets another candidate")
+        if predecessor_id is not None:
+            predecessor = _safe_read(factory, keys.config(predecessor_id))
+            if (
+                predecessor is None
+                or release_id_for(predecessor) != predecessor_id
+                or _safe_read(factory, keys.manifest(predecessor_id)) != manifest_bytes(predecessor)
+            ):
+                raise PublicationError("transaction predecessor immutable release is unavailable")
+        _transaction_write(factory, keys, _EMPTY_POINTER, production_changed=False)
+        observed_transaction = None
     new_release_id = _ensure_immutable_release(factory, keys, content)
     current_content = _safe_read(factory, keys.production)
     current_pointer_before = parse_release_pointer(_safe_read(factory, keys.current_pointer))

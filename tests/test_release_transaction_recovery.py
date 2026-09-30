@@ -124,6 +124,108 @@ def test_other_candidate_and_rollback_stop_during_pending_transaction() -> None:
     assert store.values[key] == candidate
 
 
+@pytest.mark.parametrize("first_release", [False, True])
+def test_fresh_candidate_finishes_committed_intent_after_process_restart(first_release) -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    before, committed, fresh = b"before\n", b"committed\n", b"fresh\n"
+    if not first_release:
+        publish_release_bundle(factory=store.factory, production_key=key, content=before)
+    underlying = store.factory
+
+    def crashing_factory(name: str):
+        publisher = underlying(name)
+
+        class Value:
+            def read(self):
+                return publisher.read()
+
+            def publish(self, *, content: bytes):
+                if name == keys.transaction and content == b"\n":
+                    raise SystemExit("process stopped before intent cleanup")
+                return publisher.publish(content=content)
+
+        return Value()
+
+    with pytest.raises(SystemExit):
+        publish_release_bundle(factory=crashing_factory, production_key=key, content=committed)
+    assert parse_release_transaction(store.values[keys.transaction]) is not None
+
+    result = publish_release_bundle(factory=store.factory, production_key=key, content=fresh)
+
+    assert result["status"] == "published"
+    assert read_previous_release(factory=store.factory, production_key=key)[0] == committed
+    assert store.values[key] == fresh
+    assert parse_release_transaction(store.values[keys.transaction]) is None
+
+
+@pytest.mark.parametrize(
+    "damaged_key",
+    ["production", "current_pointer", "previous_pointer", "config", "manifest", "predecessor"],
+)
+def test_fresh_candidate_preserves_unproven_intent_without_any_writes(damaged_key) -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    before, committed = b"before\n", b"committed\n"
+    publish_release_bundle(factory=store.factory, production_key=key, content=before)
+    publish_release_bundle(factory=store.factory, production_key=key, content=committed)
+    store.values[keys.transaction] = serialize_release_transaction(
+        ReleaseTransaction(release_id_for(before), release_id_for(committed), None)
+    )
+    target = {
+        "production": keys.production,
+        "current_pointer": keys.current_pointer,
+        "previous_pointer": keys.previous_pointer,
+        "config": keys.config(release_id_for(committed)),
+        "manifest": keys.manifest(release_id_for(committed)),
+        "predecessor": keys.manifest(release_id_for(before)),
+    }[damaged_key]
+    store.values.pop(target)
+    snapshot = dict(store.values)
+
+    with pytest.raises(PublicationError):
+        publish_release_bundle(factory=store.factory, production_key=key, content=b"fresh\n")
+
+    assert store.values == snapshot
+
+
+def test_fresh_candidate_stops_before_staging_if_intent_cleanup_is_unknown(monkeypatch) -> None:
+    monkeypatch.setattr("clash_relay.release_bundle._READ_BACK_DELAYS", (0.0,))
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    before, committed, fresh = b"before\n", b"committed\n", b"fresh\n"
+    publish_release_bundle(factory=store.factory, production_key=key, content=before)
+    publish_release_bundle(factory=store.factory, production_key=key, content=committed)
+    store.values[keys.transaction] = serialize_release_transaction(
+        ReleaseTransaction(release_id_for(before), release_id_for(committed), None)
+    )
+    snapshot = dict(store.values)
+    underlying = store.factory
+
+    def ambiguous_factory(name: str):
+        publisher = underlying(name)
+
+        class Value:
+            def read(self):
+                return publisher.read()
+
+            def publish(self, *, content: bytes):
+                if name == keys.transaction:
+                    raise CommitUnknownError("intent cleanup response lost")
+                return publisher.publish(content=content)
+
+        return Value()
+
+    with pytest.raises(CommitUnknownError) as captured:
+        publish_release_bundle(factory=ambiguous_factory, production_key=key, content=fresh)
+
+    assert captured.value.production_changed is False
+    assert store.values == snapshot
+
+
 def test_pending_transaction_rejects_contradictory_or_missing_predecessor() -> None:
     store, key, older, before, candidate = _interrupted_update()
     keys = release_keys(key)
