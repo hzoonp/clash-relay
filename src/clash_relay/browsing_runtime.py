@@ -21,6 +21,7 @@ from .browsing_regions import (
     region_stable_group,
 )
 from .errors import GenerationError, ValidationError
+from .regional_web_runtime import drop_unused_pool_scaffold, regional_groups
 from .util import atomic_write, dump_yaml, load_yaml_file, normalize_expected_status
 
 BROWSING_PUBLIC_GROUP = "网页浏览"
@@ -212,44 +213,16 @@ def harden_browsing_runtime(config: dict[str, Any], policies: dict[str, Any]) ->
         stable_name = region_stable_group(region)
         reserve_name = region_reserve_group(region)
         region_name = region_display_name(region)
-        _replace_or_append_group(
-            groups,
-            by_name,
-            stable_name,
-            {
-                "name": stable_name,
-                "type": "url-test",
-                "hidden": True,
-                "use": [provider_name],
-                "filter": ".*",
-                **scheduler_fields,
-            },
-        )
-        _replace_or_append_group(
-            groups,
-            by_name,
-            reserve_name,
-            {
-                "name": reserve_name,
-                "type": "url-test",
-                "hidden": True,
-                "use": [provider_name],
-                "filter": ".*",
-                **scheduler_fields,
-            },
-        )
-        _replace_or_append_group(
-            groups,
-            by_name,
-            region_name,
-            {
-                "name": region_name,
-                "type": "fallback",
-                "hidden": True,
-                "proxies": [stable_name, reserve_name],
-                **region_fields,
-            },
-        )
+        for group in regional_groups(
+            provider_names=[provider_name],
+            stable_name=stable_name,
+            reserve_name=reserve_name,
+            region_name=region_name,
+            node_filter=".*",
+            scheduler_fields=scheduler_fields,
+            region_fields=region_fields,
+        ):
+            _replace_or_append_group(groups, by_name, str(group["name"]), group)
 
     region_groups = [region_display_name(region) for region in available_regions]
     automatic.clear()
@@ -275,6 +248,7 @@ def harden_browsing_runtime(config: dict[str, Any], policies: dict[str, Any]) ->
         }
     )
 
+    drop_unused_pool_scaffold(config, pool="BROWSING", inventory="__CR_BROWSING_INVENTORY")
     validate_browsing_public_surface(config)
     return {
         "status": "regional_hardened",

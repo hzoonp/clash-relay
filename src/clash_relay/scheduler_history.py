@@ -12,6 +12,7 @@ from typing import Any
 from .errors import ValidationError
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
+from .web_general_runtime import web_general_runtime_names
 
 _STATE_VERSION = 3
 _LEGACY_STATE_VERSIONS = frozenset({1, 2})
@@ -143,7 +144,7 @@ def browsing_runtime_names(candidate: dict[str, Any]) -> set[str]:
     providers = candidate.get("proxy-providers")
     if not isinstance(providers, dict):
         raise ValidationError("scheduler history requires candidate proxy-providers")
-    names: set[str] = set()
+    names: set[str] = web_general_runtime_names(candidate)
     for provider_name, provider in providers.items():
         if not str(provider_name).startswith(_BROWSING_PROVIDER_PREFIXES):
             continue

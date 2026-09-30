@@ -66,6 +66,8 @@ Automatic schedulers are different from selectors. Netflix uses a hidden automat
 
 `ProxyLite -> 网页通用自动` is the generic foreign-web classification. This hidden automatic route uses a General-only regional pool with browsing-grade qualification, Stable/Reserve failover and client URLTest. It cannot reach browsing/SUB_1 or inherit manual `代理选择` state. `网页浏览` remains a separate visible selector for an explicitly controlled browsing surface. China-domain/company-IP/GEOIP rules retain their declared direct policy.
 
+At runtime the web regions reuse General providers with exact node filters, rather than serializing a second General payload. Browsing and General-web qualification share physical probes only when the subscription source and complete transport/dialer configuration match. Real Mihomo E2E checks the ProxyLite connection chain through both the regional Stable and Reserve tiers; the SUB_1 fixture receives no web request. The `web_general` production proof reports source isolation, regional scheduler and qualification separately.
+
 Routing V2 deliberately does **not** claim that every non-China domain is web traffic. A domain not covered by an explicit browsing or application rule continues to the final route. This prevents a broad catch-all from accidentally granting `subscription_1` access to media, downloads, messaging, or unknown traffic.
 
 Expanding foreign-web classification requires evidence and a reviewable rule source. It is not implemented by changing final `MATCH` semantics.

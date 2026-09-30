@@ -268,6 +268,20 @@ def audit_production_candidate(
         counts: Counter[str] = Counter()
         provider_count = 0
 
+        if pool["id"] == "web_general" and WEB_GENERAL_AUTO_GROUP in graph.groups:
+            shared = graph.reachable_providers(WEB_GENERAL_AUTO_GROUP, require_resolved=True)
+            provider_count = len(shared)
+            for leaf in graph.effective_leaf_proxies(WEB_GENERAL_AUTO_GROUP):
+                source_id = _runtime_source_id(
+                    graph.proxies[leaf],
+                    provider_name="shared-general",
+                    known_source_ids=set(subscriptions),
+                )
+                _assert_use_allowed(
+                    {source_id}, "general", subscriptions=subscriptions, surface="web-general-pool"
+                )
+                counts[source_id] += 1
+
         for region in pool["regions"]:
             provider_name = _provider_name(str(pool["id"]), str(region))
             provider = providers.get(provider_name)
@@ -369,6 +383,7 @@ def audit_production_candidate(
             "status": "passed",
             "source_use": "general",
             "subscription_1_reachable": False,
+            "regional_scheduler": "passed",
         }
 
     source_reports = {}

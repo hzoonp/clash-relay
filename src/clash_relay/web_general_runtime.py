@@ -15,13 +15,13 @@ from .browsing_runtime import (
     _runtime_test_fields,
 )
 from .errors import GenerationError, ValidationError
+from .regional_web_runtime import drop_unused_pool_scaffold, proxy_identity, regional_groups
+from .runtime_graph import RuntimeGraph
 from .util import atomic_write, dump_yaml, load_yaml_file
 
 WEB_GENERAL_AUTO_GROUP = "网页通用自动"
 WEB_GENERAL_PROVIDER_PREFIX = "cr_web_general_"
 _POOL_GROUP = "__CR_WEB_GENERAL_INVENTORY"
-_AUTO_PREFIX = "__CR_AUTO_WEB_GENERAL_"
-_FALLBACK_GROUP = "__CR_FALLBACK_WEB_GENERAL"
 _MIN_PREFERRED_STABLE_NODES = 3
 
 
@@ -100,42 +100,33 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
     scheduler_fields = _runtime_test_fields(probe, tolerance=True)
     region_fields = _runtime_test_fields(probe, tolerance=False)
     available = [region for region in preferred_regions if region in by_region]
+    general_leaves: dict[str, tuple[str, str]] = {}
+    for name, provider in providers.items():
+        if not str(name).startswith("cr_general_"):
+            continue
+        for proxy in provider.get("payload", []):
+            general_leaves.setdefault(proxy_identity(proxy), (str(name), str(proxy["name"])))
+    if not general_leaves:
+        raise GenerationError("general web runtime cannot resolve the general inventory")
     for region in available:
         provider_name = by_region[region]
         provider = providers[provider_name]
-        provider_fields = _runtime_test_fields(probe, tolerance=False)
-        provider["health-check"] = {
-            "enable": True,
-            "url": provider_fields["url"],
-            "interval": provider_fields["interval"],
-            "timeout": provider_fields["timeout"],
-            "lazy": provider_fields["lazy"],
-            "expected-status": provider_fields["expected-status"],
-        }
-        for name in (_stable_group(region), _reserve_group(region)):
-            _replace(
-                groups,
-                name,
-                {
-                    "name": name,
-                    "type": "url-test",
-                    "hidden": True,
-                    "use": [provider_name],
-                    "filter": ".*",
-                    **scheduler_fields,
-                },
-            )
-        _replace(
-            groups,
-            _region_group(region),
-            {
-                "name": _region_group(region),
-                "type": "fallback",
-                "hidden": True,
-                "proxies": [_stable_group(region), _reserve_group(region)],
-                **region_fields,
-            },
-        )
+        try:
+            mapped = [general_leaves[proxy_identity(proxy)] for proxy in provider["payload"]]
+        except KeyError as exc:
+            raise GenerationError("general web node is absent from the general inventory") from exc
+        shared_providers = sorted({name for name, _ in mapped})
+        node_names = {name for _, name in mapped}
+        for group in regional_groups(
+            provider_names=shared_providers,
+            stable_name=_stable_group(region),
+            reserve_name=_reserve_group(region),
+            region_name=_region_group(region),
+            node_filter=_exact_filter(node_names),
+            scheduler_fields=scheduler_fields,
+            region_fields=region_fields,
+        ):
+            _replace(groups, str(group["name"]), group)
     automatic.clear()
     automatic.update(
         {
@@ -148,19 +139,11 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
             ),
         }
     )
-    # The pool scaffold is only needed to resolve regional providers. The
-    # dedicated group now owns the entire general-only web route.
-    groups[:] = [
-        group
-        for group in groups
-        if not (
-            isinstance(group, dict)
-            and (
-                str(group.get("name", "")).startswith(_AUTO_PREFIX)
-                or group.get("name") in {_POOL_GROUP, _FALLBACK_GROUP}
-            )
-        )
-    ]
+    drop_unused_pool_scaffold(config, pool="WEB_GENERAL", inventory=_POOL_GROUP)
+    for name in by_region.values():
+        if any(name in group.get("use", []) for group in groups):
+            raise GenerationError("general web draft provider remains referenced")
+        providers.pop(name)
     validate_web_general_runtime(config)
     return {
         "status": "regional_hardened",
@@ -168,6 +151,8 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
         "available_regions": available,
         "source_use": "general",
         "probe": str(probe["url"]),
+        "shared_general_providers": True,
+        "providers_removed": len(by_region),
     }
 
 
@@ -198,13 +183,11 @@ def validate_web_general_runtime(config: dict[str, Any]) -> None:
         regional = groups.get(str(region_name))
         stable = groups.get(_stable_group(region))
         reserve = groups.get(_reserve_group(region))
-        provider = WEB_GENERAL_PROVIDER_PREFIX + region.lower()
         if (
             not isinstance(regional, dict)
             or regional.get("type") != "fallback"
             or regional.get("proxies") != [_stable_group(region), _reserve_group(region)]
             or regional.get("hidden") is not True
-            or provider not in providers
         ):
             raise ValidationError("general web region lost its same-region fallback")
         for tier in (stable, reserve):
@@ -212,23 +195,25 @@ def validate_web_general_runtime(config: dict[str, Any]) -> None:
                 not isinstance(tier, dict)
                 or tier.get("type") != "url-test"
                 or tier.get("hidden") is not True
-                or tier.get("use") != [provider]
+                or not isinstance(tier.get("use"), list)
+                or not tier["use"]
+                or any(
+                    not str(name).startswith("cr_general_") or name not in providers
+                    for name in tier["use"]
+                )
+                or (
+                    not str(tier.get("filter", "")).startswith("^(")
+                    and not (tier.get("filter") == "^$" and tier.get("proxies") == ["REJECT"])
+                )
                 or not str(tier.get("url", "")).startswith("https://")
             ):
                 raise ValidationError("general web tier lost its general-only provider")
 
 
 def web_general_runtime_names(config: dict[str, Any]) -> set[str]:
-    providers = config.get("proxy-providers")
-    if not isinstance(providers, dict):
-        raise ValidationError("general web runtime requires proxy providers")
-    return {
-        str(proxy["name"])
-        for name, provider in providers.items()
-        if provider_region(str(name)) is not None
-        for proxy in provider.get("payload", [])
-        if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
-    }
+    if WEB_GENERAL_AUTO_GROUP not in _groups_by_name(config):
+        return set()
+    return set(RuntimeGraph.from_candidate(config).effective_leaf_proxies(WEB_GENERAL_AUTO_GROUP))
 
 
 def rewrite_web_general_qualified_candidate(
@@ -236,6 +221,8 @@ def rewrite_web_general_qualified_candidate(
     qualified_names: set[str],
     stable_names: set[str],
     preferred_names: set[str],
+    *,
+    validate_candidate: bool = True,
 ) -> dict[str, Any]:
     original = candidate_path.read_text(encoding="utf-8")
     config = load_yaml_file(candidate_path)
@@ -252,29 +239,19 @@ def rewrite_web_general_qualified_candidate(
     qualified = 0
     available: list[str] = []
     removed_groups: set[str] = set()
-    for provider_name in list(providers):
-        region = provider_region(str(provider_name))
-        if region is None:
+    graph = RuntimeGraph.from_candidate(config)
+    for region in REGION_LABELS:
+        if _region_group(region) not in automatic["proxies"]:
             continue
-        provider = providers[provider_name]
-        payload = provider.get("payload") if isinstance(provider, dict) else None
-        if not isinstance(payload, list):
-            raise ValidationError("general web provider payload is invalid")
-        tested += len(payload)
-        kept = [
-            proxy
-            for proxy in payload
-            if isinstance(proxy, dict) and proxy.get("name") in qualified_names
-        ]
-        if not kept:
-            providers.pop(provider_name)
+        regional_names = set(graph.effective_leaf_proxies(_region_group(region)))
+        tested += len(regional_names)
+        names = regional_names & qualified_names
+        if not names:
             removed_groups.update(
                 {_region_group(region), _stable_group(region), _reserve_group(region)}
             )
             continue
-        provider["payload"] = kept
-        qualified += len(kept)
-        names = {str(proxy["name"]) for proxy in kept}
+        qualified += len(names)
         by_name = _groups_by_name(config)
         stable_group = by_name[_stable_group(region)]
         cap_filter = str(stable_group.get("filter", ".*"))
@@ -304,7 +281,8 @@ def rewrite_web_general_qualified_candidate(
     validate_web_general_runtime(config)
     from .validator import validate_generated_config
 
-    validate_generated_config(config)
+    if validate_candidate:
+        validate_generated_config(config)
     atomic_write(candidate_path, _comment_header(original) + dump_yaml(config))
     return {
         "status": "qualified",
@@ -315,6 +293,9 @@ def rewrite_web_general_qualified_candidate(
         ),
         "available_regions": available,
         "source_use": "general",
+        "regional_scheduler": "passed",
+        "qualification": "passed",
+        "shared_general_providers": True,
     }
 
 

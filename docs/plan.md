@@ -25,6 +25,7 @@ E  每个普通入口下载 classifier 都由同一声明生成 primary + 相邻
 F  编译、资格筛选和发布前审计失败时停止生成/发布
 G  ProxyLite、MATCH 和 General 的所有可达来源均不含 subscription_1
 H  reachable_sources(网页通用自动) 不含 subscription_1，且其 provider_pool.source_use == general
+I  网页通用区域组复用 General provider；资格筛选只收窄网页 tier filter，不删除 General/download 共享节点
 ```
 
 `DIRECT`/`REJECT` 不使用 SUB_1；更早的 general-only 目标也可能满足隔离，但都不能报告成“进入下载 selector”。每个例外需列明首次命中、最终目标和图审计结果。如要求全部下载都代理，应另行确定；本计划的硬约束是 SUB_1 不可达。
@@ -115,6 +116,8 @@ Play 域名从 fixture 中的 `play.googleapis.com`、`android.clients.google.co
 | 普通 `github.com`、`google.com`、`cloudfront.net` | 不因下载扩展整体改道；ProxyLite 用网页通用自动 / General | 不可达 |
 
 声明与图测试用含 SUB_1、SUB_2～5 的 fixture 编译并资格筛选。固定稳定版 `v1.19.30`、`v1.19.29` 均运行 `mihomo -t` 和真实连接测试；`mihomo -t` 仅证明配置可加载，不证明分类语义。Android/FlClash/桌面进程识别与入口交接应在实际客户端验收，CI 无法覆盖的平台必须留下人工验收记录。
+
+网页通用 E2E 使用实际编译配置和真实资格探测，读取 Mihomo 活动连接链验证 ProxyLite 经区域 Stable/Reserve 进入 General。Production Proof 必须同时具备 `source_use: general`、`subscription_1_reachable: false`、`regional_scheduler: passed` 与 `qualification: passed`；缺少证据则失败。
 
 ## 实施顺序
 

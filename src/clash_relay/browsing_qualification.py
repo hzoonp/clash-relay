@@ -20,10 +20,11 @@ from typing import Any
 
 from .errors import ValidationError
 from .policy_document import load_policy_document
+from .regional_web_runtime import proxy_identity
 from .runtime_names import parse_runtime_source_name
 from .util import atomic_write, dump_yaml, load_yaml_file, stable_json
 from .validator import validate_generated_config
-from .web_general_runtime import WEB_GENERAL_PROVIDER_PREFIX
+from .web_general_runtime import WEB_GENERAL_PROVIDER_PREFIX, web_general_runtime_names
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
 BROWSING_POOL_ID = "browsing"
@@ -131,8 +132,10 @@ def _browsing_provider_payloads(
     if not isinstance(providers, dict):
         raise ValidationError("candidate proxy-providers must be a mapping")
     result: dict[str, tuple[dict[str, Any], ...]] = {}
+    general_web_names = web_general_runtime_names(config)
     for provider_name in sorted(providers):
-        if not _is_canonical_browsing_provider(provider_name):
+        shared_general = str(provider_name).startswith("cr_general_")
+        if not _is_canonical_browsing_provider(provider_name) and not shared_general:
             continue
         provider = providers[provider_name]
         if not isinstance(provider, dict) or not isinstance(provider.get("payload"), list):
@@ -141,13 +144,36 @@ def _browsing_provider_payloads(
         for proxy in provider["payload"]:
             if not isinstance(proxy, dict) or not isinstance(proxy.get("name"), str):
                 raise ValidationError("browsing qualification provider contains an unnamed proxy")
-            payload.append(dict(proxy))
+            if not shared_general or proxy["name"] in general_web_names:
+                payload.append(dict(proxy))
         if not payload:
+            if shared_general:
+                continue
             raise ValidationError("browsing qualification provider must not be empty")
         result[provider_name] = tuple(payload)
     if not result:
         raise ValidationError("browsing qualification found no candidate browsing proxy nodes")
     return result
+
+
+def _unique_probe_payloads(
+    payloads: dict[str, tuple[dict[str, Any], ...]],
+) -> tuple[dict[str, tuple[dict[str, Any], ...]], dict[str, str]]:
+    representatives: dict[str, str] = {}
+    aliases: dict[str, str] = {}
+    unique: dict[str, tuple[dict[str, Any], ...]] = {}
+    for provider, proxies in payloads.items():
+        kept = []
+        for proxy in proxies:
+            name = str(proxy["name"])
+            identity = proxy_identity(proxy)
+            if identity not in representatives:
+                representatives[identity] = name
+                kept.append(proxy)
+            aliases[name] = representatives[identity]
+        if kept:
+            unique[provider] = tuple(kept)
+    return unique, aliases
 
 
 def _temporary_probe_config(
@@ -606,6 +632,7 @@ def probe_browsing_nodes(
     if not isinstance(config, dict):
         raise ValidationError("candidate is not a YAML mapping")
     provider_payloads = _browsing_provider_payloads(config)
+    probe_payloads, aliases = _unique_probe_payloads(provider_payloads)
     node_names = tuple(
         str(proxy["name"]) for payload in provider_payloads.values() for proxy in payload
     )
@@ -624,7 +651,7 @@ def probe_browsing_nodes(
         secret = "clash-relay-browsing-qualification-only"
         temporary = _temporary_probe_config(
             config,
-            provider_payloads,
+            probe_payloads,
             mixed_port=mixed_port,
             controller_port=controller_port,
             secret=secret,
@@ -675,6 +702,7 @@ def probe_browsing_nodes(
                 )
                 atomic_write(config_path, _comment_header(original) + dump_yaml(config))
                 provider_payloads = _browsing_provider_payloads(config)
+                probe_payloads, aliases = _unique_probe_payloads(provider_payloads)
                 node_names = tuple(
                     str(proxy["name"])
                     for payload in provider_payloads.values()
@@ -682,7 +710,7 @@ def probe_browsing_nodes(
                 )
                 temporary = _temporary_probe_config(
                     config,
-                    provider_payloads,
+                    probe_payloads,
                     mixed_port=mixed_port,
                     controller_port=controller_port,
                     secret=secret,
@@ -734,11 +762,13 @@ def probe_browsing_nodes(
 
         try:
             _wait_for_controller(process, controller_port, secret)
-            _wait_for_members(process, controller_port, secret, set(node_names))
+            _wait_for_members(process, controller_port, secret, set(aliases.values()))
             for _ in range(attempts):
                 sample, outcome = _group_delay_probe(controller_port, secret, probe)
                 known_sample = {
-                    node_name: sample[node_name] for node_name in node_names if node_name in sample
+                    node_name: sample[aliases[node_name]]
+                    for node_name in node_names
+                    if aliases[node_name] in sample
                 }
                 samples.append(known_sample)
                 successes = len(known_sample)
@@ -782,6 +812,8 @@ def probe_browsing_nodes(
         "attempts_per_node": attempts,
         "required_successes": required_successes,
         "tested_nodes": len(node_names),
+        "unique_nodes_probed": len(set(aliases.values())),
+        "duplicate_probe_entries_avoided": len(node_names) - len(set(aliases.values())),
         "qualified_nodes": len(qualified),
         "stable_nodes": len(stable),
         "reserve_nodes": len(qualified - stable),

@@ -15,10 +15,34 @@ from clash_relay.browsing_qualification import (
     _prune_rejected_proxy_identities,
     _qualified_from_group_samples,
     _stability_tiers_from_group_samples,
+    _unique_probe_payloads,
     apply_browsing_qualification,
     load_browsing_probe_spec,
 )
 from clash_relay.errors import ValidationError
+
+
+def test_probe_aliases_share_only_identical_source_and_transport() -> None:
+    base = {
+        "name": "[BROWSING:US] sub_2/A #1111111111",
+        "type": "http",
+        "server": "fixture.invalid",
+        "port": 443,
+    }
+    alias = {**base, "name": "[GENERAL:ANY] sub_2/A #2222222222"}
+    other_source = {**alias, "name": "[GENERAL:ANY] sub_3/A #3333333333"}
+    other_dialer = {
+        **alias,
+        "name": "[GENERAL:ANY] sub_2/B #4444444444",
+        "dialer-proxy": "different",
+    }
+    unique, aliases = _unique_probe_payloads(
+        {"browsing": (base,), "general": (alias, other_source, other_dialer)}
+    )
+    assert sum(len(payload) for payload in unique.values()) == 3
+    assert aliases[alias["name"]] == base["name"]
+    assert aliases[other_source["name"]] == other_source["name"]
+    assert aliases[other_dialer["name"]] == other_dialer["name"]
 
 
 def test_canonical_browsing_probe_is_reused_for_pre_publish_qualification(

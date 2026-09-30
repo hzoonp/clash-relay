@@ -376,6 +376,48 @@ def test_production_proof_rejects_failed_reachability_audit(tmp_path: Path) -> N
         build_production_proof(**inputs)
 
 
+def test_general_web_proof_requires_both_audit_and_qualification(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text(
+        "proxy-providers:\n  cr_general_any:\n    payload: [{name: A}, {name: B}]\nproxy-groups:\n  - name: 网页通用自动\n    use: [cr_general_any]\nrules: []\n",
+        encoding="utf-8",
+    )
+    inputs = _inputs(candidate)
+    inputs["audit"]["web_general"] = {
+        "status": "passed",
+        "source_use": "general",
+        "subscription_1_reachable": False,
+        "regional_scheduler": "passed",
+        "hostname": "SHOULD-NOT-LEAK",
+    }
+    inputs["browsing"]["web_general"] = {
+        "status": "qualified",
+        "source_use": "general",
+        "qualification": "passed",
+        "qualified_nodes": 2,
+        "node": "SHOULD-NOT-LEAK",
+    }
+    proof = build_production_proof(**inputs)
+    assert proof["web_general"] == {
+        "status": "passed",
+        "source_use": "general",
+        "subscription_1_reachable": False,
+        "regional_scheduler": "passed",
+        "qualification": "passed",
+        "qualified_nodes": 2,
+    }
+    assert "SHOULD-NOT-LEAK" not in repr(proof["web_general"])
+    assert "General web qualification | passed" in render_production_proof_markdown(proof)
+    for field in ("source_use", "subscription_1_reachable", "regional_scheduler"):
+        value = inputs["audit"]["web_general"].pop(field)
+        with pytest.raises(ValidationError, match="general web"):
+            build_production_proof(**inputs)
+        inputs["audit"]["web_general"][field] = value
+    del inputs["browsing"]["web_general"]
+    with pytest.raises(ValidationError, match="qualification evidence"):
+        build_production_proof(**inputs)
+
+
 @pytest.mark.parametrize("missing_evidence", ["terminal_guards", "download_listener_bound"])
 def test_production_proof_rejects_incomplete_download_isolation(
     tmp_path: Path, missing_evidence: str

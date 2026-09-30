@@ -342,7 +342,9 @@ def cap_endpoint_reserve_pools(config: dict[str, Any], reserve_names: set[str]) 
         name = str(group.get("name", ""))
         if name.startswith("__CR_ENDPOINT_"):
             continue
-        browsing = any(str(key).startswith(("cr_browsing_", "cr_web_general_")) for key in uses)
+        browsing = name.startswith("__CR_WEB_GENERAL_") or any(
+            str(key).startswith(("cr_browsing_", "cr_web_general_")) for key in uses
+        )
         if browsing and not name.endswith("_STABLE_AUTO"):
             continue
         names = {

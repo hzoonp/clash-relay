@@ -17,10 +17,13 @@ from clash_relay.proxy_endpoint_qualification import accelerate_client_health_ch
 from clash_relay.runtime_graph import RuntimeGraph
 from clash_relay.scheduler_history import browsing_runtime_names
 from clash_relay.util import dump_yaml, load_yaml_file
-from clash_relay.web_general_runtime import rewrite_web_general_qualified_candidate
+from clash_relay.web_general_runtime import (
+    rewrite_web_general_qualified_candidate,
+    web_general_runtime_names,
+)
 
 
-def _candidate(repo_root: Path):
+def _candidate(repo_root: Path, *, countries: dict[int, str] | None = None):
     paths = {
         "config_path": repo_root / "config.yaml",
         "subscriptions_path": repo_root / "subscriptions.yaml",
@@ -39,7 +42,7 @@ def _candidate(repo_root: Path):
         index = int(url.rsplit("/", 1)[1])
         return (
             "proxies:\n"
-            f"  - name: Fixture {index} US 1x\n"
+            f"  - name: Fixture {index} {(countries or {}).get(index, 'US')} 1x\n"
             "    type: http\n"
             f"    server: source-{index}.invalid.example\n"
             f"    port: {22000 + index}\n"
@@ -153,13 +156,14 @@ def test_general_web_auto_keeps_browsing_tiers_and_fast_failover(
     repo_root: Path, tmp_path: Path
 ) -> None:
     project, candidate = _candidate(repo_root)
-    names = {
-        proxy["name"]
-        for provider_name, provider in candidate["proxy-providers"].items()
-        if provider_name.startswith("cr_web_general_")
-        for proxy in provider["payload"]
-    }
+    names = web_general_runtime_names(candidate)
     assert names
+    assert not any(name.startswith("cr_web_general_") for name in candidate["proxy-providers"])
+    assert not any(
+        group["name"].startswith("__CR_AUTO_BROWSING_") for group in candidate["proxy-groups"]
+    )
+    assert len(candidate["proxy-providers"]) == 3
+    assert sum(group["type"] == "url-test" for group in candidate["proxy-groups"]) == 13
     path = tmp_path / "candidate.yaml"
     path.write_text(dump_yaml(candidate), encoding="utf-8")
     report = rewrite_web_general_qualified_candidate(path, names, names, names)
@@ -179,7 +183,7 @@ def test_general_web_auto_keeps_browsing_tiers_and_fast_failover(
     for tier_name in region["proxies"]:
         tier = groups[tier_name]
         assert tier["type"] == "url-test"
-        assert tier["use"] == ["cr_web_general_us"]
+        assert tier["use"] == ["cr_general_any"]
         assert tier["filter"].startswith("^(")
     accelerate_client_health_checks(rewritten)
     assert all(
@@ -189,6 +193,22 @@ def test_general_web_auto_keeps_browsing_tiers_and_fast_failover(
         audit_production_candidate(project, rewritten)["web_general"]["subscription_1_reachable"]
         is False
     )
+
+
+def test_general_web_qualification_filters_without_pruning_shared_general(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    project, candidate = _candidate(repo_root)
+    payload = copy.deepcopy(candidate["proxy-providers"]["cr_general_any"]["payload"])
+    names = sorted(web_general_runtime_names(candidate))
+    path = tmp_path / "candidate.yaml"
+    path.write_text(dump_yaml(candidate), encoding="utf-8")
+    report = rewrite_web_general_qualified_candidate(path, {names[0]}, {names[0]}, {names[0]})
+    rewritten = load_yaml_file(path)
+    assert report["qualified_nodes"] == 1
+    assert rewritten["proxy-providers"]["cr_general_any"]["payload"] == payload
+    assert web_general_runtime_names(rewritten) == {names[0]}
+    assert audit_production_candidate(project, rewritten)["web_general"]["status"] == "passed"
 
 
 def test_general_web_auto_cannot_reference_controlled_browsing(repo_root: Path) -> None:
@@ -204,12 +224,7 @@ def test_general_web_endpoint_cap_preserves_reject_and_reserve(
     repo_root: Path, tmp_path: Path
 ) -> None:
     project, candidate = _candidate(repo_root)
-    names = {
-        proxy["name"]
-        for key, provider in candidate["proxy-providers"].items()
-        if key.startswith("cr_web_general_")
-        for proxy in provider["payload"]
-    }
+    names = web_general_runtime_names(candidate)
     stable = next(
         group
         for group in candidate["proxy-groups"]
@@ -233,18 +248,14 @@ def test_browsing_qualification_rewrites_general_web_without_sub_1(
 ) -> None:
     project, candidate = _candidate(repo_root)
     names = browsing_runtime_names(candidate)
-    web_names = {
-        proxy["name"]
-        for key, provider in candidate["proxy-providers"].items()
-        if key.startswith("cr_web_general_")
-        for proxy in provider["payload"]
-    }
+    web_names = web_general_runtime_names(candidate)
     assert web_names and web_names <= names
     path = tmp_path / "candidate.yaml"
     path.write_text(dump_yaml(candidate), encoding="utf-8")
     monkeypatch.setattr(
         browsing_application, "probe_browsing_nodes", lambda *_a, **_k: (names, names)
     )
+
     monkeypatch.setattr(
         browsing_application, "probe_transport_nodes", lambda *_a, **_k: (names, names, {})
     )
@@ -264,6 +275,39 @@ def test_browsing_qualification_rewrites_general_web_without_sub_1(
         audit_production_candidate(project, qualified)["web_general"]["subscription_1_reachable"]
         is False
     )
+
+
+def test_shared_general_region_removed_by_preflight_does_not_block_other_regions(
+    repo_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, candidate = _candidate(repo_root, countries={3: "JP"})
+    general = candidate["proxy-providers"]["cr_general_any"]["payload"]
+    general[:] = [proxy for proxy in general if "sub_3/" not in proxy["name"]]
+    # The generic region selector is independently governed by on_empty: omit.
+    candidate["proxy-groups"][:] = [
+        group for group in candidate["proxy-groups"] if group["name"] != "日本节点"
+    ]
+    for group in candidate["proxy-groups"]:
+        if isinstance(group.get("proxies"), list):
+            group["proxies"] = [name for name in group["proxies"] if name != "日本节点"]
+    names = browsing_runtime_names(candidate)
+    path = tmp_path / "candidate.yaml"
+    path.write_text(dump_yaml(candidate), encoding="utf-8")
+    monkeypatch.setattr(
+        browsing_application, "probe_browsing_nodes", lambda *_a, **_k: (names, names)
+    )
+    monkeypatch.setattr(
+        browsing_application, "probe_transport_nodes", lambda *_a, **_k: (names, names, {})
+    )
+    monkeypatch.setattr(
+        browsing_application, "rewrite_transport_qualified_candidate", lambda *_a, **_k: {}
+    )
+    summary = browsing_application.run_browsing_qualification(
+        candidate=path, policies=repo_root / "policies.yaml", mihomo_bin=tmp_path / "unused"
+    )
+    assert summary["web_general"]["removed_regions"] == ["JP"]
+    rewritten = load_yaml_file(path)
+    assert audit_production_candidate(project, rewritten)["web_general"]["status"] == "passed"
 
 
 @pytest.mark.parametrize("target", ["网页浏览", "人工智能"])

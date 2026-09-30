@@ -152,6 +152,26 @@ def _write_hardened_candidate(tmp_path: Path) -> Path:
     return candidate
 
 
+def test_explicit_fork_reference_preserves_referenced_pool_scaffold() -> None:
+    candidate = _production_shaped_candidate()
+    candidate["rules"].insert(0, "DOMAIN,fork.fixture,fork-consumer")
+    candidate["proxy-groups"].append(
+        {
+            "name": "fork-consumer",
+            "type": "select",
+            "hidden": True,
+            "proxies": ["__CR_BROWSING_INVENTORY"],
+        }
+    )
+    harden_browsing_runtime(candidate, _policies())
+    groups = _groups(candidate)
+    assert "__CR_BROWSING_INVENTORY" in groups
+    assert groups["__CR_FALLBACK_BROWSING"]["proxies"] == [
+        _compiler_auto(region) for region in ("US", "SG", "JP")
+    ]
+    validate_generated_config(candidate)
+
+
 def test_region_prune_removes_stale_compiler_anchor_and_fallback_reference(
     tmp_path: Path,
 ) -> None:
@@ -172,9 +192,11 @@ def test_region_prune_removes_stale_compiler_anchor_and_fallback_reference(
     assert report["removed_regions"] == ["SG"]
     assert "cr_browsing_sg" not in providers
     assert _compiler_auto("SG") not in groups
-    assert groups["__CR_FALLBACK_BROWSING"]["proxies"] == [
-        _compiler_auto("US"),
-        _compiler_auto("JP"),
+    assert "__CR_FALLBACK_BROWSING" not in groups
+    assert "__CR_BROWSING_INVENTORY" not in groups
+    assert groups[BROWSING_AUTO_GROUP]["proxies"] == [
+        region_display_name("US"),
+        region_display_name("JP"),
     ]
     assert region_display_name("SG") not in groups
     assert region_stable_group("SG") not in groups
@@ -202,7 +224,8 @@ def test_multiple_region_prune_keeps_only_surviving_compiler_anchor(tmp_path: Pa
 
     assert report["available_regions"] == ["JP"]
     assert report["removed_regions"] == ["US", "SG"]
-    assert groups["__CR_FALLBACK_BROWSING"]["proxies"] == [_compiler_auto("JP")]
+    assert "__CR_FALLBACK_BROWSING" not in groups
+    assert _compiler_auto("JP") not in groups
     assert groups[BROWSING_AUTO_GROUP]["proxies"] == [region_display_name("JP")]
     assert groups[BROWSING_PUBLIC_GROUP]["proxies"] == [
         BROWSING_AUTO_GROUP,

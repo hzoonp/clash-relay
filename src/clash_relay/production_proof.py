@@ -12,7 +12,9 @@ from .qualification_observability import (
     render_qualification_observability_markdown,
     safe_qualification_observability,
 )
+from .runtime_graph import RuntimeGraph
 from .util import load_yaml_file
+from .web_general_runtime import WEB_GENERAL_AUTO_GROUP
 
 _ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "preflight", "published"})
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
@@ -74,6 +76,34 @@ def _safe_count(value: dict[str, Any], key: str) -> int:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return 0
     return max(0, int(raw))
+
+
+def _safe_web_general(audit: Any, qualification: Any, *, required: bool) -> dict[str, Any]:
+    if not required:
+        return {"status": "not_applicable"}
+    if (
+        not isinstance(audit, dict)
+        or audit.get("status") != "passed"
+        or audit.get("source_use") != "general"
+        or audit.get("subscription_1_reachable") is not False
+        or audit.get("regional_scheduler") != "passed"
+        or not isinstance(qualification, dict)
+        or qualification.get("status") != "qualified"
+        or qualification.get("source_use") != "general"
+        or qualification.get("qualification") != "passed"
+        or _safe_count(qualification, "qualified_nodes") == 0
+    ):
+        raise ValidationError(
+            "production proof requires general web source, scheduler and qualification evidence"
+        )
+    return {
+        "status": "passed",
+        "source_use": "general",
+        "subscription_1_reachable": False,
+        "regional_scheduler": "passed",
+        "qualification": "passed",
+        "qualified_nodes": _safe_count(qualification, "qualified_nodes"),
+    }
 
 
 def _safe_download_routing(value: Any, *, required: bool) -> dict[str, Any]:
@@ -360,6 +390,18 @@ def build_production_proof(
     if openai_client_path is not None:
         ai_proof["openai_client_path"] = openai_client_path
 
+    web_general_required = any(
+        isinstance(group, dict) and group.get("name") == WEB_GENERAL_AUTO_GROUP
+        for group in candidate.get("proxy-groups", [])
+    )
+    web_general_proof = _safe_web_general(
+        audit.get("web_general"), browsing.get("web_general"), required=web_general_required
+    )
+    if web_general_required and web_general_proof["qualified_nodes"] != len(
+        RuntimeGraph.from_candidate(candidate).effective_leaf_proxies(WEB_GENERAL_AUTO_GROUP)
+    ):
+        raise ValidationError("general web qualification evidence does not match final runtime")
+
     proof: dict[str, Any] = {
         "status": "passed",
         "candidate": {
@@ -391,6 +433,7 @@ def build_production_proof(
             "rejected": int(browsing.get("failed_nodes", 0)),
             "automatic": int(browsing.get("automatic_nodes", 0)),
         },
+        "web_general": web_general_proof,
         "ai": ai_proof,
         "validated_cores": list(validated_cores),
         "publication": publication_status,
@@ -461,6 +504,16 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
         f"| AI selector failures | {ai['selector_failures']} |",
     ]
     network_evidence = proof.get("network_evidence")
+    web_general = proof.get("web_general")
+    if isinstance(web_general, dict) and web_general.get("status") == "passed":
+        lines.extend(
+            [
+                "| General web source isolation | passed |",
+                "| General web regional scheduler | passed |",
+                "| General web qualification | passed |",
+                f"| General web qualified nodes | {web_general['qualified_nodes']} |",
+            ]
+        )
     if isinstance(network_evidence, dict):
         for label, key in (
             ("Network profile", "network_profile"),

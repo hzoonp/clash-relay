@@ -276,6 +276,16 @@ def run_browsing_qualification(
             )
 
         failure_stage = "browsing_rewrite"
+        # Narrow/remove shared-General web regions first; the following
+        # controlled browsing rewrite validates the complete candidate once
+        # both web surfaces have removed their empty regional groups.
+        web_general_report = rewrite_web_general_qualified_candidate(
+            candidate,
+            qualified_names=qualified,
+            stable_names=stable,
+            preferred_names=preferred,
+            validate_candidate=False,
+        )
         report = rewrite_hardened_browsing_qualified_candidate(candidate, qualified, stable)
         if history_inputs is not None:
             preference_groups = apply_browsing_history_preference(
@@ -294,12 +304,7 @@ def run_browsing_qualification(
                     preferred=preferred,
                 )
 
-        report["web_general"] = rewrite_web_general_qualified_candidate(
-            candidate,
-            qualified_names=qualified,
-            stable_names=stable,
-            preferred_names=preferred,
-        )
+        report["web_general"] = web_general_report
 
         failure_stage = "transport"
         tcp_qualified, udp_qualified, _ = probe_transport_nodes(

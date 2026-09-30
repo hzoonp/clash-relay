@@ -31,6 +31,8 @@ MYPY_TARGETS = (
     "ai_service_qualification",
     "browsing_application",
     "browsing_runtime",
+    "regional_web_runtime",
+    "web_general_runtime",
     "scheduler_history",
     "scheduler_policy",
     "qualification_pipeline",
