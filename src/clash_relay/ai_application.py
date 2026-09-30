@@ -220,7 +220,7 @@ def _run_sentinel_gate(
     node_regions: dict[str, str],
     provider_regions: dict[str, str],
     workers: int,
-    service_label: str,
+    service_label: str = "openai",
 ) -> dict[str, Any]:
     """Run the bounded sentinel sweep for one systemic-capable service.
 
