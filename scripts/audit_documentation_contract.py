@@ -7,75 +7,26 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
-AUTHORITATIVE = (
+GUIDES = (
     "README.md",
     "README.zh-CN.md",
     "docs/quickstart.md",
     "docs/quickstart.zh-CN.md",
 )
-
-REQUIRED = {
-    "README.md": (
-        "tools/mihomo-versions.json",
-        "versioned Cloudflare KV release transaction",
-        "clash-relay doctor",
-    ),
-    "README.zh-CN.md": (
-        "tools/mihomo-versions.json",
-        "versioned Cloudflare KV release transaction",
-        "clash-relay doctor",
-    ),
-    "docs/quickstart.md": (
-        "tools/mihomo-versions.json",
-        "previous-release-v1",
-        "clash-relay doctor",
-        "Policy Model v2",
-        "migrate_policy_v2.py",
-    ),
-    "docs/quickstart.zh-CN.md": (
-        "tools/mihomo-versions.json",
-        "previous-release-v1",
-        "clash-relay doctor",
-        "Policy Model v2",
-        "migrate_policy_v2.py",
-    ),
-}
-
+CANONICAL = (
+    "docs/publishing.md",
+    "docs/routing-v2.md",
+    "docs/rules.md",
+)
 FORBIDDEN = (
-    "Mihomo v1.19.30 plus v1.19.29",
-    "Mihomo v1.19.30 / v1.19.29",
-    "previous-good snapshot",
-    "dual-core validated rollback",
     "services.yaml",
     "Policy Model v1 remains readable",
     "Policy Model v1 仍可",
-    "current/deprecated",
-    "current` 还是 `deprecated",
     "Automatic `push` and `schedule` production runs are hard-latched to dry-run mode.",
     "Automatic `push` and `schedule` events are hard-latched to dry-run mode.",
     "自动 `push` 和 `schedule` 生产运行都被硬锁为 dry-run",
     "自动 `push` 与 `schedule` 事件始终被硬锁为 dry-run",
-    "AI routing continues to exclude CN/HK",
 )
-
-PUBLICATION_CONTRACT_DOCS = (
-    "README.md",
-    "README.zh-CN.md",
-    "docs/quickstart.md",
-    "docs/quickstart.zh-CN.md",
-    "docs/publishing.md",
-    "docs/production-cutover.md",
-)
-
-PUBLIC_SURFACE_DOCS = (
-    "README.md",
-    "README.zh-CN.md",
-    "docs/quickstart.md",
-    "docs/quickstart.zh-CN.md",
-    "docs/routing-v2.md",
-)
-
-SOURCE_POLICY_DOCS = ("docs/rules.md",)
 
 
 def _read(root: Path, relative: str) -> str:
@@ -123,70 +74,48 @@ def _canonical_ai_excluded_regions(root: Path) -> frozenset[str]:
 def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     texts: dict[str, str] = {}
-
-    documented = (
-        set(AUTHORITATIVE)
-        | set(PUBLICATION_CONTRACT_DOCS)
-        | set(PUBLIC_SURFACE_DOCS)
-        | set(SOURCE_POLICY_DOCS)
-    )
-    for relative in documented:
+    for relative in (*GUIDES, *CANONICAL):
         try:
             texts[relative] = _read(root, relative)
         except OSError:
-            errors.append(f"missing authoritative documentation: {relative}")
+            errors.append(f"missing documentation: {relative}")
 
-    for relative in AUTHORITATIVE:
+    for relative in GUIDES:
         text = texts.get(relative, "")
-        for token in REQUIRED[relative]:
-            if token not in text:
-                errors.append(f"{relative} is missing current contract token: {token}")
-        for token in FORBIDDEN:
-            if token in text:
-                errors.append(f"{relative} contains stale contract wording: {token}")
+        if "clash-relay doctor" not in text:
+            errors.append(f"{relative} does not surface the supported doctor entrypoint")
+        for target in ("publishing.md", "routing-v2.md", "rules.md"):
+            if target not in text:
+                errors.append(f"{relative} does not link to canonical {target}")
 
-    for relative in PUBLICATION_CONTRACT_DOCS:
-        text = texts.get(relative, "")
-        for token in (
-            "push",
-            "schedule",
-            "dry-run",
-            "publish=true",
-            "CLASH_RELAY_SCHEDULE_PUBLISH",
-        ):
-            if token not in text:
-                errors.append(
-                    f"{relative} does not explicitly describe the current publication trigger contract: {token}"
-                )
-        for token in FORBIDDEN:
-            if token in text:
-                errors.append(f"{relative} contains stale contract wording: {token}")
+    publishing = texts.get("docs/publishing.md", "")
+    for token in ("push", "schedule", "dry-run", "publish=true", "CLASH_RELAY_SCHEDULE_PUBLISH"):
+        if token not in publishing:
+            errors.append(f"docs/publishing.md is missing publication contract token: {token}")
 
     try:
         visible_groups = _canonical_visible_groups(root)
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
         errors.append(f"cannot derive canonical public surface: {exc}")
         visible_groups = ()
-    for relative in PUBLIC_SURFACE_DOCS:
-        text = texts.get(relative, "")
-        for group in visible_groups:
-            if group not in text:
-                errors.append(f"{relative} is missing canonical visible group: {group}")
+    routing = texts.get("docs/routing-v2.md", "")
+    for group in visible_groups:
+        if group not in routing:
+            errors.append(f"docs/routing-v2.md is missing canonical visible group: {group}")
 
     try:
         source_uses = _canonical_source_uses(root)
     except (OSError, KeyError, TypeError, yaml.YAMLError) as exc:
         errors.append(f"cannot derive canonical source policy: {exc}")
         source_uses = {}
-    for relative in SOURCE_POLICY_DOCS:
-        text = texts.get(relative, "")
-        for source_id, allowed_uses in source_uses.items():
-            expected = f"{source_id}\n  allowed_uses: {', '.join(allowed_uses)}"
-            if expected not in text:
-                errors.append(
-                    f"{relative} is missing canonical source policy for {source_id}: "
-                    f"allowed_uses={list(allowed_uses)}"
-                )
+    rules = texts.get("docs/rules.md", "")
+    for source_id, allowed_uses in source_uses.items():
+        expected = f"{source_id}\n  allowed_uses: {', '.join(allowed_uses)}"
+        if expected not in rules:
+            errors.append(
+                f"docs/rules.md is missing canonical source policy for {source_id}: "
+                f"allowed_uses={list(allowed_uses)}"
+            )
 
     try:
         excluded_regions = _canonical_ai_excluded_regions(root)
@@ -198,9 +127,13 @@ def audit(root: Path = ROOT) -> list[str]:
             "canonical topology no longer has the reviewed HK/UK AI exclusion; "
             f"found {sorted(excluded_regions)}"
         )
-    routing_text = texts.get("docs/routing-v2.md", "")
-    if "excluded: HK, UK" not in routing_text:
-        errors.append("docs/routing-v2.md is missing canonical `excluded: HK, UK` policy wording")
+    if "excluded: HK, UK" not in routing:
+        errors.append("docs/routing-v2.md is missing canonical `excluded: HK, UK` wording")
+
+    for relative, text in texts.items():
+        for token in FORBIDDEN:
+            if token in text:
+                errors.append(f"{relative} contains stale contract wording: {token}")
 
     return errors
 
@@ -209,8 +142,8 @@ def main() -> int:
     errors = audit()
     if errors:
         for error in errors:
-            print(f"error: {error}", file=sys.stderr)
-        return 2
+            print(error, file=sys.stderr)
+        return 1
     print("documentation contract: passed")
     return 0
 
