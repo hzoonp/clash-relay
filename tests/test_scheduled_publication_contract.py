@@ -57,6 +57,7 @@ def test_workflow_keeps_schedule_publication_inside_exact_sha_serialized_gate() 
     assert "github.repository == 'hzoonp/clash-relay'" in text
     assert "vars.CLASH_RELAY_SCHEDULE_PUBLISH == ''" in text
     assert "needs.validate.outputs.validated_sha == github.sha" in text
+    assert "reuse_main_validation: ${{ github.event_name != 'push' }}" in text
     assert "ref: ${{ needs.validate.outputs.validated_sha }}" in text
     assert "clash-relay-production-commit-{0}" in text
     assert "clash-relay-production-dry-run-{0}" in text

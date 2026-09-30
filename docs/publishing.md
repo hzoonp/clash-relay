@@ -6,11 +6,11 @@ Publication is downstream of Public Config v2 validation, generation, runtime qu
 
 The production workflow is designed to run from a public repository without turning GitHub into credential storage. Real subscription URLs are supplied only through trusted Secrets on `main`; generated and qualified candidates remain on the ephemeral runner until private publication to Cloudflare Workers KV.
 
-Pull requests use fictional sources and do not receive production subscription Secrets. Automatic `push` remains hard-latched to dry-run mode. Manual `workflow_dispatch` also remains a dry run unless `publish=true` is explicitly selected. Scheduled publication is a separate intentional state controlled by `CLASH_RELAY_SCHEDULE_PUBLISH` and can never be inferred from a push or manual input.
+Pull requests use fictional sources and do not receive production subscription Secrets. Every main push runs the full reusable code-validation matrix once but does not enter the production lifecycle or receive production subscription Secrets. Manual `workflow_dispatch` and scheduled refreshes reuse that successful validation only when it belongs to the exact current main SHA; missing or mismatched validation fails closed. Manual publication still requires `publish=true`, while scheduled publication remains controlled only by `CLASH_RELAY_SCHEDULE_PUBLISH`.
 
-The supported schedule runs every six hours and re-fetches current private subscriptions before executing generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, Promotion Guard, and the complete stable Mihomo matrix. The authorized upstream `hzoonp/clash-relay` deployment publishes when `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`; setting it to `false` suspends unattended publication. Public forks remain dry-run unless they explicitly opt in with the repository variable set to exact lowercase `true` after their manual bootstrap.
+The supported schedule runs every six hours and re-fetches current private subscriptions before executing generation, source audit, browsing/transport qualification, service qualification, declared client-path hardening, current-policy audit, Promotion Guard, and the complete stable Mihomo matrix for the newly generated candidate. Reusing code validation never reuses subscription bytes, qualification results, or a previous production candidate. The authorized upstream `hzoonp/clash-relay` deployment publishes when `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`; setting it to `false` suspends unattended publication. Public forks remain dry-run unless they explicitly opt in after manual bootstrap.
 
-Every publishing schedule run remains bound to the exact validated SHA. Any qualification rejection, SHA mismatch, Promotion Guard block, Mihomo rejection, ambiguous release transaction, or other mandatory-gate failure stops before activation. The same versioned rollback and compensating transaction semantics used by manual publication apply to scheduled publication.
+Every publish-capable run remains bound to the exact validated SHA. Any qualification rejection, SHA mismatch, Promotion Guard block, Mihomo rejection, ambiguous release transaction, or other mandatory-gate failure stops before activation. The same versioned rollback and compensating transaction semantics used by manual publication apply to scheduled publication.
 
 If an explicitly or automatically published final candidate is already active, publication is idempotent: production bytes stay unchanged and the previous-release pointer is not rotated.
 
@@ -123,7 +123,7 @@ A derived-state/SLO write failure cannot convert an invalid candidate into a val
 
 ## GitHub source releases
 
-The source-only GitHub Release workflow is separate from production configuration publication. It reads the package version from `pyproject.toml`, requires matching `docs/releases/<version>.md`, checks out the exact reusable-workflow `Validated SHA`, and creates a source release only when that tag does not already exist.
+The source-only GitHub Release workflow is separate from production configuration publication and is manual-only. It reads the package version from `pyproject.toml`, requires matching `docs/releases/<version>.md`, reuses the successful full main validation for the exact selected SHA, and creates a source release only when that tag does not already exist.
 
 Generated production configuration, subscription responses, Cloudflare KV data, scheduler/cache state, node-level results, metrics, and SLO state are never source-release assets.
 

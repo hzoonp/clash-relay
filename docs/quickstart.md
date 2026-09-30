@@ -127,7 +127,7 @@ A proof/manifest/metrics problem after the client-visible release transaction ha
 
 The scheduled workflow runs every six hours (`17 */6 * * *` UTC). On the authorized upstream `hzoonp/clash-relay`, scheduled publication is active when `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`; setting it to `false` suspends unattended publication and returns scheduled runs to dry-run. Public forks default to dry-run and must explicitly set the repository variable to exact lowercase `true` after a successful manual dry-run and bootstrap publication.
 
-A publishing schedule run still re-fetches current private subscriptions and reruns generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-qualification audit, Promotion Guard, and the complete stable Mihomo matrix. Any uncertainty or gate failure stops before production activation.
+A publishing schedule run reuses only the successful full code validation for the exact current main SHA. It still re-fetches current private subscriptions and reruns generation, source isolation, browsing/transport qualification, ServiceQualification, declared client-path hardening, post-qualification audit, Promotion Guard, and the complete stable Mihomo matrix. Any uncertainty or gate failure stops before production activation.
 
 Overlapping production Actions are serialized by the workflow concurrency group with `cancel-in-progress: false`; an older production run is never cancelled mid-lifecycle by a newer refresh.
 

@@ -58,6 +58,7 @@ MYPY_TARGETS = (
     "production_lifecycle",
     "production_lifecycle_result",
     "publication_decision",
+    "validation_authority",
 )
 AUDITS = (
     "audit_documentation_contract.py",

@@ -26,6 +26,8 @@ def test_publish_runs_on_main_schedule_and_manual_dispatch() -> None:
     assert "clash-relay-production-commit-{0}" in text
     assert "clash-relay-production-dry-run-{0}" in text
     assert "github.ref == 'refs/heads/main'" in text
+    assert "reuse_main_validation: ${{ github.event_name != 'push' }}" in text
+    assert "    paths:" not in text
 
 
 def test_concurrency_domains_separate_read_only_and_writer_runs() -> None:
@@ -57,17 +59,17 @@ def test_schedule_publication_signal_is_event_scoped_and_fork_safe() -> None:
     assert "CLASH_RELAY_MANUAL_PUBLISH: ${{ inputs.publish }}" in text
 
 
-def test_push_remains_a_production_preflight() -> None:
+def test_push_runs_full_code_validation_without_production_secrets() -> None:
     text = WORKFLOW.read_text()
-    assert "CLASH_RELAY_ONE_SHOT_PUBLISH:" not in text
-    assert "--manual-publish true" not in text
-    assert 'if [ "$CLASH_RELAY_PRODUCTION_PREFLIGHT" = "true" ]; then' in text
+    assert "github.event_name != 'push'" in text
+    assert "CLASH_RELAY_PRODUCTION_PREFLIGHT" not in text
+    assert "--production-preflight" not in text
     assert "export CLASH_RELAY_MANUAL_PUBLISH=true" not in text
 
 
 def test_workflow_is_a_thin_adapter_to_one_production_entrypoint() -> None:
     text = WORKFLOW.read_text()
-    assert len(text.splitlines()) < 100
+    assert len(text.splitlines()) < 90
     assert text.count("python scripts/run_production_release.py") == 1
     assert "python scripts/publish_scheduler_observation.py" not in text
     assert "Resolve publication mode" not in text

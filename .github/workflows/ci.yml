@@ -4,17 +4,25 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      reuse_main_validation:
+        description: Reuse a successful full publish push validation for this exact main SHA
+        required: false
+        default: false
+        type: boolean
     outputs:
       validated_sha:
         description: Exact commit SHA that completed every required validation gate
         value: ${{ jobs.validated.outputs.sha }}
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   quality:
     name: Python 3.12 quality
+    if: ${{ !inputs.reuse_main_validation }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -81,6 +89,7 @@ jobs:
 
   python-compat:
     name: Python ${{ matrix.python }} compatibility
+    if: ${{ !inputs.reuse_main_validation }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -213,13 +222,48 @@ jobs:
       - name: Confirm embedded Routing V2 drift gate passed
         run: echo "Routing V2 drift is enforced by the Python 3.12 quality job."
 
+  trusted-main:
+    name: Trust validated main SHA
+    if: ${{ inputs.reuse_main_validation }}
+    runs-on: ubuntu-latest
+    outputs:
+      validated_sha: ${{ steps.trust.outputs.validated_sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - id: trust
+        name: Resolve successful full validation for exact SHA
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: PYTHONPATH=src python3 scripts/resolve_validated_sha.py --github-output "$GITHUB_OUTPUT"
+
   validated:
     name: Validate exact commit / Validated SHA
-    needs: [quality, python-compat, deterministic-generation, stable-mihomo, routing-required]
+    needs:
+      [quality, python-compat, deterministic-generation, stable-mihomo, routing-required, trusted-main]
+    if: >-
+      ${{ !cancelled() &&
+        ((inputs.reuse_main_validation && needs.trusted-main.result == 'success') ||
+        (!inputs.reuse_main_validation &&
+        needs.deterministic-generation.result == 'success' &&
+        needs.stable-mihomo.result == 'success' &&
+        needs.routing-required.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
     steps:
       - id: sha
         name: Bind validation result to exact commit SHA
-        run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        env:
+          REUSE_VALIDATION: ${{ inputs.reuse_main_validation }}
+          TRUSTED_SHA: ${{ needs.trusted-main.outputs.validated_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$REUSE_VALIDATION" = "true" ]; then
+            sha="$TRUSTED_SHA"
+          else
+            sha="$GITHUB_SHA"
+          fi
+          test "$sha" = "$GITHUB_SHA"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"

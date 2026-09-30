@@ -30,7 +30,7 @@ Fork
 
 `clash-relay audit-release-state` checks private Cloudflare release consistency without writing. Use `clash-relay doctor --check-release-state` to include that check with private readiness.
 
-Automatic `push` production runs remain hard-latched to dry-run mode. Manual `workflow_dispatch` publishes only with `publish=true`. Scheduled runs may publish only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate: the authorized upstream `hzoonp/clash-relay` deployment is enabled when the variable is unset, while public forks remain dry-run unless they explicitly set the repository variable to `true`. Setting it to `false` suspends unattended publication. Unchanged validated bytes are idempotent and do not rotate the previous-release pointer.
+Every main push runs the full code-validation matrix once without entering the production lifecycle or receiving production subscription Secrets. Later manual or scheduled refreshes reuse that result only for the exact same main SHA, then re-fetch subscriptions and re-run all candidate qualification, policy, Promotion Guard, and Mihomo validation. Manual `workflow_dispatch` publishes only with `publish=true`; scheduled runs remain controlled by `CLASH_RELAY_SCHEDULE_PUBLISH`.
 
 ## Public Config v2
 

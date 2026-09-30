@@ -30,7 +30,7 @@ Fork
 
 `clash-relay audit-release-state` 只读检查私有 Cloudflare 发布状态；`clash-relay doctor --check-release-state` 将该检查纳入私有就绪诊断。
 
-自动 `push` 生产运行继续被硬锁为 dry-run；手动 `workflow_dispatch` 只有 `publish=true` 才发布。定时 `schedule` 只能通过专用 `CLASH_RELAY_SCHEDULE_PUBLISH` 门禁进入发布：已明确授权的上游 `hzoonp/clash-relay` 在该变量未设置时启用自动发布；公开 Fork 默认仍为 dry-run，只有显式把仓库变量设为精确小写 `true` 才启用。把变量设为 `false` 可立即暂停无人值守发布。最终字节完全不变时保持幂等，不旋转 previous-release 指针。
+每个 main push 只完整执行一次代码验证矩阵，不进入 production lifecycle，也不读取生产订阅 Secrets。之后的手动或定时刷新只复用“同一个 main SHA 已成功”的代码验证结果，同时仍重新获取订阅并完整执行候选资格筛选、策略审计、Promotion Guard 与 Mihomo 验证。手动 `workflow_dispatch` 只有 `publish=true` 才发布；定时发布仍由 `CLASH_RELAY_SCHEDULE_PUBLISH` 控制。
 
 ## Public Config v2
 

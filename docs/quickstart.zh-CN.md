@@ -133,7 +133,7 @@ prepared -> qualified -> promoted -> published -> verified
 
 定时 Workflow 每 6 小时运行一次（UTC `17 */6 * * *`）。已明确授权的上游 `hzoonp/clash-relay` 在 `CLASH_RELAY_SCHEDULE_PUBLISH` 未设置或设为精确小写 `true` 时自动发布；设为 `false` 会暂停无人值守发布，并让定时运行恢复为 dry-run。公开 Fork 默认仍为 dry-run，必须在成功完成手动 dry-run 与 bootstrap 发布后，显式把仓库变量设为精确小写 `true` 才启用自动发布。
 
-定时发布仍会重新获取当前私有订阅，并完整执行生成、source isolation、browsing/transport qualification、ServiceQualification、声明式 client-path hardening、qualification 后审计、Promotion Guard 以及完整 stable Mihomo matrix。任何不确定状态或门禁失败都会在生产激活前 fail-closed。
+定时发布只复用“当前 main 精确 SHA 已成功”的完整代码验证结果；当前私有订阅仍会重新获取，并完整执行生成、source isolation、browsing/transport qualification、ServiceQualification、声明式 client-path hardening、qualification 后审计、Promotion Guard 以及完整 stable Mihomo matrix。任何不确定状态或门禁失败都会在生产激活前 fail-closed。
 
 多个生产 Actions 同时到达时会通过 concurrency group 串行执行，且 `cancel-in-progress: false`；旧运行不会在生产生命周期中途被新运行取消。
 

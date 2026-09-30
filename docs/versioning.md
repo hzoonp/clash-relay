@@ -63,6 +63,6 @@ Production configuration, immutable release bytes, release manifests, pointers, 
 
 ## Release process
 
-The reusable validation workflow is release-authoritative. A release commit must pass Python 3.11/3.12/3.13 quality, deterministic generation, Routing V2 drift validation, every pinned stable Mihomo integration job, and the final Validated SHA binding.
+The reusable validation workflow is release-authoritative. Every main SHA receives the full Python 3.11/3.12/3.13, deterministic-generation, Routing V2, pinned Mihomo integration, and final Validated SHA checks once on push. Later production refreshes and source releases may reuse only that successful result for the exact same main SHA.
 
-The source-release workflow reads the package version from `pyproject.toml` and requires matching versioned release notes at `docs/releases/<version>.md`. It checks out the exact validated SHA and creates a source-only GitHub Release for an untagged version. Later validated commits that retain an already released version succeed without creating or moving that tag; the workflow records that release creation was skipped. Bump the package version before creating another source release.
+The source-release workflow is manual-only. It reads the package version from `pyproject.toml`, requires matching versioned release notes at `docs/releases/<version>.md`, checks out the exact trusted SHA, and creates a source-only GitHub Release for an untagged version. Later validated commits that retain an already released version succeed without creating or moving that tag. Bump the package version before creating another source release.
