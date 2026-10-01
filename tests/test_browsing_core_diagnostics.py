@@ -102,7 +102,7 @@ def _stub_probe_build(monkeypatch: pytest.MonkeyPatch, candidate: dict) -> None:
         "_browsing_provider_payloads",
         lambda value: value["proxy-providers"],
     )
-    monkeypatch.setattr(diagnostics, "_free_port", lambda: 12345)
+    monkeypatch.setattr(diagnostics, "free_tcp_port", lambda: 12345)
     monkeypatch.setattr(
         diagnostics,
         "_temporary_probe_config",
