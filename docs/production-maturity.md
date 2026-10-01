@@ -15,7 +15,9 @@ Authoritative onboarding documentation describes only the current architecture:
 
 ## Production observability
 
-Private longitudinal production metrics remain bounded and aggregate-only. Allowed data includes candidate byte hashes/sizes, regional cohort counts, AI service counts, release state, stable-core validation counts, and bounded phase durations.
+Private longitudinal production metrics remain bounded and aggregate-only. Allowed data includes candidate byte hashes/sizes, regional cohort counts, AI service counts, release state, stable-core validation counts, bounded phase durations, and per-source admission counts grouped by internal invalid-proxy reason codes. These admission counters retain enough history for a future regression guard without retaining rejected node identities.
+
+The production proof independently records client-facing YAML portability after the final candidate has passed the strict portable-character boundary. FlClash-facing integration fixtures include rejected C0/C1-contaminated node fields so a bad upstream entry cannot invalidate the whole generated profile.
 
 Forbidden metrics include node names, server addresses, credentials, subscription URLs, raw child-process output, and per-node qualification results. Existing private state is sanitized before re-persistence so unknown historical fields cannot silently become part of the supported metrics contract.
 
