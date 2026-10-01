@@ -126,6 +126,37 @@ def test_stop_mihomo_process_escalates_after_timeout(
     assert process.wait_calls == 2
 
 
+def test_start_mihomo_process_uses_isolated_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    process = _FakeProcess()
+
+    def fake_popen(command: list[str], **kwargs: Any):
+        captured["command"] = command
+        captured.update(kwargs)
+        return process
+
+    monkeypatch.setattr(runtime.subprocess, "Popen", fake_popen)
+    binary = tmp_path / "mihomo"
+    config = tmp_path / "probe.yaml"
+
+    result = runtime.start_mihomo_process(binary, config, tmp_path)
+
+    assert result is process
+    assert captured["command"] == [
+        str(binary),
+        "-d",
+        str(tmp_path),
+        "-f",
+        str(config),
+    ]
+    assert captured["cwd"] == tmp_path
+    assert captured["env"]["TZ"] == "UTC"
+    assert captured["start_new_session"] is True
+
+
 def test_run_config_test_uses_isolated_workdir(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
