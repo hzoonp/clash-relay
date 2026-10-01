@@ -247,9 +247,7 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
             ),
         )
     except MihomoProcessExited as exc:
-        raise AIProbeRuntimeError(
-            "Mihomo exited before AI qualification could start"
-        ) from exc
+        raise AIProbeRuntimeError("Mihomo exited before AI qualification could start") from exc
     except MihomoReadinessTimeout as exc:
         raise AIProbeRuntimeError(
             "Mihomo controller did not become ready for AI qualification"
@@ -284,9 +282,7 @@ def _wait_for_selector_members(
             ),
         )
     except MihomoProcessExited as exc:
-        raise AIProbeRuntimeError(
-            "Mihomo exited while loading AI qualification provider"
-        ) from exc
+        raise AIProbeRuntimeError("Mihomo exited while loading AI qualification provider") from exc
     except MihomoReadinessTimeout as exc:
         raise AIProbeRuntimeError(
             "AI qualification provider did not populate its selector"
@@ -584,7 +580,6 @@ def _qualify_shard(
             return qualified, diagnostics
         finally:
             stop_mihomo_process(process)
-
 
 
 def probe_ai_nodes(
