@@ -22,7 +22,7 @@ The production path is staged and fail closed:
 14. **Promotion Guard** rejects unsafe topology/config drift before publication.
 15. **Real-core matrix validation** tests the exact final candidate against every stable Mihomo core declared by `tools/mihomo-versions.json`.
 16. **Versioned promotion** stages and read-back verifies an immutable private release, updates the fixed client-facing Cloudflare KV key, and commits release pointers with compensation when a pointer commit fails.
-17. **Post-commit proof/derived state** records only safe aggregate proof, scheduler/cache state, metrics, and operational SLO outcomes. Best-effort observability cannot weaken a publication gate.
+17. **Post-commit proof/state/observability** persists scheduler/cache optimization state, then delegates metrics, scheduler evidence, and operational SLO outcomes to one aggregate-only observability boundary. Best-effort observability cannot weaken a publication gate.
 
 ## Canonical data flow
 
