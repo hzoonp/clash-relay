@@ -8,14 +8,16 @@ Use this runbook only after the complete architecture-convergence change set is 
 - The configured CI required-check context is green for the exact candidate.
 - `Verify finalized Routing V2 graph` is required and green for the exact candidate.
 - `publish.yml` still has one production mutation entrypoint: `scripts/run_production_release.py`.
-- Automatic `push` remains dry-run; scheduled publication is reachable only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate.
+- A `main` push is validation-only and does not enter the production lifecycle; scheduled publication is reachable only through the schedule-specific `CLASH_RELAY_SCHEDULE_PUBLISH` gate.
 - The current production value and rollback pointers are known-good before unattended publication is enabled.
 
 ## 2. Dry-run first
 
-Automatic `push` executions are fail-closed to `publish=false`. Manual `workflow_dispatch` also defaults to `publish=false`. After the final production-lifecycle change is merged to `main`, its push-triggered production workflow is therefore the preferred first production-parity dry run. An operator may also dispatch the production workflow manually with `publish=false`.
+A `main` push runs only the reusable code-validation matrix. It does not enter the production lifecycle and does not receive production subscription or Cloudflare Secrets. The successful push run binds full validation to that exact `main` SHA.
 
-A dry run may read private operational state needed for production-parity qualification, but it must not persist external state. Promotion Guard is publication-only because it compares against the current production baseline before an actual promotion; dry-run skips that gate while still executing the complete stable Mihomo matrix.
+The operator-controlled zero-write production-parity dry run is a manual `workflow_dispatch` with `publish=false`. Its validation job may reuse only a successful full validation for the exact same `main` SHA; only then does the deploy job re-fetch private subscriptions and execute the canonical production lifecycle with publication disabled. A scheduled run whose publication gate is disabled is also a dry run, but it is not the first-cutover acceptance path.
+
+A dry run may read private operational state needed for production-parity qualification, but it must not persist external state. Promotion Guard is publication-only because it compares against the current production baseline before an actual promotion; dry-run skips that gate while still executing qualification, current-policy audits, DNS/runtime validation, and the complete stable Mihomo matrix.
 
 Expected zero-write outcomes:
 
@@ -50,7 +52,7 @@ The scheduled workflow runs every six hours at `17 */6 * * *` UTC and uses the s
 
 The authorized upstream `hzoonp/clash-relay` deployment is enabled when repository variable `CLASH_RELAY_SCHEDULE_PUBLISH` is unset or exact lowercase `true`. Setting the variable to `false` suspends unattended publication and returns scheduled runs to dry-run. Public forks default to dry-run and must explicitly set `CLASH_RELAY_SCHEDULE_PUBLISH=true` only after a successful manual dry-run and bootstrap publication.
 
-`push` remains dry-run even if a publish-like environment value is present. Manual `workflow_dispatch` remains controlled solely by its `publish` input. Scheduled publication can be selected only by the schedule-specific gate.
+A `push` remains validation-only even if a publish-like environment value is present. Manual `workflow_dispatch` remains controlled solely by its `publish` input. Scheduled publication can be selected only by the schedule-specific gate.
 
 Overlapping production workflows remain serialized with `cancel-in-progress: false`; never weaken this to make a later scheduled refresh overtake an in-flight lifecycle.
 
