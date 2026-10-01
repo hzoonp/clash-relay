@@ -55,7 +55,7 @@ Canonical production names and Routing V2 fidelity rules are data under `routing
 
 Internal Python orchestration is in-process and typed. Scripts are adapters that parse CLI/environment input, call package application APIs, and render safe output. Python application layers do not launch sibling Python scripts or exchange business results through stdout/stderr JSON.
 
-True external programs remain explicit subprocess boundaries. Mihomo is the principal example: the project downloads a pinned official binary, validates its asset identity, then uses the core as the runtime authority for load/start/provider integration tests.
+True external programs remain explicit subprocess boundaries. Mihomo is the principal example: the project downloads a pinned official binary, validates its asset identity, then uses the core as the runtime authority for load/start/provider integration tests. Production browsing, AI, and transport qualification share one `mihomo_probe_runtime.py` boundary for temporary ports, config tests, process startup/readiness, and deterministic shutdown; each qualification module still owns its service-specific pass/fail semantics.
 
 ## Module responsibilities
 
@@ -74,6 +74,7 @@ True external programs remain explicit subprocess boundaries. Mihomo is the prin
 | `policy_contract.py` | declarative Routing V2 contract |
 | `routing_v2_audit.py` | current contract versus concrete graph audit |
 | `qualification_pipeline.py` | provider-agnostic qualification orchestration |
+| `mihomo_probe_runtime.py` | shared Mihomo process/config-test/readiness lifecycle for production probes |
 | `service_qualification.py` | typed service extension contract and ordered provider registry |
 | `ai_application.py` | service-qualification application orchestration using the registry |
 | `validator.py` | output graph, reference, isolation, and leakage validation |
@@ -82,7 +83,7 @@ True external programs remain explicit subprocess boundaries. Mihomo is the prin
 | `production_application.py` | typed production package services |
 | `promotion_guard.py` | pre-publication safety comparison |
 | `release_bundle.py` | immutable release staging, activation pointers, compensation, versioned rollback reads |
-| `operational_slo.py` / `slo_application.py` | aggregate-only bounded attempt outcomes and SLO persistence |
+| `operational_slo.py` / `production_observability.py` | aggregate-only bounded attempt outcomes and post-release SLO persistence |
 | `publication.py` / `publishers/` | publication safety and private output backend |
 | `cli.py` | local/CI command surface |
 
