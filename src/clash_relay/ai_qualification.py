@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
-import signal
 import socket
 import ssl
 import subprocess
@@ -20,6 +18,16 @@ from pathlib import Path
 from typing import Any
 
 from .errors import AIProbeRuntimeError, ValidationError
+from .mihomo_probe_runtime import (
+    MihomoProcessExited,
+    MihomoReadinessTimeout,
+    ensure_process_running,
+    free_tcp_port,
+    run_config_test,
+    start_mihomo_process,
+    stop_mihomo_process,
+    wait_for_process_condition,
+)
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
@@ -35,12 +43,6 @@ _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 )
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def _comment_header(text: str) -> str:
@@ -193,7 +195,7 @@ def _temporary_probe_config(
         # so routing-derived DNS rule-set bindings cannot be resolved here.
         probe_dns.pop("nameserver-policy", None)
         if probe_dns.get("enable"):
-            probe_dns["listen"] = f"127.0.0.1:{_free_port()}"
+            probe_dns["listen"] = f"127.0.0.1:{free_tcp_port()}"
         config["dns"] = probe_dns
     sniffer = base_config.get("sniffer")
     if isinstance(sniffer, dict):
@@ -228,16 +230,26 @@ def _controller_json(
 
 
 def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: str) -> None:
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise AIProbeRuntimeError("Mihomo exited before AI qualification could start")
-        try:
-            _controller_json(port, secret, "/version", timeout=0.5)
-            return
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(0.1)
-    raise AIProbeRuntimeError("Mihomo controller did not become ready for AI qualification")
+    try:
+        wait_for_process_condition(
+            process,
+            lambda: bool(_controller_json(port, secret, "/version", timeout=0.5)),
+            timeout=15,
+            transient_errors=(
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+            ),
+        )
+    except MihomoProcessExited as exc:
+        raise AIProbeRuntimeError(
+            "Mihomo exited before AI qualification could start"
+        ) from exc
+    except MihomoReadinessTimeout as exc:
+        raise AIProbeRuntimeError(
+            "Mihomo controller did not become ready for AI qualification"
+        ) from exc
 
 
 def _wait_for_selector_members(
@@ -247,22 +259,34 @@ def _wait_for_selector_members(
     expected_names: set[str],
 ) -> None:
     encoded_group = urllib.parse.quote(_PROBE_GROUP, safe="")
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise AIProbeRuntimeError("Mihomo exited while loading AI qualification provider")
-        try:
-            group = _controller_json(port, secret, f"/proxies/{encoded_group}", timeout=0.5)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(0.1)
-            continue
+
+    def ready() -> bool:
+        group = _controller_json(port, secret, f"/proxies/{encoded_group}", timeout=0.5)
         members = group.get("all")
-        if isinstance(members, list) and expected_names.issubset(
+        return isinstance(members, list) and expected_names.issubset(
             {str(member) for member in members}
-        ):
-            return
-        time.sleep(0.1)
-    raise AIProbeRuntimeError("AI qualification provider did not populate its selector")
+        )
+
+    try:
+        wait_for_process_condition(
+            process,
+            ready,
+            timeout=10,
+            transient_errors=(
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+            ),
+        )
+    except MihomoProcessExited as exc:
+        raise AIProbeRuntimeError(
+            "Mihomo exited while loading AI qualification provider"
+        ) from exc
+    except MihomoReadinessTimeout as exc:
+        raise AIProbeRuntimeError(
+            "AI qualification provider did not populate its selector"
+        ) from exc
 
 
 def _select_node(port: int, secret: str, node_name: str) -> bool:
@@ -500,8 +524,8 @@ def _qualify_shard(
     diagnostics["tested_nodes"] = len(payload)
     with tempfile.TemporaryDirectory(prefix="clash-relay-ai-") as temp_name:
         workdir = Path(temp_name)
-        mixed_port = _free_port()
-        controller_port = _free_port()
+        mixed_port = free_tcp_port()
+        controller_port = free_tcp_port()
         secret = "clash-relay-ai-qualification-only"
         config = _temporary_probe_config(
             base_config,
@@ -514,29 +538,14 @@ def _qualify_shard(
         config_path = workdir / "probe.yaml"
         config_path.write_text(dump_yaml(config), encoding="utf-8")
         try:
-            test = subprocess.run(
-                [str(binary), "-t", "-d", str(workdir), "-f", str(config_path)],
-                cwd=workdir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                timeout=30,
-                check=False,
-                env={**os.environ, "TZ": "UTC"},
-            )
+            test = run_config_test(binary, config_path, workdir)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise AIProbeRuntimeError("failed to execute Mihomo for AI qualification") from exc
         if test.returncode != 0:
             raise ValidationError("Mihomo rejected a temporary AI qualification configuration")
 
         try:
-            process = subprocess.Popen(
-                [str(binary), "-d", str(workdir), "-f", str(config_path)],
-                cwd=workdir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                env={**os.environ, "TZ": "UTC"},
-                start_new_session=True,
-            )
+            process = start_mihomo_process(binary, config_path, workdir)
         except OSError as exc:
             raise AIProbeRuntimeError("failed to start Mihomo for AI qualification") from exc
 
@@ -548,8 +557,10 @@ def _qualify_shard(
             node_results: dict[str, tuple[dict[str, Any], ...]] = {}
             for proxy in payload:
                 name = str(proxy["name"])
-                if process.poll() is not None:
-                    raise AIProbeRuntimeError("Mihomo exited during AI qualification")
+                try:
+                    ensure_process_running(process)
+                except MihomoProcessExited as exc:
+                    raise AIProbeRuntimeError("Mihomo exited during AI qualification") from exc
                 if not _select_node(controller_port, secret, name):
                     diagnostics["selector_failures"] += 1
                     continue
@@ -568,25 +579,8 @@ def _qualify_shard(
             )
             return qualified, diagnostics
         finally:
-            if process.poll() is None:
-                if hasattr(os, "killpg"):
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(process.pid, signal.SIGTERM)
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        with contextlib.suppress(ProcessLookupError):
-                            os.killpg(process.pid, signal.SIGKILL)
-                        process.wait(timeout=5)
-                else:
-                    # Windows: no process groups; mihomo spawns no children, so
-                    # a direct terminate covers the same guarantee.
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=5)
+            stop_mihomo_process(process)
+
 
 
 def probe_ai_nodes(
