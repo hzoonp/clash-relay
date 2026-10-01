@@ -9,7 +9,12 @@ from typing import Any
 import pytest
 
 import clash_relay.production_observability as observability
+from clash_relay.operational_slo import ProductionOutcome
 from clash_relay.production_metrics import build_metrics_run, parse_metrics_bytes
+from clash_relay.qualification_reliability import (
+    QualificationFailureCategory,
+    QualificationStageRejected,
+)
 
 
 def _browsing() -> dict:
@@ -283,3 +288,39 @@ def test_post_release_observability_owns_optional_publish_sequence(
     assert observability._load_json(tmp_path / "scheduler-observation-publish.json")[
         "status"
     ] == "published"
+
+
+
+def test_failure_observability_classifies_typed_qualification_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rejection = QualificationStageRejected(
+        stage="browsing",
+        category=QualificationFailureCategory.TRANSIENT,
+        retryable=True,
+    )
+    wrapped = RuntimeError("aggregate qualification failure")
+    wrapped.__cause__ = rejection
+    recorded: dict[str, Any] = {}
+
+    def record(**kwargs: Any) -> dict[str, Any]:
+        recorded.update(kwargs)
+        return {"status": "published"}
+
+    monkeypatch.setattr(observability, "_record_operational_slo", record)
+
+    result = observability.record_failure_observability(
+        project=_project(),  # type: ignore[arg-type]
+        publish=True,
+        private_dir=tmp_path,
+        lifecycle_started=0.0,
+        error=wrapped,
+        env={},
+    )
+
+    assert recorded["outcome"] is ProductionOutcome.QUALIFICATION_REJECTED
+    assert recorded["failure_category"] == QualificationFailureCategory.TRANSIENT.value
+    assert recorded["failure_retry_attempted"] is True
+    assert result.operational_slo == {"status": "published"}
+    assert result.warnings == ()
