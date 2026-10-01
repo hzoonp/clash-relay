@@ -425,9 +425,7 @@ def accelerate_client_health_checks(config: dict[str, Any]) -> int:
             or name.startswith(("网页 · ", "__CR_BROWSING_", "网页通用 · ", "__CR_WEB_GENERAL_"))
             or (
                 isinstance(uses, list)
-                and any(
-                    str(provider).startswith("cr_browsing_") for provider in uses
-                )
+                and any(str(provider).startswith("cr_browsing_") for provider in uses)
             )
         )
         group["max-failed-times"] = 1 if browsing else 2
