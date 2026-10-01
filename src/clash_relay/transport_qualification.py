@@ -9,14 +9,11 @@ receive nodes with a live UDP path.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
-import signal
 import socket
 import subprocess
 import tempfile
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +21,15 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .mihomo_probe_runtime import (
+    MihomoProcessExited,
+    MihomoReadinessTimeout,
+    free_tcp_port,
+    run_config_test,
+    start_mihomo_process,
+    stop_mihomo_process,
+    wait_for_process_condition,
+)
 from .util import atomic_write, dump_yaml, load_yaml_file
 from .validator import validate_generated_config
 
@@ -37,12 +43,6 @@ _TCP_URL = "https://cp.cloudflare.com/generate_204"
 _TCP_TIMEOUT_MS = 3000
 _UDP_TIMEOUT_SECONDS = 0.7
 _RE2_META = frozenset("\\.+*?()|[]{}^$")
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def _comment_header(text: str) -> str:
@@ -130,7 +130,7 @@ def _temporary_probe_config(
         # so routing-derived DNS rule-set bindings cannot be resolved here.
         probe_dns.pop("nameserver-policy", None)
         if probe_dns.get("enable"):
-            probe_dns["listen"] = f"127.0.0.1:{_free_port()}"
+            probe_dns["listen"] = f"127.0.0.1:{free_tcp_port()}"
         config["dns"] = probe_dns
     return config
 
@@ -163,36 +163,61 @@ def _controller_put(port: int, secret: str, path: str, payload: dict[str, Any]) 
 
 
 def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: str) -> None:
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise ValidationError("Mihomo exited before transport qualification could start")
-        try:
-            _controller_get(port, secret, "/version", timeout=0.5)
-            return
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(0.1)
-    raise ValidationError("Mihomo controller did not become ready for transport qualification")
+    try:
+        wait_for_process_condition(
+            process,
+            lambda: bool(_controller_get(port, secret, "/version", timeout=0.5)),
+            timeout=15,
+            transient_errors=(
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+            ),
+        )
+    except MihomoProcessExited as exc:
+        raise ValidationError(
+            "Mihomo exited before transport qualification could start"
+        ) from exc
+    except MihomoReadinessTimeout as exc:
+        raise ValidationError(
+            "Mihomo controller did not become ready for transport qualification"
+        ) from exc
 
 
 def _wait_for_members(
-    process: subprocess.Popen[bytes], port: int, secret: str, expected_names: set[str]
+    process: subprocess.Popen[bytes],
+    port: int,
+    secret: str,
+    expected_names: set[str],
 ) -> None:
     encoded = urllib.parse.quote(_PROBE_GROUP, safe="")
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise ValidationError("Mihomo exited while loading transport providers")
-        try:
-            group = _controller_get(port, secret, f"/proxies/{encoded}", timeout=0.5)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(0.1)
-            continue
+
+    def ready() -> bool:
+        group = _controller_get(port, secret, f"/proxies/{encoded}", timeout=0.5)
         members = group.get("all")
-        if isinstance(members, list) and expected_names.issubset({str(item) for item in members}):
-            return
-        time.sleep(0.1)
-    raise ValidationError("transport qualification providers did not populate their selector")
+        return isinstance(members, list) and expected_names.issubset(
+            {str(item) for item in members}
+        )
+
+    try:
+        wait_for_process_condition(
+            process,
+            ready,
+            timeout=10,
+            transient_errors=(
+                urllib.error.HTTPError,
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+            ),
+        )
+    except MihomoProcessExited as exc:
+        raise ValidationError("Mihomo exited while loading transport providers") from exc
+    except MihomoReadinessTimeout as exc:
+        raise ValidationError(
+            "transport qualification providers did not populate their selector"
+        ) from exc
 
 
 def _group_delay_probe(port: int, secret: str) -> dict[str, int]:
@@ -326,8 +351,8 @@ def probe_transport_nodes(
 
     with tempfile.TemporaryDirectory(prefix="clash-relay-transport-") as temp_name:
         workdir = Path(temp_name)
-        mixed_port = _free_port()
-        controller_port = _free_port()
+        mixed_port = free_tcp_port()
+        controller_port = free_tcp_port()
         secret = "clash-relay-transport-qualification-only"
         temporary = _temporary_probe_config(
             config,
@@ -339,29 +364,14 @@ def probe_transport_nodes(
         probe_path = workdir / "probe.yaml"
         probe_path.write_text(dump_yaml(temporary), encoding="utf-8")
         try:
-            test = subprocess.run(
-                [str(binary), "-t", "-d", str(workdir), "-f", str(probe_path)],
-                cwd=workdir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                timeout=30,
-                check=False,
-                env={**os.environ, "TZ": "UTC"},
-            )
+            test = run_config_test(binary, probe_path, workdir)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValidationError("failed to execute Mihomo for transport qualification") from exc
         if test.returncode != 0:
             raise ValidationError("Mihomo rejected the transport qualification configuration")
 
         try:
-            process = subprocess.Popen(
-                [str(binary), "-d", str(workdir), "-f", str(probe_path)],
-                cwd=workdir,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                env={**os.environ, "TZ": "UTC"},
-                start_new_session=True,
-            )
+            process = start_mihomo_process(binary, probe_path, workdir)
         except OSError as exc:
             raise ValidationError("failed to start Mihomo for transport qualification") from exc
         try:
@@ -407,21 +417,8 @@ def probe_transport_nodes(
                 if quic_ok:
                     quic_path.add(name)
         finally:
-            if process.poll() is None:
-                if hasattr(os, "killpg"):
-                    with contextlib.suppress(ProcessLookupError):
-                        os.killpg(process.pid, signal.SIGTERM)
-                else:
-                    process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if hasattr(os, "killpg"):
-                        with contextlib.suppress(ProcessLookupError):
-                            os.killpg(process.pid, signal.SIGKILL)
-                    else:
-                        process.kill()
-                    process.wait(timeout=5)
+            stop_mihomo_process(process)
+
 
     if not udp_qualified:
         raise ValidationError(
