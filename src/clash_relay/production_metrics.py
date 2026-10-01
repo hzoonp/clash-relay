@@ -155,6 +155,39 @@ def _clean_source_admission(value: Any) -> dict[str, Any] | None:
     }
 
 
+def _clean_source_admission_state(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    raw_by_source = value.get("by_source")
+    if not isinstance(raw_by_source, dict):
+        return None
+    by_source: dict[str, Any] = {}
+    for source_id, row in sorted(raw_by_source.items()):
+        if (
+            not isinstance(source_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
+            or not isinstance(row, dict)
+        ):
+            continue
+        by_source[source_id] = {
+            "input_nodes": _non_negative_int(row.get("input_nodes")),
+            "parsed_valid_nodes": _non_negative_int(row.get("parsed_valid_nodes")),
+            "skipped_invalid_nodes": _non_negative_int(row.get("skipped_invalid_nodes")),
+            "skipped_invalid_reasons": _clean_admission_reason_counts(
+                row.get("skipped_invalid_reasons")
+            ),
+        }
+    return {
+        "configured_subscriptions": _non_negative_int(value.get("configured_subscriptions")),
+        "successful_subscriptions": _non_negative_int(value.get("successful_subscriptions")),
+        "skipped_invalid_nodes": _non_negative_int(value.get("skipped_invalid_nodes")),
+        "skipped_invalid_reasons": _clean_admission_reason_counts(
+            value.get("skipped_invalid_reasons")
+        ),
+        "by_source": by_source,
+    }
+
+
 def _clean_failure(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -437,7 +470,7 @@ def _clean_run(run: Any) -> dict[str, Any] | None:
         ("mihomo", _clean_mihomo),
         ("performance", _clean_performance),
         ("qualification", _clean_qualification),
-        ("source_admission", lambda value: value if isinstance(value, dict) else None),
+        ("source_admission", _clean_source_admission_state),
         ("promotion_guard", _clean_promotion_guard),
         ("lifecycle", _clean_lifecycle),
     ):
