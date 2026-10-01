@@ -370,11 +370,7 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
 
 def _safe_non_negative_count(mapping: Mapping[str, Any], name: str) -> int:
     value = mapping.get(name)
-    return (
-        value
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
-        else 0
-    )
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def summarize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any] | None:
