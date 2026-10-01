@@ -264,6 +264,7 @@ def apply_acl4ssr_group_semantics(
                 group.pop("proxies", None)
 
         if group_type == "url-test":
+            prebuilt_interval: int | None = None
             if provider_pool is None:
                 references = group.get("proxies", [])
                 if (
@@ -279,11 +280,16 @@ def apply_acl4ssr_group_semantics(
                         f"ACL4SSR url-test group {display_name!r} requires "
                         "provider_pool or declared prebuilt group members"
                     )
+                runtime_interval = group.get("interval")
+                if isinstance(runtime_interval, int) and not isinstance(runtime_interval, bool):
+                    prebuilt_interval = runtime_interval
             if "tolerance" not in spec:
                 raise GenerationError(
                     f"ACL4SSR url-test group {display_name!r} is missing 'tolerance'"
                 )
             _apply_test_fields(group, spec)
+            if prebuilt_interval is not None:
+                group["interval"] = prebuilt_interval
             automatic_routes.append(display_name)
         elif group_type == "fallback":
             references = group.get("proxies", [])
