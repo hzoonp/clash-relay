@@ -8,7 +8,6 @@ import pytest
 
 import clash_relay.production_lifecycle as lifecycle
 from clash_relay.errors import CandidateValidationStageError, ValidationError
-from clash_relay.operational_slo import ProductionOutcome
 from clash_relay.production_lifecycle import (
     ProductionLifecyclePaths,
     ProductionPipeline,
@@ -104,7 +103,7 @@ def test_dry_run_post_commit_manifest_failure_remains_fail_closed(
     assert pipeline.warnings == []
 
 
-def test_typed_qualification_failure_records_rejected_outcome_and_retry_evidence(
+def test_typed_qualification_failure_is_delegated_to_observability(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -135,18 +134,18 @@ def test_typed_qualification_failure_records_rejected_outcome_and_retry_evidence
 
     recorded: dict[str, Any] = {}
 
-    def record_slo(**kwargs: Any) -> dict[str, Any]:
+    def record_failure(**kwargs: Any):
         recorded.update(kwargs)
-        return {"status": "skipped", "reason": "test"}
+        return SimpleNamespace(warnings=())
 
-    monkeypatch.setattr(pipeline, "_record_operational_slo", record_slo)
+    monkeypatch.setattr(lifecycle, "record_failure_observability", record_failure)
 
     with pytest.raises(ValidationError, match="aggregate qualification failure"):
         pipeline.run()
 
-    assert recorded["outcome"] is ProductionOutcome.QUALIFICATION_REJECTED
-    assert recorded["failure_category"] == QualificationFailureCategory.TRANSIENT.value
-    assert recorded["failure_retry_attempted"] is True
+    assert recorded["error"] is wrapped
+    assert recorded["publish"] is False
+    assert recorded["project"] is project
     assert not pipeline.paths.private_dir.exists()
 
 
