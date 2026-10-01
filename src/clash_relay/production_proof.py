@@ -162,7 +162,10 @@ def _safe_source_admission_rows(value: Any) -> tuple[dict[str, Any], int, dict[s
         if not isinstance(row, dict):
             continue
         source_id = row.get("id")
-        if not isinstance(source_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None:
+        if (
+            not isinstance(source_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
+        ):
             continue
         reasons = _safe_admission_reason_counts(row.get("skipped_invalid_reasons"))
         skipped = _safe_count(row, "skipped_invalid_nodes")
@@ -603,9 +606,8 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
 
     client_compatibility = proof.get("client_compatibility")
     if isinstance(client_compatibility, dict):
-        lines.append(
-            f"| FlClash YAML portability | {client_compatibility.get('yaml_portability', 'unknown')} |"
-        )
+        portability = client_compatibility.get("yaml_portability", "unknown")
+        lines.append(f"| FlClash YAML portability | {portability} |")
 
     source_admission = proof.get("source_admission")
     if isinstance(source_admission, dict):
