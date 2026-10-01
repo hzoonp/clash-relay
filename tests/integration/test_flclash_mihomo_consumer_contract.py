@@ -82,10 +82,10 @@ def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path]
         root / "subscription-5.yaml",
         [
             _http("HK General 05", "sub5-general.invalid.example", 25001),
-            _http("Bad\\u009fName", "sub5-bad-name.invalid.example", 25002),
+            _http("Bad\u009fName", "sub5-bad-name.invalid.example", 25002),
             {
                 **_http("Nested control", "sub5-bad-nested.invalid.example", 25003),
-                "ws-opts": {"headers": {"X-Test": "bad\\u009fvalue"}},
+                "ws-opts": {"headers": {"X-Test": "bad\u009fvalue"}},
             },
         ],
     )
