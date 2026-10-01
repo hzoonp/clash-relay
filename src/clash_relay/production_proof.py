@@ -13,7 +13,7 @@ from .qualification_observability import (
     safe_qualification_observability,
 )
 from .runtime_graph import RuntimeGraph
-from .util import load_yaml_file
+from .util import contains_yaml_incompatible_control_characters, load_yaml_file
 from .web_general_runtime import WEB_GENERAL_AUTO_GROUP
 
 _ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "preflight", "published"})
@@ -136,11 +136,57 @@ def _safe_download_routing(value: Any, *, required: bool) -> dict[str, Any]:
     }
 
 
+def _safe_admission_reason_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, int] = {}
+    for reason, count in sorted(value.items()):
+        if (
+            isinstance(reason, str)
+            and re.fullmatch(r"[a-z0-9_]{1,64}", reason)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and count >= 0
+        ):
+            result[reason] = count
+    return result
+
+
+def _safe_source_admission_rows(value: Any) -> tuple[dict[str, Any], int, dict[str, int]]:
+    if not isinstance(value, list):
+        return {}, 0, {}
+    by_source: dict[str, Any] = {}
+    total_skipped = 0
+    reason_totals: dict[str, int] = {}
+    for row in value:
+        if not isinstance(row, dict):
+            continue
+        source_id = row.get("id")
+        if (
+            not isinstance(source_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
+        ):
+            continue
+        reasons = _safe_admission_reason_counts(row.get("skipped_invalid_reasons"))
+        skipped = _safe_count(row, "skipped_invalid_nodes")
+        total_skipped += skipped
+        for reason, count in reasons.items():
+            reason_totals[reason] = reason_totals.get(reason, 0) + count
+        by_source[source_id] = {
+            "input_nodes": _safe_count(row, "input_nodes"),
+            "parsed_valid_nodes": _safe_count(row, "parsed_valid_nodes"),
+            "skipped_invalid_nodes": skipped,
+            "skipped_invalid_reasons": reasons,
+        }
+    return by_source, total_skipped, dict(sorted(reason_totals.items()))
+
+
 def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
     subscriptions = value.get("subscriptions")
     configured = len(subscriptions) if isinstance(subscriptions, list) else 0
+    by_source, skipped_invalid, skipped_reasons = _safe_source_admission_rows(subscriptions)
 
     compatibility = value.get("dns_compatibility_audit")
     leak = value.get("dns_leak_audit")
@@ -192,6 +238,9 @@ def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | 
             "informational_rejected": _safe_count(value, "informational_nodes_rejected"),
             "name_filtered": _safe_count(value, "name_filtered_nodes"),
             "multiplier_filtered": _safe_count(value, "multiplier_filtered_nodes"),
+            "skipped_invalid_nodes": skipped_invalid,
+            "skipped_invalid_reasons": skipped_reasons,
+            "by_source": by_source,
         },
         "dns": dns,
     }
@@ -356,6 +405,8 @@ def build_production_proof(
     candidate = load_yaml_file(candidate_path)
     if not isinstance(candidate, dict):
         raise ValidationError("production proof candidate must be a YAML mapping")
+    if contains_yaml_incompatible_control_characters(candidate):
+        raise ValidationError("production proof found FlClash-incompatible YAML control characters")
 
     audit = _json_mapping(audit, "post-qualification audit")
     reachability = _json_mapping(audit.get("reachability"), "reachability audit")
@@ -437,6 +488,7 @@ def build_production_proof(
         "ai": ai_proof,
         "validated_cores": list(validated_cores),
         "publication": publication_status,
+        "client_compatibility": {"yaml_portability": "passed"},
         "network_evidence": _safe_network_evidence(
             candidate=candidate, qualification=qualification, build_report=build_report
         ),
@@ -551,6 +603,11 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
     lines.append(
         f"| AI service fail-closed | {', '.join(fail_closed) if fail_closed else 'none'} |"
     )
+
+    client_compatibility = proof.get("client_compatibility")
+    if isinstance(client_compatibility, dict):
+        portability = client_compatibility.get("yaml_portability", "unknown")
+        lines.append(f"| FlClash YAML portability | {portability} |")
 
     source_admission = proof.get("source_admission")
     if isinstance(source_admission, dict):

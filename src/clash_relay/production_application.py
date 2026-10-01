@@ -831,6 +831,7 @@ def persist_production_metrics(
             browsing=_load_json(required["browsing"], "browsing metrics"),
             ai=_load_json(required["ai"], "AI metrics"),
             qualification=_optional_json(private_dir / "qualification-pipeline-summary.json"),
+            build_report=_optional_json(private_dir / "build-report.json"),
             release=_optional_json(private_dir / "release-publication.json"),
             mihomo_matrix=_optional_json(private_dir / "mihomo-validation-matrix.json"),
             promotion_guard=_optional_json(private_dir / "promotion-guard.json"),

@@ -11,6 +11,7 @@ import yaml
 from clash_relay.builder import build_candidate
 from clash_relay.mihomo import validate_with_mihomo
 from clash_relay.runtime_graph import RuntimeGraph
+from clash_relay.util import contains_yaml_incompatible_control_characters
 
 pytestmark = pytest.mark.integration
 
@@ -79,7 +80,14 @@ def _canonical_project(repo_root: Path, tmp_path: Path) -> tuple[dict[str, Path]
     )
     subscription_5 = _subscription(
         root / "subscription-5.yaml",
-        [_http("HK General 05", "sub5-general.invalid.example", 25001)],
+        [
+            _http("HK General 05", "sub5-general.invalid.example", 25001),
+            _http("Bad\u009fName", "sub5-bad-name.invalid.example", 25002),
+            {
+                **_http("Nested control", "sub5-bad-nested.invalid.example", 25003),
+                "ws-opts": {"headers": {"X-Test": "bad\u009fvalue"}},
+            },
+        ],
     )
     return (
         {
@@ -113,6 +121,10 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     result = build_candidate(**paths, env=env, rule_fetcher=_acl_fixture_fetcher)
 
     reports = {row["id"]: row for row in result.report["subscriptions"]}
+    consumer_source = reports["subscription_5"]
+    assert consumer_source["skipped_invalid_nodes"] == 2
+    assert consumer_source["skipped_invalid_reasons"] == {"yaml_control_characters": 2}
+    assert not contains_yaml_incompatible_control_characters(result.config)
     restricted = reports["subscription_1"]
     assert restricted["status"] == "ok"
     assert restricted["nodes"] == 2
