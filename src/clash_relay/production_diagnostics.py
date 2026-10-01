@@ -368,6 +368,15 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+def _safe_non_negative_count(mapping: Mapping[str, Any], name: str) -> int:
+    value = mapping.get(name)
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else 0
+    )
+
+
 def summarize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any] | None:
     """Return bounded aggregate admission evidence suitable for proof/metrics."""
 
@@ -407,34 +416,18 @@ def summarize_source_admission_report(report: Mapping[str, Any]) -> dict[str, An
                 source_reasons[str(reason)] = count
                 reason_totals[str(reason)] = reason_totals.get(str(reason), 0) + count
 
-        def count(name: str) -> int:
-            value = row.get(name)
-            return (
-                value
-                if isinstance(value, int) and not isinstance(value, bool) and value >= 0
-                else 0
-            )
-
         sources[source_id] = {
-            "input_nodes": count("input_nodes"),
-            "parsed_valid_nodes": count("parsed_valid_nodes"),
+            "input_nodes": _safe_non_negative_count(row, "input_nodes"),
+            "parsed_valid_nodes": _safe_non_negative_count(row, "parsed_valid_nodes"),
             "skipped_invalid_nodes": skipped_count,
             "skipped_invalid_reasons": dict(sorted(source_reasons.items())),
         }
 
-    def top_count(name: str) -> int:
-        value = safe.get(name)
-        return (
-            value
-            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
-            else 0
-        )
-
     return {
         "configured_subscriptions": len(rows),
-        "successful_subscriptions": top_count("successful_subscriptions"),
-        "parsed_nodes": top_count("parsed_nodes"),
-        "usable_nodes": top_count("usable_nodes"),
+        "successful_subscriptions": _safe_non_negative_count(safe, "successful_subscriptions"),
+        "parsed_nodes": _safe_non_negative_count(safe, "parsed_nodes"),
+        "usable_nodes": _safe_non_negative_count(safe, "usable_nodes"),
         "skipped_invalid_nodes": skipped_total,
         "skipped_invalid_reasons": dict(sorted(reason_totals.items())),
         "sources": dict(sorted(sources.items())),
