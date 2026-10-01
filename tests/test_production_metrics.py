@@ -14,9 +14,7 @@ from clash_relay.production_metrics import (
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
 PRODUCTION_APPLICATION = ROOT / "src" / "clash_relay" / "production_application.py"
-PRODUCTION_OBSERVABILITY = (
-    ROOT / "src" / "clash_relay" / "production_observability.py"
-)
+PRODUCTION_OBSERVABILITY = ROOT / "src" / "clash_relay" / "production_observability.py"
 
 
 def _browsing() -> dict:
@@ -321,4 +319,3 @@ def test_lifecycle_delegates_optional_metrics_after_release_commit() -> None:
     assert "production-metrics-v1" in application
     assert "build_metrics_run(" in application
     assert "metrics_summary(next_state)" in application
-
