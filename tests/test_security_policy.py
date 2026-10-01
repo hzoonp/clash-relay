@@ -54,9 +54,9 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
         encoding="utf-8"
     )
-    observability = (
-        repo_root / "src" / "clash_relay" / "production_observability.py"
-    ).read_text(encoding="utf-8")
+    observability = (repo_root / "src" / "clash_relay" / "production_observability.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "actions/upload-artifact" not in workflow
     assert "gh release" not in workflow
