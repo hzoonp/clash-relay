@@ -11,7 +11,12 @@ from typing import Any
 from .errors import SubscriptionError, UnsafeSubscriptionError
 from .network_address_policy import is_global_address
 from .uri_parser import decode_base64_text, parse_proxy_uri
-from .util import deep_size_guard, stable_json, yaml_load_no_aliases
+from .util import (
+    contains_yaml_incompatible_control_characters,
+    deep_size_guard,
+    stable_json,
+    yaml_load_no_aliases,
+)
 
 _ALLOWED_PROXY_TYPES = {
     "ss",
@@ -131,6 +136,8 @@ def _validate_proxy(proxy: Any, *, reject_private_hosts: bool) -> dict[str, Any]
         raise SubscriptionError("proxy entry must be a mapping")
     deep_size_guard(proxy, max_depth=12, max_items=5000)
     cleaned = _sanitize_mapping(proxy)
+    if contains_yaml_incompatible_control_characters(cleaned):
+        raise SubscriptionError("proxy contains YAML-incompatible control characters")
     name = cleaned.get("name")
     proxy_type = cleaned.get("type")
     server = cleaned.get("server")
@@ -317,6 +324,8 @@ def _invalid_proxy_reason(error: BaseException) -> str:
         return "invalid_entry"
     if message == "proxy fields must use string keys":
         return "invalid_fields"
+    if message == "proxy contains YAML-incompatible control characters":
+        return "yaml_control_characters"
     if message.endswith("has no valid name"):
         return "invalid_name"
     if message.endswith("has no type"):
