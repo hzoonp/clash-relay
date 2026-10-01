@@ -54,7 +54,7 @@ MYPY_TARGETS = (
     "release_transaction",
     "publishers/cloudflare_kv",
     "operational_slo",
-    "slo_application",
+    "production_observability",
     "production_lifecycle",
     "production_lifecycle_result",
     "publication_decision",
