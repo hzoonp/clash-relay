@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-import clash_relay.scheduler_observation as observation
+import clash_relay.production_observability as observation
 from clash_relay.errors import PublicationError
 
 
@@ -59,7 +59,7 @@ def test_scheduler_observation_publishes_only_compiled_aggregate_evidence(monkey
     monkeypatch.setattr(observation, "CloudflareKVPublisher", FakePublisher)
     monkeypatch.setattr(observation, "parse_metrics_bytes", lambda _content: (state, "loaded"))
 
-    result = observation.publish_scheduler_observation(project=_project(), env=_env())
+    result = observation._publish_scheduler_observation(project=_project(), env=_env())
 
     assert result["status"] == "published"
     assert result["mode"] == "observe_only"
@@ -77,7 +77,7 @@ def test_scheduler_observation_publishes_only_compiled_aggregate_evidence(monkey
 
 
 def test_scheduler_observation_skips_without_cloudflare_credentials() -> None:
-    assert observation.publish_scheduler_observation(project=_project(), env={}) == {
+    assert observation._publish_scheduler_observation(project=_project(), env={}) == {
         "status": "skipped",
         "reason": "cloudflare_unavailable",
     }
@@ -93,7 +93,7 @@ def test_scheduler_observation_is_best_effort_on_metrics_transport_failure(monke
 
     monkeypatch.setattr(observation, "CloudflareKVPublisher", FailingPublisher)
 
-    result = observation.publish_scheduler_observation(project=_project(), env=_env())
+    result = observation._publish_scheduler_observation(project=_project(), env=_env())
 
     assert result == {"status": "unavailable", "reason": "metrics_read_failed"}
     assert "PRIVATE" not in json.dumps(result)
