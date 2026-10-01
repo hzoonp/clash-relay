@@ -148,8 +148,22 @@ def _inputs(candidate_path: Path) -> dict:
         "build_report": {
             "network_profile": {"profile": "cn_three_net"},
             "subscriptions": [
-                {"id": "subscription_1", "url": "SHOULD-NOT-LEAK"},
-                {"id": "subscription_2", "url": "SHOULD-NOT-LEAK"},
+                {
+                    "id": "subscription_1",
+                    "url": "SHOULD-NOT-LEAK",
+                    "input_nodes": 8,
+                    "parsed_valid_nodes": 7,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {"yaml_control_characters": 1},
+                },
+                {
+                    "id": "subscription_2",
+                    "url": "SHOULD-NOT-LEAK",
+                    "input_nodes": 8,
+                    "parsed_valid_nodes": 6,
+                    "skipped_invalid_nodes": 2,
+                    "skipped_invalid_reasons": {"invalid_auth": 2},
+                },
             ],
             "successful_subscriptions": 2,
             "parsed_nodes": 14,
@@ -244,6 +258,7 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     markdown = render_production_proof_markdown(proof)
 
     assert proof["status"] == "passed"
+    assert proof["client_compatibility"] == {"yaml_portability": "passed"}
     assert proof["download_routing"] == {
         "configuration_guarantee": "passed",
         "deployment_guarantee": "unverified",
@@ -287,6 +302,11 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "successful_subscriptions": 2,
         "parsed_nodes": 14,
         "usable_nodes": 11,
+        "skipped_invalid_nodes": 3,
+        "skipped_invalid_reasons": {
+            "invalid_auth": 2,
+            "yaml_control_characters": 1,
+        },
         "duplicates_removed": 1,
         "informational_rejected": 2,
         "name_filtered": 1,
@@ -346,6 +366,8 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     assert "OpenAI client-path selection | stable_first_fallback" in markdown
     assert "OpenAI client-path nodes | 3" in markdown
     assert "Subscriptions successful / configured | 2 / 2" in markdown
+    assert "Invalid proxy entries skipped | 3" in markdown
+    assert "YAML portability | passed" in markdown
     assert "Informational nodes rejected | 2" in markdown
     assert "TCP reachable / tested | 9 / 12" in markdown
     assert "DNS compatibility | passed" in markdown
@@ -448,4 +470,13 @@ def test_production_proof_rejects_duplicate_core_versions(tmp_path: Path) -> Non
     inputs["validated_cores"] = ("v1.19.30", "v1.19.30")
 
     with pytest.raises(ValidationError, match="unique validated Mihomo core versions"):
+        build_production_proof(**inputs)
+
+
+def test_production_proof_rejects_nonportable_yaml_character(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text('metadata: "bad\\x9Fvalue"\n', encoding="utf-8")
+    inputs = _inputs(candidate)
+
+    with pytest.raises(ValidationError, match="not YAML-portable"):
         build_production_proof(**inputs)
