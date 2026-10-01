@@ -95,6 +95,17 @@ def stop_mihomo_process(
     process.wait(timeout=timeout)
 
 
+
+
+
+def ensure_process_running(process: subprocess.Popen[bytes]) -> None:
+    """Raise a typed runtime failure when Mihomo has already exited."""
+
+    returncode = process.poll()
+    if returncode is not None:
+        raise MihomoProcessExited(f"Mihomo exited with status {returncode}")
+
+
 def wait_for_process_condition(
     process: subprocess.Popen[bytes],
     probe: Callable[[], bool],
@@ -107,9 +118,7 @@ def wait_for_process_condition(
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        returncode = process.poll()
-        if returncode is not None:
-            raise MihomoProcessExited(f"Mihomo exited with status {returncode}")
+        ensure_process_running(process)
         try:
             if probe():
                 return
