@@ -337,7 +337,7 @@ def test_nul_byte_rejected() -> None:
 
 
 def test_yaml_incompatible_control_character_in_name_is_skipped() -> None:
-    bad = _http("Bad\\u009fNode")
+    bad = _http("Bad\u009fNode")
     good = _http("Good")
     payload = yaml.safe_dump({"proxies": [bad, good]}, allow_unicode=True)
 
@@ -356,7 +356,7 @@ def test_yaml_incompatible_control_character_in_nested_option_is_rejected() -> N
         "port": 443,
         "uuid": "00000000-0000-4000-8000-000000000099",
         "network": "ws",
-        "ws-opts": {"headers": {"X-Test": "bad\\u009fvalue"}},
+        "ws-opts": {"headers": {"X-Test": "bad\u009fvalue"}},
     }
     payload = yaml.safe_dump({"proxies": [proxy]}, allow_unicode=True)
 
