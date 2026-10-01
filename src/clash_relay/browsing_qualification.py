@@ -474,10 +474,14 @@ def _controller_json(
 
 
 def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: str) -> None:
+    def ready() -> bool:
+        _controller_json(port, secret, "/version", timeout=0.5)
+        return True
+
     try:
         wait_for_process_condition(
             process,
-            lambda: bool(_controller_json(port, secret, "/version", timeout=0.5)),
+            ready,
             timeout=15,
             transient_errors=(
                 urllib.error.HTTPError,
