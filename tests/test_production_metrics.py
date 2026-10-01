@@ -14,7 +14,9 @@ from clash_relay.production_metrics import (
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
 PRODUCTION_APPLICATION = ROOT / "src" / "clash_relay" / "production_application.py"
-PRODUCTION_OBSERVABILITY = ROOT / "src" / "clash_relay" / "production_observability.py"
+PRODUCTION_OBSERVABILITY = (
+    ROOT / "src" / "clash_relay" / "production_observability.py"
+)
 
 
 def _browsing() -> dict:
