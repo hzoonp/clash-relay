@@ -9,6 +9,10 @@ can never drift from production runtime identity.
 
 from __future__ import annotations
 
+import hashlib
+
+from .models import Node
+from .runtime_names import runtime_source_label
 from .util import safe_identifier
 
 _SCOPE_TOKEN_MAXIMUM = 36
@@ -36,3 +40,14 @@ def provider_and_group_names(unit_id: str, region: str) -> tuple[str, str]:
     """Return (provider_name, automatic_group_name) for one pool-region shard."""
 
     return provider_name_for(unit_id, region), automatic_group_name(unit_id, region)
+
+
+def runtime_proxy_name(node: Node, scope: str) -> str:
+    """Canonical runtime proxy name for one scoped source node."""
+
+    digest = hashlib.sha256(
+        f"{scope}\0{node.source_id}\0{node.fingerprint}".encode()
+    ).hexdigest()[:10]
+    original = node.original_name.replace("\n", " ").replace("\r", " ").strip()[:96]
+    source_label = runtime_source_label(node.source_id)
+    return f"[{scope}] {source_label}/{original} #{digest}"
