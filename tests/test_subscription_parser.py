@@ -334,3 +334,31 @@ def test_bom_is_accepted() -> None:
 def test_nul_byte_rejected() -> None:
     with pytest.raises(SubscriptionError, match="NUL"):
         parse_subscription("proxies:\x00 []")
+
+
+def test_yaml_incompatible_control_character_in_name_is_skipped() -> None:
+    bad = _http("Bad\\u009fNode")
+    good = _http("Good")
+    payload = yaml.safe_dump({"proxies": [bad, good]}, allow_unicode=True)
+
+    result = parse_subscription(payload, invalid_policy="skip")
+
+    assert [proxy["name"] for proxy in result.proxies] == ["Good"]
+    assert result.skipped_items == 1
+    assert result.skipped_reason_counts == (("yaml_control_characters", 1),)
+
+
+def test_yaml_incompatible_control_character_in_nested_option_is_rejected() -> None:
+    proxy = {
+        "name": "Nested control",
+        "type": "vless",
+        "server": "vless.invalid.example",
+        "port": 443,
+        "uuid": "00000000-0000-4000-8000-000000000099",
+        "network": "ws",
+        "ws-opts": {"headers": {"X-Test": "bad\\u009fvalue"}},
+    }
+    payload = yaml.safe_dump({"proxies": [proxy]}, allow_unicode=True)
+
+    with pytest.raises(SubscriptionError, match="YAML-incompatible control characters"):
+        parse_subscription(payload, invalid_policy="error")
