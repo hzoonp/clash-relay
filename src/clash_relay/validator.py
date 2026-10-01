@@ -10,7 +10,7 @@ from .errors import ValidationError
 from .runtime_graph import RuntimeGraph
 from .schema import validate_schema
 from .status import parse_expected_status
-from .util import stable_json
+from .util import contains_yaml_incompatible_control_characters, stable_json
 
 _BUILTINS = {"DIRECT", "REJECT", "PASS", "COMPATIBLE"}
 _FORBIDDEN_TOP_LEVEL = {
@@ -39,6 +39,8 @@ def _rule_target(rule: str) -> str:
 def validate_generated_config(config: dict[str, Any], *, secret_urls: tuple[str, ...] = ()) -> None:
     validate_schema(config, "mihomo-output.schema.json", source="generated config", output=True)
     errors: list[str] = []
+    if contains_yaml_incompatible_control_characters(config):
+        errors.append("generated configuration contains YAML-incompatible control characters")
     if "proxies" in config:
         errors.append("top-level raw proxies are forbidden; use inline providers")
     forbidden = sorted(_FORBIDDEN_TOP_LEVEL & set(config))
