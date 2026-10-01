@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import clash_relay.production_lifecycle as lifecycle
+import clash_relay.production_observability as observability
 from clash_relay.errors import ValidationError
 from clash_relay.production_event_audit import audit_production_preflight_result
 from clash_relay.production_lifecycle import ProductionLifecyclePaths
@@ -64,14 +65,15 @@ def test_full_production_preflight_never_invokes_external_persistence(
     def forbidden_external_write(*_args, **_kwargs):
         raise AssertionError("production preflight must not invoke external persistence")
 
-    for name in (
-        "persist_ai_qualification_cache",
-        "persist_scheduler_history",
-        "persist_production_metrics",
-        "publish_scheduler_observation",
-        "persist_operational_slo",
-    ):
+    for name in ("persist_ai_qualification_cache", "persist_scheduler_history"):
         monkeypatch.setattr(lifecycle, name, forbidden_external_write)
+    monkeypatch.setattr(observability, "persist_production_metrics", forbidden_external_write)
+    monkeypatch.setattr(
+        observability,
+        "_publish_scheduler_observation",
+        forbidden_external_write,
+    )
+    monkeypatch.setattr(observability, "_persist_operational_slo", forbidden_external_write)
 
     result = pipeline.run()
 
