@@ -265,9 +265,19 @@ def apply_acl4ssr_group_semantics(
 
         if group_type == "url-test":
             if provider_pool is None:
-                raise GenerationError(
-                    f"ACL4SSR url-test group {display_name!r} requires provider_pool"
-                )
+                references = group.get("proxies", [])
+                if (
+                    not isinstance(references, list)
+                    or not references
+                    or any(
+                        not isinstance(reference, str) or reference not in groups
+                        for reference in references
+                    )
+                ):
+                    raise GenerationError(
+                        f"ACL4SSR url-test group {display_name!r} requires "
+                        "provider_pool or prebuilt group members"
+                    )
             if "tolerance" not in spec:
                 raise GenerationError(
                     f"ACL4SSR url-test group {display_name!r} is missing 'tolerance'"
