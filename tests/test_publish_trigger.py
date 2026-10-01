@@ -134,14 +134,14 @@ def test_application_pipeline_owns_full_production_order_and_cleanup() -> None:
         "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
-        "metrics = self._persist_production_metrics(project)",
-        "scheduler_observation = self._publish_scheduler_observation(",
+        "observability = publish_post_release_observability(",
     ]
     positions = [lifecycle.index(stage) for stage in stages]
     assert positions == sorted(positions)
     assert "run_production_pipeline(" in lifecycle
     assert "run_release_candidate_stage(" in lifecycle
-    assert "publish_scheduler_observation(" in lifecycle
+    assert "publish_post_release_observability(" in lifecycle
+    assert "record_failure_observability(" in lifecycle
     assert "check_promotion_guard.py" not in lifecycle
     assert "validate_mihomo_matrix.py" not in lifecycle
     assert "publish_release_bundle.py" not in lifecycle
@@ -159,17 +159,13 @@ def test_observation_persistence_is_post_commit_and_best_effort() -> None:
     text = LIFECYCLE.read_text()
     release = text.index("release = release_stage.release")
     persist = text.index("derived_state = self._persist_derived_state(project)")
-    metrics = text.index("metrics = self._persist_production_metrics(project)")
-    observation = text.index("scheduler_observation = self._publish_scheduler_observation(")
-    assert release < persist < metrics < observation
-    assert text.count("self._best_effort_state(") == 4
+    observability = text.index("observability = publish_post_release_observability(")
+    assert release < persist < observability
+    assert text.count("self._best_effort_state(") == 2
     assert "persist_ai_qualification_cache" in text
     assert "persist_scheduler_history" in text
-    dry_run_guard = (
-        'if not self.publish:\n            return {"status": "skipped", "reason": "dry_run"}'
-    )
-    assert dry_run_guard in text
-    assert 'metrics.get("status") != "published"' in text
+    assert "_persist_production_metrics" not in text
+    assert "_publish_scheduler_observation" not in text
 
 
 def test_mihomo_validation_uses_manifest_matrix_without_workflow_version_constants() -> None:
