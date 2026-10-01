@@ -95,19 +95,30 @@ def audit_download_declarations(project: Any) -> dict[str, Any]:
     ):
         raise ConfigurationError("generic ProxyLite must use general inventory")
     web_auto = groups.get(WEB_GENERAL_AUTO_GROUP)
-    web_pool = next(
-        (row for row in project.policies["pools"] if row.get("id") == "web_general"), None
+    general_pool = next(
+        (row for row in project.policies["pools"] if row.get("id") == "general"),
+        None,
     )
+    browsing_pool = next(
+        (row for row in project.policies["pools"] if row.get("id") == "browsing"),
+        None,
+    )
+    web_route = web_auto.get("route") if isinstance(web_auto, dict) else None
     if (
         not isinstance(web_auto, dict)
         or web_auto.get("hidden") is not True
-        or web_auto.get("provider_pool") != "web_general"
         or web_auto.get("type") != "url-test"
-        or not isinstance(web_pool, dict)
-        or web_pool.get("source_use") != "general"
-        or web_pool.get("probe") != "browsing"
+        or web_auto.get("prebuilt_members") is not True
+        or "provider_pool" in web_auto
+        or not isinstance(web_route, dict)
+        or web_route.get("scenario") != "general"
+        or web_route.get("profile") != "browsing"
+        or not isinstance(general_pool, dict)
+        or general_pool.get("source_use") != "general"
+        or not isinstance(browsing_pool, dict)
+        or browsing_pool.get("probe") != "browsing"
     ):
-        raise ConfigurationError("generic ProxyLite requires general-only web URLTest")
+        raise ConfigurationError("generic ProxyLite requires direct general-only web URLTest")
     inline = {str(row["id"]): row for row in manifest.get("inline_rules", [])}
     if not inline.keys() >= _INLINE_IDS:
         raise ConfigurationError("download isolation inline rules are incomplete")
