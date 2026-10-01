@@ -133,7 +133,10 @@ def _clean_source_admission(value: Any) -> dict[str, Any] | None:
         if not isinstance(row, dict):
             continue
         source_id = row.get("id")
-        if not isinstance(source_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None:
+        if (
+            not isinstance(source_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
+        ):
             continue
         reasons = _clean_admission_reason_counts(row.get("skipped_invalid_reasons"))
         skipped = _non_negative_int(row.get("skipped_invalid_nodes"))
