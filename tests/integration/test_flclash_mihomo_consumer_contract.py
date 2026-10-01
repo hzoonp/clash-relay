@@ -295,3 +295,51 @@ def test_ai_fails_closed_when_subscription_1_nodes_are_all_rejected_by_admission
     general_servers = _reachable_servers(graph, general.proxies)
     assert general_servers
     assert not any(server.startswith("sub1-") for server in general_servers)
+
+
+def test_flclash_consumer_contract_skips_yaml_control_character_nodes(
+    repo_root: Path,
+    tmp_path: Path,
+) -> None:
+    paths, env = _canonical_project(repo_root, tmp_path)
+    root = paths["config_path"].parent
+    env["SUBSCRIPTION_5_URL"] = _subscription(
+        root / "subscription-5-control-characters.yaml",
+        [
+            _http("HK Good 05", "sub5-good.invalid.example", 25101),
+            _http("HK Bad\u009fName", "sub5-bad-name.invalid.example", 25102),
+            {
+                "name": "HK Nested Control",
+                "type": "vless",
+                "server": "sub5-bad-nested.invalid.example",
+                "port": 443,
+                "uuid": "00000000-0000-4000-8000-000000000099",
+                "network": "ws",
+                "ws-opts": {"headers": {"X-Test": "bad\u009fvalue"}},
+            },
+        ],
+    )
+
+    result = build_candidate(**paths, env=env, rule_fetcher=_acl_fixture_fetcher)
+    report = next(row for row in result.report["subscriptions"] if row["id"] == "subscription_5")
+
+    assert report["parsed_valid_nodes"] == 1
+    assert report["skipped_invalid_nodes"] == 2
+    assert report["skipped_invalid_reasons"] == {"yaml_control_characters": 2}
+    assert "HK Good 05" in result.yaml_text
+    assert "HK Bad" not in result.yaml_text
+    assert "bad-nested.invalid.example" not in result.yaml_text
+
+    document = yaml.safe_load(result.yaml_text)
+    assert all(
+        "\u009f" not in str(value)
+        for provider in document["proxy-providers"].values()
+        for proxy in provider["payload"]
+        for value in proxy.values()
+    )
+
+    candidate = tmp_path / "flclash-control-character.yaml"
+    candidate.write_text(result.yaml_text, encoding="utf-8")
+    mihomo = validate_with_mihomo(_binary(), candidate, startup_seconds=1.0)
+    assert mihomo["config_test"] == "passed"
+    assert mihomo["startup_smoke"] == "passed"
