@@ -64,13 +64,9 @@ def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValidationError(
-            f"production observability could not read {path.name!r}"
-        ) from exc
+        raise ValidationError(f"production observability could not read {path.name!r}") from exc
     if not isinstance(value, dict):
-        raise ValidationError(
-            f"production observability JSON {path.name!r} must be an object"
-        )
+        raise ValidationError(f"production observability JSON {path.name!r} must be an object")
     return value
 
 
@@ -223,9 +219,7 @@ def _qualification_retry_state(private_dir: Path) -> tuple[bool, bool]:
     if not isinstance(browsing, dict):
         return False, False
     attempts = browsing.get("stage_attempts", 1)
-    retry_attempted = (
-        isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1
-    )
+    retry_attempted = isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1
     return retry_attempted, browsing.get("recovered_by_retry") is True
 
 
