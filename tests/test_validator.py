@@ -315,7 +315,7 @@ def test_arbitrary_listener_configuration_rejected(built_candidate) -> None:
 def test_generated_candidate_rejects_yaml_incompatible_control_characters(built_candidate) -> None:
     config = _candidate(built_candidate)
     proxy = next(iter(config["proxy-providers"].values()))["payload"][0]
-    proxy["name"] = str(proxy["name"]) + "\\u009f"
+    proxy["name"] = str(proxy["name"]) + "\u009f"
 
     with pytest.raises(ValidationError, match="YAML-incompatible control characters"):
         validate_generated_config(config)
