@@ -176,6 +176,48 @@ def main() -> int:
             "architecture audit: qualification restored OpenAI-specific application API"
         )
 
+    # Production probe services share one Mihomo process/runtime boundary.
+    probe_runtime = _text("src/clash_relay/mihomo_probe_runtime.py")
+    for token in (
+        "free_tcp_port(",
+        "run_config_test(",
+        "start_mihomo_process(",
+        "stop_mihomo_process(",
+        "wait_for_process_condition(",
+    ):
+        if token not in probe_runtime:
+            raise SystemExit(
+                f"architecture audit: shared Mihomo probe runtime missing {token}"
+            )
+    for relative in (
+        "src/clash_relay/browsing_qualification.py",
+        "src/clash_relay/ai_qualification.py",
+        "src/clash_relay/transport_qualification.py",
+    ):
+        content = _text(relative)
+        for forbidden in (
+            "def _free_port(",
+            "subprocess.run(",
+            "subprocess.Popen(",
+            "os.killpg(",
+            "signal.SIGTERM",
+            "signal.SIGKILL",
+        ):
+            if forbidden in content:
+                raise SystemExit(
+                    f"architecture audit: {relative} retained Mihomo lifecycle token {forbidden}"
+                )
+        for required in (
+            "run_config_test(",
+            "start_mihomo_process(",
+            "stop_mihomo_process(",
+            "wait_for_process_condition(",
+        ):
+            if required not in content:
+                raise SystemExit(
+                    f"architecture audit: {relative} bypasses shared Mihomo runtime {required}"
+                )
+
     # Lifecycle calls typed package services directly; scripts are adapters only.
     production_pipeline = _text("src/clash_relay/production_pipeline.py")
     for token in ("script_dir", "python_executable"):
