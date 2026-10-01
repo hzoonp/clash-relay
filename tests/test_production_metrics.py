@@ -64,16 +64,53 @@ def _ai() -> dict:
     }
 
 
+def _build_report() -> dict:
+    return {
+        "successful_subscriptions": 2,
+        "parsed_nodes": 12,
+        "usable_nodes": 10,
+        "subscriptions": [
+            {
+                "id": "subscription_1",
+                "input_nodes": 5,
+                "parsed_valid_nodes": 4,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {
+                    "yaml_control_characters": 1,
+                    "private-reason": 99,
+                },
+                "url": "SHOULD-NOT-LEAK",
+            },
+            {
+                "id": "subscription_5",
+                "input_nodes": 8,
+                "parsed_valid_nodes": 7,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"invalid_auth": 1},
+                "server": "SHOULD-NOT-LEAK",
+            },
+        ],
+    }
+
+
 def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
     candidate = tmp_path / "config.yaml"
     candidate.write_text("secret-node-payload\n", encoding="utf-8")
 
-    run = build_metrics_run(candidate_path=candidate, browsing=_browsing(), ai=_ai(), epoch=1234)
+    run = build_metrics_run(
+        candidate_path=candidate,
+        browsing=_browsing(),
+        ai=_ai(),
+        build_report=_build_report(),
+        epoch=1234,
+    )
     serialized = json.dumps(run, sort_keys=True)
 
     assert "secret-node-payload" not in serialized
     assert "android.chat.openai.com" not in serialized
     assert "cdn.workos.com" not in serialized
+    assert "SHOULD-NOT-LEAK" not in serialized
+    assert "private-reason" not in serialized
     assert run["epoch"] == 1234
     assert run["candidate_bytes"] == len(candidate.read_bytes())
     assert run["browsing"]["qualified"] == 8
@@ -84,6 +121,31 @@ def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
         "ai_openai": 3,
     }
     assert run["ai"]["live_service_probes"] == 5
+    assert run["admission"] == {
+        "configured_subscriptions": 2,
+        "successful_subscriptions": 2,
+        "parsed_nodes": 12,
+        "usable_nodes": 10,
+        "skipped_invalid_nodes": 2,
+        "skipped_invalid_reasons": {
+            "invalid_auth": 1,
+            "yaml_control_characters": 1,
+        },
+        "sources": {
+            "subscription_1": {
+                "input_nodes": 5,
+                "parsed_valid_nodes": 4,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"yaml_control_characters": 1},
+            },
+            "subscription_5": {
+                "input_nodes": 8,
+                "parsed_valid_nodes": 7,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"invalid_auth": 1},
+            },
+        },
+    }
     assert run["ai"]["openai_app"] == {
         "app_ready_nodes": 3,
         "critical_endpoint_count": 4,
@@ -318,4 +380,24 @@ def test_lifecycle_delegates_optional_metrics_after_release_commit() -> None:
     assert "_record_operational_slo(" in observability
     assert "production-metrics-v1" in application
     assert "build_metrics_run(" in application
+    assert 'build_report=_optional_json(private_dir / "build-report.json")' in application
     assert "metrics_summary(next_state)" in application
+
+
+def test_metrics_summary_exposes_latest_invalid_admission_reasons(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text("candidate\n", encoding="utf-8")
+    run = build_metrics_run(
+        candidate_path=candidate,
+        browsing=_browsing(),
+        ai=_ai(),
+        build_report=_build_report(),
+        epoch=1234,
+    )
+    summary = metrics_summary(append_metrics_run(empty_metrics(), run))
+
+    assert summary["latest_skipped_invalid_nodes"] == 2
+    assert summary["latest_skipped_invalid_reasons"] == {
+        "invalid_auth": 1,
+        "yaml_control_characters": 1,
+    }
