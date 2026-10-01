@@ -122,9 +122,7 @@ def test_metrics_parser_strips_unknown_fields_from_existing_private_state() -> N
 
 
 def _project():
-    return SimpleNamespace(
-        config={"publishing": {"cloudflare_kv": {"key": "production-config"}}}
-    )
+    return SimpleNamespace(config={"publishing": {"cloudflare_kv": {"key": "production-config"}}})
 
 
 def test_candidate_identity_prefers_qualified_candidate(tmp_path: Path) -> None:
@@ -281,12 +279,14 @@ def test_post_release_observability_owns_optional_publish_sequence(
     assert result.scheduler_observation["status"] == "published"
     assert result.operational_slo["status"] == "published"
     assert result.warnings == ()
-    assert observability._load_json(tmp_path / "production-metrics-publish.json")[
-        "status"
-    ] == "published"
-    assert observability._load_json(tmp_path / "scheduler-observation-publish.json")[
-        "status"
-    ] == "published"
+    assert (
+        observability._load_json(tmp_path / "production-metrics-publish.json")["status"]
+        == "published"
+    )
+    assert (
+        observability._load_json(tmp_path / "scheduler-observation-publish.json")["status"]
+        == "published"
+    )
 
 
 
