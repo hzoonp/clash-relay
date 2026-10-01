@@ -64,9 +64,13 @@ def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"production observability could not read {path.name!r}") from exc
+        raise ValidationError(
+            f"production observability could not read {path.name!r}"
+        ) from exc
     if not isinstance(value, dict):
-        raise ValidationError(f"production observability JSON {path.name!r} must be an object")
+        raise ValidationError(
+            f"production observability JSON {path.name!r} must be an object"
+        )
     return value
 
 
@@ -125,7 +129,13 @@ def _publish_scheduler_observation(
 
     evidence = compile_scheduler_evidence(state)
     content = (
-        json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        json.dumps(
+            evidence,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
     ).encode("utf-8")
     try:
         published = CloudflareKVPublisher(
@@ -171,7 +181,12 @@ def _persist_operational_slo(
         state, load_status = parse_slo_bytes(existing)
         next_state = append_slo_attempt(state, attempt)
         content = (
-            json.dumps(next_state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            json.dumps(
+                next_state,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
             + "\n"
         ).encode("utf-8")
         published = publisher.publish(content=content)
@@ -299,7 +314,10 @@ def publish_post_release_observability(
         ),
         warnings,
     )
-    timings_ms["production_metrics"] = round((time.perf_counter() - started) * 1000.0, 3)
+    timings_ms["production_metrics"] = round(
+        (time.perf_counter() - started) * 1000.0,
+        3,
+    )
     _warn_unavailable("persist_production_metrics", metrics, warnings)
     _write_json(private_dir / "production-metrics-publish.json", metrics)
 
