@@ -97,9 +97,7 @@ def _general_inventory(
         provider_name = provider_name_for(str(general_pool["id"]), region)
         provider = providers.get(provider_name)
         if not isinstance(provider, dict):
-            raise GenerationError(
-                "general web runtime cannot resolve generated general provider"
-            )
+            raise GenerationError("general web runtime cannot resolve generated general provider")
         payload = provider.get("payload")
         if not isinstance(payload, list):
             raise GenerationError("general provider payload is invalid")
