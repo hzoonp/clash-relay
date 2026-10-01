@@ -545,7 +545,12 @@ def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
         "proxy-providers": {},
         "proxy-groups": [
             {"name": "region", "type": "select", "proxies": ["DIRECT"]},
-            {"name": "web-auto", "type": "select", "proxies": ["region"]},
+            {
+                "name": "web-auto",
+                "type": "url-test",
+                "proxies": ["region"],
+                "interval": 300,
+            },
         ],
         "rules": ["MATCH,DIRECT"],
     }
@@ -574,6 +579,7 @@ def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
     assert group["proxies"] == ["region"]
     assert group["hidden"] is True
     assert group["url"] == "https://cp.cloudflare.com/generate_204"
+    assert group["interval"] == 300
     assert report["automatic_routes"] == ["web-auto"]
 
     group["proxies"] = ["missing"]
