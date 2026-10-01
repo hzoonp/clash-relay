@@ -54,7 +54,7 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
                     "type": "inline",
                     "payload": [{"name": "Browsing Direct", "type": "direct"}],
                 },
-                "cr_web_general_any": {
+                "cr_general_any": {
                     "type": "inline",
                     "payload": [{"name": "General Web Direct", "type": "direct"}],
                 },
@@ -64,7 +64,40 @@ def test_real_mihomo_browsing_qualification_uses_provider_backed_group_delay(
                     "name": "Browsing Test",
                     "type": "select",
                     "use": ["cr_browsing_any"],
-                }
+                },
+                {
+                    "name": "__CR_WEB_GENERAL_US_STABLE_AUTO",
+                    "type": "url-test",
+                    "use": ["cr_general_any"],
+                    "filter": "^(General Web Direct)$",
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 180,
+                },
+                {
+                    "name": "__CR_WEB_GENERAL_US_RESERVE_AUTO",
+                    "type": "url-test",
+                    "use": ["cr_general_any"],
+                    "filter": "^(General Web Direct)$",
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 180,
+                },
+                {
+                    "name": "网页通用 · 美国",
+                    "type": "fallback",
+                    "proxies": [
+                        "__CR_WEB_GENERAL_US_STABLE_AUTO",
+                        "__CR_WEB_GENERAL_US_RESERVE_AUTO",
+                    ],
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 180,
+                },
+                {
+                    "name": "网页通用自动",
+                    "type": "url-test",
+                    "proxies": ["网页通用 · 美国"],
+                    "url": "http://www.gstatic.com/generate_204",
+                    "interval": 300,
+                },
             ],
             "rules": ["MATCH,Browsing Test"],
         }
