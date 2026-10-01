@@ -180,9 +180,7 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
             ),
         )
     except MihomoProcessExited as exc:
-        raise ValidationError(
-            "Mihomo exited before transport qualification could start"
-        ) from exc
+        raise ValidationError("Mihomo exited before transport qualification could start") from exc
     except MihomoReadinessTimeout as exc:
         raise ValidationError(
             "Mihomo controller did not become ready for transport qualification"
@@ -422,7 +420,6 @@ def probe_transport_nodes(
                     quic_path.add(name)
         finally:
             stop_mihomo_process(process)
-
 
     if not udp_qualified:
         raise ValidationError(
