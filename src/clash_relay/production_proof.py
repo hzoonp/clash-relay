@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ValidationError
+from .production_diagnostics import summarize_source_admission_report
 from .qualification_observability import (
     render_qualification_observability_markdown,
     safe_qualification_observability,
 )
 from .runtime_graph import RuntimeGraph
-from .util import load_yaml_file
+from .util import contains_yaml_incompatible_control_characters, load_yaml_file
 from .web_general_runtime import WEB_GENERAL_AUTO_GROUP
 
 _ALLOWED_PUBLICATION_STATUSES = frozenset({"dry-run", "preflight", "published"})
@@ -139,8 +140,9 @@ def _safe_download_routing(value: Any, *, required: bool) -> dict[str, Any]:
 def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    subscriptions = value.get("subscriptions")
-    configured = len(subscriptions) if isinstance(subscriptions, list) else 0
+    admission = summarize_source_admission_report(value)
+    if admission is None:
+        return None
 
     compatibility = value.get("dns_compatibility_audit")
     leak = value.get("dns_leak_audit")
@@ -182,19 +184,26 @@ def _safe_build_observability(value: dict[str, Any] | None) -> dict[str, Any] | 
             "automatic_groups": _safe_count(runtime, "automatic_groups"),
         }
 
-    return {
-        "source_admission": {
-            "configured_subscriptions": configured,
-            "successful_subscriptions": _safe_count(value, "successful_subscriptions"),
-            "parsed_nodes": _safe_count(value, "parsed_nodes"),
-            "usable_nodes": _safe_count(value, "usable_nodes"),
+    source_admission = {
+        key: admission[key]
+        for key in (
+            "configured_subscriptions",
+            "successful_subscriptions",
+            "parsed_nodes",
+            "usable_nodes",
+            "skipped_invalid_nodes",
+            "skipped_invalid_reasons",
+        )
+    }
+    source_admission.update(
+        {
             "duplicates_removed": _safe_count(value, "duplicates_removed"),
             "informational_rejected": _safe_count(value, "informational_nodes_rejected"),
             "name_filtered": _safe_count(value, "name_filtered_nodes"),
             "multiplier_filtered": _safe_count(value, "multiplier_filtered_nodes"),
-        },
-        "dns": dns,
-    }
+        }
+    )
+    return {"source_admission": source_admission, "dns": dns}
 
 
 def _safe_endpoint_qualification(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -356,6 +365,8 @@ def build_production_proof(
     candidate = load_yaml_file(candidate_path)
     if not isinstance(candidate, dict):
         raise ValidationError("production proof candidate must be a YAML mapping")
+    if contains_yaml_incompatible_control_characters(candidate):
+        raise ValidationError("production proof candidate is not YAML-portable")
 
     audit = _json_mapping(audit, "post-qualification audit")
     reachability = _json_mapping(audit.get("reachability"), "reachability audit")
@@ -437,6 +448,7 @@ def build_production_proof(
         "ai": ai_proof,
         "validated_cores": list(validated_cores),
         "publication": publication_status,
+        "client_compatibility": {"yaml_portability": "passed"},
         "network_evidence": _safe_network_evidence(
             candidate=candidate, qualification=qualification, build_report=build_report
         ),
@@ -558,9 +570,16 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
             [
                 f"| Subscriptions successful / configured | {source_admission.get('successful_subscriptions', 0)} / {source_admission.get('configured_subscriptions', 0)} |",
                 f"| Parsed / usable nodes | {source_admission.get('parsed_nodes', 0)} / {source_admission.get('usable_nodes', 0)} |",
+                f"| Invalid proxy entries skipped | {source_admission.get('skipped_invalid_nodes', 0)} |",
                 f"| Informational nodes rejected | {source_admission.get('informational_rejected', 0)} |",
                 f"| Name / multiplier filtered | {source_admission.get('name_filtered', 0)} / {source_admission.get('multiplier_filtered', 0)} |",
             ]
+        )
+
+    client_compatibility = proof.get("client_compatibility")
+    if isinstance(client_compatibility, dict):
+        lines.append(
+            f"| YAML portability | {client_compatibility.get('yaml_portability', 'unknown')} |"
         )
 
     endpoint = proof.get("endpoint_qualification")
