@@ -25,6 +25,42 @@ class _NoAliasDumper(yaml.SafeDumper):
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
 
+def _yaml_character_is_portable(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        codepoint in {0x09, 0x0A, 0x0D}
+        or 0x20 <= codepoint <= 0x7E
+        or codepoint == 0x85
+        or 0xA0 <= codepoint <= 0xD7FF
+        or 0xE000 <= codepoint <= 0xFFFD
+        or 0x10000 <= codepoint <= 0x10FFFF
+    )
+
+
+def contains_yaml_incompatible_control_characters(value: Any) -> bool:
+    """Return whether a data tree contains characters rejected by strict YAML clients.
+
+    This follows the printable-character boundary enforced by go-yaml and the
+    Dart yaml package used by FlClash. PyYAML can otherwise serialize forbidden
+    C0/C1 values as escapes, allowing local round-trips while client parsing fails.
+    """
+
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if any(not _yaml_character_is_portable(character) for character in current):
+                return True
+            continue
+        if isinstance(current, dict):
+            stack.extend(current.keys())
+            stack.extend(current.values())
+            continue
+        if isinstance(current, (list, tuple, set, frozenset)):
+            stack.extend(current)
+    return False
+
+
 def yaml_load_no_aliases(text: str, *, source: str, untrusted: bool = False) -> Any:
     """Load YAML while rejecting anchors and aliases to avoid expansion attacks."""
     if "\x00" in text:
