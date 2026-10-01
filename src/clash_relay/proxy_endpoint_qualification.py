@@ -336,14 +336,14 @@ def cap_endpoint_reserve_pools(config: dict[str, Any], reserve_names: set[str]) 
             continue
         uses = group.get("use", [])
         if not uses or not all(
-            str(key).startswith(("cr_general_", "cr_browsing_", "cr_web_general_")) for key in uses
+            str(key).startswith(("cr_general_", "cr_browsing_")) for key in uses
         ):
             continue
         name = str(group.get("name", ""))
         if name.startswith("__CR_ENDPOINT_"):
             continue
         browsing = name.startswith("__CR_WEB_GENERAL_") or any(
-            str(key).startswith(("cr_browsing_", "cr_web_general_")) for key in uses
+            str(key).startswith("cr_browsing_") for key in uses
         )
         if browsing and not name.endswith("_STABLE_AUTO"):
             continue
@@ -425,10 +425,7 @@ def accelerate_client_health_checks(config: dict[str, Any]) -> int:
             or name.startswith(("网页 · ", "__CR_BROWSING_", "网页通用 · ", "__CR_WEB_GENERAL_"))
             or (
                 isinstance(uses, list)
-                and any(
-                    str(provider).startswith(("cr_browsing_", "cr_web_general_"))
-                    for provider in uses
-                )
+                and any(str(provider).startswith("cr_browsing_") for provider in uses)
             )
         )
         group["max-failed-times"] = 1 if browsing else 2

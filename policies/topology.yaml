@@ -29,21 +29,6 @@ pools:
     rule_priority: 1010
     rules: null
 
-  - id: web_general
-    display_name: __CR_WEB_GENERAL_INVENTORY
-    module: general
-    source_use: general
-    regions: [US, SG, JP, TW, KR, HK, UK, OTHER]
-    fallback_order: [US, SG, JP, TW, KR, HK, UK, OTHER]
-    capabilities_any: [general]
-    capabilities_all: []
-    excluded_capabilities: []
-    allowed_cost_levels: [standard]
-    on_empty: error
-    probe: browsing
-    rule_priority: 1020
-    rules: null
-
   - id: ai_sg
     display_name: AI · 新加坡
     module: general

@@ -1,4 +1,4 @@
-"""Browsing-grade regional scheduling over general-only web providers."""
+"""Browsing-grade regional scheduling over the shared general inventory."""
 
 from __future__ import annotations
 
@@ -15,21 +15,15 @@ from .browsing_runtime import (
     _runtime_test_fields,
 )
 from .errors import GenerationError, ValidationError
-from .regional_web_runtime import drop_unused_pool_scaffold, proxy_identity, regional_groups
+from .models import Node
+from .regional_web_runtime import regional_groups
 from .runtime_graph import RuntimeGraph
+from .runtime_identity import provider_name_for, runtime_proxy_name, scope_token
+from .selector import select_nodes
 from .util import atomic_write, dump_yaml, load_yaml_file
 
 WEB_GENERAL_AUTO_GROUP = "网页通用自动"
-WEB_GENERAL_PROVIDER_PREFIX = "cr_web_general_"
-_POOL_GROUP = "__CR_WEB_GENERAL_INVENTORY"
 _MIN_PREFERRED_STABLE_NODES = 3
-
-
-def provider_region(name: str) -> str | None:
-    if not name.startswith(WEB_GENERAL_PROVIDER_PREFIX):
-        return None
-    region = name[len(WEB_GENERAL_PROVIDER_PREFIX) :].upper()
-    return region if region in REGION_LABELS else None
 
 
 def _region_group(region: str) -> str:
@@ -45,23 +39,84 @@ def _reserve_group(region: str) -> str:
     return f"__CR_WEB_GENERAL_{normalize_region(region)}_RESERVE_AUTO"
 
 
+def _pool(policies: dict[str, Any], pool_id: str) -> dict[str, Any]:
+    pool = next(
+        (row for row in policies.get("pools", []) if row.get("id") == pool_id),
+        None,
+    )
+    if not isinstance(pool, dict):
+        raise GenerationError(f"general web runtime requires pool {pool_id!r}")
+    return pool
+
+
+def _selector(unit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_use": unit["source_use"],
+        "capabilities_any": list(unit["capabilities_any"]),
+        "capabilities_all": list(unit["capabilities_all"]),
+        "excluded_capabilities": list(unit["excluded_capabilities"]),
+        "allowed_cost_levels": list(unit["allowed_cost_levels"]),
+    }
+
+
 def _preferred_regions(policies: dict[str, Any]) -> list[str]:
     routing = policies.get("routing")
     browsing = routing.get("browsing") if isinstance(routing, dict) else None
     preferred = browsing.get("preferred_regions") if isinstance(browsing, dict) else None
-    pool = next((row for row in policies.get("pools", []) if row.get("id") == "web_general"), None)
-    if not isinstance(preferred, list) or not isinstance(pool, dict):
-        raise GenerationError("general web runtime requires declared browsing regions and pool")
+    browsing_pool = _pool(policies, "browsing")
+    general_pool = _pool(policies, "general")
+    if not isinstance(preferred, list):
+        raise GenerationError("general web runtime requires declared browsing regions")
     regions = [str(region).upper() for region in preferred]
     if (
         not regions
-        or pool.get("source_use") != "general"
-        or pool.get("probe") != "browsing"
-        or pool.get("regions") != regions
-        or pool.get("fallback_order") != regions
+        or general_pool.get("source_use") != "general"
+        or browsing_pool.get("regions") != regions
+        or browsing_pool.get("fallback_order") != regions
     ):
-        raise GenerationError("general web pool must mirror browsing regions using general")
+        raise GenerationError(
+            "general web runtime requires general source use and canonical browsing regions"
+        )
     return regions
+
+
+def _general_inventory(
+    *,
+    nodes: list[Node],
+    general_pool: dict[str, Any],
+    providers: dict[str, Any],
+) -> dict[str, tuple[str, str]]:
+    selector = _selector(general_pool)
+    inventory: dict[str, tuple[str, str]] = {}
+    token = scope_token(str(general_pool["id"]))
+    for raw_region in general_pool["regions"]:
+        region = str(raw_region)
+        selected = select_nodes(nodes, selector, region)
+        if not selected:
+            continue
+        provider_name = provider_name_for(str(general_pool["id"]), region)
+        provider = providers.get(provider_name)
+        if not isinstance(provider, dict):
+            raise GenerationError("general web runtime cannot resolve generated general provider")
+        payload = provider.get("payload")
+        if not isinstance(payload, list):
+            raise GenerationError("general provider payload is invalid")
+        actual_names = {
+            str(proxy["name"])
+            for proxy in payload
+            if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+        }
+        scope = f"{token}:{scope_token(region)}"
+        for node in selected:
+            runtime_name = runtime_proxy_name(node, scope)
+            if runtime_name not in actual_names:
+                raise GenerationError(
+                    "general web runtime node is absent from generated general inventory"
+                )
+            inventory.setdefault(node.fingerprint, (provider_name, runtime_name))
+    if not inventory:
+        raise GenerationError("general web runtime cannot resolve the general inventory")
+    return inventory
 
 
 def _replace(groups: list[dict[str, Any]], name: str, value: dict[str, Any]) -> None:
@@ -73,7 +128,13 @@ def _replace(groups: list[dict[str, Any]], name: str, value: dict[str, Any]) -> 
     groups.append(value)
 
 
-def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any]) -> dict[str, Any]:
+def build_web_general_runtime(
+    config: dict[str, Any],
+    policies: dict[str, Any],
+    nodes: list[Node],
+) -> dict[str, Any]:
+    """Build final regional web scheduling directly from General providers."""
+
     groups = config.get("proxy-groups")
     providers = config.get("proxy-providers")
     if not isinstance(groups, list) or not isinstance(providers, dict):
@@ -81,42 +142,31 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
     automatic = _groups_by_name(config).get(WEB_GENERAL_AUTO_GROUP)
     if automatic is None:
         return {"status": "not_applicable"}
-    uses = automatic.get("use")
-    if not isinstance(uses, list) or not uses:
-        raise GenerationError("general web automatic group has no provider inventory")
+
     preferred_regions = _preferred_regions(policies)
-    by_region: dict[str, str] = {}
-    for raw_name in uses:
-        provider_name = str(raw_name)
-        region = provider_region(provider_name)
-        if region is None or region not in preferred_regions or provider_name not in providers:
-            raise GenerationError(
-                "general web automatic group references a non-general web provider"
-            )
-        if region in by_region:
-            raise GenerationError("general web runtime has duplicate regional providers")
-        by_region[region] = provider_name
+    general_pool = _pool(policies, "general")
+    selector = _selector(general_pool)
+    inventory = _general_inventory(
+        nodes=nodes,
+        general_pool=general_pool,
+        providers=providers,
+    )
     probe = _browsing_probe(policies)
     scheduler_fields = _runtime_test_fields(probe, tolerance=True)
     region_fields = _runtime_test_fields(probe, tolerance=False)
-    available = [region for region in preferred_regions if region in by_region]
-    general_leaves: dict[str, tuple[str, str]] = {}
-    for name, provider in providers.items():
-        if not str(name).startswith("cr_general_"):
+    available: list[str] = []
+
+    for region in preferred_regions:
+        selected = select_nodes(nodes, selector, region)
+        mapped = [inventory[node.fingerprint] for node in selected if node.fingerprint in inventory]
+        if not mapped:
             continue
-        for proxy in provider.get("payload", []):
-            general_leaves.setdefault(proxy_identity(proxy), (str(name), str(proxy["name"])))
-    if not general_leaves:
-        raise GenerationError("general web runtime cannot resolve the general inventory")
-    for region in available:
-        provider_name = by_region[region]
-        provider = providers[provider_name]
-        try:
-            mapped = [general_leaves[proxy_identity(proxy)] for proxy in provider["payload"]]
-        except KeyError as exc:
-            raise GenerationError("general web node is absent from the general inventory") from exc
-        shared_providers = sorted({name for name, _ in mapped})
-        node_names = {name for _, name in mapped}
+        if len(mapped) != len(selected):
+            raise GenerationError(
+                "general web regional selection escaped the general provider inventory"
+            )
+        shared_providers = sorted({name for name, _runtime_name in mapped})
+        node_names = {runtime_name for _provider, runtime_name in mapped}
         for group in regional_groups(
             provider_names=shared_providers,
             stable_name=_stable_group(region),
@@ -127,6 +177,11 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
             region_fields=region_fields,
         ):
             _replace(groups, str(group["name"]), group)
+        available.append(region)
+
+    if not available:
+        raise GenerationError("general web runtime retained no general-only region")
+
     automatic.clear()
     automatic.update(
         {
@@ -135,24 +190,21 @@ def harden_web_general_runtime(config: dict[str, Any], policies: dict[str, Any])
             "hidden": True,
             "proxies": [_region_group(region) for region in available],
             **_runtime_test_fields(
-                probe, tolerance=True, interval=_region_switch_interval(policies, probe)
+                probe,
+                tolerance=True,
+                interval=_region_switch_interval(policies, probe),
             ),
         }
     )
-    drop_unused_pool_scaffold(config, pool="WEB_GENERAL", inventory=_POOL_GROUP)
-    for name in by_region.values():
-        if any(name in group.get("use", []) for group in groups):
-            raise GenerationError("general web draft provider remains referenced")
-        providers.pop(name)
     validate_web_general_runtime(config)
     return {
-        "status": "regional_hardened",
+        "status": "regional_direct",
         "group": WEB_GENERAL_AUTO_GROUP,
         "available_regions": available,
         "source_use": "general",
         "probe": str(probe["url"]),
         "shared_general_providers": True,
-        "providers_removed": len(by_region),
+        "temporary_providers": 0,
     }
 
 

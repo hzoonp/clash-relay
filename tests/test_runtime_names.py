@@ -4,8 +4,8 @@ from dataclasses import replace
 
 import pytest
 
-from clash_relay.generator import _runtime_name
 from clash_relay.models import Node
+from clash_relay.runtime_identity import runtime_proxy_name
 from clash_relay.runtime_names import (
     canonical_source_id,
     parse_runtime_source_name,
@@ -43,7 +43,7 @@ def test_numbered_subscription_ids_are_shortened_for_runtime_display() -> None:
 
 
 def test_runtime_name_uses_short_label_but_keeps_original_name_and_digest() -> None:
-    name = _runtime_name(_node("subscription_2"), "GENERAL:ANY")
+    name = runtime_proxy_name(_node("subscription_2"), "GENERAL:ANY")
     assert name.startswith("[GENERAL:ANY] sub_2/Example Node #")
     assert "subscription_2/" not in name
 
@@ -68,7 +68,7 @@ def test_short_label_resolves_back_to_canonical_source_id() -> None:
 )
 def test_runtime_source_round_trip_and_original_name_spoofing(source_id: str) -> None:
     node = replace(_node(source_id), original_name="Visible sub_2/fake node")
-    name = _runtime_name(node, "GENERAL:ANY")
+    name = runtime_proxy_name(node, "GENERAL:ANY")
     label = parse_runtime_source_name(name)
     assert label == runtime_source_label(source_id)
     assert canonical_source_id(label, {source_id}) == source_id
