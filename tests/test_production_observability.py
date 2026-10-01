@@ -289,7 +289,6 @@ def test_post_release_observability_owns_optional_publish_sequence(
     )
 
 
-
 def test_failure_observability_classifies_typed_qualification_rejection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
