@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when the P51 operational SLO boundary regresses."""
+"""Fail CI when the operational SLO boundary regresses."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def _text(relative: str) -> str:
 
 def main() -> int:
     slo = _text("src/clash_relay/operational_slo.py")
-    application = _text("src/clash_relay/slo_application.py")
+    observability = _text("src/clash_relay/production_observability.py")
     lifecycle = _text("src/clash_relay/production_lifecycle.py")
     metrics = _text("src/clash_relay/production_metrics.py")
 
@@ -37,7 +37,7 @@ def main() -> int:
     if "_MAX_ATTEMPTS = 60" not in slo:
         raise SystemExit("operational SLO audit: bounded attempt ring changed unexpectedly")
 
-    if 'key_name=f"{production_key}.operational-slo-v1"' not in application:
+    if 'key_name=f"{production_key}.operational-slo-v1"' not in observability:
         raise SystemExit("operational SLO audit: SLO state is not isolated from production config")
     if "operational-slo-v1" in metrics:
         raise SystemExit(
@@ -45,15 +45,22 @@ def main() -> int:
         )
 
     for token in (
-        "persist_operational_slo(",
         "ProductionOutcome.QUALIFICATION_REJECTED",
         "ProductionOutcome.PROMOTION_BLOCKED",
         "ProductionOutcome.PASSED",
+        "failure_retry_attempted=qualification_retry_attempted(error)",
+    ):
+        if token not in observability:
+            raise SystemExit(f"operational SLO audit: observability missing outcome path {token}")
+
+    for token in (
+        "publish_post_release_observability(",
+        "record_failure_observability(",
     ):
         if token not in lifecycle:
-            raise SystemExit(f"operational SLO audit: lifecycle missing outcome path {token}")
-    if "failure_retry_attempted=qualification_retry_attempted(exc)" not in lifecycle:
-        raise SystemExit("operational SLO audit: typed retry failure evidence is not recorded")
+            raise SystemExit(
+                f"operational SLO audit: lifecycle missing observability boundary {token}"
+            )
     if "raise\n        finally:" not in lifecycle:
         raise SystemExit("operational SLO audit: original production failure is not re-raised")
 
@@ -65,7 +72,7 @@ def main() -> int:
         "exception_message",
     )
     for token in forbidden:
-        if token in slo or token in application:
+        if token in slo or token in observability:
             raise SystemExit(f"operational SLO audit: forbidden persisted field token {token}")
 
     print("operational SLO contract audit: passed")

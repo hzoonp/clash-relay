@@ -54,6 +54,9 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     lifecycle = (repo_root / "src" / "clash_relay" / "production_lifecycle.py").read_text(
         encoding="utf-8"
     )
+    observability = (repo_root / "src" / "clash_relay" / "production_observability.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "actions/upload-artifact" not in workflow
     assert "gh release" not in workflow
@@ -69,31 +72,23 @@ def test_sensitive_github_storage_remains_absent_from_production(repo_root: Path
     derived_state = run_body.index("derived_state = self._persist_derived_state(project)")
     proof = run_body.index("proof = self._post_commit_proof(release=release)")
     manifest = run_body.index("manifest = self._post_commit_manifest(")
-    metrics = run_body.index("metrics = self._persist_production_metrics(project)")
-    observation = run_body.index("scheduler_observation = self._publish_scheduler_observation(")
-    assert release_boundary < derived_state < proof < manifest < metrics < observation
+    optional = run_body.index("observability = publish_post_release_observability(")
+    assert release_boundary < derived_state < proof < manifest < optional
 
     persist_start = lifecycle.index("    def _persist_derived_state(")
-    persist_end = lifecycle.index("    def _persist_production_metrics", persist_start)
+    persist_end = lifecycle.index("    def _safe_source_admission_summary", persist_start)
     persist_body = lifecycle[persist_start:persist_end]
     ai = persist_body.index('"persist_ai_qualification_cache",')
     history = persist_body.index('"persist_scheduler_history",')
     assert ai < history
     assert persist_body.count("self._best_effort_state(") == 2
 
-    metrics_start = lifecycle.index("    def _persist_production_metrics(")
-    metrics_end = lifecycle.index("    def _publish_scheduler_observation", metrics_start)
-    metrics_body = lifecycle[metrics_start:metrics_end]
-    assert '"persist_production_metrics",' in metrics_body
-    assert metrics_body.count("self._best_effort_state(") == 1
-
-    observation_start = lifecycle.index("    def _publish_scheduler_observation(")
-    observation_end = lifecycle.index("    def _candidate_slo_identity", observation_start)
-    observation_body = lifecycle[observation_start:observation_end]
-    assert '"publish_scheduler_observation",' in observation_body
-    assert observation_body.count("self._best_effort_state(") == 1
-    assert "if not self.publish:" in observation_body
-    assert 'metrics.get("status") != "published"' in observation_body
+    assert "_persist_production_metrics" not in lifecycle
+    assert "_publish_scheduler_observation" not in lifecycle
+    assert "_record_operational_slo" not in lifecycle
+    assert "persist_production_metrics(" in observability
+    assert "_publish_scheduler_observation(" in observability
+    assert "_record_operational_slo(" in observability
 
     assert 'self.warnings.append("render_production_proof")' in lifecycle
     assert 'self.warnings.append("render_release_manifest")' in lifecycle

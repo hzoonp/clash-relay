@@ -155,6 +155,9 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     release_stage = (repo_root / "src" / "clash_relay" / "production_release_stage.py").read_text(
         encoding="utf-8"
     )
+    observability = (repo_root / "src" / "clash_relay" / "production_observability.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "continue-on-error" not in publish
     assert "always()" not in publish
@@ -184,11 +187,16 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     assert guard < matrix < release
     assert "qualification_path=paths.qualification" in release_stage[:matrix]
 
-    assert lifecycle.count("self._best_effort_state(") == 4
+    assert lifecycle.count("self._best_effort_state(") == 2
     assert "persist_ai_qualification_cache" in lifecycle
     assert "persist_scheduler_history" in lifecycle
-    assert "persist_production_metrics" in lifecycle
-    assert "publish_scheduler_observation" in lifecycle
+    assert "_persist_production_metrics" not in lifecycle
+    assert "_publish_scheduler_observation" not in lifecycle
+    assert "publish_post_release_observability" in lifecycle
+    assert "record_failure_observability" in lifecycle
+    assert "persist_production_metrics(" in observability
+    assert "_publish_scheduler_observation(" in observability
+    assert "_record_operational_slo(" in observability
     assert "check_promotion_guard.py" not in lifecycle
     assert "validate_mihomo_matrix.py" not in lifecycle
     assert "publish_release_bundle.py" not in lifecycle

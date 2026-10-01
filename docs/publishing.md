@@ -39,7 +39,8 @@ Public Config v2 + private Secrets
   -> immutable versioned release staging + read-back verification
   -> activate fixed client-facing production key
   -> commit current/previous release pointers
-  -> production proof + best-effort derived state / metrics / SLO
+  -> production proof + derived optimization state
+  -> one best-effort aggregate observability boundary (metrics / scheduler evidence / SLO)
 ```
 
 Scripts are thin adapters. Python production stages do not launch sibling Python scripts or exchange business results through stdout/stderr JSON. Mihomo remains an explicit external-program boundary.
@@ -117,7 +118,7 @@ A historical config that still parses in Mihomo but violates today's source perm
 
 ## Derived state and operational SLO
 
-AI qualification cache and scheduler history are optimization state. Production metrics and operational SLO history are aggregate-only observability state. They persist after the production release commits and are best-effort.
+AI qualification cache and scheduler history are optimization state. Production metrics, scheduler evidence, and operational SLO history are aggregate-only observability state. After the production release commits, one internal observability service owns those optional writes; there are no standalone production metrics/scheduler publication entrypoints.
 
 A derived-state/SLO write failure cannot convert an invalid candidate into a valid publication and cannot falsely undo a committed validated release. Later runs rebuild missing derived state through live qualification.
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from types import SimpleNamespace
 
-from clash_relay import slo_application
+from clash_relay import production_observability
 from clash_relay.operational_slo import ProductionOutcome, build_slo_attempt
 
 
@@ -27,7 +27,7 @@ def test_operational_slo_persists_to_independent_private_key(monkeypatch) -> Non
                 "sha256": hashlib.sha256(content).hexdigest(),
             }
 
-    monkeypatch.setattr(slo_application, "CloudflareKVPublisher", FakePublisher)
+    monkeypatch.setattr(production_observability, "CloudflareKVPublisher", FakePublisher)
     project = SimpleNamespace(
         config={"publishing": {"cloudflare_kv": {"key": "production-config"}}}
     )
@@ -45,7 +45,7 @@ def test_operational_slo_persists_to_independent_private_key(monkeypatch) -> Non
         epoch=1,
     )
 
-    result = slo_application.persist_operational_slo(
+    result = production_observability._persist_operational_slo(
         project=project,  # type: ignore[arg-type]
         attempt=attempt,
         env=env,
