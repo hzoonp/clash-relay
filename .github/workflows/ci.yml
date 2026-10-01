@@ -57,17 +57,6 @@ jobs:
           if data["status"] != "healthy":
               raise SystemExit("Routing V2 configuration drift detected")
           PY
-      - name: Show PR4 Ruff formatter diff
-        run: |
-          files=(
-            src/clash_relay/runtime_identity.py
-            src/clash_relay/web_general_runtime.py
-            tests/integration/test_web_general_mihomo.py
-            tests/test_acl4ssr.py
-          )
-          ruff format "${files[@]}"
-          git diff -- "${files[@]}"
-          git checkout -- "${files[@]}"
       - run: ruff check .
       - run: ruff format --check .
       - name: Static type gate for core and application boundaries
