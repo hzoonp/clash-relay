@@ -45,9 +45,9 @@ def provider_and_group_names(unit_id: str, region: str) -> tuple[str, str]:
 def runtime_proxy_name(node: Node, scope: str) -> str:
     """Canonical runtime proxy name for one scoped source node."""
 
-    digest = hashlib.sha256(
-        f"{scope}\0{node.source_id}\0{node.fingerprint}".encode()
-    ).hexdigest()[:10]
+    digest = hashlib.sha256(f"{scope}\0{node.source_id}\0{node.fingerprint}".encode()).hexdigest()[
+        :10
+    ]
     original = node.original_name.replace("\n", " ").replace("\r", " ").strip()[:96]
     source_label = runtime_source_label(node.source_id)
     return f"[{scope}] {source_label}/{original} #{digest}"
