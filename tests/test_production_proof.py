@@ -148,8 +148,22 @@ def _inputs(candidate_path: Path) -> dict:
         "build_report": {
             "network_profile": {"profile": "cn_three_net"},
             "subscriptions": [
-                {"id": "subscription_1", "url": "SHOULD-NOT-LEAK"},
-                {"id": "subscription_2", "url": "SHOULD-NOT-LEAK"},
+                {
+                    "id": "subscription_1",
+                    "input_nodes": 8,
+                    "parsed_valid_nodes": 7,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {"yaml_control_characters": 1},
+                    "url": "SHOULD-NOT-LEAK",
+                },
+                {
+                    "id": "subscription_2",
+                    "input_nodes": 7,
+                    "parsed_valid_nodes": 6,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {"malformed_options": 1},
+                    "url": "SHOULD-NOT-LEAK",
+                },
             ],
             "successful_subscriptions": 2,
             "parsed_nodes": 14,
@@ -244,6 +258,8 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     markdown = render_production_proof_markdown(proof)
 
     assert proof["status"] == "passed"
+    assert proof["client_compatibility"] == {"yaml_portability": "passed"}
+    assert "FlClash YAML portability | passed" in markdown
     assert proof["download_routing"] == {
         "configuration_guarantee": "passed",
         "deployment_guarantee": "unverified",
@@ -291,6 +307,25 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
         "informational_rejected": 2,
         "name_filtered": 1,
         "multiplier_filtered": 3,
+        "skipped_invalid_nodes": 2,
+        "skipped_invalid_reasons": {
+            "malformed_options": 1,
+            "yaml_control_characters": 1,
+        },
+        "by_source": {
+            "subscription_1": {
+                "input_nodes": 8,
+                "parsed_valid_nodes": 7,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"yaml_control_characters": 1},
+            },
+            "subscription_2": {
+                "input_nodes": 7,
+                "parsed_valid_nodes": 6,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"malformed_options": 1},
+            },
+        },
     }
     assert proof["endpoint_qualification"] == {
         "status": "passed",
@@ -449,3 +484,14 @@ def test_production_proof_rejects_duplicate_core_versions(tmp_path: Path) -> Non
 
     with pytest.raises(ValidationError, match="unique validated Mihomo core versions"):
         build_production_proof(**inputs)
+
+
+def test_production_proof_rejects_flclash_incompatible_yaml_controls(tmp_path: Path) -> None:
+    candidate = tmp_path / "config.yaml"
+    candidate.write_text(
+        'proxy-groups: []\nrule-providers: {}\nrules: []\nmetadata: "bad\\x9Fvalue"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="FlClash-incompatible YAML control characters"):
+        build_production_proof(**_inputs(candidate))
