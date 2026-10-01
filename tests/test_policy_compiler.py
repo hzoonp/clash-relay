@@ -23,8 +23,14 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
             {"proxy_groups": 1},
         )
 
+    def web_general_runtime(output, _policies, _nodes):
+        calls.append("web_general_runtime")
+        output["compiler-web-general-runtime"] = True
+        return {"status": "regional_direct"}
+
     def group_semantics(output, **_kwargs):
         calls.append("group_semantics")
+        assert output["compiler-web-general-runtime"] is True
         output["compiler-group-semantics"] = True
         return {"hidden_groups": []}
 
@@ -51,6 +57,7 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
         assert output["compiler-browsing-runtime"] is True
 
     monkeypatch.setattr(compiler, "generate_config", fake_generate_config)
+    monkeypatch.setattr(compiler, "build_web_general_runtime", web_general_runtime)
     monkeypatch.setattr(compiler, "apply_acl4ssr_group_semantics", group_semantics)
     monkeypatch.setattr(compiler, "apply_acl4ssr_source_exclusions", source_exclusions)
     monkeypatch.setattr(compiler, "_expose_manual_provider_choices", manual_exposure)
@@ -68,6 +75,7 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
 
     assert calls == [
         "draft",
+        "web_general_runtime",
         "group_semantics",
         "source_exclusions",
         "manual_exposure",
@@ -79,6 +87,7 @@ def test_policy_compiler_owns_all_pre_serialization_topology_passes(
     assert compiled.report["source_exclusions"] == {"rule:test": ["subscription_1"]}
     assert compiled.report["manual_provider_exposure"] == {"groups": ["base"]}
     assert compiled.report["browsing_runtime"]["status"] == "regional_hardened"
+    assert compiled.report["web_general_runtime"]["status"] == "regional_direct"
 
 
 def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: Path) -> None:
@@ -93,6 +102,10 @@ def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: 
             },
             {},
         )
+
+    def web_general_runtime(output, _policies, _nodes):
+        calls.append("web_general_runtime")
+        return {"status": "not_applicable"}
 
     def source_exclusions(output, **_kwargs):
         calls.append("source_exclusions")
@@ -112,6 +125,7 @@ def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: 
         assert output["browsing-hardened"] is True
 
     monkeypatch.setattr(compiler, "generate_config", fake_generate_config)
+    monkeypatch.setattr(compiler, "build_web_general_runtime", web_general_runtime)
     monkeypatch.setattr(compiler, "apply_acl4ssr_source_exclusions", source_exclusions)
     monkeypatch.setattr(compiler, "_expose_manual_provider_choices", manual_exposure)
     monkeypatch.setattr(compiler, "harden_browsing_runtime", browsing_runtime)
@@ -127,6 +141,7 @@ def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: 
     )
 
     assert calls == [
+        "web_general_runtime",
         "source_exclusions",
         "manual_exposure",
         "browsing_runtime",
