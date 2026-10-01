@@ -38,15 +38,15 @@ from .production_application import (
     render_production_proof_application,
 )
 from .production_diagnostics import sanitize_source_admission_report
+from .production_observability import (
+    publish_post_release_observability,
+    record_failure_observability,
+)
 from .production_pipeline import (
     ProductionPipelineOutputs,
     ProjectPaths,
     QualificationPaths,
     run_production_pipeline,
-)
-from .production_observability import (
-    publish_post_release_observability,
-    record_failure_observability,
 )
 from .production_release_stage import (
     ReleaseCandidateStagePaths,
