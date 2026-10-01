@@ -75,13 +75,9 @@ def test_post_commit_observability_is_not_a_publication_gate(repo_root: Path) ->
         "release_stage = self._release_candidate_stage(project, binary)"
     )
     proof = lifecycle.index("proof = self._post_commit_proof(release=release)")
-    metrics = lifecycle.index("metrics = self._persist_production_metrics(project)")
-    assert release_stage < proof < metrics
+    observability = lifecycle.index("observability = publish_post_release_observability(")
+    assert release_stage < proof < observability
     assert 'self.warnings.append("render_production_proof")' in lifecycle
     assert 'self.warnings.append("render_release_manifest")' in lifecycle
-    assert '"persist_production_metrics",' in lifecycle
-
-    metrics_start = lifecycle.index("    def _persist_production_metrics(")
-    metrics_end = lifecycle.index("    def _render_existing_proof", metrics_start)
-    metrics_body = lifecycle[metrics_start:metrics_end]
-    assert "self._best_effort_state(" in metrics_body
+    assert "publish_post_release_observability(" in lifecycle
+    assert "_persist_production_metrics" not in lifecycle
