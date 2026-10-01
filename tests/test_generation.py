@@ -191,9 +191,7 @@ def test_subscription_dialer_proxy_is_stripped_before_generation(
     )
 
 
-def test_build_report_preserves_invalid_proxy_reason_counts(
-    project_factory, yaml_editor
-) -> None:
+def test_build_report_preserves_invalid_proxy_reason_counts(project_factory, yaml_editor) -> None:
     root, paths = project_factory()
     source = root / "control-character.yaml"
     source.write_text(
