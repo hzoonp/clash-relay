@@ -28,23 +28,17 @@ def main() -> int:
         "lifecycle_duration_ms",
     ):
         if token not in slo:
-            raise SystemExit(
-                f"operational SLO audit: missing typed aggregate token {token}"
-            )
+            raise SystemExit(f"operational SLO audit: missing typed aggregate token {token}")
 
     if "str(error)" in slo or "error.args" in slo:
         raise SystemExit(
             "operational SLO audit: qualification classification parses exception text"
         )
     if "_MAX_ATTEMPTS = 60" not in slo:
-        raise SystemExit(
-            "operational SLO audit: bounded attempt ring changed unexpectedly"
-        )
+        raise SystemExit("operational SLO audit: bounded attempt ring changed unexpectedly")
 
     if 'key_name=f"{production_key}.operational-slo-v1"' not in observability:
-        raise SystemExit(
-            "operational SLO audit: SLO state is not isolated from production config"
-        )
+        raise SystemExit("operational SLO audit: SLO state is not isolated from production config")
     if "operational-slo-v1" in metrics:
         raise SystemExit(
             "operational SLO audit: failed-attempt SLOs leaked into success-only metrics"
@@ -57,9 +51,7 @@ def main() -> int:
         "failure_retry_attempted=qualification_retry_attempted(error)",
     ):
         if token not in observability:
-            raise SystemExit(
-                f"operational SLO audit: observability missing outcome path {token}"
-            )
+            raise SystemExit(f"operational SLO audit: observability missing outcome path {token}")
 
     for token in (
         "publish_post_release_observability(",
@@ -70,9 +62,7 @@ def main() -> int:
                 f"operational SLO audit: lifecycle missing observability boundary {token}"
             )
     if "raise\n        finally:" not in lifecycle:
-        raise SystemExit(
-            "operational SLO audit: original production failure is not re-raised"
-        )
+        raise SystemExit("operational SLO audit: original production failure is not re-raised")
 
     forbidden = (
         "subscription_url",
@@ -83,9 +73,7 @@ def main() -> int:
     )
     for token in forbidden:
         if token in slo or token in observability:
-            raise SystemExit(
-                f"operational SLO audit: forbidden persisted field token {token}"
-            )
+            raise SystemExit(f"operational SLO audit: forbidden persisted field token {token}")
 
     print("operational SLO contract audit: passed")
     return 0
