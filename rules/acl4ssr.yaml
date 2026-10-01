@@ -100,7 +100,6 @@ groups:
     module: general
     hidden: true
     type: url-test
-    provider_pool: web_general
     filter: '.*'
     url: https://cp.cloudflare.com/generate_204
     interval: 180
