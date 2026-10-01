@@ -557,6 +557,7 @@ def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
                 "display_name": "web-auto",
                 "hidden": True,
                 "type": "url-test",
+                "prebuilt_members": True,
                 "url": "https://cp.cloudflare.com/generate_204",
                 "interval": 180,
                 "timeout": 8000,
@@ -577,7 +578,7 @@ def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
     assert report["automatic_routes"] == ["web-auto"]
 
     group["proxies"] = ["missing"]
-    with pytest.raises(GenerationError, match="provider_pool or prebuilt group members"):
+    with pytest.raises(GenerationError, match="provider_pool or declared prebuilt group members"):
         apply_acl4ssr_group_semantics(
             output,
             group_specs=[
@@ -585,6 +586,7 @@ def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
                     "display_name": "web-auto",
                     "hidden": True,
                     "type": "url-test",
+                    "prebuilt_members": True,
                     "url": "https://cp.cloudflare.com/generate_204",
                     "interval": 180,
                     "timeout": 8000,
