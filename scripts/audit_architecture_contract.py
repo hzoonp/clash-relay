@@ -105,6 +105,7 @@ def main() -> int:
         raise SystemExit("architecture audit: publish workflow is no longer a thin adapter")
 
     lifecycle = _text("src/clash_relay/production_lifecycle.py")
+    observability = _text("src/clash_relay/production_observability.py")
     release_stage = _text("src/clash_relay/production_release_stage.py")
     ordered_stages = (
         "generation = self._generate()",
@@ -118,7 +119,7 @@ def main() -> int:
         "derived_state = self._persist_derived_state(project)",
         "proof = self._post_commit_proof(release=release)",
         "manifest = self._post_commit_manifest(",
-        "metrics = self._persist_production_metrics(project)",
+        "observability = publish_post_release_observability(",
     )
     positions = [lifecycle.find(stage) for stage in ordered_stages]
     if any(position < 0 for position in positions) or positions != sorted(positions):
@@ -198,7 +199,8 @@ def main() -> int:
         "run_release_candidate_stage(",
         "persist_ai_qualification_cache(",
         "persist_scheduler_history(",
-        "persist_production_metrics(",
+        "publish_post_release_observability(",
+        "record_failure_observability(",
         "render_production_proof_application(",
     ):
         if token not in lifecycle:
@@ -238,7 +240,6 @@ def main() -> int:
         "scripts/load_ai_qualification_cache.py",
         "scripts/publish_scheduler_history.py",
         "scripts/publish_ai_qualification_cache.py",
-        "scripts/publish_production_metrics.py",
     ):
         if "subprocess" in _text(relative):
             raise SystemExit(
@@ -253,10 +254,18 @@ def main() -> int:
         if phase not in release_reliability:
             raise SystemExit(f"architecture audit: release progress lost {phase.lower()} phase")
 
-    # Metrics remain an explicit lifecycle-owned, aggregate-only best-effort stage.
-    if '"persist_production_metrics"' not in lifecycle or "_best_effort_state(" not in lifecycle:
+    # Aggregate observability is consolidated behind one best-effort boundary.
+    if "persist_production_metrics(" not in observability or "_best_effort(" not in observability:
         raise SystemExit(
-            "architecture audit: lifecycle does not own best-effort production metrics"
+            "architecture audit: consolidated observability lost production metrics ownership"
+        )
+    if "_publish_scheduler_observation(" not in observability:
+        raise SystemExit(
+            "architecture audit: consolidated observability lost scheduler evidence ownership"
+        )
+    if "_record_operational_slo(" not in observability:
+        raise SystemExit(
+            "architecture audit: consolidated observability lost operational SLO ownership"
         )
     for token in ("append_metrics_run", "metrics_summary", "production-metrics-v1"):
         if token not in production_application:
