@@ -191,6 +191,56 @@ def test_subscription_dialer_proxy_is_stripped_before_generation(
     )
 
 
+def test_build_report_preserves_invalid_proxy_reason_counts(
+    project_factory, yaml_editor
+) -> None:
+    root, paths = project_factory()
+    source = root / "control-character.yaml"
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "proxies": [
+                    {
+                        "name": "Good General",
+                        "type": "http",
+                        "server": "good.invalid.example",
+                        "port": 443,
+                    },
+                    {
+                        "name": "Bad\u009fGeneral",
+                        "type": "http",
+                        "server": "bad.invalid.example",
+                        "port": 443,
+                    },
+                ]
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    def one_source(document):
+        item = document["subscriptions"][0]
+        item["node_metadata"] = {}
+        document["subscriptions"] = [item]
+
+    yaml_editor(paths["subscriptions_path"], one_source)
+
+    def general_skip_invalid(document):
+        for key in document["modules"]:
+            document["modules"][key] = key == "general"
+        document["generation"]["invalid_proxy_policy"] = "skip"
+
+    yaml_editor(paths["config_path"], general_skip_invalid)
+    result = _build(paths, {"SUB_PRIMARY": source.resolve().as_uri()})
+    report = result.report["subscriptions"][0]
+
+    assert report["parsed_valid_nodes"] == 1
+    assert report["skipped_invalid_nodes"] == 1
+    assert report["skipped_invalid_reasons"] == {"yaml_control_characters": 1}
+    assert "Bad" not in result.yaml_text
+
+
 def test_optional_empty_service_fails_closed(project_factory, fixture_env, yaml_editor) -> None:
     _, paths = project_factory()
 
