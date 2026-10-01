@@ -540,7 +540,6 @@ def test_acl4ssr_manifest_rejects_repository_path_escape(
         build_candidate(**paths, env=fixture_env)
 
 
-
 def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
     output = {
         "proxy-providers": {},
