@@ -23,6 +23,7 @@ MYPY_TARGETS = (
     "selector",
     "policy_compiler",
     "runtime_graph",
+    "mihomo_probe_runtime",
     "availability",
     "service_qualification",
     "service_qualification_result",
