@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from clash_relay.acl4ssr import parse_acl4ssr_list
+from clash_relay.acl4ssr_policy import apply_acl4ssr_group_semantics
 from clash_relay.builder import build_candidate
 from clash_relay.errors import ConfigurationError, GenerationError
 from clash_relay.policy_document import load_policy_document
@@ -537,3 +538,61 @@ def test_acl4ssr_manifest_rejects_repository_path_escape(
     yaml_editor(paths["config_path"], enable_acl4ssr)
     with pytest.raises(ConfigurationError, match="unsafe repository path"):
         build_candidate(**paths, env=fixture_env)
+
+
+
+def test_member_backed_urltest_accepts_only_prebuilt_known_groups() -> None:
+    output = {
+        "proxy-providers": {},
+        "proxy-groups": [
+            {"name": "region", "type": "select", "proxies": ["DIRECT"]},
+            {"name": "web-auto", "type": "select", "proxies": ["region"]},
+        ],
+        "rules": ["MATCH,DIRECT"],
+    }
+    report = apply_acl4ssr_group_semantics(
+        output,
+        group_specs=[
+            {
+                "display_name": "web-auto",
+                "hidden": True,
+                "type": "url-test",
+                "url": "https://cp.cloudflare.com/generate_204",
+                "interval": 180,
+                "timeout": 8000,
+                "expected_status": "204",
+                "tolerance": 150,
+                "members": [],
+            }
+        ],
+        pool_specs=[],
+        country_classification={},
+    )
+
+    group = next(row for row in output["proxy-groups"] if row["name"] == "web-auto")
+    assert group["type"] == "url-test"
+    assert group["proxies"] == ["region"]
+    assert group["hidden"] is True
+    assert group["url"] == "https://cp.cloudflare.com/generate_204"
+    assert report["automatic_routes"] == ["web-auto"]
+
+    group["proxies"] = ["missing"]
+    with pytest.raises(GenerationError, match="provider_pool or prebuilt group members"):
+        apply_acl4ssr_group_semantics(
+            output,
+            group_specs=[
+                {
+                    "display_name": "web-auto",
+                    "hidden": True,
+                    "type": "url-test",
+                    "url": "https://cp.cloudflare.com/generate_204",
+                    "interval": 180,
+                    "timeout": 8000,
+                    "expected_status": "204",
+                    "tolerance": 150,
+                    "members": [],
+                }
+            ],
+            pool_specs=[],
+            country_classification={},
+        )
