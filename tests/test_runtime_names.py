@@ -4,8 +4,8 @@ from dataclasses import replace
 
 import pytest
 
-from clash_relay.runtime_identity import runtime_proxy_name
 from clash_relay.models import Node
+from clash_relay.runtime_identity import runtime_proxy_name
 from clash_relay.runtime_names import (
     canonical_source_id,
     parse_runtime_source_name,
