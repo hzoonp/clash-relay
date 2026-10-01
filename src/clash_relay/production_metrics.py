@@ -9,7 +9,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .production_diagnostics import ProductionFailureCategory
+from .production_diagnostics import (
+    ProductionFailureCategory,
+    summarize_source_admission_report,
+)
 
 _STATE_VERSION = 1
 _MAX_RUNS = 30
@@ -354,6 +357,25 @@ def _clean_lifecycle(value: Any) -> dict[str, Any] | None:
     return clean or None
 
 
+def _clean_admission(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    sources = value.get("sources")
+    if not isinstance(sources, dict):
+        return None
+    report = {
+        "successful_subscriptions": value.get("successful_subscriptions"),
+        "parsed_nodes": value.get("parsed_nodes"),
+        "usable_nodes": value.get("usable_nodes"),
+        "subscriptions": [
+            {"id": source_id, **row}
+            for source_id, row in sources.items()
+            if isinstance(source_id, str) and isinstance(row, dict)
+        ],
+    }
+    return summarize_source_admission_report(report)
+
+
 def _clean_run(run: Any) -> dict[str, Any] | None:
     if not isinstance(run, dict):
         return None
@@ -382,6 +404,7 @@ def _clean_run(run: Any) -> dict[str, Any] | None:
         "ai": ai,
     }
     for key, cleaner in (
+        ("admission", _clean_admission),
         ("release", _clean_release),
         ("mihomo", _clean_mihomo),
         ("performance", _clean_performance),
@@ -440,6 +463,7 @@ def build_metrics_run(
     candidate_path: Path,
     browsing: dict[str, Any],
     ai: dict[str, Any],
+    build_report: dict[str, Any] | None = None,
     qualification: dict[str, Any] | None = None,
     release: dict[str, Any] | None = None,
     mihomo_matrix: dict[str, Any] | None = None,
@@ -522,6 +546,10 @@ def build_metrics_run(
             },
         },
     }
+    if build_report is not None:
+        admission = summarize_source_admission_report(build_report)
+        if admission is not None:
+            run["admission"] = admission
     if qualification is not None:
         run["qualification"] = qualification
         timings = qualification.get("timings_ms") if isinstance(qualification, dict) else None
@@ -638,6 +666,7 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
     promotion = (
         latest.get("promotion_guard", {}) if isinstance(latest.get("promotion_guard"), dict) else {}
     )
+    admission = latest.get("admission", {}) if isinstance(latest.get("admission"), dict) else {}
     qualification_failure_planes = (
         qualification.get("failure_planes", {})
         if isinstance(qualification.get("failure_planes"), dict)
@@ -671,6 +700,8 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_candidate_bytes": latest["candidate_bytes"],
         "latest_browsing_qualified": latest["browsing"].get("qualified", 0),
         "latest_ai_live_service_probes": latest["ai"].get("live_service_probes", 0),
+        "latest_skipped_invalid_nodes": admission.get("skipped_invalid_nodes", 0),
+        "latest_skipped_invalid_reasons": admission.get("skipped_invalid_reasons", {}),
         "latest_release_status": release.get("status", "unknown"),
         "latest_validated_core_count": mihomo.get("validated_core_count", 0),
         "latest_pipeline_total_ms": performance.get("total", 0.0),
