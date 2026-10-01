@@ -68,14 +68,61 @@ def test_metrics_run_contains_only_aggregate_values(tmp_path: Path) -> None:
     candidate = tmp_path / "config.yaml"
     candidate.write_text("secret-node-payload\n", encoding="utf-8")
 
-    run = build_metrics_run(candidate_path=candidate, browsing=_browsing(), ai=_ai(), epoch=1234)
+    run = build_metrics_run(
+        candidate_path=candidate,
+        browsing=_browsing(),
+        ai=_ai(),
+        build_report={
+            "successful_subscriptions": 2,
+            "subscriptions": [
+                {
+                    "id": "subscription_1",
+                    "input_nodes": 8,
+                    "parsed_valid_nodes": 7,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {"yaml_control_characters": 1},
+                    "url": "SHOULD-NOT-LEAK",
+                },
+                {
+                    "id": "subscription_2",
+                    "input_nodes": 5,
+                    "parsed_valid_nodes": 4,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {"invalid_auth": 1},
+                    "server": "SHOULD-NOT-LEAK",
+                },
+            ],
+        },
+        epoch=1234,
+    )
     serialized = json.dumps(run, sort_keys=True)
 
     assert "secret-node-payload" not in serialized
     assert "android.chat.openai.com" not in serialized
     assert "cdn.workos.com" not in serialized
+    assert "SHOULD-NOT-LEAK" not in serialized
     assert run["epoch"] == 1234
     assert run["candidate_bytes"] == len(candidate.read_bytes())
+    assert run["source_admission"] == {
+        "configured_subscriptions": 2,
+        "successful_subscriptions": 2,
+        "skipped_invalid_nodes": 2,
+        "skipped_invalid_reasons": {"invalid_auth": 1, "yaml_control_characters": 1},
+        "by_source": {
+            "subscription_1": {
+                "input_nodes": 8,
+                "parsed_valid_nodes": 7,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"yaml_control_characters": 1},
+            },
+            "subscription_2": {
+                "input_nodes": 5,
+                "parsed_valid_nodes": 4,
+                "skipped_invalid_nodes": 1,
+                "skipped_invalid_reasons": {"invalid_auth": 1},
+            },
+        },
+    }
     assert run["browsing"]["qualified"] == 8
     assert run["browsing"]["p95_ms"] == 300.0
     assert run["ai"]["qualified_by_service"] == {
@@ -319,3 +366,65 @@ def test_lifecycle_delegates_optional_metrics_after_release_commit() -> None:
     assert "production-metrics-v1" in application
     assert "build_metrics_run(" in application
     assert "metrics_summary(next_state)" in application
+
+
+def test_persisted_admission_metrics_are_resanitized() -> None:
+    state = {
+        "version": 1,
+        "runs": [
+            {
+                "epoch": 1,
+                "candidate_sha256": "a" * 64,
+                "candidate_bytes": 10,
+                "browsing": {
+                    "tested": 1,
+                    "qualified": 1,
+                    "stable": 1,
+                    "reserve": 0,
+                    "rejected": 0,
+                    "p50_ms": 1,
+                    "p95_ms": 1,
+                    "historically_demoted": 0,
+                    "history_latency_ema_ms": 1,
+                },
+                "ai": {
+                    "candidate_nodes": 1,
+                    "qualified_by_service": {},
+                    "live_service_probes": 0,
+                    "cache_pass_hits": 0,
+                    "cache_fail_hits": 0,
+                },
+                "source_admission": {
+                    "configured_subscriptions": 1,
+                    "successful_subscriptions": 1,
+                    "skipped_invalid_nodes": 1,
+                    "skipped_invalid_reasons": {
+                        "yaml_control_characters": 1,
+                        "SECRET BAD KEY": 99,
+                    },
+                    "by_source": {
+                        "subscription_1": {
+                            "input_nodes": 3,
+                            "parsed_valid_nodes": 2,
+                            "skipped_invalid_nodes": 1,
+                            "skipped_invalid_reasons": {"yaml_control_characters": 1},
+                            "server": "SHOULD-NOT-LEAK",
+                        },
+                        "bad source secret": {"input_nodes": 99},
+                    },
+                },
+            }
+        ],
+        "failures": [],
+    }
+
+    parsed, status = parse_metrics_bytes(json.dumps(state).encode())
+
+    assert status == "loaded"
+    serialized = json.dumps(parsed, sort_keys=True)
+    assert "SHOULD-NOT-LEAK" not in serialized
+    assert "SECRET BAD KEY" not in serialized
+    assert "bad source secret" not in serialized
+    assert parsed["runs"][0]["source_admission"]["skipped_invalid_reasons"] == {
+        "yaml_control_characters": 1
+    }
