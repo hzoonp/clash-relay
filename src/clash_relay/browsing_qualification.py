@@ -24,7 +24,7 @@ from .regional_web_runtime import proxy_identity
 from .runtime_names import parse_runtime_source_name
 from .util import atomic_write, dump_yaml, load_yaml_file, stable_json
 from .validator import validate_generated_config
-from .web_general_runtime import WEB_GENERAL_PROVIDER_PREFIX, web_general_runtime_names
+from .web_general_runtime import web_general_runtime_names
 
 BROWSING_PROVIDER_PREFIX = "cr_browsing_"
 BROWSING_POOL_ID = "browsing"
@@ -72,7 +72,7 @@ def _comment_header(text: str) -> str:
 
 
 def _is_canonical_browsing_provider(name: str) -> bool:
-    return name.startswith((BROWSING_PROVIDER_PREFIX, WEB_GENERAL_PROVIDER_PREFIX))
+    return name.startswith(BROWSING_PROVIDER_PREFIX)
 
 
 def _quote_re2_literal(value: str) -> str:
