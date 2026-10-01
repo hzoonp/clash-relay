@@ -390,7 +390,7 @@ def summarize_source_admission_report(report: Mapping[str, Any]) -> dict[str, An
         if not isinstance(row, Mapping):
             continue
         source_id = row.get("id")
-        if not valid_source_id(source_id):
+        if not isinstance(source_id, str) or not valid_source_id(source_id):
             continue
         skipped = row.get("skipped_invalid_nodes")
         skipped_count = (
