@@ -12,9 +12,9 @@ from typing import Any
 
 from .browsing_qualification import (
     _browsing_provider_payloads,
-    _free_port,
     _temporary_probe_config,
 )
+from .mihomo_probe_runtime import free_tcp_port
 from .util import dump_yaml, load_yaml_file
 
 _MAX_DIAGNOSTIC_CHARS = 1200
@@ -123,8 +123,8 @@ def diagnose_browsing_core(candidate_path: Path, mihomo_bin: Path) -> dict[str, 
         probe = _temporary_probe_config(
             candidate,
             provider_payloads,
-            mixed_port=_free_port(),
-            controller_port=_free_port(),
+            mixed_port=free_tcp_port(),
+            controller_port=free_tcp_port(),
             secret="clash-relay-browsing-diagnostic-only",
         )
         probe_path = workdir / "probe.yaml"
