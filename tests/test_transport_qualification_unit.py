@@ -76,7 +76,7 @@ def test_general_provider_payloads_are_normalized_and_fail_closed() -> None:
 def test_temporary_probe_config_is_private_inline_and_rebinds_dns(monkeypatch) -> None:
     base = _provider_config()
     payloads = transport._general_provider_payloads(base)
-    monkeypatch.setattr(transport, "_free_port", lambda: 5353)
+    monkeypatch.setattr(transport, "free_tcp_port", lambda: 5353)
 
     probe = transport._temporary_probe_config(
         base,
