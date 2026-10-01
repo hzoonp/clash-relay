@@ -491,9 +491,7 @@ def _wait_for_controller(process: subprocess.Popen[bytes], port: int, secret: st
             ),
         )
     except MihomoProcessExited as exc:
-        raise ValidationError(
-            "Mihomo exited before browsing qualification could start"
-        ) from exc
+        raise ValidationError("Mihomo exited before browsing qualification could start") from exc
     except MihomoReadinessTimeout as exc:
         raise ValidationError(
             "Mihomo controller did not become ready for browsing qualification"
@@ -776,7 +774,6 @@ def probe_browsing_nodes(
                     outcomes[outcome] = outcomes.get(outcome, 0) + failures
         finally:
             stop_mihomo_process(process)
-
 
     qualified, stable, qualified_medians = _stability_tiers_from_group_samples(
         node_names,
