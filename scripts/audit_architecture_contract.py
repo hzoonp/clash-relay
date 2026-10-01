@@ -186,9 +186,7 @@ def main() -> int:
         "wait_for_process_condition(",
     ):
         if token not in probe_runtime:
-            raise SystemExit(
-                f"architecture audit: shared Mihomo probe runtime missing {token}"
-            )
+            raise SystemExit(f"architecture audit: shared Mihomo probe runtime missing {token}")
     for relative in (
         "src/clash_relay/browsing_qualification.py",
         "src/clash_relay/ai_qualification.py",
