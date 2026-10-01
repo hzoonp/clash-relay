@@ -57,6 +57,11 @@ jobs:
           if data["status"] != "healthy":
               raise SystemExit("Routing V2 configuration drift detected")
           PY
+      - name: Show final PR4 Ruff diff
+        run: |
+          ruff format src/clash_relay/proxy_endpoint_qualification.py
+          git diff -- src/clash_relay/proxy_endpoint_qualification.py
+          git checkout -- src/clash_relay/proxy_endpoint_qualification.py
       - run: ruff check .
       - run: ruff format --check .
       - name: Static type gate for core and application boundaries
