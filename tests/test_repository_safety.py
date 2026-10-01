@@ -155,9 +155,9 @@ def test_stable_workflows_keep_production_fail_closed_and_limit_best_effort_stat
     release_stage = (repo_root / "src" / "clash_relay" / "production_release_stage.py").read_text(
         encoding="utf-8"
     )
-    observability = (
-        repo_root / "src" / "clash_relay" / "production_observability.py"
-    ).read_text(encoding="utf-8")
+    observability = (repo_root / "src" / "clash_relay" / "production_observability.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "continue-on-error" not in publish
     assert "always()" not in publish
