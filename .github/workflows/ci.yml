@@ -57,6 +57,19 @@ jobs:
           if data["status"] != "healthy":
               raise SystemExit("Routing V2 configuration drift detected")
           PY
+      - name: Show Ruff formatter diff
+        run: |
+          files=(
+            scripts/audit_operational_slo_contract.py
+            src/clash_relay/production_observability.py
+            tests/test_production_metrics.py
+            tests/test_production_observability.py
+            tests/test_repository_safety.py
+            tests/test_security_policy.py
+          )
+          ruff format "${files[@]}"
+          git diff -- "${files[@]}"
+          git checkout -- "${files[@]}"
       - run: ruff check .
       - run: ruff format --check .
       - name: Static type gate for core and application boundaries
