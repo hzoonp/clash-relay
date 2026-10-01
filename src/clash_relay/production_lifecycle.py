@@ -28,18 +28,11 @@ from .errors import (
 )
 from .mihomo import load_candidate
 from .mihomo_download import download_pinned_mihomo
-from .operational_slo import (
-    ProductionOutcome,
-    build_slo_attempt,
-    qualification_failure_category,
-    qualification_retry_attempted,
-)
 from .policy_document import load_policy_document
 from .production_application import (
     load_ai_qualification_cache_state,
     load_scheduler_history_state,
     persist_ai_qualification_cache,
-    persist_production_metrics,
     persist_scheduler_history,
     reconcile_production_release,
     render_production_proof_application,
@@ -51,6 +44,10 @@ from .production_pipeline import (
     QualificationPaths,
     run_production_pipeline,
 )
+from .production_observability import (
+    publish_post_release_observability,
+    record_failure_observability,
+)
 from .production_release_stage import (
     ReleaseCandidateStagePaths,
     run_release_candidate_stage,
@@ -60,8 +57,6 @@ from .qualification_observability import safe_qualification_observability
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
 from .release_reliability import ReleasePhase, ReleaseProgress
 from .runtime_names import valid_source_id
-from .scheduler_observation import publish_scheduler_observation
-from .slo_application import persist_operational_slo
 from .util import atomic_write, atomic_write_bytes
 
 _MAX_CARRIER_INPUT_BYTES = 64 * 1024
@@ -334,87 +329,6 @@ class ProductionPipeline:
         self._write_json(self._private("scheduler-history-publish.json"), history)
         return {"status": "completed", "ai_cache": cache, "scheduler_history": history}
 
-    def _persist_production_metrics(self, project: ProjectDefinition) -> dict[str, Any]:
-        if not self.publish:
-            return {"status": "skipped", "reason": "dry_run"}
-        result = self._best_effort_state(
-            "persist_production_metrics",
-            lambda: persist_production_metrics(
-                project=project,
-                private_dir=self.paths.private_dir,
-                env=os.environ,
-            ),
-        )
-        if (
-            result.get("status") == "unavailable"
-            and "persist_production_metrics" not in self.warnings
-        ):
-            self.warnings.append("persist_production_metrics")
-        self._write_json(self._private("production-metrics-publish.json"), result)
-        return result
-
-    def _publish_scheduler_observation(
-        self,
-        project: ProjectDefinition,
-        *,
-        metrics: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Publish scheduler evidence only from this lifecycle and fresh metrics."""
-
-        if not self.publish:
-            return {"status": "skipped", "reason": "dry_run"}
-        if metrics.get("status") != "published":
-            return {"status": "skipped", "reason": "production_metrics_not_published"}
-        result = self._best_effort_state(
-            "publish_scheduler_observation",
-            lambda: publish_scheduler_observation(project=project, env=os.environ),
-        )
-        if (
-            result.get("status") == "unavailable"
-            and "publish_scheduler_observation" not in self.warnings
-        ):
-            self.warnings.append("publish_scheduler_observation")
-        self._write_json(self._private("scheduler-observation-publish.json"), result)
-        return result
-
-    def _candidate_slo_identity(self) -> tuple[str | None, int | None]:
-        for path in (self._private("config.yaml"), self._private("generated.yaml")):
-            try:
-                content = path.read_bytes()
-            except OSError:
-                continue
-            if content:
-                return hashlib.sha256(content).hexdigest(), len(content)
-        return None, None
-
-    def _qualification_retry_state(self) -> tuple[bool, bool]:
-        path = self._private("qualification-pipeline-summary.json")
-        if not path.is_file():
-            return False, False
-        try:
-            summary = self._load_json(path)
-        except ValidationError:
-            return False, False
-        browsing = summary.get("browsing")
-        if not isinstance(browsing, dict):
-            return False, False
-        attempts = browsing.get("stage_attempts", 1)
-        retry_attempted = (
-            isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1
-        )
-        return retry_attempted, browsing.get("recovered_by_retry") is True
-
-    def _promotion_slo_state(self) -> tuple[bool, bool]:
-        path = self._private("promotion-guard.json")
-        if not path.is_file():
-            return False, False
-        try:
-            report = self._load_json(path)
-        except ValidationError:
-            return False, False
-        status = report.get("status")
-        return status in {"passed", "blocked"}, status == "blocked"
-
     def _safe_source_admission_summary(self) -> dict[str, Any] | None:
         path = self._private("build-report.json")
         if not path.is_file():
@@ -525,40 +439,6 @@ class ProductionPipeline:
         ):
             raise ValidationError("production source removal totals drifted")
         return result
-
-    def _record_operational_slo(
-        self,
-        *,
-        project: ProjectDefinition,
-        outcome: ProductionOutcome,
-        lifecycle_started: float,
-        failure_category: str | None = None,
-        failure_retry_attempted: bool = False,
-    ) -> dict[str, Any]:
-        if not self.publish:
-            return {"status": "skipped", "reason": "dry_run"}
-        candidate_sha256, candidate_bytes = self._candidate_slo_identity()
-        retry_attempted, retry_recovered = self._qualification_retry_state()
-        retry_attempted = retry_attempted or failure_retry_attempted
-        guard_checked, guard_blocked = self._promotion_slo_state()
-        try:
-            attempt = build_slo_attempt(
-                outcome=outcome,
-                duration_ms=(time.perf_counter() - lifecycle_started) * 1000.0,
-                candidate_sha256=candidate_sha256,
-                candidate_bytes=candidate_bytes,
-                qualification_failure_category=failure_category,
-                retry_attempted=retry_attempted,
-                retry_recovered=retry_recovered,
-                promotion_guard_checked=guard_checked,
-                promotion_guard_blocked=guard_blocked,
-            )
-            result = persist_operational_slo(project=project, attempt=attempt, env=os.environ)
-            self._write_json(self._private("operational-slo-publish.json"), result)
-            return result
-        except (OSError, ValueError, ClashRelayError):
-            self.warnings.append("persist_operational_slo")
-            return {"status": "unavailable", "reason": "stage_failed"}
 
     def _render_existing_proof(self, *, release: dict[str, Any] | None) -> dict[str, Any]:
         proof = render_production_proof_application(
@@ -816,17 +696,18 @@ class ProductionPipeline:
                 progress.advance(ReleasePhase.VERIFIED)
 
             self._write_lifecycle_observability(progress)
-            started = time.perf_counter()
-            metrics = self._persist_production_metrics(project)
-            self._record_timing("production_metrics", started)
-            started = time.perf_counter()
-            scheduler_observation = self._publish_scheduler_observation(project, metrics=metrics)
-            self._record_timing("scheduler_observation", started)
-            slo = self._record_operational_slo(
+            observability = publish_post_release_observability(
                 project=project,
-                outcome=ProductionOutcome.PASSED,
+                publish=self.publish,
+                private_dir=self.paths.private_dir,
                 lifecycle_started=lifecycle_started,
+                env=os.environ,
             )
+            self.timings_ms.update(observability.timings_ms)
+            self.warnings.extend(observability.warnings)
+            metrics = observability.production_metrics
+            scheduler_observation = observability.scheduler_observation
+            slo = observability.operational_slo
 
             if self.warnings:
                 print(
@@ -902,22 +783,15 @@ class ProductionPipeline:
             if source_admission is not None:
                 exc.source_admission_report = source_admission  # type: ignore[attr-defined]
             if project is not None:
-                category = qualification_failure_category(exc)
-                guard_checked, guard_blocked = self._promotion_slo_state()
-                outcome = (
-                    ProductionOutcome.QUALIFICATION_REJECTED
-                    if category is not None
-                    else ProductionOutcome.PROMOTION_BLOCKED
-                    if guard_checked and guard_blocked
-                    else ProductionOutcome.FAILED
-                )
-                self._record_operational_slo(
+                failure_observability = record_failure_observability(
                     project=project,
-                    outcome=outcome,
+                    publish=self.publish,
+                    private_dir=self.paths.private_dir,
                     lifecycle_started=lifecycle_started,
-                    failure_category=category,
-                    failure_retry_attempted=qualification_retry_attempted(exc),
+                    error=exc,
+                    env=os.environ,
                 )
+                self.warnings.extend(failure_observability.warnings)
             raise
         finally:
             shutil.rmtree(self.paths.private_dir, ignore_errors=True)
