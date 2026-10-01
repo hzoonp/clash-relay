@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -11,24 +10,15 @@ from .errors import GenerationError
 from .models import Node
 from .rule_compiler import RuleCompiler
 from .runtime_config_renderer import RuntimeConfigRenderer
-from .runtime_identity import provider_and_group_names, scope_token
-from .runtime_names import runtime_source_label, validate_runtime_source_labels
+from .runtime_identity import provider_and_group_names, runtime_proxy_name, scope_token
+from .runtime_names import validate_runtime_source_labels
 from .selector import select_nodes
 from .util import normalize_expected_status, safe_identifier, unique
 
 
-def _runtime_name(node: Node, scope: str) -> str:
-    digest = hashlib.sha256(f"{scope}\0{node.source_id}\0{node.fingerprint}".encode()).hexdigest()[
-        :10
-    ]
-    original = node.original_name.replace("\n", " ").replace("\r", " ").strip()[:96]
-    source_label = runtime_source_label(node.source_id)
-    return f"[{scope}] {source_label}/{original} #{digest}"
-
-
 def _runtime_proxy(node: Node, scope: str, *, dialer_proxy: str | None = None) -> dict[str, Any]:
     proxy = dict(node.proxy)
-    proxy["name"] = _runtime_name(node, scope)
+    proxy["name"] = runtime_proxy_name(node, scope)
     if dialer_proxy is not None:
         proxy["dialer-proxy"] = dialer_proxy
     return proxy
