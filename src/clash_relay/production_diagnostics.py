@@ -108,6 +108,28 @@ _SAFE_EMPTY_PAYLOAD_SHAPES = frozenset(
         "yaml_empty_inventory",
     }
 )
+_SAFE_INVALID_PROXY_REASONS = frozenset(
+    {
+        "invalid_entry",
+        "invalid_fields",
+        "yaml_control_characters",
+        "invalid_name",
+        "missing_type",
+        "unsupported_type",
+        "invalid_server",
+        "invalid_port",
+        "private_host",
+        "missing_required_field",
+        "malformed_options",
+        "unsupported_values",
+        "unknown_uri_scheme",
+        "unsupported_uri_parameter",
+        "malformed_uri",
+        "garbage_uri_line",
+        "invalid_auth",
+        "other_invalid",
+    }
+)
 _SAFE_SOURCE_FAILURE_REASONS = frozenset(
     {
         "http_error",
@@ -128,6 +150,7 @@ _SAFE_SOURCE_FAILURE_REASONS = frozenset(
         "mixed_invalid_proxies",
         "all_invalid_entries",
         "all_invalid_fields",
+        "all_yaml_control_characters",
         "all_invalid_names",
         "all_missing_types",
         "all_unsupported_types",
@@ -322,6 +345,18 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
         payload_shape = row.get("empty_payload_shape")
         if payload_shape in _SAFE_EMPTY_PAYLOAD_SHAPES:
             safe_row["empty_payload_shape"] = payload_shape
+        invalid_reasons = row.get("skipped_invalid_reasons")
+        if isinstance(invalid_reasons, Mapping):
+            safe_reasons = {
+                str(reason): count
+                for reason, count in invalid_reasons.items()
+                if reason in _SAFE_INVALID_PROXY_REASONS
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count >= 0
+            }
+            if safe_reasons:
+                safe_row["skipped_invalid_reasons"] = dict(sorted(safe_reasons.items()))
         safe_rows.append(safe_row)
     return {
         "successful_subscriptions": report.get("successful_subscriptions"),
@@ -330,6 +365,79 @@ def sanitize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any
         "name_filtered_nodes": report.get("name_filtered_nodes"),
         "multiplier_filtered_nodes": report.get("multiplier_filtered_nodes"),
         "subscriptions": safe_rows,
+    }
+
+
+def summarize_source_admission_report(report: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return bounded aggregate admission evidence suitable for proof/metrics."""
+
+    safe = sanitize_source_admission_report(report)
+    if safe is None:
+        return None
+    rows = safe.get("subscriptions")
+    if not isinstance(rows, list):
+        return None
+
+    skipped_total = 0
+    reason_totals: dict[str, int] = {}
+    sources: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        source_id = row.get("id")
+        if not valid_source_id(source_id):
+            continue
+        skipped = row.get("skipped_invalid_nodes")
+        skipped_count = (
+            skipped
+            if isinstance(skipped, int) and not isinstance(skipped, bool) and skipped >= 0
+            else 0
+        )
+        skipped_total += skipped_count
+        reasons = row.get("skipped_invalid_reasons")
+        safe_reasons = reasons if isinstance(reasons, Mapping) else {}
+        source_reasons: dict[str, int] = {}
+        for reason, count in safe_reasons.items():
+            if (
+                reason in _SAFE_INVALID_PROXY_REASONS
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count >= 0
+            ):
+                source_reasons[str(reason)] = count
+                reason_totals[str(reason)] = reason_totals.get(str(reason), 0) + count
+
+        def count(name: str) -> int:
+            value = row.get(name)
+            return (
+                value
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                else 0
+            )
+
+        sources[source_id] = {
+            "input_nodes": count("input_nodes"),
+            "parsed_valid_nodes": count("parsed_valid_nodes"),
+            "skipped_invalid_nodes": skipped_count,
+            "skipped_invalid_reasons": dict(sorted(source_reasons.items())),
+        }
+
+    def top_count(name: str) -> int:
+        value = safe.get(name)
+        return (
+            value
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            else 0
+        )
+
+    return {
+        "configured_subscriptions": len(rows),
+        "successful_subscriptions": top_count("successful_subscriptions"),
+        "parsed_nodes": top_count("parsed_nodes"),
+        "usable_nodes": top_count("usable_nodes"),
+        "skipped_invalid_nodes": skipped_total,
+        "skipped_invalid_reasons": dict(sorted(reason_totals.items())),
+        "sources": dict(sorted(sources.items())),
     }
 
 
