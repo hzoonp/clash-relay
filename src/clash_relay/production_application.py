@@ -830,6 +830,7 @@ def persist_production_metrics(
             candidate_path=required["candidate"],
             browsing=_load_json(required["browsing"], "browsing metrics"),
             ai=_load_json(required["ai"], "AI metrics"),
+            build_report=_optional_json(private_dir / "build-report.json"),
             qualification=_optional_json(private_dir / "qualification-pipeline-summary.json"),
             release=_optional_json(private_dir / "release-publication.json"),
             mihomo_matrix=_optional_json(private_dir / "mihomo-validation-matrix.json"),
