@@ -166,6 +166,7 @@ def _source_failure_diagnostic(error: BaseException) -> dict[str, str]:
 _EMPTY_SUBSCRIPTION_REASON_BY_INVALID_REASON = {
     "invalid_entry": "all_invalid_entries",
     "invalid_fields": "all_invalid_fields",
+    "yaml_control_characters": "all_yaml_control_characters",
     "invalid_name": "all_invalid_names",
     "missing_type": "all_missing_types",
     "unsupported_type": "all_unsupported_types",
