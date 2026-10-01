@@ -18,6 +18,7 @@ CANONICAL = (
     "docs/routing-v2.md",
     "docs/rules.md",
 )
+OPERATIONS = ("docs/production-cutover.md",)
 FORBIDDEN = (
     "services.yaml",
     "Policy Model v1 remains readable",
@@ -26,6 +27,10 @@ FORBIDDEN = (
     "Automatic `push` and `schedule` events are hard-latched to dry-run mode.",
     "自动 `push` 和 `schedule` 生产运行都被硬锁为 dry-run",
     "自动 `push` 与 `schedule` 事件始终被硬锁为 dry-run",
+    "Automatic `push` remains dry-run",
+    "Automatic `push` executions are fail-closed to `publish=false`.",
+    "push-triggered production workflow is therefore the preferred first production-parity dry run.",
+    "`push` remains dry-run even if a publish-like environment value is present.",
 )
 
 
@@ -74,7 +79,7 @@ def _canonical_ai_excluded_regions(root: Path) -> frozenset[str]:
 def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     texts: dict[str, str] = {}
-    for relative in (*GUIDES, *CANONICAL):
+    for relative in (*GUIDES, *CANONICAL, *OPERATIONS):
         try:
             texts[relative] = _read(root, relative)
         except OSError:
@@ -92,6 +97,18 @@ def audit(root: Path = ROOT) -> list[str]:
     for token in ("push", "schedule", "dry-run", "publish=true", "CLASH_RELAY_SCHEDULE_PUBLISH"):
         if token not in publishing:
             errors.append(f"docs/publishing.md is missing publication contract token: {token}")
+
+    cutover = texts.get("docs/production-cutover.md", "")
+    for token in (
+        "A `main` push runs only the reusable code-validation matrix.",
+        "does not enter the production lifecycle",
+        "`workflow_dispatch` with `publish=false`",
+        "zero-write production-parity dry run",
+    ):
+        if token not in cutover:
+            errors.append(
+                f"docs/production-cutover.md is missing exact-SHA dry-run contract token: {token}"
+            )
 
     try:
         visible_groups = _canonical_visible_groups(root)
