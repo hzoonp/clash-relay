@@ -104,6 +104,57 @@ def _safe_sha(value: Any) -> str | None:
     return value if isinstance(value, str) and _RELEASE_ID.fullmatch(value) else None
 
 
+def _clean_admission_reason_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    clean: dict[str, int] = {}
+    for reason, count in sorted(value.items()):
+        if (
+            isinstance(reason, str)
+            and re.fullmatch(r"[a-z0-9_]{1,64}", reason)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and count >= 0
+        ):
+            clean[reason] = count
+    return clean
+
+
+def _clean_source_admission(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    subscriptions = value.get("subscriptions")
+    if not isinstance(subscriptions, list):
+        return None
+    by_source: dict[str, Any] = {}
+    skipped_total = 0
+    reason_totals: dict[str, int] = {}
+    for row in subscriptions:
+        if not isinstance(row, dict):
+            continue
+        source_id = row.get("id")
+        if not isinstance(source_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None:
+            continue
+        reasons = _clean_admission_reason_counts(row.get("skipped_invalid_reasons"))
+        skipped = _non_negative_int(row.get("skipped_invalid_nodes"))
+        skipped_total += skipped
+        for reason, count in reasons.items():
+            reason_totals[reason] = reason_totals.get(reason, 0) + count
+        by_source[source_id] = {
+            "input_nodes": _non_negative_int(row.get("input_nodes")),
+            "parsed_valid_nodes": _non_negative_int(row.get("parsed_valid_nodes")),
+            "skipped_invalid_nodes": skipped,
+            "skipped_invalid_reasons": reasons,
+        }
+    return {
+        "configured_subscriptions": len(subscriptions),
+        "successful_subscriptions": _non_negative_int(value.get("successful_subscriptions")),
+        "skipped_invalid_nodes": skipped_total,
+        "skipped_invalid_reasons": dict(sorted(reason_totals.items())),
+        "by_source": by_source,
+    }
+
+
 def _clean_failure(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -386,6 +437,7 @@ def _clean_run(run: Any) -> dict[str, Any] | None:
         ("mihomo", _clean_mihomo),
         ("performance", _clean_performance),
         ("qualification", _clean_qualification),
+        ("source_admission", lambda value: value if isinstance(value, dict) else None),
         ("promotion_guard", _clean_promotion_guard),
         ("lifecycle", _clean_lifecycle),
     ):
@@ -441,6 +493,7 @@ def build_metrics_run(
     browsing: dict[str, Any],
     ai: dict[str, Any],
     qualification: dict[str, Any] | None = None,
+    build_report: dict[str, Any] | None = None,
     release: dict[str, Any] | None = None,
     mihomo_matrix: dict[str, Any] | None = None,
     promotion_guard: dict[str, Any] | None = None,
@@ -522,6 +575,9 @@ def build_metrics_run(
             },
         },
     }
+    source_admission = _clean_source_admission(build_report)
+    if source_admission is not None:
+        run["source_admission"] = source_admission
     if qualification is not None:
         run["qualification"] = qualification
         timings = qualification.get("timings_ms") if isinstance(qualification, dict) else None
@@ -669,6 +725,7 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "runs": len(runs),
         "latest_candidate_sha256": latest["candidate_sha256"],
         "latest_candidate_bytes": latest["candidate_bytes"],
+        "latest_source_admission": latest.get("source_admission", {}),
         "latest_browsing_qualified": latest["browsing"].get("qualified", 0),
         "latest_ai_live_service_probes": latest["ai"].get("live_service_probes", 0),
         "latest_release_status": release.get("status", "unknown"),
