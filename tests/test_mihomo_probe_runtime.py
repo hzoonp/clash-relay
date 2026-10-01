@@ -59,6 +59,12 @@ def test_wait_for_process_condition_succeeds_without_sleep(
     assert sleeps == []
 
 
+def test_ensure_process_running_reports_early_exit() -> None:
+    process = _FakeProcess(returncode=9)
+    with pytest.raises(runtime.MihomoProcessExited, match="status 9"):
+        runtime.ensure_process_running(process)  # type: ignore[arg-type]
+
+
 def test_wait_for_process_condition_reports_early_exit() -> None:
     process = _FakeProcess(returncode=7)
     with pytest.raises(runtime.MihomoProcessExited, match="status 7"):
