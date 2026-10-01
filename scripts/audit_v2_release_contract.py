@@ -19,6 +19,9 @@ STALE_PHASE_DOCS = (
     "docs/p33-p38-stabilization-v1.8.md",
     "docs/p39-p45-production-stabilization.md",
     "docs/migration-v1.8.md",
+    "docs/plan.md",
+    "docs/v2.1-design.md",
+    "docs/scheduler.md",
 )
 _RUNTIME_COMPATIBILITY_TOKENS = (
     "--allow-legacy-openai-client-path",
