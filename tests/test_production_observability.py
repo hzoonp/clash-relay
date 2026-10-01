@@ -121,7 +121,6 @@ def test_metrics_parser_strips_unknown_fields_from_existing_private_state() -> N
     assert "secret.example" not in serialized
 
 
-
 def _project():
     return SimpleNamespace(
         config={"publishing": {"cloudflare_kv": {"key": "production-config"}}}
