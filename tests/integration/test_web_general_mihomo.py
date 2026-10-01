@@ -183,6 +183,13 @@ def test_compiled_proxylite_uses_general_stable_and_reserve_without_sub_1(
             rule_fetcher=lambda *_a, **_k: "DOMAIN,web.fixture.test\n",
         )
         config = result.config
+        assert not any(
+            str(name).startswith("cr_web_general_")
+            for name in config["proxy-providers"]
+        )
+        assert "__CR_WEB_GENERAL_INVENTORY" not in {
+            str(group["name"]) for group in config["proxy-groups"]
+        }
         config.pop("dns", None)
         path = root / "candidate.yaml"
         path.write_text(dump_yaml(config), encoding="utf-8")
