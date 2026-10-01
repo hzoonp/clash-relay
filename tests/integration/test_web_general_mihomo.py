@@ -184,8 +184,7 @@ def test_compiled_proxylite_uses_general_stable_and_reserve_without_sub_1(
         )
         config = result.config
         assert not any(
-            str(name).startswith("cr_web_general_")
-            for name in config["proxy-providers"]
+            str(name).startswith("cr_web_general_") for name in config["proxy-providers"]
         )
         assert "__CR_WEB_GENERAL_INVENTORY" not in {
             str(group["name"]) for group in config["proxy-groups"]
