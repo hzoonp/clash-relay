@@ -8,6 +8,19 @@ import yaml
 from clash_relay.subscription_parser import parse_subscription
 
 FIXTURES = Path(__file__).parent / "fixtures" / "uri"
+REQUIRED_PROTOCOL_FIXTURES = {
+    "vless-reality",
+    "trojan",
+    "hysteria2",
+    "tuic",
+    "anytls",
+}
+
+
+def test_required_protocol_runtime_fixtures_are_present() -> None:
+    fixture_names = {path.stem for path in FIXTURES.glob("*.yaml")}
+
+    assert REQUIRED_PROTOCOL_FIXTURES <= fixture_names
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.yaml")), ids=lambda path: path.stem)
