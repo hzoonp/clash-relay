@@ -62,11 +62,13 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
     minimum_source_ratio_by_use = _float_map(document["minimum_source_ratio_by_use"])
     warning_source_ratio_by_use = dict(minimum_source_ratio_by_use)
     warning_source_ratio_by_use.update(_float_map(document.get("warning_source_ratio_by_use", {})))
+    raw_warning_total = document.get("warning_total_node_ratio")
+    raw_warning_provider = document.get("warning_provider_ratio")
     warning_total_node_ratio = float(
-        document.get("warning_total_node_ratio", document["minimum_total_node_ratio"])
+        document["minimum_total_node_ratio"] if raw_warning_total is None else raw_warning_total
     )
     warning_provider_ratio = float(
-        document.get("warning_provider_ratio", document["minimum_provider_ratio"])
+        document["minimum_provider_ratio"] if raw_warning_provider is None else raw_warning_provider
     )
     if warning_total_node_ratio < float(document["minimum_total_node_ratio"]):
         raise ConfigurationError(
