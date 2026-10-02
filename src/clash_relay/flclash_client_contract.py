@@ -75,7 +75,10 @@ def audit_flclash_client_contract(
 
     graph = RuntimeGraph.from_candidate(candidate)
     missing_groups = [name for name in _PUBLIC_GROUPS if name not in graph.groups]
-    _require(not missing_groups, "FlClash contract is missing a required public selector")
+    _require(
+        not missing_groups,
+        "FlClash contract is missing a required public selector",
+    )
 
     urltest_groups = [
         row
@@ -164,7 +167,10 @@ def audit_flclash_client_contract(
         for rule in rules
         if isinstance(rule, str) and (rule.endswith(",DIRECT") or ",DIRECT," in rule)
     )
-    _require(direct_rule_count > 0, "FlClash contract requires an explicit DIRECT surface")
+    _require(
+        direct_rule_count > 0,
+        "FlClash contract requires an explicit DIRECT surface",
+    )
 
     checks = {
         "profile_structure": "passed",
