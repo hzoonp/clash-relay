@@ -28,6 +28,9 @@ class PromotionGuardPolicy:
     minimum_total_node_ratio: float
     minimum_provider_ratio: float
     minimum_source_ratio_by_use: dict[str, float]
+    warning_total_node_ratio: float
+    warning_provider_ratio: float
+    warning_source_ratio_by_use: dict[str, float]
     minimum_sources_by_use: dict[str, int]
     minimum_nodes_by_use: dict[str, int]
     minimum_regions_by_use: dict[str, int]
@@ -56,6 +59,37 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
     if not isinstance(document, dict):
         raise ConfigurationError("promotion guard document must be a mapping")
 
+    minimum_source_ratio_by_use = _float_map(document["minimum_source_ratio_by_use"])
+    warning_source_ratio_by_use = dict(minimum_source_ratio_by_use)
+    warning_source_ratio_by_use.update(_float_map(document.get("warning_source_ratio_by_use", {})))
+    raw_warning_total = document.get("warning_total_node_ratio")
+    raw_warning_provider = document.get("warning_provider_ratio")
+    warning_total_node_ratio = float(
+        document["minimum_total_node_ratio"] if raw_warning_total is None else raw_warning_total
+    )
+    warning_provider_ratio = float(
+        document["minimum_provider_ratio"] if raw_warning_provider is None else raw_warning_provider
+    )
+    if warning_total_node_ratio < float(document["minimum_total_node_ratio"]):
+        raise ConfigurationError(
+            "promotion guard warning_total_node_ratio must not be below the blocking threshold"
+        )
+    if warning_provider_ratio < float(document["minimum_provider_ratio"]):
+        raise ConfigurationError(
+            "promotion guard warning_provider_ratio must not be below the blocking threshold"
+        )
+    unknown_warning_uses = set(warning_source_ratio_by_use) - set(minimum_source_ratio_by_use)
+    if unknown_warning_uses:
+        rendered = ", ".join(sorted(unknown_warning_uses))
+        raise ConfigurationError(
+            f"promotion guard warning source ratios reference unknown uses: {rendered}"
+        )
+    for source_use, minimum in minimum_source_ratio_by_use.items():
+        if warning_source_ratio_by_use[source_use] < minimum:
+            raise ConfigurationError(
+                "promotion guard warning source ratio must not be below the blocking threshold"
+            )
+
     minimum_qualified_nodes_by_service = _int_map(
         document.get("minimum_qualified_nodes_by_service", {})
     )
@@ -73,13 +107,24 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
         enabled=bool(document["enabled"]),
         minimum_total_node_ratio=float(document["minimum_total_node_ratio"]),
         minimum_provider_ratio=float(document["minimum_provider_ratio"]),
-        minimum_source_ratio_by_use=_float_map(document["minimum_source_ratio_by_use"]),
+        minimum_source_ratio_by_use=minimum_source_ratio_by_use,
+        warning_total_node_ratio=warning_total_node_ratio,
+        warning_provider_ratio=warning_provider_ratio,
+        warning_source_ratio_by_use=warning_source_ratio_by_use,
         minimum_sources_by_use=_int_map(document["minimum_sources_by_use"]),
         minimum_nodes_by_use=_int_map(document.get("minimum_nodes_by_use", {})),
         minimum_regions_by_use=_int_map(document.get("minimum_regions_by_use", {})),
         minimum_qualified_nodes_by_service=minimum_qualified_nodes_by_service,
         minimum_qualified_regions_by_service=minimum_qualified_regions_by_service,
     )
+
+
+def _warning_thresholds(policy: PromotionGuardPolicy) -> dict[str, Any]:
+    return {
+        "warning_total_node_ratio": policy.warning_total_node_ratio,
+        "warning_provider_ratio": policy.warning_provider_ratio,
+        "warning_source_ratio_by_use": dict(sorted(policy.warning_source_ratio_by_use.items())),
+    }
 
 
 def _absolute_thresholds(policy: PromotionGuardPolicy) -> dict[str, Any]:
@@ -219,7 +264,13 @@ def assess_promotion(
     """Return an aggregate-only allow/block decision against availability requirements."""
 
     if not policy.enabled:
-        return {"status": "passed", "reason": "disabled", "violations": []}
+        return {
+            "status": "passed",
+            "admission_state": "NORMAL",
+            "reason": "disabled",
+            "warnings": [],
+            "violations": [],
+        }
 
     candidate_inventory = collect_inventory(project, candidate)
     service_availability = collect_service_availability(qualification)
@@ -237,6 +288,7 @@ def assess_promotion(
     if baseline is None:
         return {
             "status": "blocked" if violations else "passed",
+            "admission_state": "PROMOTION_BLOCK" if violations else "NORMAL",
             "reason": (
                 "probe_environment_hold"
                 if held_services
@@ -247,7 +299,11 @@ def assess_promotion(
                 "held_services": sorted(held_services),
             },
             "candidate": candidate_summary,
-            "thresholds": _absolute_thresholds(policy),
+            "thresholds": {
+                **_warning_thresholds(policy),
+                **_absolute_thresholds(policy),
+            },
+            "warnings": [],
             "violations": violations,
         }
 
@@ -259,17 +315,28 @@ def assess_promotion(
     if provider_ratio < policy.minimum_provider_ratio:
         violations.append("provider_ratio")
 
+    warnings: list[str] = []
+    if total_node_ratio < policy.warning_total_node_ratio:
+        warnings.append("total_node_ratio")
+    if provider_ratio < policy.warning_provider_ratio:
+        warnings.append("provider_ratio")
+
     use_ratios: dict[str, dict[str, float | int | bool]] = {}
     for source_use in sorted(policy.minimum_source_ratio_by_use):
         row = _use_ratio_row(source_use, candidate_inventory, baseline_inventory)
         configured = bool(row["configured_in_baseline"])
         source_ratio = float(row["source_ratio"])
         minimum_ratio = policy.minimum_source_ratio_by_use[source_use]
+        warning_ratio = policy.warning_source_ratio_by_use[source_use]
         if configured and source_ratio < minimum_ratio:
             violations.append(f"source_ratio:{source_use}")
+        if configured and source_ratio < warning_ratio:
+            warnings.append(f"source_ratio:{source_use}")
         use_ratios[source_use] = row
 
-    blocked_reason = "degraded" if violations else "within_thresholds"
+    blocked_reason = (
+        "degraded" if violations else ("degraded_warning" if warnings else "within_thresholds")
+    )
     if held_services and not (
         set(violations) - {f"probe_environment_hold:{service}" for service in held_services}
     ):
@@ -277,6 +344,9 @@ def assess_promotion(
 
     return {
         "status": "blocked" if violations else "passed",
+        "admission_state": (
+            "PROMOTION_BLOCK" if violations else ("WARNING" if warnings else "NORMAL")
+        ),
         "reason": blocked_reason,
         "probe_environment": {
             "cache_backed_services": sorted(cache_backed_services),
@@ -293,7 +363,9 @@ def assess_promotion(
             "minimum_total_node_ratio": policy.minimum_total_node_ratio,
             "minimum_provider_ratio": policy.minimum_provider_ratio,
             "minimum_source_ratio_by_use": dict(sorted(policy.minimum_source_ratio_by_use.items())),
+            **_warning_thresholds(policy),
             **_absolute_thresholds(policy),
         },
+        "warnings": warnings,
         "violations": violations,
     }

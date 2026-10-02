@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from clash_relay.availability import collect_baseline_inventory, collect_inventory
+from clash_relay.availability import InventoryCount, collect_baseline_inventory, collect_inventory
 from clash_relay.builder import build_candidate
 from clash_relay.config_loader import load_project
 from clash_relay.errors import ValidationError
@@ -65,10 +65,85 @@ def test_canonical_promotion_guard_requires_all_public_scenario_uses() -> None:
     assert set(policy.minimum_sources_by_use) == required
     assert policy.minimum_sources_by_use == {"general": 2, "browsing": 2, "ai": 1}
     assert policy.minimum_source_ratio_by_use == dict.fromkeys(required, 0.5)
+    assert policy.warning_total_node_ratio == 0.75
+    assert policy.warning_provider_ratio == 0.75
+    assert policy.warning_source_ratio_by_use == dict.fromkeys(required, 0.75)
     assert set(policy.minimum_nodes_by_use) == required
     assert set(policy.minimum_regions_by_use) == required
     assert set(policy.minimum_qualified_nodes_by_service) == services
     assert set(policy.minimum_qualified_regions_by_service) == services
+
+
+def test_promotion_guard_warns_before_hard_block(
+    built_candidate, project_paths, monkeypatch
+) -> None:
+    candidate_inventory = InventoryCount(
+        nodes=7,
+        providers=3,
+        sources_by_use={"general": 2},
+        providers_by_use={"general": 3},
+        nodes_by_use={"general": 7},
+        regions_by_use={"general": 2},
+    )
+    baseline_inventory = InventoryCount(
+        nodes=10,
+        providers=4,
+        sources_by_use={"general": 2},
+        providers_by_use={"general": 4},
+        nodes_by_use={"general": 10},
+        regions_by_use={"general": 2},
+    )
+    monkeypatch.setattr(
+        "clash_relay.promotion_guard.collect_inventory",
+        lambda project, candidate: candidate_inventory,
+    )
+    monkeypatch.setattr(
+        "clash_relay.promotion_guard.collect_baseline_inventory",
+        lambda project, baseline: baseline_inventory,
+    )
+    policy = replace(
+        _fixture_policy(),
+        minimum_total_node_ratio=0.5,
+        minimum_provider_ratio=0.5,
+        minimum_source_ratio_by_use={"general": 0.5},
+        warning_total_node_ratio=0.75,
+        warning_provider_ratio=0.75,
+        warning_source_ratio_by_use={"general": 0.75},
+        minimum_sources_by_use={},
+        minimum_nodes_by_use={},
+        minimum_regions_by_use={},
+    )
+
+    report = assess_promotion(
+        _project(project_paths),
+        built_candidate.config,
+        copy.deepcopy(built_candidate.config),
+        policy,
+    )
+
+    assert report["status"] == "passed"
+    assert report["admission_state"] == "WARNING"
+    assert report["reason"] == "degraded_warning"
+    assert report["warnings"] == ["total_node_ratio"]
+    assert report["violations"] == []
+
+
+def test_promotion_guard_marks_blocked_candidate_as_promotion_block(
+    built_candidate, project_paths
+) -> None:
+    candidate = copy.deepcopy(built_candidate.config)
+    for provider in candidate["proxy-providers"].values():
+        provider["payload"] = []
+
+    report = assess_promotion(
+        _project(project_paths),
+        candidate,
+        copy.deepcopy(built_candidate.config),
+        _fixture_policy(),
+    )
+
+    assert report["status"] == "blocked"
+    assert report["admission_state"] == "PROMOTION_BLOCK"
 
 
 def test_promotion_guard_allows_first_release(built_candidate, project_paths) -> None:

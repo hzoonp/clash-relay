@@ -16,7 +16,14 @@
     "enabled": {"type": "boolean"},
     "minimum_total_node_ratio": {"type": "number", "minimum": 0, "maximum": 1},
     "minimum_provider_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "warning_total_node_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+    "warning_provider_ratio": {"type": "number", "minimum": 0, "maximum": 1},
     "minimum_source_ratio_by_use": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "warning_source_ratio_by_use": {
       "type": "object",
       "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
       "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}

@@ -198,7 +198,9 @@ def _inputs(candidate_path: Path) -> dict:
         },
         "promotion_guard": {
             "status": "passed",
-            "reason": "within_thresholds",
+            "admission_state": "WARNING",
+            "reason": "degraded_warning",
+            "warnings": ["provider_ratio"],
             "violations": [],
             "candidate": {"server": "SHOULD-NOT-LEAK"},
         },
@@ -355,7 +357,9 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     }
     assert proof["promotion_guard"] == {
         "status": "passed",
-        "reason": "within_thresholds",
+        "admission_state": "WARNING",
+        "reason": "degraded_warning",
+        "warnings": 1,
         "violations": 0,
     }
     assert proof["qualification_pipeline"]["sources_fully_removed"][0]["removed_at_stage"] == "ai"
@@ -387,6 +391,8 @@ def test_production_proof_contains_only_aggregate_candidate_metadata(tmp_path: P
     assert "DNS leak audit | passed" in markdown
     assert "DNS runtime audit | passed" in markdown
     assert "Promotion Guard | passed" in markdown
+    assert "Promotion admission state | WARNING" in markdown
+    assert "Promotion Guard warnings | 1" in markdown
     for secret in (
         "SECRET-NODE-NAME",
         "secret.example.invalid",

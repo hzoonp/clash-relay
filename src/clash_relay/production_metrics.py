@@ -412,11 +412,23 @@ def _clean_promotion_guard(value: Any) -> dict[str, Any] | None:
     status = value.get("status")
     if not isinstance(status, str) or status not in {"passed", "skipped", "not_applicable"}:
         return None
+    admission_state = value.get("admission_state")
+    if admission_state is not None and admission_state not in {"NORMAL", "WARNING"}:
+        return None
+    warnings = value.get("warnings")
     violations = value.get("violations")
-    return {
+    warning_count = len(warnings) if isinstance(warnings, list) else _non_negative_int(warnings)
+    violation_count = (
+        len(violations) if isinstance(violations, list) else _non_negative_int(violations)
+    )
+    clean: dict[str, Any] = {
         "status": status,
-        "violations": len(violations) if isinstance(violations, list) else 0,
+        "warnings": warning_count,
+        "violations": violation_count,
     }
+    if admission_state in {"NORMAL", "WARNING"}:
+        clean["admission_state"] = admission_state
+    return clean
 
 
 def _clean_lifecycle(value: Any) -> dict[str, Any] | None:
@@ -773,6 +785,8 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_qualification_failure_planes": qualification_failure_planes,
         "latest_qualification_tuning": qualification_tuning,
         "latest_promotion_guard_status": promotion.get("status", "unknown"),
+        "latest_promotion_guard_admission_state": promotion.get("admission_state", "unknown"),
+        "latest_promotion_guard_warnings": promotion.get("warnings", 0),
         "latest_release_phase": release_progress.get("phase", "unknown"),
         "retry_runs": retry_runs,
         "retry_recoveries": retry_recoveries,
