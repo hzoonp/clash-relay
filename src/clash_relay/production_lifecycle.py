@@ -57,6 +57,7 @@ from .qualification_observability import safe_qualification_observability
 from .release_manifest import build_release_manifest, render_release_manifest_markdown
 from .release_reliability import ReleasePhase, ReleaseProgress
 from .runtime_names import valid_source_id
+from .source_quality import build_source_quality_report
 from .util import atomic_write, atomic_write_bytes
 
 _MAX_CARRIER_INPUT_BYTES = 64 * 1024
@@ -413,6 +414,7 @@ class ProductionPipeline:
             result.append(
                 {
                     "id": source_id,
+                    "status": str(before.get("status", "unknown")),
                     "input_nodes": int(before.get("input_nodes", 0) or 0),
                     "parsed_valid_nodes": int(before.get("parsed_valid_nodes", 0) or 0),
                     "skipped_invalid_nodes": int(before.get("skipped_invalid_nodes", 0) or 0),
@@ -439,6 +441,23 @@ class ProductionPipeline:
         ):
             raise ValidationError("production source removal totals drifted")
         return result
+
+    def _render_source_quality(self) -> dict[str, Any]:
+        required = (
+            self._private("qualification-pipeline-summary.json"),
+            self._private("config.yaml"),
+            self._private("browsing-qualification-summary.json"),
+        )
+        if not all(path.is_file() for path in required):
+            return {"status": "skipped", "reason": "evidence_unavailable"}
+        report = build_source_quality_report(
+            source_stage_accounting=self._source_stage_accounting(),
+            qualification=self._load_json(self._private("qualification-pipeline-summary.json")),
+            candidate=load_candidate(self._private("config.yaml")),
+            browsing=self._load_json(self._private("browsing-qualification-summary.json")),
+        )
+        self._write_json(self._public("source-quality.json"), report)
+        return report
 
     def _render_existing_proof(self, *, release: dict[str, Any] | None) -> dict[str, Any]:
         proof = render_production_proof_application(
@@ -670,6 +689,10 @@ class ProductionPipeline:
             self._record_timing("qualification", started)
             progress.advance(ReleasePhase.QUALIFIED)
 
+            started = time.perf_counter()
+            source_quality = self._render_source_quality()
+            self._record_timing("source_quality", started)
+
             try:
                 release_stage = self._release_candidate_stage(project, binary)
             except ValidationError as exc:
@@ -745,6 +768,7 @@ class ProductionPipeline:
                 "manifest_status": "passed" if manifest is not None else "unavailable",
                 "derived_state": derived_state.get("status"),
                 "production_metrics": metrics.get("status"),
+                "source_quality": source_quality.get("status"),
                 "scheduler_observation": scheduler_observation.get("status"),
                 "operational_slo": slo.get("status"),
                 "source_stage_accounting": self._source_stage_accounting(),
