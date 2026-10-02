@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from clash_relay.builder import build_candidate
+from clash_relay.config_loader import load_project
+from clash_relay.flclash_client_contract import audit_flclash_client_contract
 from clash_relay.mihomo import validate_with_mihomo
 from clash_relay.runtime_graph import RuntimeGraph
 from clash_relay.util import contains_yaml_incompatible_control_characters
@@ -240,6 +242,28 @@ def test_flclash_facing_candidate_preserves_source_isolation_and_loads_in_real_m
     # AI-reachable runtime proxy must therefore have no dialer-proxy field.
     runtime_proxies = graph.proxies
     assert all("dialer-proxy" not in runtime_proxies[name] for name in ai_proxy_names)
+
+    project = load_project(**paths)
+    client_contract = audit_flclash_client_contract(project, document)
+    assert client_contract["status"] == "passed"
+    assert client_contract["automation_scope"] == "generated_config_contract"
+    assert client_contract["mihomo_core_validation"] == "required_release_stage"
+    assert client_contract["device_evidence_status"] == "unverified"
+    assert client_contract["profiles"] == {
+        "windows_system_proxy": "compatible_by_contract",
+        "windows_tun": "compatible_by_contract",
+        "android_vpn": "compatible_by_contract",
+    }
+    assert client_contract["source_reachability"]["subscription_1_download_reachable"] is False
+    assert client_contract["source_reachability"]["subscription_1_general_reachable"] is False
+    assert set(client_contract["scenarios"]) == {
+        "direct",
+        "web_browsing",
+        "ai",
+        "streaming",
+        "messaging",
+        "download",
+    }
 
     # FlClash consumes Mihomo configuration. CI proves that the exact
     # consumer-facing YAML is accepted and starts on the pinned real Mihomo

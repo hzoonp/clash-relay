@@ -26,6 +26,7 @@ from .errors import (
     PublicationError,
     ValidationError,
 )
+from .flclash_client_contract import audit_flclash_client_contract
 from .mihomo import load_candidate
 from .mihomo_download import download_pinned_mihomo
 from .policy_document import load_policy_document
@@ -274,6 +275,17 @@ class ProductionPipeline:
         self._write_json(self._private("production-pipeline.json"), result)
         self._append_summary(self._private("production-summary.md"))
         return result
+
+    def _render_flclash_client_contract(self, project: ProjectDefinition) -> dict[str, Any]:
+        candidate_path = self._private("config.yaml")
+        if not candidate_path.is_file():
+            return {"status": "skipped", "reason": "candidate_unavailable"}
+        report = audit_flclash_client_contract(
+            project,
+            load_candidate(candidate_path),
+        )
+        self._write_json(self._public("flclash-client-contract.json"), report)
+        return report
 
     def _release_candidate_stage(self, project: ProjectDefinition, binary: Path):
         result = run_release_candidate_stage(
@@ -693,6 +705,10 @@ class ProductionPipeline:
             source_quality = self._render_source_quality()
             self._record_timing("source_quality", started)
 
+            started = time.perf_counter()
+            flclash_contract = self._render_flclash_client_contract(project)
+            self._record_timing("flclash_client_contract", started)
+
             try:
                 release_stage = self._release_candidate_stage(project, binary)
             except ValidationError as exc:
@@ -759,6 +775,7 @@ class ProductionPipeline:
                 "generation": generation.get("status"),
                 "production_pipeline": pipeline.get("production_pipeline", {}).get("status"),
                 "promotion_guard": promotion.get("status"),
+                "flclash_client_contract": flclash_contract.get("status"),
                 "mihomo_matrix": matrix.get("status"),
                 "release_status": release.get("status") if release is not None else "dry-run",
                 "release_phase": progress.phase,

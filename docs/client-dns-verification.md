@@ -2,17 +2,23 @@
 
 This is the canonical manual client verification contract for production `clash-relay` profiles. GitHub Actions validates the repository, generated candidate, and Mihomo cores; it does **not** claim to emulate Windows or Android FlClash, carrier networks, Wi-Fi transitions, or application authentication flows.
 
+## Automated contract evidence
+
+The canonical production lifecycle writes `.work/public/flclash-client-contract.json` after qualification and before release promotion. This is a hard generated-config contract: it verifies client-owned TUN ownership, managed Fake-IP DNS, the six public selectors, HTTPS URLTest groups, the bound download listener, explicit DIRECT routing, and source isolation including the rule that download/general/streaming/messaging cannot reach `subscription_1`. The release-stage Mihomo matrix separately validates the same candidate on both pinned stable cores.
+
+The automated report intentionally records `device_evidence_status: unverified`. A passing report means the generated Mihomo profile is compatible by repository contract; it does not mean FlClash Windows or Android was opened, that VPN/TUN permission was granted, or that Wi-Fi/carrier transitions were exercised. Only the manual matrix below may turn those device/network observations into real-client evidence.
+
 ## Base matrix
 
 Every release candidate intended to change routing, DNS, TUN, regional selection, or client compatibility should be checked across the Cartesian product below when the environment is available:
 
 | Dimension | Required values |
 | --- | --- |
-| Client | FlClash Windows; FlClash Android |
-| Mode | System Proxy; TUN |
+| Windows | System Proxy; TUN |
+| Android | VPN |
 | Network | Wi-Fi; mobile hotspot; China Telecom; China Unicom; China Mobile |
 
-That is 20 base client/mode/network combinations. A result may be recorded as unavailable when the physical network is not available; unavailable is not equivalent to passed.
+That is 15 base client/mode/network combinations: 10 Windows combinations plus 5 Android VPN combinations. A result may be recorded as unavailable when the physical network is not available; unavailable is not equivalent to passed.
 
 ## Required checks
 
