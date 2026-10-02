@@ -94,8 +94,7 @@ def test_promotion_guard_warns_before_hard_block(
         regions_by_use={"general": 2},
     )
     monkeypatch.setattr(
-        "clash_relay.promotion_guard.collect_inventory",
-        lambda project, candidate: candidate_inventory,
+        "clash_relay.promotion_guard.collect_inventory", lambda project, candidate: candidate_inventory
     )
     monkeypatch.setattr(
         "clash_relay.promotion_guard.collect_baseline_inventory",
