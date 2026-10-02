@@ -782,6 +782,8 @@ def metrics_summary(state: dict[str, Any]) -> dict[str, Any]:
         "latest_qualification_failure_planes": qualification_failure_planes,
         "latest_qualification_tuning": qualification_tuning,
         "latest_promotion_guard_status": promotion.get("status", "unknown"),
+        "latest_promotion_guard_admission_state": promotion.get("admission_state", "unknown"),
+        "latest_promotion_guard_warnings": promotion.get("warnings", 0),
         "latest_release_phase": release_progress.get("phase", "unknown"),
         "retry_runs": retry_runs,
         "retry_recoveries": retry_recoveries,
