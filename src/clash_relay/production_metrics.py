@@ -417,15 +417,9 @@ def _clean_promotion_guard(value: Any) -> dict[str, Any] | None:
         return None
     warnings = value.get("warnings")
     violations = value.get("violations")
-    warning_count = (
-        len(warnings)
-        if isinstance(warnings, list)
-        else _non_negative_int(warnings)
-    )
+    warning_count = len(warnings) if isinstance(warnings, list) else _non_negative_int(warnings)
     violation_count = (
-        len(violations)
-        if isinstance(violations, list)
-        else _non_negative_int(violations)
+        len(violations) if isinstance(violations, list) else _non_negative_int(violations)
     )
     clean: dict[str, Any] = {
         "status": status,
