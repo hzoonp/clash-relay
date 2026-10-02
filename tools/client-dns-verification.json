@@ -1,28 +1,29 @@
 {
-  "schema_version": 1,
-  "strategy": "cartesian_product",
-  "dimensions": {
-    "clients": ["flclash_windows", "flclash_android"],
-    "modes": ["system_proxy", "tun"],
-    "networks": ["wifi", "mobile_hotspot", "china_telecom", "china_unicom", "china_mobile"]
-  },
+  "schema_version": 2,
+  "strategy": "profile_network_product",
+  "profiles": [
+    {"id": "windows_system_proxy", "client": "flclash_windows", "mode": "system_proxy"},
+    {"id": "windows_tun", "client": "flclash_windows", "mode": "tun"},
+    {"id": "android_vpn", "client": "flclash_android", "mode": "vpn"}
+  ],
+  "networks": ["wifi", "mobile_hotspot", "china_telecom", "china_unicom", "china_mobile"],
   "checks": [
-    {"id": "profile_refresh", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "tun_dns_hijack", "modes": ["tun"], "evidence": "client_runtime"},
-    {"id": "fake_ip_compatibility", "modes": ["tun"], "evidence": "client_runtime"},
-    {"id": "direct_dns", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "proxy_server_dns", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "cn_three_net", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "six_public_groups", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "uk_region", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "ai_services", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "web_browsing", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "streaming", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "messaging", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "download", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "ipv4_ipv6", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "network_transition", "modes": ["system_proxy", "tun"], "evidence": "client_runtime"},
-    {"id": "carrier_auth", "modes": ["tun"], "evidence": "client_runtime"},
-    {"id": "banking_auth", "modes": ["tun"], "evidence": "client_runtime"}
+    {"id": "profile_refresh", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "tun_dns_hijack", "profiles": ["windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "fake_ip_compatibility", "profiles": ["windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "direct_dns", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "proxy_server_dns", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "cn_three_net", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "six_public_groups", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "uk_region", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "ai_services", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "web_browsing", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "streaming", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "messaging", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "download", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "ipv4_ipv6", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "network_transition", "profiles": ["windows_system_proxy", "windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "carrier_auth", "profiles": ["windows_tun", "android_vpn"], "evidence": "client_runtime"},
+    {"id": "banking_auth", "profiles": ["windows_tun", "android_vpn"], "evidence": "client_runtime"}
   ]
 }
