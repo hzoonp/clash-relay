@@ -412,11 +412,19 @@ def _clean_promotion_guard(value: Any) -> dict[str, Any] | None:
     status = value.get("status")
     if not isinstance(status, str) or status not in {"passed", "skipped", "not_applicable"}:
         return None
+    admission_state = value.get("admission_state")
+    if status == "passed" and admission_state not in {"NORMAL", "WARNING"}:
+        return None
+    warnings = value.get("warnings")
     violations = value.get("violations")
-    return {
+    clean: dict[str, Any] = {
         "status": status,
+        "warnings": len(warnings) if isinstance(warnings, list) else 0,
         "violations": len(violations) if isinstance(violations, list) else 0,
     }
+    if admission_state in {"NORMAL", "WARNING"}:
+        clean["admission_state"] = admission_state
+    return clean
 
 
 def _clean_lifecycle(value: Any) -> dict[str, Any] | None:
