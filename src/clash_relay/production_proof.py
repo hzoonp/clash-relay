@@ -325,19 +325,26 @@ def _safe_promotion_guard(value: dict[str, Any] | None) -> dict[str, Any] | None
     status = value.get("status")
     if status not in {"passed", "blocked"}:
         raise ValidationError("production proof received invalid Promotion Guard status")
+    admission_state = value.get("admission_state")
+    if admission_state not in {"NORMAL", "WARNING", "PROMOTION_BLOCK"}:
+        raise ValidationError("production proof received invalid Promotion Guard admission state")
     reason = value.get("reason")
     safe_reasons = {
         "disabled",
         "first_release",
         "within_thresholds",
+        "degraded_warning",
         "degraded",
         "availability_contract",
         "probe_environment_hold",
     }
+    warnings = value.get("warnings")
     violations = value.get("violations")
     return {
         "status": status,
+        "admission_state": admission_state,
         "reason": reason if reason in safe_reasons else "other",
+        "warnings": len(warnings) if isinstance(warnings, list) else 0,
         "violations": len(violations) if isinstance(violations, list) else 0,
     }
 
