@@ -1,0 +1,13 @@
+uri: 'vless://00000000-0000-4000-8000-000000000011@reality.invalid.example:443?security=reality&sni=www.example.com&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&sid=0123456789abcdef&fp=chrome&flow=xtls-rprx-vision#VLESS-Reality'
+expected:
+  type: vless
+  server: reality.invalid.example
+  port: 443
+  uuid: 00000000-0000-4000-8000-000000000011
+  tls: true
+  servername: www.example.com
+  reality-opts:
+    public-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8
+    short-id: 0123456789abcdef
+  client-fingerprint: chrome
+  flow: xtls-rprx-vision
