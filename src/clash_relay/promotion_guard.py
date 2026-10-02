@@ -61,9 +61,7 @@ def load_promotion_guard_policy(path: Path) -> PromotionGuardPolicy:
 
     minimum_source_ratio_by_use = _float_map(document["minimum_source_ratio_by_use"])
     warning_source_ratio_by_use = dict(minimum_source_ratio_by_use)
-    warning_source_ratio_by_use.update(
-        _float_map(document.get("warning_source_ratio_by_use", {}))
-    )
+    warning_source_ratio_by_use.update(_float_map(document.get("warning_source_ratio_by_use", {})))
     warning_total_node_ratio = float(
         document.get("warning_total_node_ratio", document["minimum_total_node_ratio"])
     )
