@@ -260,9 +260,7 @@ def render_promotion_guard_markdown(report: dict[str, Any]) -> str:
             f"Candidate/baseline ratios: **nodes {ratios.get('total_nodes', 'n/a')} / providers {ratios.get('providers', 'n/a')}**"
         )
     if warnings:
-        lines.extend(
-            ["", "Warning checks: **" + ", ".join(str(item) for item in warnings) + "**"]
-        )
+        lines.extend(["", "Warning checks: **" + ", ".join(str(item) for item in warnings) + "**"])
     if violations:
         lines.extend(
             ["", "Blocked checks: **" + ", ".join(str(item) for item in violations) + "**"]
