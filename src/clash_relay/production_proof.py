@@ -662,7 +662,9 @@ def render_production_proof_markdown(proof: dict[str, Any]) -> str:
         lines.extend(
             [
                 f"| Promotion Guard | {promotion.get('status', 'unknown')} |",
+                f"| Promotion admission state | {promotion.get('admission_state', 'legacy')} |",
                 f"| Promotion Guard reason | {promotion.get('reason', 'other')} |",
+                f"| Promotion Guard warnings | {promotion.get('warnings', 0)} |",
                 f"| Promotion Guard violations | {promotion.get('violations', 0)} |",
             ]
         )
