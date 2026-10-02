@@ -152,6 +152,7 @@ def test_source_stage_accounting_is_safe_and_qualification_aware(tmp_path: Path)
             "subscriptions": [
                 {
                     "id": "subscription_4",
+                    "status": "ok",
                     "input_nodes": 12,
                     "parsed_valid_nodes": 11,
                     "skipped_invalid_nodes": 1,
@@ -198,6 +199,7 @@ def test_source_stage_accounting_is_safe_and_qualification_aware(tmp_path: Path)
     assert pipeline._source_stage_accounting() == [
         {
             "id": "subscription_4",
+            "status": "ok",
             "input_nodes": 12,
             "parsed_valid_nodes": 11,
             "skipped_invalid_nodes": 1,
