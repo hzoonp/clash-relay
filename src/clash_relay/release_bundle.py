@@ -227,7 +227,11 @@ def _recover_transaction(
     previous_id: str | None,
     observed_transaction: Any = None,
 ) -> dict[str, Any] | None:
-    from .release_transaction import parse_release_transaction
+    from .release_transaction import (
+        advance_release_transaction,
+        parse_release_transaction,
+        serialize_release_transaction,
+    )
 
     transaction = observed_transaction or parse_release_transaction(
         _safe_read(factory, keys.transaction)
@@ -268,6 +272,12 @@ def _recover_transaction(
         raise CommitUnknownError(
             "release transaction pointer repair state is unknown", production_changed=True
         ) from exc
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(advance_release_transaction(transaction, "verify")),
+        production_changed=True,
+    )
     if (
         _safe_read(factory, keys.production) != content
         or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) != from_id
@@ -276,7 +286,13 @@ def _recover_transaction(
         raise CommitUnknownError(
             "release transaction verification is incomplete", production_changed="unknown"
         )
-    _transaction_write(factory, keys, _EMPTY_POINTER)
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(advance_release_transaction(transaction, "finalize")),
+        production_changed=True,
+    )
+    _transaction_write(factory, keys, _EMPTY_POINTER, production_changed=True)
     return {
         "status": "published",
         "release_id": to_id,
@@ -467,12 +483,17 @@ def publish_release_bundle(
         }
 
     if current_content is None:
-        from .release_transaction import ReleaseTransaction, serialize_release_transaction
+        from .release_transaction import (
+            ReleaseTransaction,
+            advance_release_transaction,
+            serialize_release_transaction,
+        )
 
+        transaction = ReleaseTransaction(None, new_release_id, None)
         _transaction_write(
             factory,
             keys,
-            serialize_release_transaction(ReleaseTransaction(None, new_release_id, None)),
+            serialize_release_transaction(transaction),
             production_changed=False,
         )
         try:
@@ -489,6 +510,18 @@ def publish_release_bundle(
             if str(exc) == "first release activation failed; current pointer was restored":
                 _transaction_write(factory, keys, _EMPTY_POINTER)
             raise
+        _transaction_write(
+            factory,
+            keys,
+            serialize_release_transaction(advance_release_transaction(transaction, "commit")),
+            production_changed=True,
+        )
+        _transaction_write(
+            factory,
+            keys,
+            serialize_release_transaction(advance_release_transaction(transaction, "verify")),
+            production_changed=True,
+        )
         if (
             _safe_read(factory, keys.production) != content
             or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != new_release_id
@@ -498,7 +531,13 @@ def publish_release_bundle(
                 "first release transaction verification is incomplete",
                 production_changed="unknown",
             )
-        _transaction_write(factory, keys, _EMPTY_POINTER)
+        _transaction_write(
+            factory,
+            keys,
+            serialize_release_transaction(advance_release_transaction(transaction, "finalize")),
+            production_changed=True,
+        )
+        _transaction_write(factory, keys, _EMPTY_POINTER, production_changed=True)
         return {
             "status": "published",
             "release_id": new_release_id,
@@ -510,14 +549,17 @@ def publish_release_bundle(
         }
 
     old_release_id = _ensure_immutable_release(factory, keys, current_content)
-    from .release_transaction import ReleaseTransaction, serialize_release_transaction
+    from .release_transaction import (
+        ReleaseTransaction,
+        advance_release_transaction,
+        serialize_release_transaction,
+    )
 
+    transaction = ReleaseTransaction(old_release_id, new_release_id, previous_pointer_before)
     _transaction_write(
         factory,
         keys,
-        serialize_release_transaction(
-            ReleaseTransaction(old_release_id, new_release_id, previous_pointer_before)
-        ),
+        serialize_release_transaction(transaction),
         production_changed=False,
     )
 
@@ -543,6 +585,13 @@ def publish_release_bundle(
         raise PublicationError(
             "release commit failed; previous production bytes were restored"
         ) from exc
+
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(advance_release_transaction(transaction, "commit")),
+        production_changed=True,
+    )
 
     try:
         _restore_pointer(factory, keys.previous_pointer, old_release_id)
@@ -590,6 +639,12 @@ def publish_release_bundle(
             "release commit failed; previous production bytes were restored"
         ) from exc
 
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(advance_release_transaction(transaction, "verify")),
+        production_changed=True,
+    )
     if (
         _safe_read(factory, keys.production) != content
         or parse_release_pointer(_safe_read(factory, keys.current_pointer)) != new_release_id
@@ -598,7 +653,13 @@ def publish_release_bundle(
         raise CommitUnknownError(
             "release transaction verification is incomplete", production_changed="unknown"
         )
-    _transaction_write(factory, keys, _EMPTY_POINTER)
+    _transaction_write(
+        factory,
+        keys,
+        serialize_release_transaction(advance_release_transaction(transaction, "finalize")),
+        production_changed=True,
+    )
+    _transaction_write(factory, keys, _EMPTY_POINTER, production_changed=True)
     return {
         "status": "published",
         "release_id": new_release_id,
