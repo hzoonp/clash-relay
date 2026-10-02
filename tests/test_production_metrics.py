@@ -212,7 +212,12 @@ def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Pat
                 },
             },
         },
-        promotion_guard={"status": "passed", "violations": []},
+        promotion_guard={
+            "status": "passed",
+            "admission_state": "WARNING",
+            "warnings": ["provider_ratio"],
+            "violations": [],
+        },
         lifecycle={
             "timings_ms": {"generation": 10.0, "qualification": 200.0},
             "release_progress": {
@@ -281,7 +286,12 @@ def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Pat
             "dns_inconclusive_action": "keep",
         },
     }
-    assert run["promotion_guard"] == {"status": "passed", "violations": 0}
+    assert run["promotion_guard"] == {
+        "status": "passed",
+        "admission_state": "WARNING",
+        "warnings": 1,
+        "violations": 0,
+    }
     assert run["lifecycle"]["release_progress"]["phase"] == "verified"
     assert "private-name-must-not-survive" not in serialized
     assert "private-config-bytes" not in serialized
@@ -298,6 +308,8 @@ def test_metrics_reliability_fields_are_bounded_and_aggregate_only(tmp_path: Pat
     assert summary["latest_qualification_tuning"]["endpoint_timeout_action"] == "reserve"
     assert summary["latest_qualification_tuning"]["dns_inconclusive_action"] == "keep"
     assert summary["latest_promotion_guard_status"] == "passed"
+    assert summary["latest_promotion_guard_admission_state"] == "WARNING"
+    assert summary["latest_promotion_guard_warnings"] == 1
     assert summary["latest_release_phase"] == "verified"
     assert summary["retry_runs"] == 1
     assert summary["retry_recoveries"] == 1
