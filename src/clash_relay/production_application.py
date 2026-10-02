@@ -237,11 +237,13 @@ def render_promotion_guard_markdown(report: dict[str, Any]) -> str:
     candidate = report.get("candidate", {})
     baseline = report.get("baseline", {})
     ratios = report.get("ratios", {})
+    warnings = report.get("warnings", [])
     violations = report.get("violations", [])
     lines = [
         "## Production promotion guard",
         "",
         f"Decision: **{report.get('status', 'unknown')}**  ",
+        f"Admission state: **{report.get('admission_state', 'unknown')}**  ",
         f"Reason: **{report.get('reason', 'unknown')}**",
         "",
     ]
@@ -256,6 +258,10 @@ def render_promotion_guard_markdown(report: dict[str, Any]) -> str:
     if isinstance(ratios, dict) and ratios:
         lines.append(
             f"Candidate/baseline ratios: **nodes {ratios.get('total_nodes', 'n/a')} / providers {ratios.get('providers', 'n/a')}**"
+        )
+    if warnings:
+        lines.extend(
+            ["", "Warning checks: **" + ", ".join(str(item) for item in warnings) + "**"]
         )
     if violations:
         lines.extend(
