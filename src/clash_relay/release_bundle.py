@@ -483,7 +483,11 @@ def publish_release_bundle(
         }
 
     if current_content is None:
-        from .release_transaction import ReleaseTransaction, serialize_release_transaction
+        from .release_transaction import (
+            ReleaseTransaction,
+            advance_release_transaction,
+            serialize_release_transaction,
+        )
 
         transaction = ReleaseTransaction(None, new_release_id, None)
         _transaction_write(
@@ -545,7 +549,11 @@ def publish_release_bundle(
         }
 
     old_release_id = _ensure_immutable_release(factory, keys, current_content)
-    from .release_transaction import ReleaseTransaction, serialize_release_transaction
+    from .release_transaction import (
+        ReleaseTransaction,
+        advance_release_transaction,
+        serialize_release_transaction,
+    )
 
     transaction = ReleaseTransaction(old_release_id, new_release_id, previous_pointer_before)
     _transaction_write(
