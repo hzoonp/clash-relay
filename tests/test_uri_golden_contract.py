@@ -20,7 +20,7 @@ REQUIRED_PROTOCOL_FIXTURES = {
 def test_required_protocol_runtime_fixtures_are_present() -> None:
     fixture_names = {path.stem for path in FIXTURES.glob("*.yaml")}
 
-    assert REQUIRED_PROTOCOL_FIXTURES <= fixture_names
+    assert fixture_names >= REQUIRED_PROTOCOL_FIXTURES
 
 
 @pytest.mark.parametrize("path", sorted(FIXTURES.glob("*.yaml")), ids=lambda path: path.stem)
