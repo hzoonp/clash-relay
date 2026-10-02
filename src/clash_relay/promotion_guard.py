@@ -333,9 +333,7 @@ def assess_promotion(
         use_ratios[source_use] = row
 
     blocked_reason = (
-        "degraded"
-        if violations
-        else ("degraded_warning" if warnings else "within_thresholds")
+        "degraded" if violations else ("degraded_warning" if warnings else "within_thresholds")
     )
     if held_services and not (
         set(violations) - {f"probe_environment_hold:{service}" for service in held_services}
