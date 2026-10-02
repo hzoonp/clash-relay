@@ -326,7 +326,11 @@ def _safe_promotion_guard(value: dict[str, Any] | None) -> dict[str, Any] | None
     if status not in {"passed", "blocked"}:
         raise ValidationError("production proof received invalid Promotion Guard status")
     admission_state = value.get("admission_state")
-    if admission_state not in {"NORMAL", "WARNING", "PROMOTION_BLOCK"}:
+    if admission_state is not None and admission_state not in {
+        "NORMAL",
+        "WARNING",
+        "PROMOTION_BLOCK",
+    }:
         raise ValidationError("production proof received invalid Promotion Guard admission state")
     reason = value.get("reason")
     safe_reasons = {
@@ -340,13 +344,16 @@ def _safe_promotion_guard(value: dict[str, Any] | None) -> dict[str, Any] | None
     }
     warnings = value.get("warnings")
     violations = value.get("violations")
-    return {
+    result = {
         "status": status,
-        "admission_state": admission_state,
         "reason": reason if reason in safe_reasons else "other",
-        "warnings": len(warnings) if isinstance(warnings, list) else 0,
         "violations": len(violations) if isinstance(violations, list) else 0,
     }
+    if admission_state is not None:
+        result["admission_state"] = admission_state
+    if isinstance(warnings, list):
+        result["warnings"] = len(warnings)
+    return result
 
 
 def _safe_openai_app(value: Any) -> dict[str, int] | None:
