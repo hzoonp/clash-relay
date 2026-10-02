@@ -7,7 +7,11 @@ from dataclasses import dataclass
 
 from .errors import PublicationError
 
-_PHASE = "prepared"
+_CURRENT_VERSION = 2
+_LEGACY_VERSION = 1
+_LEGACY_PHASE = "prepared"
+_PHASES = ("prepare", "commit", "verify", "finalize")
+_PHASE_INDEX = {phase: index for index, phase in enumerate(_PHASES)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +19,7 @@ class ReleaseTransaction:
     from_release_id: str | None
     to_release_id: str
     previous_release_id: str | None
-    phase: str = _PHASE
+    phase: str = "prepare"
 
     @property
     def referenced_release_ids(self) -> set[str]:
@@ -24,6 +28,30 @@ class ReleaseTransaction:
             for value in (self.from_release_id, self.to_release_id, self.previous_release_id)
             if value is not None
         }
+
+
+def _validate_phase(phase: str) -> None:
+    if phase not in _PHASE_INDEX:
+        raise PublicationError("release transaction phase is invalid")
+
+
+def advance_release_transaction(
+    transaction: ReleaseTransaction,
+    phase: str,
+) -> ReleaseTransaction:
+    """Advance a transaction monotonically without changing its release identities."""
+    _validate_phase(transaction.phase)
+    _validate_phase(phase)
+    if _PHASE_INDEX[phase] < _PHASE_INDEX[transaction.phase]:
+        raise PublicationError("release transaction phase regression is invalid")
+    if phase == transaction.phase:
+        return transaction
+    return ReleaseTransaction(
+        from_release_id=transaction.from_release_id,
+        to_release_id=transaction.to_release_id,
+        previous_release_id=transaction.previous_release_id,
+        phase=phase,
+    )
 
 
 def parse_release_transaction(content: bytes | None) -> ReleaseTransaction | None:
@@ -38,10 +66,19 @@ def parse_release_transaction(content: bytes | None) -> ReleaseTransaction | Non
         or set(value)
         != {"version", "phase", "from_release_id", "to_release_id", "previous_release_id"}
         or type(value["version"]) is not int
-        or value["version"] != 1
-        or value["phase"] != _PHASE
+        or not isinstance(value["phase"], str)
     ):
         raise PublicationError("release transaction is invalid")
+
+    version = value["version"]
+    raw_phase = value["phase"]
+    if version == _LEGACY_VERSION and raw_phase == _LEGACY_PHASE:
+        phase = "prepare"
+    elif version == _CURRENT_VERSION and raw_phase in _PHASE_INDEX:
+        phase = raw_phase
+    else:
+        raise PublicationError("release transaction is invalid")
+
     from .release_bundle import _validate_release_id
 
     for field in ("from_release_id", "to_release_id", "previous_release_id"):
@@ -59,12 +96,14 @@ def parse_release_transaction(content: bytes | None) -> ReleaseTransaction | Non
         from_release_id=value["from_release_id"],
         to_release_id=value["to_release_id"],
         previous_release_id=value["previous_release_id"],
+        phase=phase,
     )
 
 
 def serialize_release_transaction(transaction: ReleaseTransaction) -> bytes:
+    _validate_phase(transaction.phase)
     value = {
-        "version": 1,
+        "version": _CURRENT_VERSION,
         "phase": transaction.phase,
         "from_release_id": transaction.from_release_id,
         "to_release_id": transaction.to_release_id,
