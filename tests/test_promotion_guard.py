@@ -74,8 +74,6 @@ def test_canonical_promotion_guard_requires_all_public_scenario_uses() -> None:
     assert set(policy.minimum_qualified_regions_by_service) == services
 
 
-
-
 def test_promotion_guard_warns_before_hard_block(built_candidate, project_paths) -> None:
     baseline = copy.deepcopy(built_candidate.config)
     candidate = copy.deepcopy(built_candidate.config)
@@ -125,6 +123,7 @@ def test_promotion_guard_marks_blocked_candidate_as_promotion_block(
 
     assert report["status"] == "blocked"
     assert report["admission_state"] == "PROMOTION_BLOCK"
+
 
 def test_promotion_guard_allows_first_release(built_candidate, project_paths) -> None:
     report = assess_promotion(
