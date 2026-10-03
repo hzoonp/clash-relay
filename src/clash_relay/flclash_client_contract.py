@@ -68,7 +68,8 @@ def audit_flclash_client_contract(
         "FlClash contract requires explicit direct resolver bypass policy",
     )
     _require(
-        isinstance(dns.get("direct-nameserver"), list) and bool(dns["direct-nameserver"]),
+        isinstance(dns.get("direct-nameserver"), list)
+        and bool(dns["direct-nameserver"]),
         "FlClash contract requires explicit direct resolver coverage",
     )
     _require(
