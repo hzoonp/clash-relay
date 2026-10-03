@@ -68,6 +68,10 @@ def audit_flclash_client_contract(
         "FlClash contract requires explicit direct resolver bypass policy",
     )
     _require(
+        isinstance(dns.get("direct-nameserver"), list) and bool(dns["direct-nameserver"]),
+        "FlClash contract requires explicit direct resolver coverage",
+    )
+    _require(
         isinstance(dns.get("proxy-server-nameserver"), list)
         and bool(dns["proxy-server-nameserver"]),
         "FlClash contract requires proxy-server resolver coverage",
@@ -156,18 +160,6 @@ def audit_flclash_client_contract(
             "AI without subscription_1 inventory must fail closed",
         )
 
-    rules = candidate.get("rules")
-    _require(isinstance(rules, list), "FlClash contract requires rules")
-    direct_rule_count = sum(
-        1
-        for rule in rules
-        if isinstance(rule, str) and (rule.endswith(",DIRECT") or ",DIRECT," in rule)
-    )
-    _require(
-        direct_rule_count > 0,
-        "FlClash contract requires an explicit DIRECT surface",
-    )
-
     checks = {
         "profile_structure": "passed",
         "tun_client_ownership": "passed",
@@ -177,7 +169,7 @@ def audit_flclash_client_contract(
         "urltest": "passed",
         "source_isolation": "passed",
         "download_listener": "passed",
-        "direct_surface": "passed",
+        "direct_dns_bypass": "passed",
     }
     scenarios = {
         "direct": "config_passed",
@@ -213,5 +205,5 @@ def audit_flclash_client_contract(
             "subscription_1_general_reachable": False,
         },
         "urltest_groups": len(urltest_groups),
-        "direct_rules": direct_rule_count,
+        "direct_nameservers": len(dns["direct-nameserver"]),
     }
