@@ -97,11 +97,7 @@ def audit_flclash_client_contract(
         "FlClash contract requires the download listener",
     )
     download_listener = next(
-        (
-            row
-            for row in listeners
-            if isinstance(row, dict) and row.get("name") == "download-in"
-        ),
+        (row for row in listeners if isinstance(row, dict) and row.get("name") == "download-in"),
         None,
     )
     _require(
