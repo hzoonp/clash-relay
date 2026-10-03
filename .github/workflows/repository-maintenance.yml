@@ -1,0 +1,165 @@
+name: Repository maintenance
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    branches:
+      - main
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: repository-maintenance
+  cancel-in-progress: false
+
+jobs:
+  delete-merged-pr-branch:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged PR branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python - <<'PY'
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["GITHUB_TOKEN"]
+          repository = os.environ["REPOSITORY"]
+          branch = os.environ["HEAD_REF"]
+          url = (
+              f"https://api.github.com/repos/{repository}/git/refs/heads/"
+              f"{urllib.parse.quote(branch, safe='/')}"
+          )
+          request = urllib.request.Request(
+              url,
+              method="DELETE",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "User-Agent": "clash-relay-repository-maintenance",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          try:
+              with urllib.request.urlopen(request) as response:
+                  if response.status != 204:
+                      raise SystemExit(f"unexpected branch deletion status: {response.status}")
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+          PY
+
+  sweep-historical-state:
+    if: >-
+      github.event_name == 'push' &&
+      contains(github.event.head_commit.message, '[repo-cleanup]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove stale branches and obsolete failed CI runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["GITHUB_TOKEN"]
+          repository = os.environ["REPOSITORY"]
+          stale_branches = {
+              "feat/pr7-client-compat-admission-observability",
+              "fix/ai-service-probe-reliability",
+              "fix/flclash-yaml-control-characters",
+              "hardening/pr8-pr12-production-reliability-suite",
+              "hardening/pr8-production-transaction",
+              "hardening/pr9-admission-baseline-guard",
+              "hardening/pr10-protocol-runtime-matrix",
+              "hardening/pr11-source-quality-analytics",
+              "hardening/pr12-flclash-client-validation",
+              "hotfix/pr12-ruff-format",
+              "maintenance/repository-cleanup",
+              "observability/pr7-client-compat-admission",
+              "refactor/pr1-simplify-surface",
+              "refactor/pr2-reuse-main-validation",
+              "refactor/pr3-consolidate-observability",
+              "refactor/pr4-direct-web-general",
+              "refactor/pr5-unify-mihomo-runtime",
+              "refactor/pr6-final-slim-production-acceptance",
+          }
+          obsolete_main_runs = {37024150767, 37071460684}
+          removable_conclusions = {
+              "action_required",
+              "cancelled",
+              "failure",
+              "stale",
+              "startup_failure",
+              "timed_out",
+          }
+          active_statuses = {"in_progress", "pending", "queued", "requested", "waiting"}
+
+          def request(method, path):
+              req = urllib.request.Request(
+                  f"https://api.github.com{path}",
+                  method=method,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "clash-relay-repository-maintenance",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      body = response.read()
+                      if not body:
+                          return None
+                      return json.loads(body.decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 404:
+                      return None
+                  raise
+
+          runs = []
+          for page in range(1, 11):
+              payload = request(
+                  "GET",
+                  f"/repos/{repository}/actions/runs?per_page=100&page={page}",
+              )
+              page_runs = list((payload or {}).get("workflow_runs", []))
+              runs.extend(page_runs)
+              if len(page_runs) < 100:
+                  break
+
+          for run in runs:
+              run_id = int(run["id"])
+              branch = run.get("head_branch")
+              status = run.get("status")
+              conclusion = run.get("conclusion")
+              targeted = branch in stale_branches or run_id in obsolete_main_runs
+              if not targeted:
+                  continue
+              if status in active_statuses:
+                  request("POST", f"/repos/{repository}/actions/runs/{run_id}/cancel")
+              elif status == "completed" and conclusion in removable_conclusions:
+                  request("DELETE", f"/repos/{repository}/actions/runs/{run_id}")
+
+          for branch in sorted(stale_branches):
+              encoded = urllib.parse.quote(branch, safe="/")
+              request("DELETE", f"/repos/{repository}/git/refs/heads/{encoded}")
+          PY
