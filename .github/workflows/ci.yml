@@ -58,10 +58,8 @@ jobs:
               raise SystemExit("Routing V2 configuration drift detected")
           PY
       - run: ruff check .
-      - name: Ruff formatter diagnostic
-        run: |
-          ruff format --diff .
-          ruff format --check .
+      - name: Verify Ruff formatting
+        run: ruff format --check .
       - name: Static type gate for core and application boundaries
         run: python scripts/run_project_checks.py typecheck
       - name: Unit tests and coverage floor
