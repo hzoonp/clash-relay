@@ -1,0 +1,9 @@
+uri: 'vmess://eyJ2IjoiMiIsInBzIjoiRml4dHVyZSBWTWVzcyBnUlBDIHBsYWluIiwiYWRkIjoidm1lc3MtZ3JwYy1wbGFpbi5pbnZhbGlkLmV4YW1wbGUiLCJwb3J0IjoiMzEwMDciLCJpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNCIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0IjoiZ3JwYyIsInBhdGgiOiJmaXh0dXJlLXNlcnZpY2UiLCJ0bHMiOiIifQ=='
+expected:
+  type: vmess
+  server: vmess-grpc-plain.invalid.example
+  port: 31007
+  uuid: 00000000-0000-4000-8000-000000000004
+  network: grpc
+  grpc-opts:
+    grpc-service-name: fixture-service

@@ -102,6 +102,61 @@ def test_put_unparseable_success_response_is_commit_unknown(monkeypatch) -> None
         _publisher().publish(content=b"candidate\n")
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"{}",
+        b'{"success": null}',
+        b'{"success": "true"}',
+        b'{"success": 1}',
+        b'{"success": []}',
+    ],
+)
+def test_put_response_without_boolean_success_is_commit_unknown(
+    monkeypatch,
+    payload: bytes,
+) -> None:
+    """A missing, null, or wrongly typed success flag cannot prove either outcome."""
+
+    def fake_urlopen(request, timeout):
+        if request.get_method() == "GET":
+            return _json_response(_namespace())
+        return _Response(payload)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(CommitUnknownError, match="could not be verified"):
+        _publisher().publish(content=b"candidate\n")
+
+
+def test_put_explicit_success_false_is_definite_rejection(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        if request.get_method() == "GET":
+            return _json_response(_namespace())
+        return _Response(b'{"success": false, "errors": [{"code": 10000}]}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(PublicationError, match="rejected the request") as captured:
+        _publisher().publish(content=b"candidate\n")
+
+    assert not isinstance(captured.value, CommitUnknownError)
+
+
+def test_read_response_without_boolean_success_is_definite_publication_error(monkeypatch) -> None:
+    """Read paths keep the definite failure classification for malformed bodies."""
+
+    def fake_urlopen(request, timeout):
+        return _Response(b"{}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    with pytest.raises(PublicationError, match="invalid response") as captured:
+        _publisher().read()
+
+    assert not isinstance(captured.value, CommitUnknownError)
+
+
 class _TruncatedResponse(_Response):
     def read(self, size: int = -1) -> bytes:
         raise http.client.IncompleteRead(b'{"success":true', 20)

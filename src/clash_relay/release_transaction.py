@@ -54,6 +54,18 @@ def advance_release_transaction(
     )
 
 
+def phase_reached(transaction: ReleaseTransaction, phase: str) -> bool:
+    """Report whether a transaction has already reached (or passed) a phase.
+
+    Recovery must resume from the durable phase instead of replaying earlier
+    steps: advancing a ``finalize`` transaction back to ``verify`` would violate
+    the phase monotonicity the transaction model enforces.
+    """
+    _validate_phase(transaction.phase)
+    _validate_phase(phase)
+    return _PHASE_INDEX[transaction.phase] >= _PHASE_INDEX[phase]
+
+
 def parse_release_transaction(content: bytes | None) -> ReleaseTransaction | None:
     if content is None or content == b"\n":
         return None

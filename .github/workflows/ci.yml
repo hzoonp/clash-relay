@@ -112,6 +112,32 @@ jobs:
           pytest -m "not integration" \
             --junitxml=.work/compat-${{ matrix.python }}.xml
 
+  windows-platform:
+    name: Windows platform gate
+    if: ${{ !inputs.reuse_main_validation }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock
+      - name: Install hash-verified development dependencies
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
+          python -m pip install --no-build-isolation --no-deps --editable .
+      # Windows is where the POSIX-only process-group APIs are absent. Keeping
+      # this gate required means a regression fails the workflow immediately
+      # instead of only surfacing on a developer machine.
+      - name: Static type gate on Windows process boundaries
+        run: python scripts/run_project_checks.py typecheck
+      - name: Run Mihomo process lifecycle unit tests on Windows
+        run: |
+          pytest tests/test_mihomo_probe_runtime.py \
+            -m "not integration" \
+            --junitxml=.work/unit-windows.xml
+
   deterministic-generation:
     name: Deterministic fictional generation
     needs: [quality, python-compat]
@@ -242,14 +268,15 @@ jobs:
   validated:
     name: Validate exact commit / Validated SHA
     needs:
-      [quality, python-compat, deterministic-generation, stable-mihomo, routing-required, trusted-main]
+      [quality, python-compat, deterministic-generation, stable-mihomo, routing-required, windows-platform, trusted-main]
     if: >-
       ${{ !cancelled() &&
         ((inputs.reuse_main_validation && needs.trusted-main.result == 'success') ||
         (!inputs.reuse_main_validation &&
         needs.deterministic-generation.result == 'success' &&
         needs.stable-mihomo.result == 'success' &&
-        needs.routing-required.result == 'success')) }}
+        needs.routing-required.result == 'success' &&
+        needs.windows-platform.result == 'success')) }}
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.sha.outputs.sha }}

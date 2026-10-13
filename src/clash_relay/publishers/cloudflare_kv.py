@@ -55,9 +55,19 @@ def _request_json(
         if commit_unknown_on_unverified_response:
             raise CommitUnknownError("Cloudflare API write response could not be verified")
         raise PublicationError("Cloudflare API returned an invalid response")
-    if document.get("success") is not True:
+    # Accept an explicit success, and treat an explicit boolean false as the only
+    # definite rejection. A missing, null, or wrongly typed flag (for example the
+    # malformed `{}` body) cannot prove either outcome: on a write path the
+    # mutation may already have run, so it must stay commit-unknown instead of
+    # being downgraded to a definite rejection that would trigger compensation.
+    success = document.get("success")
+    if success is True:
+        return document
+    if success is False:
         raise PublicationError("Cloudflare API rejected the request")
-    return document
+    if commit_unknown_on_unverified_response:
+        raise CommitUnknownError("Cloudflare API write response could not be verified")
+    raise PublicationError("Cloudflare API returned an invalid response")
 
 
 def _validate_key_name(key_name: str) -> None:

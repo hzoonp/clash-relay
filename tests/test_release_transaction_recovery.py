@@ -376,3 +376,143 @@ def test_transaction_refs_are_retained_even_outside_window() -> None:
 def test_invalid_transaction_fails_closed(raw: bytes) -> None:
     with pytest.raises(PublicationError):
         parse_release_transaction(raw)
+
+
+def _interrupt_before_finalize_cleanup(store: MemoryKV, keys):
+    """Fail the final transaction cleanup write after the phase reached finalize."""
+    underlying = store.factory
+
+    def factory(name: str):
+        publisher = underlying(name)
+
+        class Value:
+            def read(self) -> bytes | None:
+                return publisher.read()
+
+            def publish(self, *, content: bytes):
+                if name == keys.transaction and content == b"\n":
+                    raise SystemExit("process stopped before finalize cleanup")
+                return publisher.publish(content=content)
+
+        return Value()
+
+    return factory
+
+
+def test_retry_after_finalize_interruption_recovers_the_same_candidate() -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    old, new = b"old\n", b"new\n"
+    publish_release_bundle(factory=store.factory, production_key=key, content=old)
+
+    with pytest.raises(SystemExit):
+        publish_release_bundle(
+            factory=_interrupt_before_finalize_cleanup(store, keys),
+            production_key=key,
+            content=new,
+        )
+
+    interrupted = parse_release_transaction(store.values[keys.transaction])
+    assert interrupted is not None
+    assert interrupted.phase == "finalize"
+
+    result = publish_release_bundle(factory=store.factory, production_key=key, content=new)
+
+    assert result["status"] == "published"
+    assert result["recovered_transaction"] is True
+    assert result["previous_release_id"] == release_id_for(old)
+    assert store.values[key] == new
+    assert parse_release_pointer(store.values[keys.current_pointer]) == release_id_for(new)
+    assert parse_release_pointer(store.values[keys.previous_pointer]) == release_id_for(old)
+    assert parse_release_transaction(store.values[keys.transaction]) is None
+    assert read_previous_release(factory=store.factory, production_key=key)[0] == old
+
+
+def test_finalize_recovery_only_clears_intent_without_rewriting_confirmed_bytes() -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    old, new = b"old\n", b"new\n"
+    publish_release_bundle(factory=store.factory, production_key=key, content=old)
+
+    with pytest.raises(SystemExit):
+        publish_release_bundle(
+            factory=_interrupt_before_finalize_cleanup(store, keys),
+            production_key=key,
+            content=new,
+        )
+
+    writes: list[str] = []
+    underlying = store.factory
+
+    def recording_factory(name: str):
+        publisher = underlying(name)
+
+        class Value:
+            def read(self) -> bytes | None:
+                return publisher.read()
+
+            def publish(self, *, content: bytes):
+                writes.append(name)
+                return publisher.publish(content=content)
+
+        return Value()
+
+    publish_release_bundle(factory=recording_factory, production_key=key, content=new)
+
+    assert writes == [keys.transaction]
+    assert store.values[key] == new
+
+
+def test_first_release_retry_after_finalize_interruption_recovers() -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    first = b"first\n"
+
+    with pytest.raises(SystemExit):
+        publish_release_bundle(
+            factory=_interrupt_before_finalize_cleanup(store, keys),
+            production_key=key,
+            content=first,
+        )
+
+    interrupted = parse_release_transaction(store.values[keys.transaction])
+    assert interrupted is not None
+    assert interrupted.phase == "finalize"
+
+    result = publish_release_bundle(factory=store.factory, production_key=key, content=first)
+
+    assert result["status"] == "published"
+    assert result["recovered_transaction"] is True
+    assert result["first_release"] is True
+    assert result["previous_release_id"] is None
+    assert store.values[key] == first
+    assert parse_release_pointer(store.values[keys.current_pointer]) == release_id_for(first)
+    assert parse_release_pointer(store.values.get(keys.previous_pointer)) is None
+    assert parse_release_transaction(store.values[keys.transaction]) is None
+
+
+def test_finalize_recovery_rejects_contradictory_pointers_without_writes() -> None:
+    store = MemoryKV()
+    key = "production-config"
+    keys = release_keys(key)
+    old, new = b"old\n", b"new\n"
+    publish_release_bundle(factory=store.factory, production_key=key, content=old)
+
+    with pytest.raises(SystemExit):
+        publish_release_bundle(
+            factory=_interrupt_before_finalize_cleanup(store, keys),
+            production_key=key,
+            content=new,
+        )
+
+    # Contradict the durable intent: the current pointer names an unrelated release.
+    store.values[keys.current_pointer] = f"{release_id_for(b'unrelated')}\n".encode()
+    snapshot = dict(store.values)
+
+    with pytest.raises(PublicationError, match="contradict"):
+        publish_release_bundle(factory=store.factory, production_key=key, content=new)
+
+    assert store.values == snapshot

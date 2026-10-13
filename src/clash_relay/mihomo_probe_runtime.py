@@ -7,6 +7,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -70,13 +71,19 @@ def stop_mihomo_process(
     *,
     timeout: float = 5.0,
 ) -> None:
-    """Stop Mihomo deterministically, escalating from TERM to KILL."""
+    """Stop Mihomo deterministically, escalating from TERM to KILL.
+
+    ``sys.platform`` is used instead of ``os.name`` because it is the branch a
+    static type checker recognizes: the POSIX-only ``os.killpg``/``signal.SIGKILL``
+    calls are analysed only on non-Windows targets, so the Windows type gate stays
+    meaningful instead of being silenced with an ignore.
+    """
 
     if process.poll() is not None:
         process.wait(timeout=timeout)
         return
 
-    if os.name == "nt":
+    if sys.platform == "win32":
         process.terminate()
     else:
         with contextlib.suppress(ProcessLookupError):
@@ -87,7 +94,7 @@ def stop_mihomo_process(
     except subprocess.TimeoutExpired:
         pass
 
-    if os.name == "nt":
+    if sys.platform == "win32":
         process.kill()
     else:
         with contextlib.suppress(ProcessLookupError):

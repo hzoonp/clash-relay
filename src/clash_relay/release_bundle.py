@@ -230,6 +230,7 @@ def _recover_transaction(
     from .release_transaction import (
         advance_release_transaction,
         parse_release_transaction,
+        phase_reached,
         serialize_release_transaction,
     )
 
@@ -272,12 +273,15 @@ def _recover_transaction(
         raise CommitUnknownError(
             "release transaction pointer repair state is unknown", production_changed=True
         ) from exc
-    _transaction_write(
-        factory,
-        keys,
-        serialize_release_transaction(advance_release_transaction(transaction, "verify")),
-        production_changed=True,
-    )
+    # Resume from the durable phase: a transaction interrupted after its finalize
+    # write must not be advanced back to verify, which the monotonic model rejects.
+    if not phase_reached(transaction, "verify"):
+        _transaction_write(
+            factory,
+            keys,
+            serialize_release_transaction(advance_release_transaction(transaction, "verify")),
+            production_changed=True,
+        )
     if (
         _safe_read(factory, keys.production) != content
         or parse_release_pointer(_safe_read(factory, keys.previous_pointer)) != from_id
@@ -286,12 +290,13 @@ def _recover_transaction(
         raise CommitUnknownError(
             "release transaction verification is incomplete", production_changed="unknown"
         )
-    _transaction_write(
-        factory,
-        keys,
-        serialize_release_transaction(advance_release_transaction(transaction, "finalize")),
-        production_changed=True,
-    )
+    if not phase_reached(transaction, "finalize"):
+        _transaction_write(
+            factory,
+            keys,
+            serialize_release_transaction(advance_release_transaction(transaction, "finalize")),
+            production_changed=True,
+        )
     _transaction_write(factory, keys, _EMPTY_POINTER, production_changed=True)
     return {
         "status": "published",

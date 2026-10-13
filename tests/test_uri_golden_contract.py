@@ -14,6 +14,7 @@ REQUIRED_PROTOCOL_FIXTURES = {
     "hysteria2",
     "tuic",
     "anytls",
+    "vmess-grpc",
 }
 
 

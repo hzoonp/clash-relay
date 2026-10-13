@@ -10,6 +10,7 @@ from clash_relay.release_transaction import (
     ReleaseTransaction,
     advance_release_transaction,
     parse_release_transaction,
+    phase_reached,
     serialize_release_transaction,
 )
 
@@ -85,3 +86,15 @@ def test_unknown_transaction_phase_is_rejected() -> None:
 
     with pytest.raises(PublicationError, match="phase is invalid"):
         serialize_release_transaction(transaction)
+
+
+def test_phase_reached_reports_durable_progress_without_regressing() -> None:
+    transaction = ReleaseTransaction(None, _rid(b"new"), None, phase="finalize")
+
+    assert phase_reached(transaction, "prepare") is True
+    assert phase_reached(transaction, "verify") is True
+    assert phase_reached(transaction, "finalize") is True
+
+    prepared = ReleaseTransaction(None, _rid(b"new"), None)
+    assert phase_reached(prepared, "verify") is False
+    assert phase_reached(prepared, "finalize") is False

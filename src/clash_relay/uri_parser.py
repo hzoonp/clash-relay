@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import math
 import re
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -399,24 +400,65 @@ def _parse_ssr(uri: str) -> dict[str, Any]:
     return proxy
 
 
-def _parse_vmess(uri: str) -> dict[str, Any]:
+def _coerce_vmess_integer(value: Any, *, field: str) -> int:
+    """Normalize a VMess numeric field to a bounded integer.
+
+    A share link is attacker-controlled JSON: ``port`` and ``aid`` can arrive as
+    non-finite floats (``1e999``), strings, booleans, or containers. Converting
+    them with a bare ``int`` lets ``OverflowError``/``AttributeError`` escape the
+    subscription failure boundary, so every rejection is normalized here.
+    """
+    if isinstance(value, bool):
+        raise SubscriptionError(f"vmess URI has an invalid {field}")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or value != int(value):
+            raise SubscriptionError(f"vmess URI has an invalid {field}")
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip(), 10)
+        except ValueError as exc:
+            raise SubscriptionError(f"vmess URI has an invalid {field}") from exc
+    raise SubscriptionError(f"vmess URI has an invalid {field}")
+
+
+def _decode_vmess_json(encoded: str) -> Any:
     try:
-        data = json.loads(decode_base64_text(uri[8:]))
-    except (json.JSONDecodeError, TypeError) as exc:
+        text = decode_base64_text(encoded)
+    except SubscriptionError:
+        raise
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise SubscriptionError("vmess URI JSON is invalid") from exc
+    # Deeply nested attacker JSON can exhaust the recursion limit while decoding,
+    # before any post-decode structural guard can run.
+    except RecursionError as exc:
+        raise SubscriptionError("vmess URI JSON is nested too deeply") from exc
+
+
+def _parse_vmess(uri: str) -> dict[str, Any]:
+    data = _decode_vmess_json(uri[8:])
     if not isinstance(data, dict):
         raise SubscriptionError("vmess URI must decode to an object")
     try:
-        port = int(data["port"])
-    except (KeyError, TypeError, ValueError) as exc:
+        raw_port = data["port"]
+    except KeyError as exc:
         raise SubscriptionError("vmess URI has an invalid port") from exc
+    port = _coerce_vmess_integer(raw_port, field="port")
+    raw_alter_id = data.get("aid")
+    alter_id = (
+        0 if raw_alter_id in (None, "", False) else _coerce_vmess_integer(raw_alter_id, field="aid")
+    )
     proxy: dict[str, Any] = {
         "name": str(data.get("ps") or f"vmess-{data.get('add', 'node')}"),
         "type": "vmess",
         "server": str(data.get("add") or ""),
         "port": port,
         "uuid": str(data.get("id") or ""),
-        "alterId": int(data.get("aid") or 0),
+        "alterId": alter_id,
         "cipher": str(data.get("scy") or "auto"),
         "udp": True,
     }
@@ -431,6 +473,13 @@ def _parse_vmess(uri: str) -> dict[str, Any]:
     if network == "ws":
         headers = {"Host": str(data.get("host"))} if data.get("host") else {}
         proxy["ws-opts"] = {"path": str(data.get("path") or "/"), "headers": headers}
+    elif network == "grpc":
+        # VMess share links carry the gRPC service name in the ``path`` field.
+        # Without this mapping Mihomo receives ``network: grpc`` with no service
+        # name, silently routing to a different (empty) service.
+        service_name = str(data.get("path") or "")
+        if service_name:
+            proxy["grpc-opts"] = {"grpc-service-name": service_name}
     return proxy
 
 
