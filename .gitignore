@@ -16,6 +16,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Local agent workspace data
+.workbuddy-ai/
+
 # Secret material: never commit
 .env
 .env.*
