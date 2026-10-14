@@ -139,11 +139,11 @@ jobs:
       # instead of only surfacing on a developer machine.
       - name: Static type gate on Windows process boundaries
         run: python scripts/run_project_checks.py typecheck
+      # One command per line: PowerShell treats backslash as an ordinary
+      # character, so a bash-style `\` continuation is a parse error here.
       - name: Run Mihomo process lifecycle unit tests on Windows
         run: |
-          pytest tests/test_mihomo_probe_runtime.py \
-            -m "not integration" \
-            --junitxml=.work/unit-windows.xml
+          python -m pytest tests/test_mihomo_probe_runtime.py -m "not integration" --junitxml=.work/unit-windows.xml
 
   deterministic-generation:
     name: Deterministic fictional generation
