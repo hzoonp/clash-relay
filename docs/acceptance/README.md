@@ -2,7 +2,7 @@
 
 更新日期：2026-10-14。范围：承接本次项目检查的六项问题，并安排必要的测试与类型门禁优化。
 
-**R01–R06 的源码修复、失败路径回归、本地验收门与远程 CI 已完成。** 本地非集成测试 1453 passed、50 deselected，覆盖率 84.09%（floor 75%）。GitHub CI 在 `17ece93`、`a067828`、`99e7afb` 上连续三次全部 job 通过（3.11 / 3.12 / 3.13、`windows-platform`、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），最新已记录的 validated SHA 为 `99e7afb`；R04 的 Linux（amd64）内核 gRPC 证据由 stable-mihomo 提供。首次推送暴露的 Windows 门缺陷（锁文件仅覆盖 Linux、步骤使用 bash 语法）已修复并回归通过。以上不代表真实 Cloudflare、生产发布或回滚已验收。
+**R01–R06 的源码修复、失败路径回归、本地验收门与远程 CI 已完成。** 本地非集成测试 1456 passed、50 deselected，覆盖率 84.09%（floor 75%）。GitHub CI 在 `17ece93`、`a067828`、`99e7afb` 上连续三次全部 job 通过（3.11 / 3.12 / 3.13、`windows-platform`、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），最新已记录的 validated SHA 为 `99e7afb`；R04 的 Linux（amd64）内核 gRPC 证据由 stable-mihomo 提供。首次推送暴露的 Windows 门缺陷（锁文件仅覆盖 Linux、步骤使用 bash 语法）已修复并回归通过。以上不代表真实 Cloudflare、生产发布或回滚已验收。
 
 ## 只维护这三个文件
 
@@ -26,7 +26,7 @@
 | T3 / R04：VMess gRPC 保真 | 已实施，P2 | 解析映射 + 真实内核客户端流回归；Windows v1.19.30 本地 2 passed，CI stable-mihomo 在 ubuntu-latest 上随 v1.19.29 / v1.19.30 各 2 passed。arm64 仍缺 |
 | T4 / R06：Windows 类型检查 | 已实施，P3 | 3 个报错消失；CI `windows-platform` job 在 `17ece93` 上 success；并已实证该门失败会阻止 `validated` 与 `deploy` |
 | T5：最终整体验收 | 本地门与远程 CI 均通过 | 本地 lint / 格式 / 类型 / 单测 + 覆盖率 / 高风险覆盖率 / 审计 / doctor 全绿；CI run `38561302259` 在 `17ece93` 上全部 job 通过，validated SHA = `17ece93` |
-| O1–O3：持续优化 | O1 / O2 已落地，O3 第一批完成 | O1 随缺陷修复落地；O2 随 T4；O3 第一批把 URI / 订阅解析边界 7 个模块纳入类型门（49 → 56 目标，零抑制），第二批（`util` 需 `types-PyYAML`、`dns_runtime_audit`）已定位未实施 |
+| O1–O3：持续优化 | O1 / O2 已落地，O3 两批均完成 | O1 随缺陷修复落地；O2 随 T4；O3 第一批把 URI / 订阅解析边界 7 个模块纳入类型门，第二批修掉 `util.py` 与 `dns_runtime_audit.py` 的两处类型错误、补 `types-PyYAML` 并纳入类型门（49 → 58 目标，零抑制），同时补一条 `UnsafeSubscriptionError` 精确类别回归 |
 | GitHub 工作流验证 | 已完成 | run `38558938927`（失败，暴露 Windows 门缺陷）→ `38560429609`（安装与类型门通过）→ `38561302259`（`17ece93` 全绿）→ `38562845128`（`a067828` 全绿）→ `38565198668`（`99e7afb` 全绿，56 目标类型门） |
 | 生产现场验证 | NOT_EXERCISED | 未触发 `deploy`（push 事件按设计不部署），未访问生产 KV，未执行发布、回滚或清理 |
 

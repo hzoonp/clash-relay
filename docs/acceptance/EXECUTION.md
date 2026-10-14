@@ -285,3 +285,52 @@ R02 / R05 由审查子任务通过内存 KV / urllib Mock 验证，最小测试�
 - run `38562845128`（SHA `a067828`，纯文档提交）→ success；9 个 job 全通过，`validated` SHA = `a067828`。
 - run `38565198668`（SHA `99e7afb`，O3 第一批）→ success；Linux（Python 3.12 quality）与 Windows platform gate 均输出 `Success: no issues found in 56 source files`，`validated` SHA = `99e7afb`。
 - 本文档本身随代码提交，承载文档更新的提交由同一条 `publish.yml` 验证链覆盖；其 run 不再逐个回填，以免文档与提交互相追赶。当前 `main` 的精确 SHA 与验证结论以 `gh run list` / GitHub Actions 为准。
+
+## 2026-10-14：O3 第二批——YAML 共享边界与 DNS 运行时审计
+
+范围：完成第一批评估中已定位的第二批——修掉两个真实类型错误、补齐 `types-PyYAML` stub、把两个模块纳入类型门，并为被改动的失败路径补一条精确类别的回归。改动含运行期源码，逐项做了行为等价验证。
+
+### 两处类型错误（零行为变化）
+
+| 位置 | 原报错 | 修法 |
+| --- | --- | --- |
+| `util.py:80` | `error` 先被推断为 `type[UnsafeSubscriptionError] \| type[ConfigurationError]`，再赋 `SubscriptionError \| ConfigurationError` 不兼容 | 两类失败绑到不同名字：`unsafe_error`（NUL / 锚点别名）与 `invalid_error`（解析失败）；`unsafe_error` 提到循环外 |
+| `dns_runtime_audit.py:70` | `authority: tuple[str, ...]` 无法容纳含 port 的 4 元组 | 新增模块级别名 `_ResolverAuthority = tuple[str, ...] \| tuple[str, str, int, str]`，set 与变量共用；两种形状仍不可能相等 |
+
+### 行为等价验证（本窗口新运行）
+
+- `util.yaml_load_no_aliases`：6 条失败路径异常类型逐一不变（NUL / 锚点别名 × trusted / untrusted；畸形 YAML × 两者），2 条成功路径正常加载。
+- `dns_runtime_audit._require_distinct_resolver_authorities`：6 条判重用例不变（重复 `system`、重复 URL 报错；不同 URL、同主机不同端口、`system` + URL 不报错）。
+
+### 依赖变更：types-PyYAML
+
+- `requirements-dev.lock` 新增 `types-PyYAML==6.0.12.20260906`（`py3-none-any`，纯 stub，一条哈希覆盖所有平台与 Python 版本）；哈希取自 PyPI 并下载复核为 `bca893ff…5137b`。
+- 锁文件约定据实核对：平台相关包按「CI 运行器 = Python 版本 × 系统」各列一条哈希（`PyYAML` 现为 cp311 / cp312 / cp313 的 manylinux_x86_64 加 cp312-win_amd64）。
+- 校验：`pip download`（锁内 `--hash` 隐式开启哈希校验）在 `win_amd64` 与 `manylinux2014_x86_64`（cp312）下均成功，并都拉取到该 stub。
+
+### 新增回归（判别力已实证）
+
+- `tests/test_subscription_parser.py` 新增 3 项：untrusted 的 NUL / 锚点别名必须抛 `UnsafeSubscriptionError`（而不是其父类 `SubscriptionError`），untrusted 的畸形 YAML 必须保持可重试的 `SubscriptionError`。
+- 该不变量此前无覆盖：既有 `test_yaml_aliases_rejected` 断言的是父类，`UnsafeSubscriptionError` 的子类关系使降级不会被发现；而 `test_production_diagnostics.py` 依赖该类映射到 `subscription_admission`（不可重试）。
+- 判别力验证：把 `util.UnsafeSubscriptionError` 临时替换为 `SubscriptionError` 后，同一路径返回 `SubscriptionError` → 新断言会失败；还原后恢复 `UnsafeSubscriptionError`。
+
+### 类型门扩展
+
+- `MYPY_TARGETS` 由 56 增至 **58**，新增 `dns_runtime_audit` 与 `util`。仍无 `# type: ignore`、`Any`、放宽错误码或全仓 strict；`util.py` 的 stub 报错通过补依赖解决，未使用 `disable_error_code`。
+
+### 本地门（本窗口新运行）
+
+| 验证 | 结果 |
+| --- | --- |
+| `python scripts/run_project_checks.py typecheck` | exit 0，`Success: no issues found in 58 source files` |
+| 同 58 目标 + `--platform linux` | exit 0，`Success: no issues found in 58 source files` |
+| `ruff check` / `ruff format --check` | All checks passed / 353 files already formatted |
+| `pytest -m "not integration"` | 1456 passed、50 deselected |
+| `pytest -m "not integration" --cov=clash_relay --cov-fail-under=75` | 1456 passed；总覆盖率 84.09%（floor 75%） |
+| `python scripts/audit_risk_coverage.py <coverage.xml>` | risk-based coverage ratchet: passed |
+| `audit --offline-acl4ssr` | 8 项子门全部 passed |
+
+### 边界
+
+- 为在本机验证 `util.py`，`types-PyYAML` 装进了系统 Python 3.13 的工具链环境；CI 由锁文件安装，版本一致。
+- 类型门扩展只说明静态无错，不代表运行期行为已完整验证；`util.py` 与 `dns_runtime_audit.py` 的行为等价性由上面的显式用例覆盖。

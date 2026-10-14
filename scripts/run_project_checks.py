@@ -70,6 +70,12 @@ MYPY_TARGETS = (
     "subscription_parser",
     "uri_parser",
     "validator",
+    # O3 batch 2: the shared YAML boundary and the DNS runtime audit. Both needed
+    # a source fix first (a widened union and a mis-shaped tuple annotation), and
+    # util.py also needed the types-PyYAML stubs, now pinned in
+    # requirements-dev.lock for both supported runner platforms.
+    "dns_runtime_audit",
+    "util",
 )
 AUDITS = (
     "audit_documentation_contract.py",

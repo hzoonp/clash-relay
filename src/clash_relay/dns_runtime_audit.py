@@ -49,6 +49,12 @@ def _proxy_server_resolver(value: object) -> bool:
     return value == "system" or _encrypted_proxy_server_resolver(value)
 
 
+# An authority key has two shapes: the literal ``system`` marker, and the parsed
+# (scheme, host, port, path) key of a resolver URL. They can never compare equal,
+# which is what keeps the distinct-authority quorum honest.
+_ResolverAuthority = tuple[str, ...] | tuple[str, str, int, str]
+
+
 def _require_distinct_resolver_authorities(resolvers: list[Any]) -> None:
     """Fail closed when the same resolver authority is declared twice.
 
@@ -57,10 +63,10 @@ def _require_distinct_resolver_authorities(resolvers: list[Any]) -> None:
     semantics.
     """
 
-    authorities: set[tuple[str, ...]] = set()
+    authorities: set[_ResolverAuthority] = set()
     for resolver in resolvers:
         if resolver == "system":
-            authority: tuple[str, ...] = ("system",)
+            authority: _ResolverAuthority = ("system",)
         else:
             parsed = urlsplit(str(resolver))
             try:

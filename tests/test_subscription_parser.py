@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from clash_relay.errors import SubscriptionError
+from clash_relay.errors import SubscriptionError, UnsafeSubscriptionError
 from clash_relay.subscription_parser import parse_subscription
+from clash_relay.util import yaml_load_no_aliases
 
 
 def _http(name: str = "Node", server: str = "node.invalid.example", port=443):
@@ -270,6 +271,31 @@ def test_yaml_aliases_rejected() -> None:
     payload = "proxies:\n  - &node {name: A, type: http, server: a.invalid.example, port: 80}\n  - *node\n"
     with pytest.raises(SubscriptionError, match="anchors and aliases"):
         parse_subscription(payload)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ("a: 1\x00", "NUL bytes"),
+        ("a: &x 1\nb: *x\n", "anchors and aliases"),
+    ],
+)
+def test_untrusted_unsafe_yaml_keeps_the_non_retryable_error(payload: str, message: str) -> None:
+    """An untrusted unsafe construct must not degrade to the retryable base class.
+
+    UnsafeSubscriptionError is what marks the failure as never-retryable, so an
+    assertion at the SubscriptionError superclass would not notice a downgrade.
+    """
+
+    with pytest.raises(UnsafeSubscriptionError, match=message):
+        yaml_load_no_aliases(payload, source="probe", untrusted=True)
+
+
+def test_untrusted_malformed_yaml_stays_retryable() -> None:
+    with pytest.raises(SubscriptionError, match="invalid YAML") as caught:
+        yaml_load_no_aliases("a: [1, 2\n", source="probe", untrusted=True)
+
+    assert not isinstance(caught.value, UnsafeSubscriptionError)
 
 
 @pytest.mark.parametrize("server", ["127.0.0.1", "10.1.2.3", "::1", "169.254.1.2"])

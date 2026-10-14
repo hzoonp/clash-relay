@@ -63,22 +63,24 @@ def contains_yaml_incompatible_control_characters(value: Any) -> bool:
 
 def yaml_load_no_aliases(text: str, *, source: str, untrusted: bool = False) -> Any:
     """Load YAML while rejecting anchors and aliases to avoid expansion attacks."""
+    # Two distinct failure families: an unsafe document (NUL bytes, anchors or
+    # aliases) versus a malformed one. They are bound to separate names so each
+    # keeps its own exception type instead of one name widening to a union.
+    unsafe_error = UnsafeSubscriptionError if untrusted else ConfigurationError
     if "\x00" in text:
-        error = UnsafeSubscriptionError if untrusted else ConfigurationError
-        raise error(f"{source}: NUL bytes are not allowed")
+        raise unsafe_error(f"{source}: NUL bytes are not allowed")
     try:
         for token in yaml.scan(text):
             if isinstance(token, (AliasToken, AnchorToken)):
-                error = UnsafeSubscriptionError if untrusted else ConfigurationError
-                raise error(f"{source}: YAML anchors and aliases are not allowed")
+                raise unsafe_error(f"{source}: YAML anchors and aliases are not allowed")
         return yaml.safe_load(text)
     # PyYAML can exhaust Python's recursion limit while composing an extremely
     # deep collection, before callers can apply their structural depth guard.
     # Treat it like every other malformed untrusted document so an optional
     # subscription cannot escape the builder's failure boundary.
     except (yaml.YAMLError, UnicodeError, RecursionError) as exc:
-        error = SubscriptionError if untrusted else ConfigurationError
-        raise error(f"{source}: invalid YAML") from exc
+        invalid_error = SubscriptionError if untrusted else ConfigurationError
+        raise invalid_error(f"{source}: invalid YAML") from exc
 
 
 def load_yaml_file(path: Path, *, untrusted: bool = False) -> Any:
