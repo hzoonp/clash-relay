@@ -2,7 +2,7 @@
 
 更新日期：2026-10-14。范围：承接本次项目检查的六项问题，并安排必要的测试与类型门禁优化。
 
-**R01–R06 的源码修复、失败路径回归与本地验收门已完成（改动尚未提交）。** 本轮非集成测试 1453 passed、50 deselected，覆盖率 84.09%（floor 75%）；Ruff、类型（Windows 与 Linux 语义）、高风险覆盖率、离线审计与 doctor 全部通过；R04 已在真实 Mihomo v1.19.30 上取得 gRPC 传输证据。以上均为本地新运行，不代表 GitHub 工作流、真实 Cloudflare 或生产发布已验收。
+**R01–R06 的源码修复、失败路径回归、本地验收门与远程 CI 已完成。** 本地非集成测试 1453 passed、50 deselected，覆盖率 84.09%（floor 75%）。GitHub CI run `38561302259` 在 SHA `17ece93` 上全部 job 通过（3.11 / 3.12 / 3.13、`windows-platform`、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），validated SHA 绑定为 `17ece93`；R04 的 Linux（amd64）内核 gRPC 证据由 stable-mihomo 提供。首次推送暴露的 Windows 门缺陷（锁文件仅覆盖 Linux、步骤使用 bash 语法）已修复并回归通过。以上不代表真实 Cloudflare、生产发布或回滚已验收。
 
 ## 只维护这三个文件
 
@@ -19,17 +19,18 @@
 | 门 | 当前状态 | 完成证据或剩余条件 |
 | --- | --- | --- |
 | T0：共同基线与证据校准 | 完成 | 已记录 HEAD、输入清单（含 sha256）与本轮环境；反例已固化为回归 |
-| T1 / R01：工作流权限 | 已实施，P1 | rollback、retention 增加 `actions: read`；权限兼容与 workflow 契约回归通过（111 passed） |
+| T1 / R01：工作流权限 | 已实施，P1 | rollback、retention 增加 `actions: read`；权限兼容与 workflow 契约回归通过（111 passed）。rollback / retention 自身未派发 |
 | T2 / R02：发布事务恢复 | 已实施，P2 | finalize 中断后相同候选幂等恢复；T2 定向 136 passed |
 | T2 / R05：Cloudflare 提交状态 | 已实施，P2 | 缺失 / null / 错误类型 success 保留 CommitUnknownError，`success:false` 仍为明确拒绝 |
 | T3 / R03：VMess 异常边界 | 已实施，P2 | 非有限数值与过深 JSON 归一为 SubscriptionError；skip / fail 与可选 / 必需源契约保持 |
-| T3 / R04：VMess gRPC 保真 | 已实施（Windows 内核），P2 | 解析映射与真实 Mihomo v1.19.30 客户端流回归 2 passed；Linux 内核证据仍缺 |
-| T4 / R06：Windows 类型检查 | 已实施，P3 | 3 个报错消失；Windows 与 Linux 语义类型门均 0 错误；CI 新增 `windows-platform` job（本地契约测试通过，远程未运行） |
-| T5：最终整体验收 | 本地门通过，CI 未执行 | 本地 lint / 格式 / 类型 / 单测 + 覆盖率 / 高风险覆盖率 / 审计 / doctor 全绿；3.11–3.13 矩阵、wheel、双次生成与 stable-mihomo 完整矩阵沿用 CI |
+| T3 / R04：VMess gRPC 保真 | 已实施，P2 | 解析映射 + 真实内核客户端流回归；Windows v1.19.30 本地 2 passed，CI stable-mihomo 在 ubuntu-latest 上随 v1.19.29 / v1.19.30 各 2 passed。arm64 仍缺 |
+| T4 / R06：Windows 类型检查 | 已实施，P3 | 3 个报错消失；CI `windows-platform` job 在 `17ece93` 上 success；并已实证该门失败会阻止 `validated` 与 `deploy` |
+| T5：最终整体验收 | 本地门与远程 CI 均通过 | 本地 lint / 格式 / 类型 / 单测 + 覆盖率 / 高风险覆盖率 / 审计 / doctor 全绿；CI run `38561302259` 在 `17ece93` 上全部 job 通过，validated SHA = `17ece93` |
 | O1–O3：持续优化 | 已纳入计划 | O1 随缺陷修复落地；O2 随 T4；O3 分批推进，不阻塞六项整改交付 |
-| GitHub / 生产现场验证 | NOT_EXERCISED | 未触发远程工作流，未访问生产 KV，未执行发布、回滚或清理 |
+| GitHub 工作流验证 | 已完成 | run `38558938927`（失败，暴露 Windows 门缺陷）→ `38560429609`（安装与类型门通过）→ `38561302259`（全绿，validated SHA `17ece93`） |
+| 生产现场验证 | NOT_EXERCISED | 未触发 `deploy`（push 事件按设计不部署），未访问生产 KV，未执行发布、回滚或清理 |
 
-**下一动作：在精确 SHA 上提交并触发 GitHub CI（含新 `windows-platform` job 与 validated 聚合）与 stable-mihomo 矩阵；如需关闭完整协议验收门，补 Linux 内核 gRPC 证据。**
+**下一动作：观察下一个定时发布窗口能否在 `validated` 恢复后正常取用验证结果（仍属外部验证）；如需 arm64 协议证据，扩展 stable-mihomo 矩阵。**
 
 ## 权威规范与证据导航
 

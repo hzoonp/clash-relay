@@ -165,3 +165,74 @@ R02 / R05 由审查子任务通过内存 KV / urllib Mock 验证，最小测试�
 
 - 在精确 SHA 上触发 GitHub CI（含新 `windows-platform` job 与 validated 聚合）与 stable-mihomo 矩阵。
 - 如需关闭完整协议验收门，补 Linux 内核的 gRPC 实际传输证据。
+
+## 2026-10-14：推送 main、远程 CI 验证与 Windows 门修复（外部验证窗口）
+
+范围：在精确 SHA 上推送 `main` 并触发 GitHub CI，按实际结果修复新增 Windows 门暴露的两处真实缺陷，并取得 Linux 内核 gRPC 证据。push 事件下 `deploy` 被 `github.event_name != 'push'` 排除，未触发部署；未访问生产 KV，未执行发布 / 回滚 / retention。
+
+### 输入与环境
+
+- 起点 HEAD `69427dd`，`origin/main` 原为 `95cad44`。
+- 证据目录 `.work/acceptance-20261014-192602/`（推送前基线 `input-manifest.txt`、`env.txt`）。
+- 环境：Windows（MINGW64_NT-10.0-26100）、Python 3.13.15、pytest 9.0.2、Ruff 0.14.10、mypy 1.18.2；`gh` 以 `hzoonp` 认证（`repo` + `workflow` 作用域）。本机无 WSL / Docker，无法本地取得 Linux 内核证据。
+
+### 推送前本地门（在 `69427dd` 上重跑）
+
+| 验证 | 命令 | 退出码 | 结果 |
+| --- | --- | --- | --- |
+| Lint | `python -m ruff check .` | 0 | All checks passed |
+| 格式 | `python -m ruff format --check .` | 0 | 353 files already formatted |
+| 类型（Windows） | `python scripts/run_project_checks.py typecheck` | 0 | Success: no issues found in 49 source files |
+| 单测 + 覆盖率 | `env -u PYTHONPATH python -m pytest -m "not integration" --cov=clash_relay --cov-fail-under=75 …` | 0 | 1453 passed、50 deselected；84.09%（146.91s） |
+| 高风险覆盖率 | `python scripts/audit_risk_coverage.py <coverage.xml>` | 0 | risk-based coverage ratchet: passed |
+| 审计 | `python scripts/run_project_checks.py audit --offline-acl4ssr` | 0 | 子门全部通过；ACL4SSR `matched_with_declared_deviations`，`upstream_reference_verified=false` |
+| 公共配置 | `python -m clash_relay.cli doctor --public-only` | 0 | status=passed |
+
+### 第一次推送与 CI 失败（R06 新门暴露真实缺陷）
+
+- 推送 `95cad44..69427dd`，CI run `38558938927`（event=push）。
+- 结果 **failure**：Python 3.11 / 3.12 / 3.13、deterministic-generation、routing-required、Mihomo v1.19.29、Mihomo v1.19.30 均 success；**Windows platform gate failure**；`validated` 与 `deploy` 因此 skipped。
+- 根因（`gh-windows-failed.txt`）：Windows job 复用 `requirements-dev.lock`，而锁头声明为 Linux x64 runners。pip 在 windows-latest 解析到 `pyyaml-6.0.3-cp312-cp312-win_amd64.whl`，哈希不在锁内 → `THESE PACKAGES DO NOT MATCH THE HASHES`；连锁使 `hatchling` 未安装，`pip install --editable .` 报 `BackendUnavailable: Cannot import 'hatchling.build'`。类型检查与进程测试从未执行。
+- 连带影响：定时 run `38559843548`（event=schedule，SHA `69427dd`）在 `trusted-main` 阶段失败（该 SHA 无成功完整验证），其余 job 与 `deploy` 全部 skipped，**未发生生产写入**。
+
+### 修复一：锁文件覆盖 Windows（`10aecc1`）
+
+- 补 Windows x64（CPython 3.12）wheel 哈希。仅 5 个平台相关包需要补：`PyYAML`、`rpds-py`（requirements.lock）、`coverage`、`mypy`、`ruff`（requirements-dev.lock）；其余 17 个为纯 Python wheel，跨平台哈希相同，未改动。锁头改为声明 Linux x64 与 Windows x64 两个支持平台，保持单一锁来源、不新增锁文件。
+- Windows job 的安装拆成两个单命令步骤：默认 PowerShell 在多行步骤中不会因原生命令非零退出码中止，拆分后安装失败会直接失败该门，而不是以「缺少构建后端」的形式出现或静默用残缺依赖继续。
+- 本地验证：`audit_supply_chain.py` passed；`pip download --platform win_amd64 --python-version 3.12 --abi cp312 -r requirements-dev.lock` 与 `--platform manylinux2014_x86_64` 均成功（哈希校验通过）。
+- CI run `38560429609`：安装与类型门通过（`Successfully installed clash-relay-2.3.0`、`Success: no issues found in 49 source files`），pytest 步骤仍失败。
+
+### 修复二：Windows 步骤改用 PowerShell 语法（`17ece93`）
+
+- 根因（`gh-windows-failed-2.txt`）：pytest 步骤使用了 bash 的 `\` 续行，PowerShell 把反斜杠当作普通字符 → `ParserError: Missing expression after unary operator '--'`，pytest 未执行。
+- 改为单行命令，并使用 `python -m pytest`，不依赖入口脚本在 PATH 上。
+- 本地验证：在 PowerShell 中执行同一条命令 → `9 passed`（`unit-win-sim2.xml`：tests=9、errors=0、failures=0）。不带 `--basetemp` 的本地首跑出现 `WinError 5`，属本机沙箱临时目录限制，非 CI 行为。
+
+### 最终 CI 结果（run `38561302259`，SHA `17ece93`）
+
+| Job | 结论 | 关键证据 |
+| --- | --- | --- |
+| Python 3.12 quality | success | 覆盖率 84.08%（floor 75%）；ruff / 格式 / 类型 0 问题；risk ratchet passed；8 项审计 passed；wheel 构建与源码树外 smoke 通过 |
+| Python 3.11 compatibility | success | 1453 passed、50 deselected |
+| Python 3.13 compatibility | success | 1453 passed、50 deselected |
+| Windows platform gate | success | `Successfully installed clash-relay-2.3.0`；`Success: no issues found in 49 source files`；`9 passed` |
+| Deterministic fictional generation | success | 双次生成字节比较、ACL4SSR 保真、pinned stable 矩阵导出 |
+| Verify finalized Routing V2 graph | success | 依赖 quality 的 drift 门 |
+| Mihomo v1.19.29 | success | integration `47 passed, 6 deselected`，含 `tests/integration/test_vmess_grpc_transport_mihomo.py ..`；ACL4SSR upstream `3 passed` |
+| Mihomo v1.19.30 | success | 同上 |
+| Validate exact commit / Validated SHA | success | 「Bind validation result to exact commit SHA」通过 → validated SHA = `17ece93` |
+| Run canonical production lifecycle | skipped | push 事件下按设计不部署 |
+
+**R04 的 Linux 内核证据已取得**：`test_vmess_grpc_transport_mihomo.py` 在 ubuntu-latest（linux-amd64）上随 v1.19.29 与 v1.19.30 各执行 2 项并通过。仍缺 arm64 与其他架构。
+
+### 本轮关闭与剩余边界
+
+- 关闭：GitHub CI 未执行 → 已在 `17ece93` 上全绿；Windows 平台门真实生效；`validated` 聚合真实生效（并已实证失败门会阻止 `validated` 与 `deploy`）。
+- 关闭：R04 的 Linux（amd64）内核 gRPC 证据。
+- 仍未执行：真实 Cloudflare dry-run、发布、回滚、retention、任何生产写入；arm64 内核 gRPC；真实设备客户端验证。
+- 本地通过、远程通过、生产状态仍分别判断；本轮未改变生产。
+
+### 下一动作
+
+- 观察下一个定时发布窗口能否在 `validated` 恢复后正常取用验证结果；该路径仍属外部验证，需单独记录。
+- 如需 arm64 协议证据，扩展 stable-mihomo 矩阵。

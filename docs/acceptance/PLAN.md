@@ -99,6 +99,7 @@
 - 保持 Windows terminate / kill 与 POSIX process-group TERM / KILL 行为；不通过全局 ignore、删除类型目标或禁用错误码使门禁变绿。
 - Windows 上执行现有 canonical typecheck 和 Mihomo process 定向单测；Linux 验证 POSIX 分支及原有完整类型门禁。
 - CI 增加 Windows 定向静态 / 进程检查，依赖沿用锁文件；避免复制现有整个 Python × 内核矩阵。新增 job 若作为必需门，同步 validated 聚合条件及治理测试。
+- 实施修正（2026-10-14）：原锁文件只覆盖 Linux x64 runner，Windows 无法复用。改为在同一对锁文件中补 Windows x64（CPython 3.12）wheel 哈希，锁头声明两个支持平台，不新增锁文件。Windows runner 的默认 shell 是 PowerShell，该 job 的命令须用 PowerShell 语法且每条命令独立成步。
 
 **完成条件：** Windows 3 个已知错误消失，Linux 与 Windows 对应进程回归通过；类型门禁继续有判别力，CI 新门的失败会阻止 validated 成功。
 
