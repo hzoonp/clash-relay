@@ -60,6 +60,16 @@ MYPY_TARGETS = (
     "production_lifecycle_result",
     "publication_decision",
     "validation_authority",
+    # O3 batch 1: the URI / subscription parse boundary and its direct imports.
+    # Each module below reported zero errors under the options above, so the gate
+    # widens without a new suppression, an Any cast, or a global ignore.
+    "dns_leak_audit",
+    "errors",
+    "schema",
+    "status",
+    "subscription_parser",
+    "uri_parser",
+    "validator",
 )
 AUDITS = (
     "audit_documentation_contract.py",

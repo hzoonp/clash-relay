@@ -236,3 +236,46 @@ R02 / R05 由审查子任务通过内存 KV / urllib Mock 验证，最小测试�
 
 - 观察下一个定时发布窗口能否在 `validated` 恢复后正常取用验证结果；该路径仍属外部验证，需单独记录。
 - 如需 arm64 协议证据，扩展 stable-mihomo 矩阵。
+
+## 2026-10-14：O3 第一批——把 URI / 订阅解析边界纳入类型门
+
+范围：按 PLAN §8 的 O3 要求，先评估 URI / 订阅边界的未覆盖模块及导入，再以零抑制方式完成第一批扩展。未改动业务行为，未触发外部动作。
+
+### 先决：文档窗口的 CI 结果
+
+- run `38562845128`（SHA `a067828`，纯文档提交）→ success；9 个 job 全通过，`validated` SHA = `a067828`。文档提交不改变任何门。
+
+### 评估（mypy 1.18.2，选项与 canonical 门一致）
+
+覆盖率取自本轮 `.work/acceptance-20261014-192602/coverage.xml`；报错数为该模块单独加入类型门时的实际输出。
+
+| 模块 | 覆盖率 | 报错数 |
+| --- | --- | --- |
+| `errors.py` | 100% | 0 |
+| `status.py` | 100% | 0 |
+| `schema.py` | 88.57% | 0 |
+| `subscription_parser.py` | 88.03% | 0 |
+| `uri_parser.py` | 78.92% | 0 |
+| `dns_leak_audit.py` | 74.04% | 0 |
+| `validator.py` | 73.63% | 0 |
+| `util.py` | 88.70% | 2（`yaml` / `yaml.tokens` 缺 stub） |
+| `dns_runtime_audit.py` | — | 1（`tuple[str, str, int, str]` 赋给 `tuple[str, ...]`） |
+
+`util.py` 是源码中唯一导入 `yaml` 的模块，正因它此前不在类型目标内，缺 stub 的问题一直未被暴露。
+
+### 第一批实施
+
+- `scripts/run_project_checks.py` 的 `MYPY_TARGETS` 由 49 增至 **56**，新增 7 个零报错模块：`dns_leak_audit`、`errors`、`schema`、`status`、`subscription_parser`、`uri_parser`、`validator`。
+- 未新增 `# type: ignore`、未引入 `Any`、未放宽错误码，也未打开全仓 strict。
+- 验证（本机新运行）：`python scripts/run_project_checks.py typecheck` → exit 0，`Success: no issues found in 56 source files`；同 56 目标加 `--platform linux` 亦为 0 错误；`ruff check` exit 0；非集成测试 1453 passed。
+
+### 第二批（未实施，已定位）
+
+- `util.py`：需补 `types-PyYAML` stub（连带更新 `requirements-dev.lock` 的 Linux 与 Windows 哈希），并修 `util.py:80` 的联合类型赋值。
+- `dns_runtime_audit.py:70`：修 tuple 赋值不兼容。
+- 两项都涉及源码或依赖变更，按 O3「分批」原则留作下一批，本轮不做。
+
+### 边界
+
+- 覆盖率数字来自本轮本地 coverage 运行；CI 上为 84.08%（Python 3.12），两者不互相替代。
+- 类型门扩展只说明这些模块在现有选项下无静态错误，不代表其运行期行为已被完整验证。
