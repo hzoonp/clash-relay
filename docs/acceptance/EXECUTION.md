@@ -279,3 +279,9 @@ R02 / R05 由审查子任务通过内存 KV / urllib Mock 验证，最小测试�
 
 - 覆盖率数字来自本轮本地 coverage 运行；CI 上为 84.08%（Python 3.12），两者不互相替代。
 - 类型门扩展只说明这些模块在现有选项下无静态错误，不代表其运行期行为已被完整验证。
+
+### 本窗口的 CI 结果
+
+- run `38562845128`（SHA `a067828`，纯文档提交）→ success；9 个 job 全通过，`validated` SHA = `a067828`。
+- run `38565198668`（SHA `99e7afb`，O3 第一批）→ success；Linux（Python 3.12 quality）与 Windows platform gate 均输出 `Success: no issues found in 56 source files`，`validated` SHA = `99e7afb`。
+- 本文档本身随代码提交，承载文档更新的提交由同一条 `publish.yml` 验证链覆盖；其 run 不再逐个回填，以免文档与提交互相追赶。当前 `main` 的精确 SHA 与验证结论以 `gh run list` / GitHub Actions 为准。
