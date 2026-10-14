@@ -123,9 +123,16 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.lock
+      # The default Windows shell is PowerShell, which keeps going after a
+      # non-zero native exit code inside a multi-line step. Each install is
+      # therefore its own single-command step so a failed hash-verified install
+      # fails this gate directly instead of surfacing later as a missing build
+      # backend, or silently validating against a partial dependency set.
       - name: Install hash-verified development dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
+      - name: Install the project without build isolation
+        run: |
           python -m pip install --no-build-isolation --no-deps --editable .
       # Windows is where the POSIX-only process-group APIs are absent. Keeping
       # this gate required means a regression fails the workflow immediately
