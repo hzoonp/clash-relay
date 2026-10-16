@@ -82,27 +82,43 @@ def test_reconcile_proves_first_release() -> None:
     assert result.reason == "first_release_fully_visible"
 
 
-def test_reconcile_proves_candidate_not_committed() -> None:
+def test_reconcile_proves_candidate_not_committed_only_on_a_dated_read() -> None:
     production_key = "production-config"
     previous = b"old\n"
     candidate = b"new\n"
     keys = release_keys(production_key)
-    result = reconcile_release_bundle(
-        factory=_ReadOnlyFactory(
-            {
-                keys.production: previous,
-                keys.current_pointer: _pointer(previous),
-                keys.previous_pointer: None,
-            }
-        ),
+    state = {
+        keys.production: previous,
+        keys.current_pointer: _pointer(previous),
+        keys.previous_pointer: None,
+    }
+
+    undated = reconcile_release_bundle(
+        factory=_ReadOnlyFactory(state),
         production_key=production_key,
         candidate_content=candidate,
         previous_content=previous,
     )
 
-    assert result.status is ReconciliationStatus.NOT_COMMITTED
-    assert result.production_changed is False
-    assert result.to_dict()["requires_manual_action"] is False
+    assert undated.status is ReconciliationStatus.INDETERMINATE
+    assert undated.production_changed == "unknown"
+    assert undated.reason == "pre_attempt_production_still_live"
+    assert undated.observation_freshness == "unsupported"
+    assert undated.to_dict()["requires_manual_action"] is True
+
+    dated = reconcile_release_bundle(
+        factory=_ReadOnlyFactory(state),
+        production_key=production_key,
+        candidate_content=candidate,
+        previous_content=previous,
+        fresh_read_evidence=True,
+    )
+
+    assert dated.status is ReconciliationStatus.NOT_COMMITTED
+    assert dated.production_changed is False
+    assert dated.reason == "pre_attempt_production_still_live"
+    assert dated.observation_freshness == "fresh"
+    assert dated.to_dict()["requires_manual_action"] is False
 
 
 def test_reconcile_keeps_candidate_live_with_incomplete_pointers_unknown() -> None:

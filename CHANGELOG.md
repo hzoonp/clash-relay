@@ -4,6 +4,10 @@ All notable user-visible changes are documented here. This project follows Seman
 
 ## [Unreleased]
 
+### Changed
+
+- `clash-relay reconcile-release` no longer reports a stale-looking observation as a conclusive `not_committed`. When the observed production value equals the exact pre-attempt bytes with no visible pending intent but the observation carries no freshness evidence, the command reports the new `indeterminate` status with `requires_manual_action: true` and `observation_freshness: "unsupported"`, because one read cannot rule out a path that lagged a write the attempt already verified. Pass the new `--observed-after-attempt` flag to assert that the observation is at least as fresh as the attempt's own read path; only then is the same state reported as `not_committed` with `observation_freshness: "fresh"`. Consumers that treated every non-`committed` status as a conclusive non-commit must handle `indeterminate` as an investigation state. `production_changed` is tri-state accordingly: it stays `true`/`false` only when the observation proves the value, and is `"unknown"` for an `indeterminate` or otherwise undatable verdict, which cannot prove production was left untouched.
+
 ## [2.3.0] - 2026-09-27
 
 ### Added

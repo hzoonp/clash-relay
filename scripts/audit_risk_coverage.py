@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -49,11 +50,32 @@ def _normalized(path: str) -> str:
     return path.replace("\\", "/").removeprefix("./")
 
 
+def _ratio(raw: str, label: str) -> float:
+    """Return a coverage ratio, refusing values no report should contain.
+
+    ``float("NaN")`` parses without error and loses every threshold comparison,
+    so a corrupt report would pass the ratchet silently. Non-finite and
+    out-of-range values are therefore rejected before any comparison happens.
+    """
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"invalid line-rate for {label!r}") from exc
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(f"line-rate for {label!r} is not a ratio in [0, 1]: {raw!r}")
+    return value
+
+
 def _coverage_by_filename(path: Path) -> dict[str, float]:
     try:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError) as exc:
         raise ValueError(f"failed to read coverage XML {path}") from exc
+
+    for node in root.iter():
+        reported = node.get("line-rate")
+        if reported is not None:
+            _ratio(reported, node.get("filename") or node.get("name") or node.tag)
 
     coverage: dict[str, float] = {}
     for node in root.findall(".//class"):
@@ -61,11 +83,7 @@ def _coverage_by_filename(path: Path) -> dict[str, float]:
         line_rate = node.get("line-rate")
         if filename is None or line_rate is None:
             continue
-        try:
-            percent = float(line_rate) * 100.0
-        except ValueError as exc:
-            raise ValueError(f"invalid line-rate for {filename!r}") from exc
-        coverage[_normalized(filename)] = percent
+        coverage[_normalized(filename)] = _ratio(line_rate, filename) * 100.0
     return coverage
 
 

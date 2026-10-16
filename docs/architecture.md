@@ -9,7 +9,7 @@ The production path is staged and fail closed:
 1. **Declaration loading** validates Public Config v2 (`config.yaml`, `subscriptions.yaml`) plus the Policy Model v2 `policies.yaml` manifest and its routing, scheduling, classification, and topology fragments.
 2. **Secret resolution** maps logical `secret_name` values to URLs from `CLASH_RELAY_SUBSCRIPTIONS`, a same-name environment variable, or an ignored local secret file.
 3. **Fetch** permits HTTPS by default, rejects URL userinfo and private IP literals, bounds transfer/decompression size, validates redirect destinations, and returns UTF-8 text.
-4. **Parse/sanitize** accepts common Clash/Mihomo YAML and proxy URIs, rejects YAML aliases, validates proxy shape, and strips user-controlled chaining/interface/routing fields.
+4. **Parse/sanitize** accepts common Clash/Mihomo YAML and proxy URIs, rejects YAML aliases and duplicate mapping keys, validates proxy shape, and strips user-controlled chaining/interface/routing fields.
 5. **Classification** combines source defaults, optional name rules, country aliases, and authoritative exact-node metadata into an immutable node model.
 6. **Eligibility selection** applies source use, country, capability any/all/exclude, and cost constraints. `ingest_order` is deterministic ingestion/deduplication order only.
 7. **Policy compilation** constructs the runtime draft from declarations and `NodeInventory`, applies ACL4SSR group semantics, source exclusions, manual provider exposure, and browsing regional hardening, validates the public surface, then freezes the completed topology as one `RuntimeGraph`.

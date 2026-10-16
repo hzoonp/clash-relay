@@ -298,6 +298,32 @@ def test_untrusted_malformed_yaml_stays_retryable() -> None:
     assert not isinstance(caught.value, UnsafeSubscriptionError)
 
 
+def test_duplicate_yaml_key_rejects_the_whole_document() -> None:
+    """A contradicting declaration must not fall back to URI-line probing.
+
+    ``_parse_payload`` swallows the retryable parse error class to allow plain
+    URI lists, so a duplicate key that stayed retryable would be silently
+    reinterpreted instead of rejected at the document level.
+    """
+
+    payload = (
+        "proxies:\n"
+        "  - {name: A, type: http, server: a.invalid.example, port: 80}\n"
+        "proxies:\n"
+        "  - {name: B, type: http, server: b.invalid.example, port: 80}\n"
+    )
+    with pytest.raises(UnsafeSubscriptionError, match=r"duplicate YAML key at line 3, column 1"):
+        parse_subscription(payload)
+
+
+def test_repeated_key_in_distinct_mappings_is_accepted() -> None:
+    payload = yaml.safe_dump([{**_http("A"), "name": "A"}, {**_http("B"), "name": "B"}])
+    document = yaml.safe_dump({"proxy-groups": [{"name": "g1"}, {"name": "g2"}], "proxies": []})
+
+    assert len(parse_subscription(payload).proxies) == 2
+    assert yaml_load_no_aliases(document, source="probe", untrusted=True)["proxy-groups"]
+
+
 @pytest.mark.parametrize("server", ["127.0.0.1", "10.1.2.3", "::1", "169.254.1.2"])
 def test_private_proxy_host_rejected_by_default(server: str) -> None:
     with pytest.raises(SubscriptionError, match="private or special-use"):

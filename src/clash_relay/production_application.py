@@ -12,6 +12,13 @@ from typing import Any
 from .ai_qualification_cache import ai_cache_summary, derive_ai_cache_key, parse_ai_cache_bytes
 from .config_loader import ProjectDefinition
 from .errors import PublicationError, ValidationError
+from .kv_keys import (
+    AI_QUALIFICATION_CACHE_SUFFIX,
+    PRODUCTION_METRICS_SUFFIX,
+    SCHEDULER_STATE_SUFFIXES,
+    auxiliary_state_key,
+    require_derived_kv_keys,
+)
 from .mihomo import load_candidate
 from .production_metrics import (
     append_metrics_run,
@@ -55,7 +62,10 @@ def _credentials(env: Mapping[str, str] | None) -> tuple[str, str, str]:
 
 
 def _production_key(project: ProjectDefinition) -> str:
-    return str(project.config["publishing"]["cloudflare_kv"]["key"])
+    production_key = str(project.config["publishing"]["cloudflare_kv"]["key"])
+    # Covers the auxiliary state names that never pass through release_keys.
+    require_derived_kv_keys(production_key)
+    return production_key
 
 
 def _publisher(
@@ -105,17 +115,14 @@ def load_scheduler_history_state(
     transport_status = "unavailable"
     source = "none"
     if token and account_id and namespace_title:
-        for suffix, source_name in (
-            ("scheduler-state-v3", "v3"),
-            ("scheduler-state-v2", "v2"),
-            ("scheduler-state-v1", "v1"),
-        ):
+        for suffix in SCHEDULER_STATE_SUFFIXES:
+            source_name = suffix.rsplit("-", 1)[1]
             try:
                 content = _publisher(
                     token=token,
                     account_id=account_id,
                     namespace_title=namespace_title,
-                    key_name=f"{production_key}.{suffix}",
+                    key_name=auxiliary_state_key(production_key, suffix),
                 ).read()
             except PublicationError:
                 content = None
@@ -164,7 +171,7 @@ def load_ai_qualification_cache_state(
     """Load the private AI qualification cache and derive its local fingerprint key."""
 
     token, account_id, namespace_title = _credentials(env)
-    cache_key = f"{_production_key(project)}.ai-qualification-cache-v1"
+    cache_key = auxiliary_state_key(_production_key(project), AI_QUALIFICATION_CACHE_SUFFIX)
     content: bytes | None = None
     transport_status = "unavailable"
     if token and account_id and namespace_title:
@@ -398,8 +405,14 @@ def reconcile_production_release(
     candidate: Path,
     previous: Path | None,
     env: Mapping[str, str] | None = None,
+    fresh_read_evidence: bool = False,
 ) -> dict[str, Any]:
-    """Read only the observable state of an ambiguous production release."""
+    """Read only the observable state of an ambiguous production release.
+
+    ``fresh_read_evidence`` is the operator's dated-read assertion. Without it a
+    stale-looking observation is reported as ``indeterminate`` rather than a
+    conclusive non-commit, because one read cannot rule out a lagging path.
+    """
     try:
         candidate_content = candidate.read_bytes()
     except OSError as exc:
@@ -440,6 +453,7 @@ def reconcile_production_release(
         production_key=production_key,
         candidate_content=candidate_content,
         previous_content=previous_content,
+        fresh_read_evidence=fresh_read_evidence,
     ).to_dict()
 
 
@@ -449,8 +463,14 @@ def reconcile_production_release_ids(
     candidate_release_id: str,
     previous_release_id: str | None,
     env: Mapping[str, str] | None = None,
+    fresh_read_evidence: bool = False,
 ) -> dict[str, Any]:
-    """Reconcile from verified private immutable KV evidence after a runner exits."""
+    """Reconcile from verified private immutable KV evidence after a runner exits.
+
+    ``fresh_read_evidence`` carries the same dated-read assertion as the
+    file-based entry point; without it a stale-looking observation stays
+    ``indeterminate``.
+    """
     token, account_id, namespace_title = _credentials(env)
     if not token or not account_id or not namespace_title:
         raise PublicationError("Cloudflare credentials are required for release reconciliation")
@@ -489,6 +509,7 @@ def reconcile_production_release_ids(
         production_key=production_key,
         candidate_content=candidate,
         previous_content=previous,
+        fresh_read_evidence=fresh_read_evidence,
     ).to_dict()
 
 
@@ -755,7 +776,7 @@ def persist_ai_qualification_cache(
             token=token,
             account_id=account_id,
             namespace_title=namespace_title,
-            key_name=f"{_production_key(project)}.ai-qualification-cache-v1",
+            key_name=auxiliary_state_key(_production_key(project), AI_QUALIFICATION_CACHE_SUFFIX),
         ).publish(content=content)
     except PublicationError:
         return {"status": "unavailable", "records_preserved": False}
@@ -791,7 +812,7 @@ def persist_scheduler_history(
             token=token,
             account_id=account_id,
             namespace_title=namespace_title,
-            key_name=f"{_production_key(project)}.scheduler-state-v3",
+            key_name=auxiliary_state_key(_production_key(project), SCHEDULER_STATE_SUFFIXES[0]),
         ).publish(content=content)
     except PublicationError:
         return {"status": "unavailable", "records_preserved": False}
@@ -825,7 +846,7 @@ def persist_production_metrics(
         token=token,
         account_id=account_id,
         namespace_title=namespace_title,
-        key_name=f"{_production_key(project)}.production-metrics-v1",
+        key_name=auxiliary_state_key(_production_key(project), PRODUCTION_METRICS_SUFFIX),
     )
     try:
         existing = publisher.read()

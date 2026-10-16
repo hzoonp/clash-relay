@@ -218,6 +218,7 @@ def _command_reconcile_release(args: argparse.Namespace) -> int:
             project=project,
             candidate_release_id=args.candidate_release_id,
             previous_release_id=args.previous_release_id,
+            fresh_read_evidence=args.observed_after_attempt,
         )
     else:
         if args.previous_release_id is not None:
@@ -226,6 +227,7 @@ def _command_reconcile_release(args: argparse.Namespace) -> int:
             project=project,
             candidate=args.candidate,
             previous=args.previous,
+            fresh_read_evidence=args.observed_after_attempt,
         )
     print(_json_text(result), end="")
     return 0
@@ -425,6 +427,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--first-release",
         action="store_true",
         help="State that the ambiguous attempt had no prior production value.",
+    )
+    reconcile.add_argument(
+        "--observed-after-attempt",
+        action="store_true",
+        help=(
+            "Assert that this observation is at least as fresh as the attempt's own "
+            "verified read path. Only then can pre-attempt bytes prove not_committed; "
+            "without it they are reported as indeterminate."
+        ),
     )
     reconcile.set_defaults(handler=_command_reconcile_release)
 

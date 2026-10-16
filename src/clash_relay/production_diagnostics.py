@@ -377,7 +377,6 @@ def safe_failure_diagnostic(error: BaseException) -> dict[str, Any]:
         recovery_status = getattr(commit_unknown, "recovery_status", None)
         if recovery_status in {
             "committed",
-            "not_committed",
             "preserved",
             "candidate_missing",
             "preservation_failed",

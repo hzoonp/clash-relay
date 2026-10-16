@@ -19,6 +19,16 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .errors import CommitUnknownError, PublicationError
+from .kv_keys import (
+    CURRENT_POINTER_SUFFIX,
+    JOURNAL_SUFFIX,
+    PREVIOUS_POINTER_SUFFIX,
+    TRANSACTION_SUFFIX,
+    auxiliary_state_key,
+    release_config_key,
+    release_manifest_key,
+    require_derived_kv_keys,
+)
 
 _RELEASE_ID = re.compile(r"^[0-9a-f]{64}$")
 _READ_BACK_DELAYS = (0.0, 0.25, 0.5, 1.0, 2.0)
@@ -44,22 +54,26 @@ class ReleaseKeys:
 
     def config(self, release_id: str) -> str:
         _validate_release_id(release_id)
-        return f"{self.production}.release-v1.{release_id}.config"
+        return release_config_key(self.production, release_id)
 
     def manifest(self, release_id: str) -> str:
         _validate_release_id(release_id)
-        return f"{self.production}.release-v1.{release_id}.manifest"
+        return release_manifest_key(self.production, release_id)
 
 
 def release_keys(production_key: str) -> ReleaseKeys:
     if not production_key:
         raise PublicationError("production release key must not be empty")
+    # Every name this release can touch is checked before the first read or
+    # write, so an over-long derived key cannot fail after an immutable object
+    # has already been staged under a shorter one.
+    require_derived_kv_keys(production_key)
     return ReleaseKeys(
         production=production_key,
-        current_pointer=f"{production_key}.current-release-v1",
-        previous_pointer=f"{production_key}.previous-release-v1",
-        journal=f"{production_key}.release-journal-v1",
-        transaction=f"{production_key}.release-transaction-v1",
+        current_pointer=auxiliary_state_key(production_key, CURRENT_POINTER_SUFFIX),
+        previous_pointer=auxiliary_state_key(production_key, PREVIOUS_POINTER_SUFFIX),
+        journal=auxiliary_state_key(production_key, JOURNAL_SUFFIX),
+        transaction=auxiliary_state_key(production_key, TRANSACTION_SUFFIX),
     )
 
 
@@ -103,11 +117,20 @@ def manifest_bytes(content: bytes) -> bytes:
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def _wait_between_read_backs(delay: float) -> None:
+    """Wait before the next read-back attempt.
+
+    Tests replace this seam to assert the retry schedule without paying the
+    production backoff in wall-clock time.
+    """
+    time.sleep(delay)
+
+
 def _matches_after_write(publisher: KVValue, expected: bytes) -> bool:
     """Retry short read-after-write propagation without weakening byte equality."""
     for delay in _READ_BACK_DELAYS:
         if delay:
-            time.sleep(delay)
+            _wait_between_read_backs(delay)
         try:
             observed = publisher.read()
         except PublicationError:

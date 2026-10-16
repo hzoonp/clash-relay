@@ -4,6 +4,14 @@ A reconciliation pass never publishes, retries, or compensates. It only compares
 observable KV state with the candidate and the known pre-attempt production
 bytes so an operator can distinguish a proven commit, a proven non-commit, and
 state that still requires manual investigation.
+
+One observation cannot date itself. Seeing the pre-attempt production bytes with
+no pending intent is consistent both with a write that never landed and with an
+observation path that still lags a write the attempt already verified. Because a
+KV read is not an atomic snapshot, that reading is only reported as
+``not_committed`` when the caller supplies evidence that its observation is at
+least as fresh as the attempt's own read path; otherwise it is reported as
+``indeterminate`` and requires a repeated read after the propagation window.
 """
 
 from __future__ import annotations
@@ -20,11 +28,21 @@ from .release_transaction import parse_release_transaction
 class ReconciliationStatus(StrEnum):
     COMMITTED = "committed"
     NOT_COMMITTED = "not_committed"
+    INDETERMINATE = "indeterminate"
     UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
 class ReleaseReconciliation:
+    """One read-only verdict.
+
+    ``observation_freshness`` states why a stale-looking observation was accepted
+    as ``not_committed``: ``"fresh"`` means the caller asserted dated read
+    evidence, and ``"unsupported"`` means no freshness evidence exists so the
+    observation is reported as ``indeterminate`` instead. ``None`` means the
+    observation proves the verdict by itself.
+    """
+
     status: ReconciliationStatus
     production_changed: bool | str
     release_id: str
@@ -32,6 +50,7 @@ class ReleaseReconciliation:
     production_matches_candidate: bool | None
     current_release_id: str | None
     previous_release_id: str | None
+    observation_freshness: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,7 +61,9 @@ class ReleaseReconciliation:
             "production_matches_candidate": self.production_matches_candidate,
             "current_release_id": self.current_release_id,
             "previous_release_id": self.previous_release_id,
-            "requires_manual_action": self.status is ReconciliationStatus.UNKNOWN,
+            "observation_freshness": self.observation_freshness,
+            "requires_manual_action": self.status
+            in {ReconciliationStatus.INDETERMINATE, ReconciliationStatus.UNKNOWN},
         }
 
 
@@ -72,13 +93,17 @@ def reconcile_release_bundle(
     production_key: str,
     candidate_content: bytes,
     previous_content: bytes | None,
+    fresh_read_evidence: bool = False,
 ) -> ReleaseReconciliation:
     """Classify the final observable state after a commit-unknown publication.
 
     ``previous_content`` is the exact production value observed before the
-    ambiguous attempt. ``None`` represents a first release. The function is
-    deliberately read-only: unknown or contradictory evidence is returned as
-    ``unknown`` instead of attempting another write.
+    ambiguous attempt. ``None`` represents a first release. ``fresh_read_evidence``
+    is the caller's assertion that this observation is at least as well dated as
+    the attempt's own verified read path; without it, seeing the pre-attempt
+    bytes is not sufficient to prove a non-commit. The function is deliberately
+    read-only: unknown or contradictory evidence is returned as ``unknown``
+    instead of attempting another write.
     """
 
     candidate_id = release_id_for(candidate_content)
@@ -179,11 +204,24 @@ def reconcile_release_bundle(
         )
 
     if previous_content is None:
-        definitely_not_committed = production is None and not current_matches_candidate
+        pre_attempt_production_still_live = production is None and not current_matches_candidate
     else:
-        definitely_not_committed = production == previous_content and not current_matches_candidate
+        pre_attempt_production_still_live = (
+            production == previous_content and not current_matches_candidate
+        )
 
-    if definitely_not_committed:
+    if pre_attempt_production_still_live:
+        if not fresh_read_evidence:
+            return ReleaseReconciliation(
+                status=ReconciliationStatus.INDETERMINATE,
+                production_changed="unknown",
+                release_id=candidate_id,
+                reason="pre_attempt_production_still_live",
+                production_matches_candidate=False,
+                current_release_id=current_id,
+                previous_release_id=observed_previous_id,
+                observation_freshness="unsupported",
+            )
         return ReleaseReconciliation(
             status=ReconciliationStatus.NOT_COMMITTED,
             production_changed=False,
@@ -192,6 +230,7 @@ def reconcile_release_bundle(
             production_matches_candidate=False,
             current_release_id=current_id,
             previous_release_id=observed_previous_id,
+            observation_freshness="fresh",
         )
 
     return _unknown(

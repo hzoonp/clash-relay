@@ -596,7 +596,16 @@ class ProductionPipeline:
         return output
 
     def _preserve_ambiguous_release(self, project: ProjectDefinition) -> str:
-        """Reconcile while exact private bytes remain, retaining them if unresolved."""
+        """Reconcile while exact private bytes remain, retaining them if unresolved.
+
+        Only a proven commit releases the copy. The write outcome is already
+        unknown here, and one read-only pass cannot date its own observation
+        path: a read that still shows the pre-attempt bytes may be served by a
+        path that lagged writes this attempt already verified. Treating that read
+        as proof of a non-commit would discard the only private copy of a live
+        candidate, so the observed verdict is recorded in the metadata and the
+        copy is kept.
+        """
         candidate = self._private("config.yaml")
         baseline = self._private("current-production.yaml")
         baseline_known = baseline.with_suffix(".captured").is_file()
@@ -611,9 +620,9 @@ class ProductionPipeline:
                     previous=baseline if baseline.is_file() else None,
                     env=os.environ,
                 )
-                if result["status"] in {"committed", "not_committed"}:
-                    return str(result["status"])
                 status = str(result["status"])
+                if status == "committed":
+                    return "committed"
             except PublicationError:
                 status = "read_failed"
 

@@ -18,6 +18,12 @@ from typing import Any
 
 from .config_loader import ProjectDefinition
 from .errors import ClashRelayError, PublicationError, ValidationError
+from .kv_keys import (
+    OPERATIONAL_SLO_SUFFIX,
+    PRODUCTION_METRICS_SUFFIX,
+    SCHEDULER_EVIDENCE_SUFFIX,
+    auxiliary_state_key,
+)
 from .operational_slo import (
     ProductionOutcome,
     append_slo_attempt,
@@ -114,7 +120,7 @@ def _publish_scheduler_observation(
             token=token,
             account_id=account_id,
             namespace_title=namespace_title,
-            key_name=f"{production_key}.production-metrics-v1",
+            key_name=auxiliary_state_key(production_key, PRODUCTION_METRICS_SUFFIX),
         ).read()
     except PublicationError:
         return {"status": "unavailable", "reason": "metrics_read_failed"}
@@ -138,7 +144,7 @@ def _publish_scheduler_observation(
             token=token,
             account_id=account_id,
             namespace_title=namespace_title,
-            key_name=f"{production_key}.scheduler-evidence-v1",
+            key_name=auxiliary_state_key(production_key, SCHEDULER_EVIDENCE_SUFFIX),
         ).publish(content=content)
     except PublicationError:
         return {"status": "unavailable", "reason": "evidence_publish_failed"}
@@ -170,7 +176,7 @@ def _persist_operational_slo(
         token=token,
         account_id=account_id,
         namespace_title=namespace_title,
-        key_name=f"{production_key}.operational-slo-v1",
+        key_name=auxiliary_state_key(production_key, OPERATIONAL_SLO_SUFFIX),
     )
     try:
         existing = publisher.read()

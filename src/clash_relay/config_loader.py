@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .errors import ConfigurationError
+from .kv_keys import KV_KEY_MAX_BYTES, oversized_derived_kv_keys
 from .models import SubscriptionSpec
 from .network_profile import compile_effective_config
 from .policy_document import load_policy_document
@@ -190,6 +191,26 @@ def _validate_acl4ssr_group_cycles(group_rows: list[dict[str, Any]]) -> None:
         visit(name)
 
 
+def _publishing_key_semantics(config: dict[str, Any]) -> None:
+    """Refuse a production key whose derived KV names cannot be stored.
+
+    The schema bounds the declared key in characters while Cloudflare KV bounds
+    the name in UTF-8 bytes, and every derived name appends a suffix. Checking
+    the derived set here keeps the failure at declaration time instead of midway
+    through a release, after an immutable object may already have been staged.
+    """
+
+    production_key = str(config["publishing"]["cloudflare_kv"]["key"])
+    oversized = oversized_derived_kv_keys(production_key)
+    if not oversized:
+        return
+    details = ", ".join(f"{label} ({size} bytes)" for label, size in sorted(oversized.items()))
+    raise ConfigurationError(
+        "publishing.cloudflare_kv.key derives Cloudflare KV names beyond the "
+        f"{KV_KEY_MAX_BYTES}-byte limit: {details}"
+    )
+
+
 def load_project(
     *,
     config_path: Path,
@@ -198,6 +219,7 @@ def load_project(
 ) -> ProjectDefinition:
     declared_config = load_and_validate(config_path, "config.schema.json")
     _sniffer_semantics(declared_config)
+    _publishing_key_semantics(declared_config)
     config, network_profile = compile_effective_config(declared_config)
     _dns_tun_semantics(config)
     subscriptions_document = load_and_validate(subscriptions_path, "subscriptions.schema.json")

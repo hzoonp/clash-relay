@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_LIFECYCLE = ROOT / "src" / "clash_relay" / "production_lifecycle.py"
 PRODUCTION_APPLICATION = ROOT / "src" / "clash_relay" / "production_application.py"
 PRODUCTION_OBSERVABILITY = ROOT / "src" / "clash_relay" / "production_observability.py"
+KV_KEYS = ROOT / "src" / "clash_relay" / "kv_keys.py"
 
 
 def _browsing() -> dict:
@@ -375,7 +376,8 @@ def test_lifecycle_delegates_optional_metrics_after_release_commit() -> None:
     assert "persist_production_metrics(" in observability
     assert "_publish_scheduler_observation(" in observability
     assert "_record_operational_slo(" in observability
-    assert "production-metrics-v1" in application
+    assert "production-metrics-v1" in KV_KEYS.read_text(encoding="utf-8")
+    assert "PRODUCTION_METRICS_SUFFIX" in application
     assert "build_metrics_run(" in application
     assert "metrics_summary(next_state)" in application
 

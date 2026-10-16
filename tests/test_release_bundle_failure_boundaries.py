@@ -106,7 +106,9 @@ def test_unchanged_release_repairs_missing_current_pointer() -> None:
     assert parse_release_pointer(kv.values[keys.current_pointer]) == release_id_for(content)
 
 
-def test_first_release_reports_incomplete_pointer_compensation() -> None:
+def test_first_release_reports_incomplete_pointer_compensation(
+    release_read_back_waits: list[float],
+) -> None:
     kv = FaultKV()
     key = "production-config"
     keys = release_keys(key)
@@ -116,8 +118,12 @@ def test_first_release_reports_incomplete_pointer_compensation() -> None:
     with pytest.raises(PublicationError, match="pointer compensation was incomplete"):
         publish_release_bundle(factory=kv.factory, production_key=key, content=b"first\n")
 
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0] * 2
 
-def test_failed_commit_reports_current_pointer_compensation_failure() -> None:
+
+def test_failed_commit_reports_current_pointer_compensation_failure(
+    release_read_back_waits: list[float],
+) -> None:
     kv = FaultKV()
     key = "production-config"
     first = b"first\n"
@@ -133,8 +139,12 @@ def test_failed_commit_reports_current_pointer_compensation_failure() -> None:
     with pytest.raises(PublicationError, match="compensation was incomplete: current-pointer"):
         publish_release_bundle(factory=kv.factory, production_key=key, content=second)
 
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0] * 2
 
-def test_failed_commit_reports_previous_pointer_compensation_failure() -> None:
+
+def test_failed_commit_reports_previous_pointer_compensation_failure(
+    release_read_back_waits: list[float],
+) -> None:
     kv = FaultKV()
     key = "production-config"
     first = b"first\n"
@@ -146,6 +156,8 @@ def test_failed_commit_reports_previous_pointer_compensation_failure() -> None:
 
     with pytest.raises(PublicationError, match="compensation was incomplete: previous-pointer"):
         publish_release_bundle(factory=kv.factory, production_key=key, content=second)
+
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0] * 2
 
 
 def test_previous_reader_rejects_missing_release_bytes() -> None:

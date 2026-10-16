@@ -8,10 +8,13 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any
 
 import yaml
+from yaml.constructor import ConstructorError
+from yaml.nodes import MappingNode
 from yaml.tokens import AliasToken, AnchorToken
 
 from .errors import ConfigurationError, SubscriptionError, UnsafeSubscriptionError
@@ -20,6 +23,44 @@ from .errors import ConfigurationError, SubscriptionError, UnsafeSubscriptionErr
 class _NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data: object) -> bool:
         return True
+
+
+class _DuplicateMappingKey(yaml.YAMLError):
+    """A mapping declared the same key twice; only the position is retained."""
+
+    def __init__(self, mark: yaml.error.Mark) -> None:
+        super().__init__("duplicate mapping key")
+        self.line = mark.line + 1
+        self.column = mark.column + 1
+
+
+class _StrictMappingLoader(yaml.SafeLoader):
+    """Reject duplicate mapping keys instead of silently keeping the last value.
+
+    PyYAML's default mapping constructor overwrites an earlier declaration, so
+    ``enabled: false`` followed by ``enabled: true`` reads as ``True`` and the
+    conflicting declaration disappears before any schema check can see it. The
+    mapping boundary is the only place where that ambiguity is still visible.
+    """
+
+    def construct_mapping(self, node: MappingNode, deep: bool = False) -> Any:
+        if not isinstance(node, MappingNode):
+            return super().construct_mapping(node, deep=deep)
+        self.flatten_mapping(node)
+        mapping: dict[Any, Any] = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, Hashable):
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found unhashable key",
+                    key_node.start_mark,
+                )
+            if key in mapping:
+                raise _DuplicateMappingKey(key_node.start_mark)
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
 
 
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -62,10 +103,11 @@ def contains_yaml_incompatible_control_characters(value: Any) -> bool:
 
 
 def yaml_load_no_aliases(text: str, *, source: str, untrusted: bool = False) -> Any:
-    """Load YAML while rejecting anchors and aliases to avoid expansion attacks."""
-    # Two distinct failure families: an unsafe document (NUL bytes, anchors or
-    # aliases) versus a malformed one. They are bound to separate names so each
-    # keeps its own exception type instead of one name widening to a union.
+    """Load YAML while rejecting anchors, aliases and duplicate mapping keys."""
+    # Two distinct failure families: an unsafe document (NUL bytes, anchors,
+    # aliases or contradictory duplicate keys) versus a malformed one. They are
+    # bound to separate names so each keeps its own exception type instead of
+    # one name widening to a union.
     unsafe_error = UnsafeSubscriptionError if untrusted else ConfigurationError
     if "\x00" in text:
         raise unsafe_error(f"{source}: NUL bytes are not allowed")
@@ -73,7 +115,14 @@ def yaml_load_no_aliases(text: str, *, source: str, untrusted: bool = False) -> 
         for token in yaml.scan(text):
             if isinstance(token, (AliasToken, AnchorToken)):
                 raise unsafe_error(f"{source}: YAML anchors and aliases are not allowed")
-        return yaml.safe_load(text)
+        return yaml.load(text, Loader=_StrictMappingLoader)
+    except _DuplicateMappingKey as exc:
+        # Ambiguous declarations are rejected at the document level rather than
+        # silently resolved to one of the conflicting values. Only the position
+        # is reported: the key text itself may carry a credential-shaped value.
+        raise unsafe_error(
+            f"{source}: duplicate YAML key at line {exc.line}, column {exc.column}"
+        ) from exc
     # PyYAML can exhaust Python's recursion limit while composing an extremely
     # deep collection, before callers can apply their structural depth guard.
     # Treat it like every other malformed untrusted document so an optional

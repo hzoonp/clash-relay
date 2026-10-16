@@ -1,8 +1,33 @@
 # clash-relay 后续整改与验收：当前入口
 
-更新日期：2026-10-14。范围：承接本次项目检查的六项问题，并安排必要的测试与类型门禁优化。
+更新日期：2026-10-17。范围：保留历史整改，记录当前工作区实施与独立复审结论。
 
-**R01–R06 的源码修复、失败路径回归、本地验收门与远程 CI 已完成。** 本地非集成测试 1456 passed、50 deselected，覆盖率 84.09%（floor 75%）。GitHub CI 在 `17ece93`、`a067828`、`99e7afb` 上连续三次全部 job 通过（3.11 / 3.12 / 3.13、`windows-platform`、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），最新已记录的 validated SHA 为 `99e7afb`；R04 的 Linux（amd64）内核 gRPC 证据由 stable-mihomo 提供。首次推送暴露的 Windows 门缺陷（锁文件仅覆盖 Linux、步骤使用 bash 语法）已修复并回归通过。以上不代表真实 Cloudflare、生产发布或回滚已验收。
+**最新独立复审：PASS（本地整改范围）。** V01 的结果三态与 R12 的反向枚举已用原合成反例复核通过；92 项相关回归、Ruff、格式、58 文件类型门、离线审计与 `git diff --check` 均通过，未发现新的需修复问题。本轮采用定向验证，未重复全量 coverage；下述 1609 项及 84.32% 为实施窗口结果。远程 CI、真实内核及真实 KV 证据仍按各自边界保留，详见 [第四轮复审](EXECUTION.md#2026-10-17第四轮实施后复审通过)。
+
+**2026-10-17 第三轮实施：R12 关闭；V01 的 P2 结果字段一致性已修复（本地闭环）。** 无新鲜度证据的陈旧读现在同时输出 `indeterminate / production_changed="unknown" / requires_manual_action=true`，不再同时声称“不确定”与“生产未改变”；显式日期断言后的 `not_committed / false`、已提交及候选原本已在线的规则保持不变。反例变体（改回 `false`）实测 6 failed / 1 passed，恢复后源文件与改动前逐字节相同（sha256 `d9a8bd23c365…`）。另把本批遗留的三个 CRLF 文件按 `.gitattributes`（`* text=auto eol=lf`）规范化为 LF，内容未变。§0.9 九门在代码、文档定稿、行尾规范化三个树状态各重跑一次，均 9 行退出码 0：1609 passed、50 deselected、覆盖率 84.32%、高风险模块 24/24、审计 475 文件、doctor `passed`。改动仍未提交、未推送。
+
+最新依据见 [第三轮实施窗口](EXECUTION.md#2026-10-17第三轮实施窗口-v01-字段一致性)，上一轮复审见 [第三轮复审](EXECUTION.md#2026-10-17第三轮实施后复审)，历史实现证据见 [R12 / V01 实施窗口](EXECUTION.md#2026-10-17r12--v01-实施窗口)。
+
+历史实施证据见 [执行窗口](EXECUTION.md#2026-10-16r07r11--o4o6-实施与-v01-状态机验证窗口)、[复审记录](EXECUTION.md#2026-10-16实施后独立复审)、[V01 / O6 / R12 / O5 实施窗口](EXECUTION.md#2026-10-16v01--o6--r12--o5-实施窗口) 与 [第二轮复审记录](EXECUTION.md#2026-10-17第二轮实施后独立复审)。
+
+| 当前队列 | 状态 | 下一动作 |
+| --- | --- | --- |
+| R07：脱敏遇到畸形端口抛异常 | 已实施，P2 | 畸形 host/port 归入固定占位符；49 passed 定向回归 |
+| R08：KV 派生键长度预检 | 已实施，P2 | 派生名集合按 UTF-8 字节预检，配置 / doctor / 发布入口共用；19 passed |
+| R09：供应链审计结构漏检 | 已实施，P2 | 结构化扫描全部 `uses`（含 job 级与 `.yaml`）；回退脚本即 28 failed |
+| R10：YAML 重复映射键 | 已实施，P2 | 严格 loader 拒绝重复键，config 与订阅共用；97 passed |
+| R11：覆盖率比例 NaN | 已实施，P3 | 要求有限且 ∈ [0, 1]；23 passed |
+| V01：陈旧读被判定为确定未提交 | **本地闭环（P1 → P2 两项均已实施）；真实服务证据独立开放** | 状态、人工复核标记、CLI 参数、恢复副本保留与 `production_changed` 三态字段均已对齐：陈旧视图输出 `indeterminate / "unknown" / true`，日期证据路径为 `not_committed / false`；反例变体 6 failed、公开入口探针首发与后续视图一致；真实 REST 读一致性 / 传播延迟未验证 |
+| O4：发布退避真实等待 | 已完成 | 非集成整轮 100.41s → 27.69s，最慢用例 0.76s；重试 / 退避断言保留 |
+| O5：依赖元数据 / 锁 / 安装一致性 | **已关闭（判定粒度），P3 余量开放** | `pip check` 改为逐 job / 安装环境判定；7 个删除检查的反例在修复前全部漏检，41 passed（33 → 41）。`publish.yml` / `rollback.yml` / `retention.yml` / `release-inventory-audit.yml` 缺 `pip check` 的加固仍在队列 |
+| O6：CI 报告留存 | **已关闭（本地契约），P2** | 8 个上传步骤开 `include-hidden-files: true`，XML 白名单、7 天保留与成功 / `if: failure()` 成对结构不变；glob 语义矩阵 18 条 + 10 变异用例，34 passed（10 → 34）。真实 CI artifact 检查待推送后单独执行 |
+| R12：恢复测试目录枚举顺序 | **关闭，P2** | run 用例改用 `_copy_names()` 排序比较；反向枚举回归覆盖生命周期 helper、生命周期与真实 `run()` 三条轨迹；未排序变体实测 1 failed，生产创建顺序未改 |
+| §0.9 实施完成门 | 通过（本窗口 9 行退出码 0，三次） | 1609 passed / 50 deselected（77.04 / 135.56 / 134.30 秒），覆盖率 84.32%，高风险模块 24/24（`release_reconciliation.py` 92.65% / 门 90%），审计 475 文件，doctor passed |
+| 本批改动的远程 CI | 未派发 | 改动未推送；推送后单独记录，勿沿用 `38565198668` 作为本批验证 |
+
+本窗口命令、反例和证据边界见 [R12 / V01 实施窗口](EXECUTION.md#2026-10-17r12--v01-实施窗口)、[第三轮实施窗口](EXECUTION.md#2026-10-17第三轮实施窗口-v01-字段一致性) 与 `.work/acceptance-20261017-impl/`；上一窗口证据在 `.work/acceptance-20261016-01a/`。
+
+**R01–R06 的源码修复、失败路径回归、本地验收门与远程 CI 已完成（以下为历史窗口数据，不代表当前工作区）。** 本地非集成测试 1456 passed、50 deselected，覆盖率 84.09%（floor 75%）。GitHub CI 在 `17ece93`、`a067828`、`99e7afb` 上连续三次全部 job 通过（3.11 / 3.12 / 3.13、`windows-platform`、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），最新已记录的 validated SHA 为 `99e7afb`；R04 的 Linux（amd64）内核 gRPC 证据由 stable-mihomo 提供。首次推送暴露的 Windows 门缺陷（锁文件仅覆盖 Linux、步骤使用 bash 语法）已修复并回归通过。以上不代表真实 Cloudflare、生产发布或回滚已验收。
 
 ## 只维护这三个文件
 
@@ -14,7 +39,7 @@
 
 以后沿用本目录，不新增日期版当前计划。日志、合成 fixture、测试报告放入新的 `.work/acceptance-<timestamp>/`，文档保留聚合结论与索引。样例只贡献结构；其中其他项目的设备、硬件与验收结果均不适用于 clash-relay。
 
-## 当前状态（唯一汇总）
+## 历史整改状态（R01–R06 / O1–O3）
 
 | 门 | 当前状态 | 完成证据或剩余条件 |
 | --- | --- | --- |
@@ -30,7 +55,7 @@
 | GitHub 工作流验证 | 已完成 | run `38558938927`（失败，暴露 Windows 门缺陷）→ `38560429609`（安装与类型门通过）→ `38561302259`（`17ece93` 全绿）→ `38562845128`（`a067828` 全绿）→ `38565198668`（`99e7afb` 全绿，56 目标类型门） |
 | 生产现场验证 | NOT_EXERCISED | 未触发 `deploy`（push 事件按设计不部署），未访问生产 KV，未执行发布、回滚或清理 |
 
-**下一动作：观察下一个定时发布窗口能否在 `validated` 恢复后正常取用验证结果（仍属外部验证）；如需 arm64 协议证据，扩展 stable-mihomo 矩阵。**
+历史外部验证待办仍保留：观察定时发布能否取用精确 SHA 的验证结果；如需 arm64 协议证据，再扩展 stable-mihomo 矩阵。本轮下一动作以页首新增队列为准。
 
 ## 权威规范与证据导航
 

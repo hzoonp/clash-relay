@@ -69,6 +69,37 @@ def test_url_redaction_preserves_only_location_shape() -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://fixture.invalid:bad/private-path",
+        "https://fixture.invalid:70000/private-path",
+        "https://[::1/private-path",
+        "https://[not-an-address]/private-path",
+        "https://user:pass@fixture.invalid:bad/private-path?profile=secret-value",
+    ],
+)
+def test_malformed_url_redaction_degrades_to_placeholder(url: str) -> None:
+    redacted = redact_url(url)
+    assert redacted == "<redacted-url>"
+    assert "private-path" not in redacted
+    assert "secret-value" not in redacted
+
+
+def test_url_redaction_keeps_valid_ip_origins() -> None:
+    assert redact_url("https://127.0.0.1:8080/private") == (
+        "https://127.0.0.1:8080/<redacted>?<redacted>#<redacted>"
+    )
+    assert redact_url("https://[2001:db8::1]:8443/private") == (
+        "https://[2001:db8::1]:8443/<redacted>?<redacted>#<redacted>"
+    )
+
+
+def test_text_redaction_survives_malformed_url() -> None:
+    assert redact_text("error https://fixture.invalid:bad/private") == "error <redacted-url>"
+    assert redact_text("error https://[::1/private") == "error <redacted-url>"
+
+
+@pytest.mark.parametrize(
     ("url", "allow_http", "allow_file"),
     [
         ("http://example.invalid/sub", False, False),
@@ -243,4 +274,49 @@ def test_minimum_successful_subscriptions_gate(project_factory, fixture_env, yam
     env = dict(fixture_env)
     env["SUB_BROKEN"] = "file:///definitely/not/present.yaml"
     with pytest.raises(GenerationError, match="minimum_successful"):
+        build_candidate(**paths, env=env)
+
+
+def _duplicate_key_payload(tmp_path: Path) -> str:
+    payload = tmp_path / "duplicate-keys.yaml"
+    payload.write_text(
+        "proxies:\n"
+        "  - {name: fixture, type: http, server: a.invalid.example, port: 80}\n"
+        "proxies:\n"
+        "  - {name: fixture, type: http, server: b.invalid.example, port: 80}\n",
+        encoding="utf-8",
+    )
+    return payload.as_uri()
+
+
+def test_optional_subscription_with_duplicate_keys_is_skipped(
+    project_factory, fixture_env, yaml_editor, tmp_path: Path
+) -> None:
+    _, paths = project_factory()
+
+    def optional_only(document):
+        document["subscriptions"][1]["secret_name"] = "SUB_AMBIGUOUS"
+        document["subscriptions"][1]["on_error"] = "skip"
+
+    yaml_editor(paths["subscriptions_path"], optional_only)
+    env = dict(fixture_env)
+    env["SUB_AMBIGUOUS"] = _duplicate_key_payload(tmp_path)
+    result = build_candidate(**paths, env=env)
+    failed = [item for item in result.report["subscriptions"] if item["id"] == "secondary"]
+    assert failed[0]["status"] == "failed"
+    assert failed[0]["failure_category"] == "subscription_admission"
+    assert "duplicate YAML key" in failed[0]["error"]
+
+
+def test_required_subscription_with_duplicate_keys_aborts(
+    project_factory, fixture_env, yaml_editor, tmp_path: Path
+) -> None:
+    _, paths = project_factory()
+    yaml_editor(
+        paths["subscriptions_path"],
+        lambda data: data["subscriptions"][0].update(secret_name="SUB_AMBIGUOUS"),
+    )
+    env = dict(fixture_env)
+    env["SUB_AMBIGUOUS"] = _duplicate_key_payload(tmp_path)
+    with pytest.raises(GenerationError, match="subscription 'primary' failed"):
         build_candidate(**paths, env=env)

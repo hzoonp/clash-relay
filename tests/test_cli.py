@@ -200,7 +200,38 @@ def test_reconcile_release_command_is_read_only_adapter(
     )
     assert captured["candidate"] == candidate
     assert captured["previous"] == previous
+    assert captured["fresh_read_evidence"] is False
     assert json.loads(capsys.readouterr().out)["status"] == "committed"
+
+
+def test_reconcile_release_command_forwards_the_dated_read_assertion(
+    project_paths, monkeypatch, tmp_path: Path, capsys
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("candidate\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_reconcile(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "not_committed", "requires_manual_action": False}
+
+    monkeypatch.setattr(cli, "reconcile_production_release", fake_reconcile)
+
+    assert (
+        cli.main(
+            [
+                "reconcile-release",
+                *_project_args(project_paths),
+                "--candidate",
+                str(candidate),
+                "--first-release",
+                "--observed-after-attempt",
+            ]
+        )
+        == 0
+    )
+    assert captured["fresh_read_evidence"] is True
+    assert json.loads(capsys.readouterr().out)["status"] == "not_committed"
 
 
 def test_release_retention_plan_command_is_read_only_adapter(

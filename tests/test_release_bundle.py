@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from dataclasses import dataclass, field
 
 import pytest
 
+from clash_relay import release_bundle
 from clash_relay.errors import PublicationError
 from clash_relay.release_bundle import (
     manifest_bytes,
@@ -104,7 +106,9 @@ def test_unchanged_refresh_is_idempotent_and_preserves_previous_release() -> Non
     assert kv.values[keys.previous_pointer].decode().strip() == release_id_for(first)
 
 
-def test_failed_pointer_commit_restores_previous_production_bytes() -> None:
+def test_failed_pointer_commit_restores_previous_production_bytes(
+    release_read_back_waits: list[float],
+) -> None:
     kv = MemoryKV()
     key = "production-config"
     first = b"version: first\n"
@@ -119,6 +123,7 @@ def test_failed_pointer_commit_restores_previous_production_bytes() -> None:
     assert kv.values[key] == first
     assert kv.values[keys.current_pointer].decode().strip() == release_id_for(first)
     assert parse_release_pointer(kv.values[keys.previous_pointer]) is None
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0]
 
 
 def test_ambiguous_successful_production_put_is_recovered_by_exact_readback() -> None:
@@ -155,7 +160,9 @@ def test_ambiguous_successful_pointer_put_is_recovered_by_exact_readback() -> No
     assert parse_release_pointer(kv.values[keys.previous_pointer]) == release_id_for(first)
 
 
-def test_first_release_activation_failure_restores_empty_pointer_state() -> None:
+def test_first_release_activation_failure_restores_empty_pointer_state(
+    release_read_back_waits: list[float],
+) -> None:
     kv = MemoryKV()
     key = "production-config"
     keys = release_keys(key)
@@ -166,9 +173,12 @@ def test_first_release_activation_failure_restores_empty_pointer_state() -> None
 
     assert key not in kv.values
     assert parse_release_pointer(kv.values[keys.current_pointer]) is None
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0]
 
 
-def test_incomplete_compensation_is_reported_explicitly() -> None:
+def test_incomplete_compensation_is_reported_explicitly(
+    release_read_back_waits: list[float],
+) -> None:
     kv = MemoryKV()
     key = "production-config"
     first = b"first\n"
@@ -182,6 +192,7 @@ def test_incomplete_compensation_is_reported_explicitly() -> None:
         publish_release_bundle(factory=kv.factory, production_key=key, content=second)
 
     assert kv.values[key] == second
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0, 0.25, 0.5, 1.0, 2.0]
 
 
 @pytest.mark.parametrize(
@@ -192,7 +203,9 @@ def test_incomplete_compensation_is_reported_explicitly() -> None:
         "Cloudflare API request failed",
     ),
 )
-def test_pre_activation_api_failure_never_changes_client_visible_bytes(failure: str) -> None:
+def test_pre_activation_api_failure_never_changes_client_visible_bytes(
+    failure: str, release_read_back_waits: list[float]
+) -> None:
     kv = MemoryKV()
     key = "production-config"
     first = b"first\n"
@@ -206,6 +219,7 @@ def test_pre_activation_api_failure_never_changes_client_visible_bytes(failure: 
 
     assert kv.values[key] == first
     assert parse_release_pointer(kv.values[keys.current_pointer]) == release_id_for(first)
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0]
 
 
 def test_rollback_rehearsal_round_trips_exact_versioned_bytes() -> None:
@@ -264,3 +278,62 @@ def test_previous_reader_rejects_corrupt_versioned_manifest() -> None:
 
     with pytest.raises(PublicationError, match="manifest does not match"):
         read_previous_release(factory=kv.factory, production_key=key)
+
+
+class _PropagatingPublisher:
+    """Serve stale bytes for the first ``stale_reads`` reads, then the write."""
+
+    def __init__(self, stale: bytes | None, writes: list[bytes], stale_reads: int) -> None:
+        self._stale = stale
+        self._writes = writes
+        self._stale_reads = stale_reads
+        self.reads = 0
+
+    def read(self) -> bytes | None:
+        self.reads += 1
+        if self.reads <= self._stale_reads:
+            return self._stale
+        return self._writes[0] if self._writes else None
+
+    def publish(self, *, content: bytes) -> dict:
+        self._writes.append(bytes(content))
+        return {"key": "fixture", "bytes": len(content)}
+
+
+def test_read_back_schedule_matches_the_production_backoff_configuration(
+    release_read_back_waits: list[float],
+) -> None:
+    publisher = _PropagatingPublisher(stale=b"stale\n", writes=[b"expected\n"], stale_reads=99)
+
+    assert release_bundle._READ_BACK_DELAYS == (0.0, 0.25, 0.5, 1.0, 2.0)
+    assert release_bundle._matches_after_write(publisher, b"expected\n") is False
+    assert publisher.reads == 5
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0]
+
+
+def test_read_back_stops_waiting_at_the_first_exact_match(
+    release_read_back_waits: list[float],
+) -> None:
+    publisher = _PropagatingPublisher(stale=b"stale\n", writes=[b"expected\n"], stale_reads=2)
+
+    assert release_bundle._matches_after_write(publisher, b"expected\n") is True
+    assert publisher.reads == 3
+    assert release_read_back_waits == [0.25, 0.5]
+
+
+def test_read_back_never_sleeps_before_the_first_attempt(
+    release_read_back_waits: list[float],
+) -> None:
+    publisher = _PropagatingPublisher(stale=b"stale\n", writes=[b"expected\n"], stale_reads=0)
+
+    assert release_bundle._matches_after_write(publisher, b"expected\n") is True
+    assert publisher.reads == 1
+    assert release_read_back_waits == []
+
+
+def test_production_wait_seam_actually_sleeps() -> None:
+    started = time.monotonic()
+
+    release_bundle._wait_between_read_backs(0.05)
+
+    assert time.monotonic() - started >= 0.04

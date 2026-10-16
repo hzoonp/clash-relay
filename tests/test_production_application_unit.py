@@ -172,6 +172,70 @@ def test_release_reconciliation_reads_only_the_versioned_release_state(
     ]
 
 
+def test_release_reconciliation_reports_an_undatable_old_value_as_indeterminate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V01: the public entry point cannot call a lagging read a conclusive non-commit.
+
+    The same undated observation must not claim the production value is unchanged
+    either: a live candidate may already be stored remotely.
+    """
+    previous = tmp_path / "previous.yaml"
+    candidate = tmp_path / "candidate.yaml"
+    previous.write_bytes(b"previous\n")
+    candidate.write_bytes(b"candidate\n")
+    keys = release_keys("production-config")
+    previous_id = release_id_for(b"previous\n")
+    view = {
+        keys.production: b"previous\n",
+        keys.current_pointer: f"{previous_id}\n".encode("ascii"),
+    }
+
+    class Reader:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def resolve_namespace_id(self) -> str:
+            return "namespace-id"
+
+        def read(self) -> bytes | None:
+            return view.get(self.key)
+
+        def publish(self, *, content: bytes) -> dict[str, object]:
+            raise AssertionError("release reconciliation must not publish")
+
+    monkeypatch.setattr(
+        "clash_relay.production_application._publisher",
+        lambda **kwargs: Reader(str(kwargs["key_name"])),
+    )
+    env = {
+        "CLOUDFLARE_API_TOKEN": "private-token",
+        "CLOUDFLARE_ACCOUNT_ID": "account",
+        "CLOUDFLARE_KV_NAMESPACE_TITLE": "namespace",
+    }
+
+    undated = reconcile_production_release(
+        project=_project(tmp_path), candidate=candidate, previous=previous, env=env
+    )
+    dated = reconcile_production_release(
+        project=_project(tmp_path),
+        candidate=candidate,
+        previous=previous,
+        env=env,
+        fresh_read_evidence=True,
+    )
+
+    assert undated["status"] == "indeterminate"
+    assert undated["production_changed"] == "unknown"
+    assert undated["reason"] == "pre_attempt_production_still_live"
+    assert undated["observation_freshness"] == "unsupported"
+    assert undated["requires_manual_action"] is True
+    assert dated["status"] == "not_committed"
+    assert dated["production_changed"] is False
+    assert dated["observation_freshness"] == "fresh"
+    assert dated["requires_manual_action"] is False
+
+
 def test_release_id_reconciliation_verifies_private_immutable_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

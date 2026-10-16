@@ -257,6 +257,7 @@ def main() -> int:
             )
 
     production_application = _text("src/clash_relay/production_application.py")
+    kv_keys = _text("src/clash_relay/kv_keys.py")
     mihomo_matrix_application = _text("src/clash_relay/mihomo_matrix_application.py")
     if "commit_release_bundle(" not in production_application:
         raise SystemExit(
@@ -307,11 +308,16 @@ def main() -> int:
         raise SystemExit(
             "architecture audit: consolidated observability lost operational SLO ownership"
         )
-    for token in ("append_metrics_run", "metrics_summary", "production-metrics-v1"):
+    for token in ("append_metrics_run", "metrics_summary", "PRODUCTION_METRICS_SUFFIX"):
         if token not in production_application:
             raise SystemExit(
                 f"architecture audit: production application missing metrics token {token}"
             )
+    # The canonical derived KV key suffixes live in kv_keys.py, where the complete
+    # name set is length-validated; the application must consume that name rather
+    # than rebuild the suffix privately.
+    if '".production-metrics-v1"' not in kv_keys:
+        raise SystemExit("architecture audit: kv_keys lost the canonical metrics key suffix")
 
     # Canonical physical policy is current v2 with four owned domain fragments.
     raw_manifest = load_yaml_file(ROOT / "policies.yaml")

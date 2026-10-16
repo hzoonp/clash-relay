@@ -17,6 +17,7 @@ def main() -> int:
     observability = _text("src/clash_relay/production_observability.py")
     lifecycle = _text("src/clash_relay/production_lifecycle.py")
     metrics = _text("src/clash_relay/production_metrics.py")
+    kv_keys = _text("src/clash_relay/kv_keys.py")
 
     for token in (
         "QualificationStageRejected",
@@ -37,8 +38,13 @@ def main() -> int:
     if "_MAX_ATTEMPTS = 60" not in slo:
         raise SystemExit("operational SLO audit: bounded attempt ring changed unexpectedly")
 
-    if 'key_name=f"{production_key}.operational-slo-v1"' not in observability:
+    # SLO state lives under its own derived key. The canonical suffix set lives in
+    # kv_keys.py, so the isolation check follows the named suffix into the module
+    # that consumes it instead of requiring the rebuilt literal in the caller.
+    if "auxiliary_state_key(production_key, OPERATIONAL_SLO_SUFFIX)" not in observability:
         raise SystemExit("operational SLO audit: SLO state is not isolated from production config")
+    if '".operational-slo-v1"' not in kv_keys:
+        raise SystemExit("operational SLO audit: kv_keys lost the canonical operational SLO suffix")
     if "operational-slo-v1" in metrics:
         raise SystemExit(
             "operational SLO audit: failed-attempt SLOs leaked into success-only metrics"

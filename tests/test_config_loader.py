@@ -229,6 +229,26 @@ def test_yaml_alias_is_rejected(project_factory) -> None:
         load_project(**paths)
 
 
+def test_yaml_duplicate_keys_are_rejected(project_factory) -> None:
+    _, paths = project_factory()
+    paths["config_path"].write_text("version: 1\nversion: 2\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match=r"duplicate YAML key at line 2, column 1"):
+        load_project(**paths)
+
+
+def test_yaml_duplicate_key_error_omits_the_key_text(project_factory) -> None:
+    _, paths = project_factory()
+    paths["config_path"].write_text(
+        "subscription-token: hunter2-secret\nsubscription-token: hunter3-secret\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError) as error:
+        load_project(**paths)
+    message = str(error.value)
+    assert "hunter" not in message
+    assert "subscription-token" not in message
+
+
 def test_dns_routing_policy_requires_enabled_acl4ssr(project_factory, yaml_editor) -> None:
     _, paths = project_factory()
 

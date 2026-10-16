@@ -18,17 +18,23 @@ _WORDISH_SECRET = re.compile(r"^[A-Za-z0-9_.-]+$")
 def redact_url(value: str) -> str:
     """Remove userinfo and URL details while retaining a diagnostic origin."""
 
+    # ``urlsplit`` validates brackets, while ``hostname`` and ``port`` validate
+    # lazily and raise for damaged IPv6 and for non-numeric or out-of-range
+    # ports. Everything stays inside the guarded region because this helper runs
+    # while assembling failure diagnostics: a malformed URL must degrade to the
+    # placeholder instead of raising a second error from the redactor.
     try:
         parsed = urlsplit(value)
+        host = parsed.hostname
+        port = parsed.port
     except ValueError:
         return "<redacted-url>"
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if parsed.scheme not in {"http", "https"} or not host:
         return "<redacted-url>"
-    host = parsed.hostname
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
-    if parsed.port:
-        host = f"{host}:{parsed.port}"
+    if port:
+        host = f"{host}:{port}"
     return urlunsplit((parsed.scheme, host, "/<redacted>", "<redacted>", "<redacted>"))
 
 

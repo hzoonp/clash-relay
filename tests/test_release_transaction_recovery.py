@@ -279,7 +279,9 @@ def test_release_observer_captures_the_actual_pre_attempt_bytes() -> None:
     assert captured == [b"old\n"]
 
 
-def test_ambiguous_transaction_intent_write_stops_before_activation() -> None:
+def test_ambiguous_transaction_intent_write_stops_before_activation(
+    release_read_back_waits: list[float],
+) -> None:
     store = MemoryKV()
     key = "production-config"
     keys = release_keys(key)
@@ -303,6 +305,7 @@ def test_ambiguous_transaction_intent_write_stops_before_activation() -> None:
     with pytest.raises(CommitUnknownError, match="transaction state is unknown"):
         publish_release_bundle(factory=ambiguous_factory, production_key=key, content=b"new\n")
     assert store.values[keys.production] == b"old\n"
+    assert release_read_back_waits == [0.25, 0.5, 1.0, 2.0]
 
 
 def test_interrupted_legacy_pointer_can_recover_from_verified_intent() -> None:

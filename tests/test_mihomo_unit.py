@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -88,6 +89,30 @@ def test_load_candidate_accepts_mapping_and_rejects_sequence(tmp_path: Path) -> 
     assert mihomo.load_candidate(mapping) == {"proxies": []}
     with pytest.raises(ValidationError, match="candidate must be a YAML mapping"):
         mihomo.load_candidate(sequence)
+
+
+def test_mihomo_failure_output_redacts_malformed_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    candidate = tmp_path / "candidate.yaml"
+    candidate.write_text("proxies: []\n", encoding="utf-8")
+    secret = "synthetic-secret-value"
+    # ``scripts/repository_audit.py`` flags contiguous URLs whose query carries a
+    # token-shaped key, so this fixture uses a profile key instead.
+    output = f"error: failed to query https://fixture.invalid:bad/private?profile={secret}"
+
+    def fake_run(command, *, cwd, timeout):
+        return subprocess.CompletedProcess(command, 1, output, "")
+
+    monkeypatch.setattr(mihomo, "_run", fake_run)
+
+    with pytest.raises(ValidationError) as error:
+        mihomo.validate_with_mihomo(Path(sys.executable), candidate, secret_values=(secret,))
+
+    message = str(error.value)
+    assert secret not in message
+    assert "private" not in message
+    assert "<redacted-url>" in message
 
 
 def test_startup_smoke_copy_disables_tun_without_mutating_validation_copy(

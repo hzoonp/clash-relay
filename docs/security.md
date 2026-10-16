@@ -65,6 +65,7 @@ All subscriptions are untrusted:
 - transfer and gzip-expanded sizes are bounded;
 - UTF-8 is required;
 - YAML anchors and aliases are rejected;
+- YAML mapping keys declared twice are rejected instead of silently keeping the last value, for untrusted subscriptions and public declarations alike;
 - nesting/item counts are bounded;
 - only known proxy types and valid ports pass;
 - remote provider URLs embedded in subscriptions are ignored;
@@ -108,6 +109,8 @@ The Cloudflare publication gate fails unless all credential-bearing GitHub publi
 - `publishing.cloudflare_kv.enabled: true`.
 
 The production workflow itself contains no `upload-artifact`, Release, or Gist path for the generated config.
+
+Continuous integration archives a whitelist of synthetic test reports only: the JUnit XML of the quality job, the compatibility matrix runs, the Windows platform gate and the integration matrix, together with the coverage XML that the risk-coverage audit consumes. Each artifact has a success step and an `if: failure()` step that carries the same artifact name and paths, so a failed gate keeps its reports without introducing an unconditional step, and retention is 7 days. Every step sets `include-hidden-files: true`, because the pinned upload action globs with hidden files excluded by default and the reports live under `.work/`; without it a wildcard declaration matches nothing at all and the retry attempts would be archived silently as zero files. The ACL4SSR upstream retry writes a separate report per attempt, so a retry that succeeded on the second try is distinguishable from a real failure. Generated configuration, subscription sources, the smoke-test project, the fixture secret file and the rest of `.work` are outside the archive scope.
 
 ## Cloudflare Workers KV
 

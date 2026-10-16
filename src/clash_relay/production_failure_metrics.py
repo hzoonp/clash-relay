@@ -10,6 +10,7 @@ from typing import Any
 
 from .config_loader import load_project
 from .errors import ClashRelayError
+from .kv_keys import PRODUCTION_METRICS_SUFFIX, auxiliary_state_key
 from .production_metrics import append_failure_metric, metrics_summary, parse_metrics_bytes
 from .publishers.cloudflare_kv import CloudflareKVPublisher
 
@@ -50,7 +51,7 @@ def persist_failure_diagnostic(
             token=token,
             account_id=account_id,
             namespace_title=namespace_title,
-            key_name=f"{production_key}.production-metrics-v1",
+            key_name=auxiliary_state_key(production_key, PRODUCTION_METRICS_SUFFIX),
         )
         existing = publisher.read()
         state, load_status = parse_metrics_bytes(existing)

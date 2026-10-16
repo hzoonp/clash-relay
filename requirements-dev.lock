@@ -1,4 +1,9 @@
 -r requirements.lock
+# pytest depends on colorama on Windows only. Pinning it with the platform marker
+# keeps a clean Windows install hash-verified and complete instead of depending on
+# a colorama that already happens to be present in the environment.
+colorama==0.4.6 ; sys_platform == "win32" \
+    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
 coverage==7.13.1 \
     --hash=sha256:bf100a3288f9bb7f919b87eb84f87101e197535b9bd0e2c2b5b3179633324fee \
     --hash=sha256:c223d078112e90dc0e5c4e35b98b9584164bea9fbbd221c0b21c5241f6d51b62 \

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from clash_relay import release_bundle
 from clash_relay.builder import build_candidate
 from clash_relay.util import dump_yaml
 
@@ -68,6 +69,18 @@ def project_factory(tmp_path: Path, repo_root: Path):
         }
 
     return factory
+
+
+@pytest.fixture
+def release_read_back_waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Replace the release read-back wait and record the delay sequence.
+
+    Pure state-machine tests assert retry counts and stop conditions through the
+    recorded delays instead of paying the production backoff in wall-clock time.
+    """
+    waits: list[float] = []
+    monkeypatch.setattr(release_bundle, "_wait_between_read_backs", waits.append)
+    return waits
 
 
 @pytest.fixture
