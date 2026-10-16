@@ -823,3 +823,47 @@ R12 重新打开；V01 拆分为“恢复副本保留已通过 / 公开接口语
 脚本从此前只读探针复制到新目录 `.work/acceptance-20261017-review4/`，输出保存在 `probe-results.json`，未覆盖历史证据。V01 在实际存储已为候选、读视图仍旧时保留不确定结论；R12 在合法反向枚举下通过。日期证据下的 `not_committed / false`、已提交路径及恢复副本保留由相关回归覆盖，未见其他重要回归。
 
 **复审结论：PASS（本地整改范围），§0.1c 的最后一个字段问题已关闭。** 本轮根据单分支修复选择定向回归，未重复运行实施窗口已执行的 1609 项全量测试与 coverage；不把历史全量结果冒充本轮执行。远程 CI、跨平台/真实内核、真实 KV 一致性及生产演练仍未执行，不属于本轮本地 PASS 的证明范围。O5 四份生产工作流的额外 `pip check` 保持原有独立优化待办，未发现相关现存故障。
+
+## 2026-10-17：推送、远程 CI 与 Windows 门修复
+
+输入为 HEAD `cd9c178` 加全部未提交工作区。按用户指令提交并推送 `main`，随后按实际 CI 结果修复新增 Windows 门暴露的一处真实缺陷。未访问真实 Cloudflare / KV，未执行发布、回滚或 retention；push 事件下 `deploy` 被 `github.event_name != 'push'` 排除。
+
+### 提交与推送
+
+| 提交 | 内容 | 结果 |
+| --- | --- | --- |
+| `a3b718b` | R07–R12 / V01 / O4–O6 实现、测试与文档（43 文件，3843 insertions / 98 deletions） | 推送成功；CI run `38948496539` **failure** |
+| `32ad94b` | Windows 门改用自有虚拟环境（3 文件，24 insertions / 8 deletions） | 推送成功；CI run `38952400087` **success** |
+
+推送前检查：`git diff --check` 无诊断、无 CRLF 残留、差异内无凭据形态内容（仅固定 action SHA 与文档文本）、无 `.work` 产物入库。`publish.yml` 的 `deploy` 需 `github.event_name != 'push'`，push 仅跑验证。
+
+### 首次推送暴露的缺陷（Windows 门）
+
+- run `38948496539`：3.11 / 3.12 / 3.13、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30 均 success，**Windows platform gate failure**，`validated` 与 `deploy` 因此 skipped。
+- 失败步骤为本批新增的 `Verify installed dependency consistency`，根因：`windows-latest` 镜像把自身工具装进 `actions/setup-python` 暴露的同一解释器，其中 `pipx 1.17.12` 要求 `packaging>=26.3`，而哈希锁固定 `packaging==25.0`。安装锁会降级该 `packaging`，于是 `pip check` 报告一条本项目并不拥有的冲突。其余 6 个 job 的共享解释器未被同样污染，故只有 Windows 失败。
+- 这是 `a3b718b` 引入的真实缺陷，不是偶发门：此前的安装步骤本就在改写共享解释器，只是新增的检查让它可见。
+- 修复：`windows-platform` 建立并全程使用 `.work/dev-venv`（venv 创建、锁安装、可编辑安装、`pip check`、类型门、Mihomo 进程测试），判定范围限定为该 job 自己的环境，与 O5 的「谁安装谁检查」原则一致。
+- 本机复现与验证（Windows，Python 3.12.15）：完整 job 序列在新建 venv 内逐条 exit 0；`pip check` 输出 `No broken requirements found.`，类型门 `Success: no issues found in 58 source files`，Mihomo 进程测试 9 passed。
+
+### 远程 CI 最终结果（run `38952400087`，SHA `32ad94b`）
+
+| Job | 结果 |
+| --- | --- |
+| Python 3.11 / 3.12 / 3.13 compatibility 与 quality | success |
+| Windows platform gate | success（修复确认） |
+| Verify finalized Routing V2 graph | success |
+| Deterministic fictional generation | success |
+| Mihomo v1.19.29 / v1.19.30 | success |
+| Validate exact commit / Validated SHA | success；`validated` SHA = `32ad94b` |
+| Run canonical production lifecycle | skipped（push 事件按设计不部署） |
+
+### O6 报告留存的真实 artifact 验证
+
+run `38952400087` 实测 6 个 artifact，全部非空且未过期：`test-reports-3.12`（62913 bytes）、`test-reports-3.11`（30724）、`test-reports-3.13`（30721）、`test-reports-windows-3.12`（532）、`test-reports-integration-v1.19.29`（2046）、`test-reports-integration-v1.19.30`（2053）。下载核对：Windows 归档仅含 `unit-windows.xml`（`errors="0" failures="0" tests="9"`）；quality 归档仅含 `unit-3.12.xml` 与 `coverage-3.12.xml`，无配置、订阅、fixture secret 或其他 `.work` 内容。这同时证明 `include-hidden-files: true` 是必要的——没有它，指向 `.work/` 的通配声明会静默归档 0 个文件。
+
+### 证据边界
+
+- 本轮未运行 50 项 `integration` 用例；其通过由上述远程 job 记录，不并入本地计数。
+- 未访问真实 Cloudflare / KV：V01 的真实读一致性与传播延迟、生产故障注入仍是独立缺口，本次未验证。
+- `deploy` 未触发，生产发布、回滚与 retention 未验收。
+- 本机 pytest 默认临时根目录 `%TEMP%\pytest-of-Healer` 在本会话环境中不可访问，故本地全量运行使用 `--basetemp=.work/...`；该目录属忽略范围。首次未加该参数时出现的 326 个 setup error 全部是这一环境问题（`PermissionError: [WinError 5]`），非代码失败，与文档记载的 1609 项一致。

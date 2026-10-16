@@ -108,6 +108,8 @@ R12 在真实 run 路径的反向枚举已通过，本地关闭。V01 新 `indet
 
 **2026-10-17 独立复审确认：§0.1c 本地剩余项已关闭。** 原陈旧视图反例现输出 `indeterminate / production_changed="unknown" / requires_manual_action=true`；R12 run 反向枚举通过。92 项相关回归与静态/离线审计通过，未新增整改事项。真实服务证据与远程 CI 继续独立记录，不将本地 PASS 扩大为生产验收。
 
+**2026-10-17 推送与远程 CI：本批已提交（`a3b718b`）并推送；首次推送暴露 Windows 门缺陷，修复提交 `32ad94b` 后 run `38952400087` 全部 10 个 job 通过，`validated` SHA = `32ad94b`。** 缺陷根因：`windows-latest` 镜像把自身工具装进 `actions/setup-python` 的同一解释器，`pipx 1.17.12` 要求 `packaging>=26.3` 而哈希锁固定 `25.0`，新增的 `pip check` 因此报告本项目不拥有的冲突。修复让该 job 全程使用 `.work/dev-venv`，判定范围限定为自有环境。O6 的报告留存由该 run 的真实 artifact 验证：6 个 artifact 全部非空，quality 归档仅含两个白名单 XML。`deploy` 按 `github.event_name != 'push'` 跳过，生产未触碰。详见 [EXECUTION](EXECUTION.md#2026-10-17推送远程-ci-与-windows-门修复)。
+
 ### 0.2 R07：脱敏函数应处理畸形 URL
 
 - **证据与影响：** `src/clash_relay/redact.py:18–32` 仅捕获 `urlsplit()` 的异常，`parsed.port` 的延迟校验位于保护外。`redact_text("error https://fixture.invalid:bad/private")` 和端口 `70000` 均抛 `ValueError`。`mihomo.py:113、135` 在组装 `ValidationError` 前调用它，因此异常诊断可能再次失败。未据此断言已有秘密泄漏。
