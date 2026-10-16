@@ -2,7 +2,7 @@
 
 更新日期：2026-10-17。范围：保留历史整改，记录当前工作区实施与独立复审结论。
 
-**本批改动已提交并推送，远程 CI 全绿。** `a3b718b` 首次推送暴露 Windows 门缺陷（见下），修复提交 `32ad94b` 后 run `38952400087` 全部 10 个 job 通过（3.11 / 3.12 / 3.13、windows-platform、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），`validated` SHA = `32ad94b`；`deploy` 按 `github.event_name != 'push'` 跳过，未触碰生产。O6 的报告留存由该 run 的真实 artifact 验证：6 个 artifact 均非空，quality 归档仅含两个白名单 XML，未包含配置、订阅或 fixture secret。证据见 [推送与远程 CI](EXECUTION.md#2026-10-17推送远程-ci-与-windows-门修复)。
+**本批改动已提交并推送，远程 CI 全绿。** `a3b718b` 首次推送暴露 Windows 门缺陷（见下），修复提交 `32ad94b` 后 run `38952400087` 全部 10 个 job 通过（3.11 / 3.12 / 3.13、windows-platform、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated），`validated` SHA = `32ad94b`；记录本批结果的文档提交 `abc04aa` 由 run `38953501920` 以同样 10 个 job 覆盖。`deploy` 按 `github.event_name != 'push'` 跳过，未触碰生产。本记录自身的后续纯文档提交由同一验证链覆盖，不再逐个列举 SHA。O6 的报告留存由该 run 的真实 artifact 验证：6 个 artifact 均非空，quality 归档仅含两个白名单 XML，未包含配置、订阅或 fixture secret。证据见 [推送与远程 CI](EXECUTION.md#2026-10-17推送远程-ci-与-windows-门修复)。
 
 **最新独立复审：PASS（本地整改范围）。** V01 的结果三态与 R12 的反向枚举已用原合成反例复核通过；92 项相关回归、Ruff、格式、58 文件类型门、离线审计与 `git diff --check` 均通过，未发现新的需修复问题。本轮采用定向验证，未重复全量 coverage；下述 1609 项及 84.32% 为实施窗口结果。远程 CI、真实内核及真实 KV 证据仍按各自边界保留，详见 [第四轮复审](EXECUTION.md#2026-10-17第四轮实施后复审通过)。
 
