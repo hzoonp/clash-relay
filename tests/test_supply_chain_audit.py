@@ -497,7 +497,9 @@ CI_PIP_CHECKS = (
     ("quality", "python -m pip check"),
     ("quality", ".work/wheel-venv/bin/python -m pip check"),
     ("python-compat", "python -m pip check"),
-    ("windows-platform", "python -m pip check"),
+    # The Windows job judges its own virtual environment: the image's tooling
+    # shares the setup-python interpreter and conflicts with the pinned lock.
+    ("windows-platform", ".work/dev-venv/Scripts/python.exe -m pip check"),
     ("deterministic-generation", "python -m pip check"),
     ("stable-mihomo", "python -m pip check"),
 )

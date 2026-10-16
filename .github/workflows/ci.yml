@@ -176,6 +176,15 @@ jobs:
           cache-dependency-path: |
             requirements.lock
             requirements-dev.lock
+      # The image installs its own tooling into the interpreter that
+      # actions/setup-python exposes - pipx 1.17.12 requires packaging>=26.3,
+      # while the hash-pinned lock holds 25.0. Installing the lock there both
+      # breaks the image's tooling and makes `pip check` report a conflict this
+      # project does not own, so the gate owns a virtual environment and every
+      # command below judges that closure instead of the shared interpreter.
+      - name: Create the gate virtual environment
+        run: |
+          python -m venv .work/dev-venv
       # The default Windows shell is PowerShell, which keeps going after a
       # non-zero native exit code inside a multi-line step. Each install is
       # therefore its own single-command step so a failed hash-verified install
@@ -183,25 +192,25 @@ jobs:
       # backend, or silently validating against a partial dependency set.
       - name: Install hash-verified development dependencies
         run: |
-          python -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
+          .work/dev-venv/Scripts/python.exe -m pip install --require-hashes --only-binary=:all: --requirement requirements-dev.lock
       - name: Install the project without build isolation
         run: |
-          python -m pip install --no-build-isolation --no-deps --editable .
+          .work/dev-venv/Scripts/python.exe -m pip install --no-build-isolation --no-deps --editable .
       # Single command per step: PowerShell continues past a non-zero native exit
       # code inside a multi-line step, so the install check must stand alone.
       - name: Verify installed dependency consistency
         run: |
-          python -m pip check
+          .work/dev-venv/Scripts/python.exe -m pip check
       # Windows is where the POSIX-only process-group APIs are absent. Keeping
       # this gate required means a regression fails the workflow immediately
       # instead of only surfacing on a developer machine.
       - name: Static type gate on Windows process boundaries
-        run: python scripts/run_project_checks.py typecheck
+        run: .work/dev-venv/Scripts/python.exe scripts/run_project_checks.py typecheck
       # One command per line: PowerShell treats backslash as an ordinary
       # character, so a bash-style `\` continuation is a parse error here.
       - name: Run Mihomo process lifecycle unit tests on Windows
         run: |
-          python -m pytest tests/test_mihomo_probe_runtime.py -m "not integration" --junitxml=.work/unit-windows.xml
+          .work/dev-venv/Scripts/python.exe -m pytest tests/test_mihomo_probe_runtime.py -m "not integration" --junitxml=.work/unit-windows.xml
       - name: Preserve Windows platform test reports
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

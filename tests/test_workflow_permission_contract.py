@@ -107,8 +107,13 @@ def test_windows_platform_job_is_part_of_the_validated_gate() -> None:
     assert windows is not None
     assert windows["runs-on"] == "windows-latest"
     steps = " ".join(str(step.get("run", "")) for step in windows["steps"])
-    assert "python scripts/run_project_checks.py typecheck" in steps
-    assert "pytest tests/test_mihomo_probe_runtime.py" in steps
+    # Every command judges the gate's own environment. The image installs its
+    # tooling into the interpreter setup-python exposes, and pipx there requires
+    # a newer packaging than the pinned lock, so the shared interpreter would
+    # fail the consistency check for a conflict this project does not own.
+    assert ".work/dev-venv/Scripts/python.exe scripts/run_project_checks.py typecheck" in steps
+    assert ".work/dev-venv/Scripts/python.exe -m pytest tests/test_mihomo_probe_runtime.py" in steps
+    assert "python -m venv .work/dev-venv" in steps
 
     validated = jobs["validated"]
     assert "windows-platform" in validated["needs"]
