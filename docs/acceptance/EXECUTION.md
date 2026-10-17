@@ -21,6 +21,13 @@
 - 验证：`pytest tests/test_supply_chain_audit.py` → 50 passed；非集成全量 1618 passed / 50 deselected（31.66s）；`audit_supply_chain.py`、`audit_documentation_contract.py`、`repository_audit.py` 均通过；Ruff、格式与单文件 mypy 通过。
 - 边界：本轮只做本地实现与定向验证，未推送、未触发远程 CI；生产工作流的实际 `pip check` 步骤尚未在 Actions 上运行过。
 
+### 2026-10-17 推送与远程 CI
+
+- 提交：代码 `942c397`、文档 `bc29fcd`，已推送到 `origin/main`（`0e82624..bc29fcd`）。
+- push run `39030406944`（SHA `bc29fcd`）全部通过：Python 3.12 quality、3.11 / 3.13 compatibility、windows-platform、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated 均 success；`Run canonical production lifecycle` 按 `github.event_name != 'push'` 跳过，生产未被触碰。
+- 实际日志确认：quality job 输出 `supply-chain audit: passed`（扩展后的逐工作流判定在真实仓库树上通过），各 job 的 `pip check` 均返回 `No broken requirements found.`。
+- 仍未在 Actions 上执行：四份生产工作流新增的 `pip check` 步骤只有在下次 manual dispatch / schedule / rollback / retention / inventory 运行中才会真正跑到；本次 push 不进入生产生命周期。
+
 ## 2026-10-17：生产链路只读核对（P1 准备阶段）
 
 - 只读核对，未触发任何 workflow、未写 KV、未改仓库变量或 Secret。
