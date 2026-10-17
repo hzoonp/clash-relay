@@ -25,6 +25,7 @@
 
 - 提交：代码 `942c397`、文档 `bc29fcd`，已推送到 `origin/main`（`0e82624..bc29fcd`）。
 - push run `39030406944`（SHA `bc29fcd`）全部通过：Python 3.12 quality、3.11 / 3.13 compatibility、windows-platform、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated 均 success；`Run canonical production lifecycle` 按 `github.event_name != 'push'` 跳过，生产未被触碰。
+- 记录本次结果的文档提交 `d477547` 由 push run `39030768677` 以同样 job 集合覆盖，同样全绿；本记录自身的后续纯文档提交沿用该验证链，不再逐个列举 SHA。
 - 实际日志确认：quality job 输出 `supply-chain audit: passed`（扩展后的逐工作流判定在真实仓库树上通过），各 job 的 `pip check` 均返回 `No broken requirements found.`。
 - 仍未在 Actions 上执行：四份生产工作流新增的 `pip check` 步骤只有在下次 manual dispatch / schedule / rollback / retention / inventory 运行中才会真正跑到；本次 push 不进入生产生命周期。
 
