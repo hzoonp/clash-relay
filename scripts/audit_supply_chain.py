@@ -278,6 +278,15 @@ def _job_pip_usage(job: Any) -> dict[str, dict[str, Any]]:
                 entry["locks"] |= _installed_lock_names(line)
             else:
                 entry["check"] = True
+                # A check that cannot fail proves nothing: ``continue-on-error``
+                # and an ``if: false`` guard both turn the step into a no-op.
+                if step.get("continue-on-error") in (True, "true"):
+                    entry["check_can_fail"] = False
+                condition = step.get("if")
+                if condition is False or (
+                    isinstance(condition, str) and condition.strip() in ("false", "${{ false }}")
+                ):
+                    entry["check_can_fail"] = False
     return usage
 
 
@@ -290,21 +299,28 @@ def _environment_label(interpreter: str, locks: Any) -> str:
     return "runtime"
 
 
-def _audit_ci_pip_checks(name: str, jobs: dict[str, Any]) -> None:
+def _audit_pip_checks(name: str, jobs: dict[str, Any]) -> None:
     """Every interpreter that installed dependencies in a job must check them in that job.
 
     Judging the command set of the whole workflow would let one job's check stand in
     for another job's install, so deleting the check from any single job — or
     substituting a different interpreter — would stay invisible to this audit.
+
+    Every workflow is judged, not only ``ci.yml``: the production workflows install
+    the runtime lock in their own jobs, and a check there must not be satisfied by
+    the validation workflow that ran earlier. A job that owns its install owns the
+    consistency check.
     """
     for job_name, job in jobs.items():
         for interpreter, usage in sorted(_job_pip_usage(job).items()):
-            if not usage["install"] or usage["check"]:
+            if not usage["install"]:
+                continue
+            if usage["check"] and usage.get("check_can_fail", True):
                 continue
             environment = _environment_label(interpreter, usage["locks"])
             raise SystemExit(
-                f"supply-chain audit: CI job {job_name!r} in {name} installs the {environment} "
-                f"environment without running {interpreter + ' -m pip check'!r}"
+                f"supply-chain audit: job {job_name!r} in {name} installs the {environment} "
+                f"environment without a failing {interpreter + ' -m pip check'!r} step"
             )
 
 
@@ -319,11 +335,7 @@ def _audit_install_environment(root: Path) -> None:
         jobs = document.get("jobs") if isinstance(document, dict) else None
         if not isinstance(jobs, dict):
             raise SystemExit(f"supply-chain audit: workflow {path.name} declares no jobs")
-        if path.name == "ci.yml":
-            # The production workflows install one hash-verified runtime lock each and
-            # their pip-check hardening is tracked separately; this gate is scoped to
-            # the validation workflow whose jobs own several environments at once.
-            _audit_ci_pip_checks(path.name, jobs)
+        _audit_pip_checks(path.name, jobs)
         for job_name, job in jobs.items():
             if not isinstance(job, dict):
                 continue

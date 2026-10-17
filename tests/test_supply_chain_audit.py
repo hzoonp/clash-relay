@@ -96,8 +96,13 @@ def _ci_workflow(
     )
 
 
-def _lock_only_workflow(cache_path: str) -> str:
+def _lock_only_workflow(cache_path: str, check: bool = True) -> str:
     """A production workflow that installs the runtime lock alone."""
+    consistency = (
+        "      - name: Verify installed dependency consistency\n        run: python -m pip check\n"
+        if check
+        else ""
+    )
     return (
         "name: publish\n"
         "on: [workflow_dispatch]\n"
@@ -113,6 +118,7 @@ def _lock_only_workflow(cache_path: str) -> str:
         "      - name: Install hash-verified runtime dependencies\n"
         "        run: |\n"
         "          python -m pip install --require-hashes --only-binary=:all: --requirement requirements.lock\n"
+        f"{consistency}"
     )
 
 
@@ -443,7 +449,7 @@ def test_ci_must_run_pip_check_in_the_development_environment(
 
     with pytest.raises(
         SystemExit,
-        match=r"development environment without running 'python -m pip check'",
+        match=r"development environment without a failing 'python -m pip check' step",
     ):
         module._audit_install_environment(tmp_path)
 
@@ -455,7 +461,7 @@ def test_ci_must_run_pip_check_in_the_standalone_wheel_environment(
 
     with pytest.raises(
         SystemExit,
-        match=r"standalone wheel environment without running '\.work/wheel-venv/bin/python -m pip check'",
+        match=r"standalone wheel environment without a failing '\.work/wheel-venv/bin/python -m pip check' step",
     ):
         module._audit_install_environment(tmp_path)
 
@@ -479,9 +485,98 @@ def test_runtime_workflow_installs_must_cover_their_lock(
     )
     with pytest.raises(
         SystemExit,
-        match=r"CI job 'publish' in publish\.yml installs requirements\.lock without covering it",
+        match=r"job 'publish' in publish\.yml installs requirements\.lock without covering it",
     ):
         drifted._audit_install_environment(tmp_path)
+
+
+def test_runtime_workflow_must_check_its_own_install_environment(
+    repo_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    module = _workflow_repo(
+        repo_root,
+        tmp_path,
+        monkeypatch,
+        publish=_lock_only_workflow("requirements.lock", check=False),
+    )
+
+    with pytest.raises(
+        SystemExit,
+        match=r"job 'publish' in publish\.yml installs the runtime environment "
+        r"without a failing 'python -m pip check' step",
+    ):
+        module._audit_install_environment(tmp_path)
+
+
+PRODUCTION_WORKFLOWS = (
+    ("publish", "deploy", "python -m pip check"),
+    ("rollback", "rollback", "python -m pip check"),
+    ("retention", "retention", "python -m pip check"),
+    ("release-inventory-audit", "audit", "python -m pip check"),
+)
+
+
+@pytest.mark.parametrize(("workflow", "job_key", "command"), PRODUCTION_WORKFLOWS)
+def test_removing_a_production_pip_check_fails_the_audit(
+    repo_root: Path, tmp_path: Path, monkeypatch, workflow: str, job_key: str, command: str
+) -> None:
+    """The production jobs install the runtime lock themselves, so each must check it."""
+    name = f"{workflow}.yml"
+    text = (repo_root / ".github" / "workflows" / name).read_text(encoding="utf-8")
+    module = _workflow_repo(
+        repo_root, tmp_path, monkeypatch, **{workflow: _remove_command(text, job_key, command)}
+    )
+
+    with pytest.raises(
+        SystemExit,
+        match=rf"job '{re.escape(job_key)}' in {re.escape(name)} installs the runtime "
+        r"environment without a failing",
+    ):
+        module._audit_install_environment(tmp_path)
+
+
+def test_the_production_workflows_pass_the_install_audit(repo_root: Path) -> None:
+    module = _load_audit(repo_root)
+
+    module._audit_install_environment(repo_root)
+
+
+def test_a_validation_check_does_not_cover_a_production_install(
+    repo_root: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """ci.yml runs first, but its check judges a different job's environment."""
+    publish = (repo_root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    module = _workflow_repo(
+        repo_root,
+        tmp_path,
+        monkeypatch,
+        ci=ci,
+        publish=_remove_command(publish, "deploy", "python -m pip check"),
+    )
+
+    with pytest.raises(SystemExit, match=r"job 'deploy' in publish\.yml"):
+        module._audit_install_environment(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "guard",
+    [
+        "        continue-on-error: true\n",
+        "        if: false\n",
+    ],
+)
+def test_a_pip_check_that_cannot_fail_does_not_satisfy_the_gate(
+    repo_root: Path, tmp_path: Path, monkeypatch, guard: str
+) -> None:
+    text = _lock_only_workflow("requirements.lock").replace(
+        "      - name: Verify installed dependency consistency\n",
+        f"      - name: Verify installed dependency consistency\n{guard}",
+    )
+    module = _workflow_repo(repo_root, tmp_path, monkeypatch, publish=text)
+
+    with pytest.raises(SystemExit, match=r"without a failing 'python -m pip check' step"):
+        module._audit_install_environment(tmp_path)
 
 
 def test_workflow_without_jobs_fails_the_install_audit(
@@ -560,8 +655,8 @@ def test_removing_any_single_pip_check_fails_the_audit(
 
     with pytest.raises(
         SystemExit,
-        match=rf"CI job '{re.escape(job_name)}' in ci\.yml installs the [a-z ]+ environment "
-        r"without running",
+        match=rf"job '{re.escape(job_name)}' in ci\.yml installs the [a-z ]+ environment "
+        r"without a failing",
     ):
         module._audit_install_environment(tmp_path)
 
@@ -581,5 +676,5 @@ def test_a_check_in_another_job_does_not_cover_the_missing_one(
     )
     module = _ci_only_repository(repo_root, tmp_path, monkeypatch, text)
 
-    with pytest.raises(SystemExit, match=r"CI job 'python-compat' in ci\.yml installs the"):
+    with pytest.raises(SystemExit, match=r"job 'python-compat' in ci\.yml installs the"):
         module._audit_install_environment(tmp_path)
