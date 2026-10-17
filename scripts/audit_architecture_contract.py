@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Fail CI when the current architecture boundaries regress."""
+"""Fail CI when the current architecture boundaries regress.
+
+The checks judge behavior and AST boundaries instead of exact source spellings:
+an equivalent rename or local rewrite passes, while a bypass, a reordered
+stage, or a lost gate still fails.
+"""
 
 from __future__ import annotations
 
+import ast
+from collections.abc import Iterable
 from pathlib import Path
 
+from clash_relay.errors import ConfigurationError
 from clash_relay.policy_contract import load_policy_contract
-from clash_relay.policy_document import load_policy_document
+from clash_relay.policy_document import _validate_fragment_owner, load_policy_document
 from clash_relay.util import load_yaml_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,23 +24,527 @@ def _text(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def _parse(relative: str, text: str | None = None) -> ast.Module:
+    source = _text(relative) if text is None else text
+    try:
+        return ast.parse(source)
+    except SyntaxError as exc:
+        raise SystemExit(f"architecture audit: cannot parse {relative}") from exc
+
+
+def _walk_calls(node: ast.AST | list[ast.AST]) -> list[ast.Call]:
+    roots = node if isinstance(node, list) else [node]
+    calls = [item for root in roots for item in ast.walk(root) if isinstance(item, ast.Call)]
+    return sorted(calls, key=lambda item: (item.lineno, item.col_offset))
+
+
+def _call_name(call: ast.Call) -> str | None:
+    func = call.func
+    parts: list[str] = []
+    while isinstance(func, ast.Attribute):
+        parts.append(func.attr)
+        func = func.value
+    if isinstance(func, ast.Name):
+        parts.append(func.id)
+        return ".".join(reversed(parts))
+    return None
+
+
+def _attr_chain(node: ast.AST) -> tuple[str, ...] | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return tuple(reversed(parts))
+    return None
+
+
+def _find_function(module: ast.Module, name: str, relative: str) -> ast.FunctionDef:
+    for node in ast.walk(module):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise SystemExit(f"architecture audit: {relative} lost function {name}")
+
+
+def _call_names(node: ast.AST) -> set[str]:
+    return {name for name in (_call_name(call) for call in _walk_calls(node)) if name}
+
+
+def _ordered_calls(node: ast.AST, names: Iterable[str]) -> list[str]:
+    wanted = set(names)
+    return [name for name in (_call_name(call) for call in _walk_calls(node)) if name in wanted]
+
+
+def _require_call_order(
+    node: ast.AST,
+    names: Iterable[str],
+    message: str,
+) -> None:
+    ordered = list(names)
+    seen = _ordered_calls(node, ordered)
+    positions: list[int] = []
+    for name in ordered:
+        if name not in seen:
+            raise SystemExit(message)
+        positions.append(seen.index(name))
+    if positions != sorted(positions):
+        raise SystemExit(message)
+
+
+def _identifiers(module: ast.Module) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(module):
+        if isinstance(node, ast.Name):
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            chain = _attr_chain(node)
+            if chain is not None:
+                found.add(".".join(chain))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            found.add(node.module.split(".")[0])
+    return found
+
+
+def _string_constants(module: ast.Module) -> set[str]:
+    return {
+        node.value
+        for node in ast.walk(module)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def _function_names(module: ast.Module) -> set[str]:
+    return {
+        node.name
+        for node in ast.walk(module)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _matches_exception_message(module: ast.Module) -> bool:
+    """True when an exception is classified by its rendered message."""
+
+    for node in ast.walk(module):
+        if not isinstance(node, ast.Compare) or not any(isinstance(op, ast.In) for op in node.ops):
+            continue
+        operands = [node.left, *node.comparators]
+        if any(isinstance(item, ast.Call) and _call_name(item) == "str" for item in operands):
+            return True
+    return False
+
+
+def _serializer_uses_public_snapshot(text: str) -> bool:
+    """The serializer must read the graph's public snapshot, never its internals.
+
+    ``RuntimeGraph.candidate`` deep-copies on every access, so any value derived
+    from it — ``dict(...)``, ``{**...}``, a local alias, or a second deep copy —
+    is already isolated from the compiled graph. The only real aliasing risk is
+    reaching into private state such as ``graph._candidate``, which hands back
+    the live mapping. Behavior is proven by the nested-isolation test; this check
+    only keeps the dependency on the public surface.
+    """
+
+    module = _parse("src/clash_relay/mihomo_serializer.py", text)
+    function = _find_function(module, "serialize_runtime_graph", "mihomo_serializer.py")
+    if not function.args.args:
+        return False
+    graph_parameter = function.args.args[0].arg
+    uses_public = False
+    for node in ast.walk(function):
+        chain = _attr_chain(node)
+        if chain is None or chain[0] != graph_parameter or len(chain) < 2:
+            continue
+        if chain[1].startswith("_"):
+            return False
+        if chain[1] == "candidate":
+            uses_public = True
+    return uses_public
+
+
+def _audit_serializer(text: str | None = None) -> None:
+    source = _text("src/clash_relay/mihomo_serializer.py") if text is None else text
+    if not _serializer_uses_public_snapshot(source):
+        raise SystemExit(
+            "architecture audit: Mihomo serializer reads private graph state "
+            "instead of the detached candidate snapshot"
+        )
+
+
+def _compiler_freezes_graph(text: str) -> bool:
+    names = _call_names(_parse("src/clash_relay/policy_compiler.py", text))
+    freezes = "RuntimeGraph.from_candidate" in names
+    traverses = any(name.endswith(".provider_order") for name in names)
+    return freezes and traverses
+
+
+def _builder_respects_boundary(text: str) -> bool:
+    module = _parse("src/clash_relay/builder.py", text)
+    names = _call_names(module)
+    identifiers = _identifiers(module)
+    if "compile_runtime_graph" not in names or "serialize_runtime_graph" not in names:
+        return False
+    if any(name.endswith("generate_config") for name in names):
+        return False
+    if "RuntimeGraph" in identifiers:
+        return False
+    return not any(name.endswith(".provider_order") for name in names)
+
+
+def _audit_compiler_boundary(compiler_text: str, builder_text: str) -> None:
+    if not _compiler_freezes_graph(compiler_text):
+        raise SystemExit("architecture audit: PolicyCompiler does not freeze/traverse RuntimeGraph")
+    if not _builder_respects_boundary(builder_text):
+        raise SystemExit("architecture audit: builder bypasses compiler/serializer boundary")
+
+
+def _lifecycle_stage_order_is_intact(text: str) -> bool:
+    module = _parse("src/clash_relay/production_lifecycle.py", text)
+    run = _find_function(module, "run", "production_lifecycle.py")
+    stages = (
+        "self._generate",
+        "self._load_derived_state",
+        "self._download_primary_mihomo",
+        "self._qualify",
+        "self._release_candidate_stage",
+        "self._persist_derived_state",
+        "self._post_commit_proof",
+        "self._post_commit_manifest",
+        "publish_post_release_observability",
+    )
+    seen = _ordered_calls(run, stages)
+    positions: list[int] = []
+    for stage in stages:
+        if stage not in seen:
+            return False
+        positions.append(seen.index(stage))
+    return positions == sorted(positions)
+
+
+def _private_state_always_cleaned(text: str) -> bool:
+    module = _parse("src/clash_relay/production_lifecycle.py", text)
+    run = _find_function(module, "run", "production_lifecycle.py")
+    for node in ast.walk(run):
+        if not isinstance(node, ast.Try) or not node.finalbody:
+            continue
+        for call in _walk_calls(node.finalbody):
+            if _call_name(call) not in {"shutil.rmtree", "rmtree"}:
+                continue
+            for argument in call.args:
+                chain = _attr_chain(argument)
+                if chain is not None and chain[-1] == "private_dir":
+                    return True
+    return False
+
+
+def _audit_lifecycle(text: str | None = None) -> None:
+    source = _text("src/clash_relay/production_lifecycle.py") if text is None else text
+    if not _lifecycle_stage_order_is_intact(source):
+        raise SystemExit("architecture audit: production lifecycle stage order regressed")
+    if not _private_state_always_cleaned(source):
+        raise SystemExit("architecture audit: private production state is not always cleaned")
+
+
+def _release_stage_is_ordered(text: str) -> bool:
+    module = _parse("src/clash_relay/production_release_stage.py", text)
+    function = _find_function(module, "run_release_candidate_stage", "production_release_stage.py")
+    stages = (
+        "fetch_current_production_config",
+        "run_promotion_guard",
+        "validate_mihomo_matrix",
+        "publish_production_release",
+    )
+    seen = _ordered_calls(function, stages)
+    positions: list[int] = []
+    for stage in stages:
+        if stage not in seen:
+            return False
+        positions.append(seen.index(stage))
+    return positions == sorted(positions)
+
+
+def _promotion_guard_keeps_qualification_input(text: str) -> bool:
+    """Structural tripwire only.
+
+    The behavioral contract — the guard receives the qualification sidecar — is
+    asserted by ``tests/test_production_release_stage.py``, which runs the stage
+    and inspects the arguments actually passed. This check just keeps the call
+    site from silently dropping the keyword.
+    """
+
+    module = _parse("src/clash_relay/production_release_stage.py", text)
+    function = _find_function(module, "run_release_candidate_stage", "production_release_stage.py")
+    for call in _walk_calls(function):
+        if _call_name(call) != "run_promotion_guard":
+            continue
+        if any(keyword.arg == "qualification_path" for keyword in call.keywords):
+            return True
+    return False
+
+
+def _audit_release_stage(text: str | None = None) -> None:
+    source = _text("src/clash_relay/production_release_stage.py") if text is None else text
+    if not _release_stage_is_ordered(source):
+        raise SystemExit("architecture audit: delegated release-candidate stage order regressed")
+    if not _promotion_guard_keeps_qualification_input(source):
+        raise SystemExit("architecture audit: Promotion Guard lost qualification sidecar input")
+
+
+def _audit_qualification(text: str | None = None) -> None:
+    """Structural tripwires for the qualification boundary.
+
+    The retry contract itself — only typed ``retryable`` rejections retry, and a
+    policy rejection does not — is behavioral and owned by
+    ``tests/test_qualification_pipeline.py`` and
+    ``tests/test_qualification_reliability.py``. This audit only keeps the
+    typed rejection from being replaced by string matching or a subprocess
+    boundary.
+    """
+
+    source = _text("src/clash_relay/qualification_pipeline.py") if text is None else text
+    module = _parse("src/clash_relay/qualification_pipeline.py", source)
+    names = _call_names(module)
+    if "QualificationStageRejected" not in _identifiers(module) and not any(
+        name.endswith("QualificationStageRejected") for name in names
+    ):
+        raise SystemExit("architecture audit: typed qualification rejection contract is missing")
+    if _matches_exception_message(module):
+        raise SystemExit("architecture audit: qualification retry regressed to message matching")
+    identifiers = _identifiers(module)
+    forbidden = {
+        "subprocess",
+        "sys.executable",
+        "_run_json_stage",
+        "script_dir",
+        "python_executable",
+        "openai_application",
+        "harden_openai_client_path",
+    }
+    leaked = sorted(token for token in forbidden if token in identifiers)
+    if leaked:
+        raise SystemExit(f"architecture audit: qualification retained Python IPC token {leaked[0]}")
+    for required in (
+        "run_browsing_qualification",
+        "run_ai_qualification",
+        "harden_declared_service_client_paths",
+    ):
+        if required not in names:
+            raise SystemExit(
+                f"architecture audit: qualification bypasses application API {required}"
+            )
+    if not _qualification_returns_model_version(module):
+        raise SystemExit("architecture audit: qualification retained Policy Model v1 fallback")
+
+
+def _qualification_returns_model_version(module: ast.Module) -> bool:
+    function = _find_function(module, "_qualification_policy_input", "qualification_pipeline.py")
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Return) or not isinstance(node.value, ast.Tuple):
+            continue
+        if any(
+            _attr_chain(item) and _attr_chain(item)[-1] == "model_version"
+            for item in node.value.elts
+        ):
+            return True
+    return False
+
+
+_PROCESS_LAUNCHES = frozenset(
+    {
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
+        "os.system",
+        "os.spawnl",
+        "os.spawnv",
+        "os.execv",
+        "os.fork",
+    }
+)
+
+
+def _process_launch_calls(module: ast.Module) -> list[ast.Call]:
+    """Calls that actually start or replace a process.
+
+    ``subprocess.TimeoutExpired`` and ``subprocess.Popen[bytes]`` annotations are
+    the shared runtime's vocabulary, not a second process boundary, so they must
+    not trip this check.
+    """
+
+    return [call for call in _walk_calls(module) if _call_name(call) in _PROCESS_LAUNCHES]
+
+
+def _audit_probe_runtime() -> None:
+    module = _parse("src/clash_relay/mihomo_probe_runtime.py")
+    names = _call_names(module)
+    for token in (
+        "free_tcp_port",
+        "run_config_test",
+        "start_mihomo_process",
+        "stop_mihomo_process",
+        "wait_for_process_condition",
+    ):
+        if token not in names and token not in _function_names(module):
+            raise SystemExit(f"architecture audit: shared Mihomo probe runtime missing {token}")
+    for relative in (
+        "src/clash_relay/browsing_qualification.py",
+        "src/clash_relay/ai_qualification.py",
+        "src/clash_relay/transport_qualification.py",
+    ):
+        probe = _parse(relative)
+        probe_names = _call_names(probe)
+        probe_identifiers = _identifiers(probe)
+        if "_free_port" in _function_names(probe):
+            raise SystemExit(
+                f"architecture audit: {relative} retained Mihomo lifecycle token def _free_port("
+            )
+        launches = _process_launch_calls(probe)
+        if launches:
+            raise SystemExit(
+                f"architecture audit: {relative} retained Mihomo lifecycle token "
+                f"{_call_name(launches[0])}"
+            )
+        for forbidden in ("os.killpg", "signal.SIGTERM", "signal.SIGKILL"):
+            if forbidden in probe_identifiers:
+                raise SystemExit(
+                    f"architecture audit: {relative} retained Mihomo lifecycle token {forbidden}"
+                )
+        for required in (
+            "run_config_test",
+            "start_mihomo_process",
+            "stop_mihomo_process",
+            "wait_for_process_condition",
+        ):
+            if required not in probe_names:
+                raise SystemExit(
+                    f"architecture audit: {relative} bypasses shared Mihomo runtime {required}"
+                )
+
+
+def _audit_no_python_ipc(relative: str, forbidden: Iterable[str]) -> None:
+    identifiers = _identifiers(_parse(relative))
+    leaked = sorted(token for token in forbidden if token in identifiers)
+    if leaked:
+        raise SystemExit(f"architecture audit: {relative} retained Python IPC token {leaked[0]}")
+
+
+def _audit_application_calls(relative: str, required: Iterable[str], message: str) -> None:
+    names = _call_names(_parse(relative))
+    for token in required:
+        if token not in names:
+            raise SystemExit(message.format(token=token))
+
+
+def _audit_generate_config_escape() -> None:
+    for path in (ROOT / "src" / "clash_relay").glob("*.py"):
+        if path.name in {"generator.py", "policy_compiler.py"}:
+            continue
+        module = _parse(str(path.relative_to(ROOT)))
+        if any(name.endswith("generate_config") for name in _call_names(module)):
+            raise SystemExit(
+                "architecture audit: low-level runtime draft generator escaped "
+                f"PolicyCompiler: {path.name}"
+            )
+
+
+def _audit_thin_adapters() -> None:
+    for relative in (
+        "scripts/qualify_browsing.py",
+        "scripts/qualify_ai.py",
+        "scripts/harden_openai_runtime.py",
+        "scripts/download_mihomo.py",
+        "scripts/validate_mihomo_matrix.py",
+        "scripts/fetch_current_config.py",
+        "scripts/check_promotion_guard.py",
+        "scripts/publish_release_bundle.py",
+        "scripts/render_production_proof.py",
+        "scripts/load_scheduler_history.py",
+        "scripts/load_ai_qualification_cache.py",
+        "scripts/publish_scheduler_history.py",
+        "scripts/publish_ai_qualification_cache.py",
+    ):
+        identifiers = _identifiers(_parse(relative))
+        if "subprocess" in identifiers or any(
+            token.startswith("subprocess.") for token in identifiers
+        ):
+            raise SystemExit(
+                f"architecture audit: thin adapter {relative} still launches subprocesses"
+            )
+
+
+def _audit_routing_declarations(contract) -> None:
+    for relative in (
+        "src/clash_relay/routing_shadow.py",
+        "src/clash_relay/routing_v2_audit.py",
+    ):
+        module = _parse(relative)
+        constants = _string_constants(module)
+        for group_name in contract.public_groups.values():
+            if group_name in constants:
+                raise SystemExit(
+                    f"architecture audit: {relative} hard-codes contract group {group_name!r}"
+                )
+        if "load_policy_contract" not in _identifiers(module):
+            raise SystemExit(f"architecture audit: {relative} does not consume PolicyContract")
+
+
+def _audit_production_audit_ownership() -> None:
+    module = _parse("src/clash_relay/production_audit.py")
+    if "RuntimeGraph" not in _identifiers(module):
+        raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
+    if "_reachable_sources" in _function_names(module):
+        raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
+
+
+def _audit_policy_loader() -> None:
+    module = _parse("src/clash_relay/policy_document.py")
+    identifiers = _identifiers(module)
+    if "compatibility_status" in identifiers:
+        raise SystemExit("architecture audit: Policy Model v1 runtime compatibility returned")
+    for call in _walk_calls(module):
+        if any(
+            keyword.arg == "deprecated"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in call.keywords
+        ):
+            raise SystemExit("architecture audit: Policy Model v1 runtime compatibility returned")
+    if "Policy Model v2 manifest is required" not in _string_constants(module):
+        raise SystemExit("architecture audit: runtime no longer rejects Policy Model v1")
+
+
+def _audit_policy_ownership() -> None:
+    expected = {
+        "routing": "routing",
+        "scheduler": "scheduling",
+        "probes": "scheduling",
+        "capabilities": "classification",
+        "pools": "topology",
+    }
+    for section, owner in expected.items():
+        _validate_fragment_owner(owner, section)
+    for section, wrong_owner in (("pools", "routing"), ("scheduler", "topology")):
+        try:
+            _validate_fragment_owner(wrong_owner, section)
+        except ConfigurationError:
+            continue
+        raise SystemExit(
+            f"architecture audit: Policy Model v2 ownership missing {section}->{expected[section]}"
+        )
+
+
 def main() -> int:
     policy_document = load_policy_document(ROOT / "policies.yaml")
     contract = load_policy_contract(policy_document.document)
 
     # Declaration truth is explicit. No Python routing-name/default fallback.
-    for relative in (
-        "src/clash_relay/routing_shadow.py",
-        "src/clash_relay/routing_v2_audit.py",
-    ):
-        content = _text(relative)
-        for group_name in contract.public_groups.values():
-            if group_name in content:
-                raise SystemExit(
-                    f"architecture audit: {relative} hard-codes contract group {group_name!r}"
-                )
-        if "load_policy_contract" not in content:
-            raise SystemExit(f"architecture audit: {relative} does not consume PolicyContract")
+    _audit_routing_declarations(contract)
     policy_contract = _text("src/clash_relay/policy_contract.py")
     routing_policy = _text("src/clash_relay/routing_policy_v2.py")
     if "_LEGACY_DEFAULT_CONTRACT" in policy_contract:
@@ -43,17 +555,15 @@ def main() -> int:
         raise SystemExit("architecture audit: PolicyContract no longer fails closed")
 
     # RuntimeGraph is topology truth and builder crosses one compiler/serializer boundary.
-    production_audit = _text("src/clash_relay/production_audit.py")
-    if "RuntimeGraph" not in production_audit or "def _reachable_sources(" in production_audit:
-        raise SystemExit("architecture audit: production audit bypasses RuntimeGraph")
+    _audit_production_audit_ownership()
+    _audit_compiler_boundary(
+        _text("src/clash_relay/policy_compiler.py"),
+        _text("src/clash_relay/builder.py"),
+    )
+    _audit_serializer()
 
-    builder = _text("src/clash_relay/builder.py")
     compiler = _text("src/clash_relay/policy_compiler.py")
-    serializer = _text("src/clash_relay/mihomo_serializer.py")
-    if "compile_runtime_graph(" not in builder or "serialize_runtime_graph(" not in builder:
-        raise SystemExit("architecture audit: builder bypasses compiler/serializer boundary")
-    if "generate_config(" in builder or "RuntimeGraph" in builder or ".provider_order(" in builder:
-        raise SystemExit("architecture audit: builder resumed topology construction/traversal")
+    builder = _text("src/clash_relay/builder.py")
     for token in (
         "apply_acl4ssr_group_semantics",
         "apply_acl4ssr_source_exclusions",
@@ -64,18 +574,8 @@ def main() -> int:
             raise SystemExit(f"architecture audit: builder resumed post-generation pass {token}")
         if token not in compiler:
             raise SystemExit(f"architecture audit: PolicyCompiler no longer owns pass {token}")
-    if "RuntimeGraph.from_candidate(output)" not in compiler or ".provider_order(" not in compiler:
-        raise SystemExit("architecture audit: PolicyCompiler does not freeze/traverse RuntimeGraph")
-    if "copy.deepcopy(dict(graph.candidate))" not in serializer:
-        raise SystemExit("architecture audit: Mihomo serializer no longer detaches compiled graph")
 
-    for path in (ROOT / "src" / "clash_relay").glob("*.py"):
-        if path.name in {"generator.py", "policy_compiler.py"}:
-            continue
-        if "generate_config(" in path.read_text(encoding="utf-8"):
-            raise SystemExit(
-                f"architecture audit: low-level runtime draft generator escaped PolicyCompiler: {path.name}"
-            )
+    _audit_generate_config_escape()
 
     # Actions invokes one application entrypoint and contains no business pipeline.
     workflow = _text(".github/workflows/publish.yml")
@@ -104,157 +604,56 @@ def main() -> int:
     if len(workflow.splitlines()) >= 100:
         raise SystemExit("architecture audit: publish workflow is no longer a thin adapter")
 
-    lifecycle = _text("src/clash_relay/production_lifecycle.py")
-    observability = _text("src/clash_relay/production_observability.py")
-    release_stage = _text("src/clash_relay/production_release_stage.py")
-    ordered_stages = (
-        "generation = self._generate()",
-        "self._load_derived_state(project)",
-        "binary = self._download_primary_mihomo()",
-        "pipeline = self._qualify(binary)",
-        "release_stage = self._release_candidate_stage(project, binary)",
-        "promotion = release_stage.promotion",
-        "matrix = release_stage.matrix",
-        "release = release_stage.release",
-        "derived_state = self._persist_derived_state(project)",
-        "proof = self._post_commit_proof(release=release)",
-        "manifest = self._post_commit_manifest(",
-        "observability = publish_post_release_observability(",
-    )
-    positions = [lifecycle.find(stage) for stage in ordered_stages]
-    if any(position < 0 for position in positions) or positions != sorted(positions):
-        raise SystemExit("architecture audit: production lifecycle stage order regressed")
-    if "finally:" not in lifecycle or "shutil.rmtree(self.paths.private_dir" not in lifecycle:
-        raise SystemExit("architecture audit: private production state is not always cleaned")
-
-    release_order = (
-        "fetch_current_production_config(",
-        "run_promotion_guard(",
-        "validate_mihomo_matrix(",
-        "publish_production_release(",
-    )
-    release_positions = [release_stage.find(stage) for stage in release_order]
-    if any(position < 0 for position in release_positions) or release_positions != sorted(
-        release_positions
-    ):
-        raise SystemExit("architecture audit: delegated release-candidate stage order regressed")
-    if "qualification_path=paths.qualification" not in release_stage:
-        raise SystemExit("architecture audit: Promotion Guard lost qualification sidecar input")
+    _audit_lifecycle()
+    _audit_release_stage()
 
     # Qualification retry is typed and package-to-package, never stdout JSON IPC.
-    qualification = _text("src/clash_relay/qualification_pipeline.py")
-    reliability = _text("src/clash_relay/qualification_reliability.py")
-    if "QualificationStageRejected" not in qualification:
-        raise SystemExit("architecture audit: typed qualification rejection contract is missing")
-    if '"qualification stage rejected the candidate" in str(exc)' in qualification:
-        raise SystemExit("architecture audit: qualification retry regressed to message matching")
-    if "exc.retryable" not in qualification or "_whole_browsing_probe_transient" not in reliability:
+    _audit_qualification()
+    reliability = _parse("src/clash_relay/qualification_reliability.py")
+    if "_whole_browsing_probe_transient" not in _function_names(reliability):
         raise SystemExit(
             "architecture audit: transient-only qualification retry contract regressed"
         )
-    for token in (
-        "subprocess",
-        "sys.executable",
-        "_run_json_stage",
-        "script_dir",
-        "python_executable",
-        "qualify_browsing.py",
-        "qualify_ai.py",
-        "harden_openai_runtime.py",
-    ):
-        if token in qualification:
-            raise SystemExit(f"architecture audit: qualification retained Python IPC token {token}")
-    for token in (
-        "run_browsing_qualification(",
-        "run_ai_qualification(",
-        "harden_declared_service_client_paths(",
-    ):
-        if token not in qualification:
-            raise SystemExit(f"architecture audit: qualification bypasses application API {token}")
-    if "openai_application" in qualification or "harden_openai_client_path" in qualification:
-        raise SystemExit(
-            "architecture audit: qualification restored OpenAI-specific application API"
-        )
 
     # Production probe services share one Mihomo process/runtime boundary.
-    probe_runtime = _text("src/clash_relay/mihomo_probe_runtime.py")
-    for token in (
-        "free_tcp_port(",
-        "run_config_test(",
-        "start_mihomo_process(",
-        "stop_mihomo_process(",
-        "wait_for_process_condition(",
-    ):
-        if token not in probe_runtime:
-            raise SystemExit(f"architecture audit: shared Mihomo probe runtime missing {token}")
-    for relative in (
-        "src/clash_relay/browsing_qualification.py",
-        "src/clash_relay/ai_qualification.py",
-        "src/clash_relay/transport_qualification.py",
-    ):
-        content = _text(relative)
-        for forbidden in (
-            "def _free_port(",
-            "subprocess.run(",
-            "subprocess.Popen(",
-            "os.killpg(",
-            "signal.SIGTERM",
-            "signal.SIGKILL",
-        ):
-            if forbidden in content:
-                raise SystemExit(
-                    f"architecture audit: {relative} retained Mihomo lifecycle token {forbidden}"
-                )
-        for required in (
-            "run_config_test(",
-            "start_mihomo_process(",
-            "stop_mihomo_process(",
-            "wait_for_process_condition(",
-        ):
-            if required not in content:
-                raise SystemExit(
-                    f"architecture audit: {relative} bypasses shared Mihomo runtime {required}"
-                )
+    _audit_probe_runtime()
 
     # Lifecycle calls typed package services directly; scripts are adapters only.
-    production_pipeline = _text("src/clash_relay/production_pipeline.py")
-    for token in ("script_dir", "python_executable"):
-        if token in production_pipeline:
-            raise SystemExit(
-                f"architecture audit: production pipeline retained subprocess API {token}"
-            )
-    for token in (
-        "subprocess",
-        "sys.executable",
-        "_script_command",
-        "_run_command",
-        "scripts_dir",
-    ):
-        if token in lifecycle or token in release_stage:
-            raise SystemExit(
-                f"architecture audit: production release path retained Python IPC token {token}"
-            )
-    for token in (
-        "download_pinned_mihomo(",
-        "run_release_candidate_stage(",
-        "persist_ai_qualification_cache(",
-        "persist_scheduler_history(",
-        "publish_post_release_observability(",
-        "record_failure_observability(",
-        "render_production_proof_application(",
-    ):
-        if token not in lifecycle:
-            raise SystemExit(f"architecture audit: lifecycle bypasses application service {token}")
-    for token in (
-        "fetch_current_production_config(",
-        "run_promotion_guard(",
-        "validate_mihomo_matrix(",
-        "publish_production_release(",
-    ):
-        if token not in release_stage:
-            raise SystemExit(
-                f"architecture audit: release-candidate stage bypasses application service {token}"
-            )
+    _audit_no_python_ipc(
+        "src/clash_relay/production_pipeline.py",
+        ("script_dir", "python_executable"),
+    )
+    _audit_no_python_ipc(
+        "src/clash_relay/production_lifecycle.py",
+        ("subprocess", "sys.executable", "_script_command", "_run_command", "scripts_dir"),
+    )
+    _audit_no_python_ipc(
+        "src/clash_relay/production_release_stage.py",
+        ("subprocess", "sys.executable", "_script_command", "_run_command", "scripts_dir"),
+    )
+    _audit_application_calls(
+        "src/clash_relay/production_lifecycle.py",
+        (
+            "download_pinned_mihomo",
+            "run_release_candidate_stage",
+            "persist_ai_qualification_cache",
+            "persist_scheduler_history",
+            "publish_post_release_observability",
+            "record_failure_observability",
+            "render_production_proof_application",
+        ),
+        "architecture audit: lifecycle bypasses application service {token}",
+    )
+    _audit_application_calls(
+        "src/clash_relay/production_release_stage.py",
+        (
+            "fetch_current_production_config",
+            "run_promotion_guard",
+            "validate_mihomo_matrix",
+            "publish_production_release",
+        ),
+        "architecture audit: release-candidate stage bypasses application service {token}",
+    )
 
     production_application = _text("src/clash_relay/production_application.py")
     kv_keys = _text("src/clash_relay/kv_keys.py")
@@ -267,27 +666,10 @@ def main() -> int:
         raise SystemExit(
             "architecture audit: Mihomo matrix still delegates download through a script"
         )
-    for relative in (
-        "scripts/qualify_browsing.py",
-        "scripts/qualify_ai.py",
-        "scripts/harden_openai_runtime.py",
-        "scripts/download_mihomo.py",
-        "scripts/validate_mihomo_matrix.py",
-        "scripts/fetch_current_config.py",
-        "scripts/check_promotion_guard.py",
-        "scripts/publish_release_bundle.py",
-        "scripts/render_production_proof.py",
-        "scripts/load_scheduler_history.py",
-        "scripts/load_ai_qualification_cache.py",
-        "scripts/publish_scheduler_history.py",
-        "scripts/publish_ai_qualification_cache.py",
-    ):
-        if "subprocess" in _text(relative):
-            raise SystemExit(
-                f"architecture audit: thin adapter {relative} still launches subprocesses"
-            )
+    _audit_thin_adapters()
 
     # Release progress wraps the proven in-process release transaction.
+    lifecycle = _text("src/clash_relay/production_lifecycle.py")
     if "ReleaseProgress" not in lifecycle or "ReleasePhase.PUBLISHED" not in lifecycle:
         raise SystemExit("architecture audit: explicit release progress contract is missing")
     release_reliability = _text("src/clash_relay/release_reliability.py")
@@ -296,15 +678,19 @@ def main() -> int:
             raise SystemExit(f"architecture audit: release progress lost {phase.lower()} phase")
 
     # Aggregate observability is consolidated behind one best-effort boundary.
-    if "persist_production_metrics(" not in observability or "_best_effort(" not in observability:
+    observability = _parse("src/clash_relay/production_observability.py")
+    observability_names = _call_names(observability) | _function_names(observability)
+    if "persist_production_metrics" not in observability_names or "_best_effort" not in (
+        observability_names
+    ):
         raise SystemExit(
             "architecture audit: consolidated observability lost production metrics ownership"
         )
-    if "_publish_scheduler_observation(" not in observability:
+    if "_publish_scheduler_observation" not in observability_names:
         raise SystemExit(
             "architecture audit: consolidated observability lost scheduler evidence ownership"
         )
-    if "_record_operational_slo(" not in observability:
+    if "_record_operational_slo" not in observability_names:
         raise SystemExit(
             "architecture audit: consolidated observability lost operational SLO ownership"
         )
@@ -329,28 +715,12 @@ def main() -> int:
         raise SystemExit("architecture audit: canonical Policy Model v2 fragment layout drifted")
     if policy_document.model_version != 2:
         raise SystemExit("architecture audit: canonical Policy Model v2 is not current")
-    policy_loader = _text("src/clash_relay/policy_document.py")
-    for section, owner in (
-        ("routing", "routing"),
-        ("scheduler", "scheduling"),
-        ("probes", "scheduling"),
-        ("capabilities", "classification"),
-        ("pools", "topology"),
-    ):
-        if f'"{section}": "{owner}"' not in policy_loader:
-            raise SystemExit(
-                f"architecture audit: Policy Model v2 ownership missing {section}->{owner}"
-            )
+    _audit_policy_ownership()
+    _audit_policy_loader()
     if not (ROOT / "scripts/migrate_policy_v2.py").is_file():
         raise SystemExit("architecture audit: Policy Model v2 migration tool is missing")
 
     # Runtime is clean-slate v2; migration is offline and generic Services are gone.
-    if "Policy Model v2 manifest is required" not in policy_loader:
-        raise SystemExit("architecture audit: runtime no longer rejects Policy Model v1")
-    if "deprecated=True" in policy_loader or "compatibility_status" in policy_loader:
-        raise SystemExit("architecture audit: Policy Model v1 runtime compatibility returned")
-    if "return policies, 1" in qualification or "historical v1 contract" in qualification:
-        raise SystemExit("architecture audit: qualification retained Policy Model v1 fallback")
     for relative in (
         "services.yaml",
         "schemas/services.schema.json",
@@ -366,8 +736,10 @@ def main() -> int:
         "src/clash_relay/production_lifecycle.py",
         "src/clash_relay/production_pipeline.py",
     ):
-        content = _text(relative)
-        if "services_path" in content or '"--services"' in content:
+        identifiers = _identifiers(_parse(relative))
+        if "services_path" in identifiers or any(
+            token == "--services" for token in _string_constants(_parse(relative))
+        ):
             raise SystemExit(
                 f"architecture audit: {relative} retained generic Services runtime API"
             )
@@ -394,7 +766,7 @@ def main() -> int:
     package = _text("src/clash_relay/__init__.py")
     if 'version = "2.3.0"' not in pyproject or '__version__ = "2.3.0"' not in package:
         raise SystemExit("architecture audit: v2.3.0 package version boundary is incomplete")
-    if not (ROOT / "scripts/audit_v2_release_contract.py").is_file():
+    if not (ROOT / "scripts" / "audit_v2_release_contract.py").is_file():
         raise SystemExit("architecture audit: v2 release contract audit is missing")
 
     print("architecture contract audit: passed")

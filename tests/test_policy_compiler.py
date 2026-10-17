@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import clash_relay.policy_compiler as compiler
@@ -152,16 +153,93 @@ def test_browsing_hardening_is_independent_of_acl_groups(monkeypatch, tmp_path: 
 
 
 def test_mihomo_serializer_detaches_compiled_runtime_graph() -> None:
-    graph = compiler.RuntimeGraph.from_candidate(
-        {
-            "proxy-providers": {},
-            "proxy-groups": [{"name": "public", "type": "select", "proxies": ["DIRECT"]}],
-            "rules": ["MATCH,DIRECT"],
-        }
-    )
+    graph = _graph()
 
     document = serialize_runtime_graph(graph)
     document["proxy-groups"][0]["proxies"].append("REJECT")
 
     assert graph.group_members("public") == ("DIRECT",)
+    # ``_groups`` and ``_candidate`` are separately deep-copied at construction,
+    # so the group index alone cannot prove the candidate mapping is intact.
+    assert graph.candidate["proxy-groups"][0]["proxies"] == ["DIRECT"]
     assert document["proxy-groups"][0]["proxies"] == ["DIRECT", "REJECT"]
+
+
+DERIVATIONS = {
+    "snapshot": lambda graph: graph.candidate,
+    "local alias": lambda graph: (lambda snapshot: snapshot)(graph.candidate),
+    "dict()": lambda graph: dict(graph.candidate),
+    "unpacking": lambda graph: {**graph.candidate},
+    "deepcopy": lambda graph: copy.deepcopy(graph.candidate),
+}
+
+
+def test_the_candidate_snapshot_isolates_every_derivation() -> None:
+    """Behavioral guarantee behind the serializer audit.
+
+    ``RuntimeGraph.candidate`` deep-copies on every access, so a shallow
+    ``dict(...)``, ``{**...}``, a local alias, or a second deep copy all keep
+    nested structures isolated. Each derivation is built from the same graph
+    that is then inspected, and the assertion reads the candidate mapping
+    itself — not the separately copied group index.
+
+    The original mapping handed to ``from_candidate`` is kept and compared as
+    well, rather than rebuilding the template: that checks the constructor did
+    not hand the caller's own object back. It cannot fail while construction
+    starts with ``copy.deepcopy(dict(candidate))``, so the assertions that
+    actually discriminate are the two ``graph.candidate`` ones.
+    """
+
+    for label, derive in DERIVATIONS.items():
+        source = _source_candidate()
+        graph = compiler.RuntimeGraph.from_candidate(source)
+        derived = derive(graph)
+        derived["proxy-groups"][0]["proxies"].append("REJECT")
+
+        assert graph.candidate["proxy-groups"][0]["proxies"] == ["DIRECT"], label
+        assert source["proxy-groups"][0]["proxies"] == ["DIRECT"], label
+
+
+def test_extra_deepcopy_survives_a_leaking_snapshot_getter(monkeypatch) -> None:
+    """Negative control: the derivation table must distinguish real isolation.
+
+    With the public getter patched to return the live private mapping, every
+    derivation that does not copy again leaks into the graph; only the explicit
+    ``deepcopy`` stays isolated. If this test ever passes for all five
+    derivations, the positive test above has no discriminating power.
+    """
+
+    monkeypatch.setattr(
+        compiler.RuntimeGraph,
+        "candidate",
+        property(lambda self: self._candidate),
+    )
+
+    leaked: list[str] = []
+    for label, derive in DERIVATIONS.items():
+        graph = _graph()
+        derived = derive(graph)
+        derived["proxy-groups"][0]["proxies"].append("REJECT")
+        if graph.candidate["proxy-groups"][0]["proxies"] != ["DIRECT"]:
+            leaked.append(label)
+
+    assert leaked == ["snapshot", "local alias", "dict()", "unpacking"]
+
+
+def test_the_private_candidate_is_the_live_mapping() -> None:
+    graph = _graph()
+    graph._candidate["proxy-groups"][0]["proxies"].append("REJECT")
+
+    assert graph.candidate["proxy-groups"][0]["proxies"] == ["DIRECT", "REJECT"]
+
+
+def _source_candidate() -> dict:
+    return {
+        "proxy-providers": {},
+        "proxy-groups": [{"name": "public", "type": "select", "proxies": ["DIRECT"]}],
+        "rules": ["MATCH,DIRECT"],
+    }
+
+
+def _graph() -> compiler.RuntimeGraph:
+    return compiler.RuntimeGraph.from_candidate(_source_candidate())
