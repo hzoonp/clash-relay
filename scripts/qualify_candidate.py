@@ -52,7 +52,6 @@ def main(argv: list[str] | None = None) -> int:
             cache=args.cache,
             cache_key=args.cache_key,
             next_cache=args.next_cache,
-            script_dir=Path(__file__).resolve().parent,
         )
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
