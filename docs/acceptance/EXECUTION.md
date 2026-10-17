@@ -186,3 +186,11 @@ S1/S3 既有通过结论保持；本轮未发现新的业务实现回归，S2 �
 - 本轮定向执行 `test_policy_compiler.py`、`test_runtime_graph.py`、`test_architecture_audit_behavior.py`：30 passed，0.16 秒，exit 0；修改文件 Ruff/格式、架构审计、文档审计与 `git diff --check` 均通过。
 - 内存负向对照仍有效：getter 临时返回内部映射时，两个正向隔离测试均检测到别名并抛 AssertionError；正常 getter 下原输入/快照断言通过。未修改源文件，monkeypatch 已恢复。
 - 结论：PASS，上一轮非阻断建议已关闭，未发现新的需修复问题。未重复全量、coverage 或类型门；未运行远程 CI、真实内核及生产操作。本次仅更新验收记录，计划关闭状态保持。
+
+## 2026-10-17：S1–S3 推送与远程 CI
+
+- 提交：`b0290b5`（S1 adapter）、`65e22ea`（S3 去重）、`4063568`（S2 审计重写）、`49c9a48`（验收文档），推送 `4477383..49c9a48`。
+- push run `39037217650`（SHA `49c9a48`）全部通过：Python 3.12 quality、3.11 / 3.13 compatibility、windows-platform、deterministic-generation、routing-required、stable-mihomo v1.19.29 与 v1.19.30、validated 均 success；`Run canonical production lifecycle` 按 `event_name != 'push'` 跳过，生产未被触碰。
+- 日志确认重写后的 `architecture contract audit: passed` 与 `supply-chain audit: passed` 在真实仓库树上成立；三个 Python 版本的非集成套件均为 1645 passed / 50 deselected（3.12 含 coverage 为 123.47s，3.11 为 41.39s，3.13 为 29.57s）。
+- 本记录自身的后续纯文档提交沿用同一验证链，不再逐个列举 SHA。
+- 边界：`rollback.yml`、`retention.yml` 仍未运行；`release-inventory-audit.yml` 的过期观测未刷新。生产/KV 演练保持待授权状态。
