@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .admission_sanitize import is_safe_source_id, safe_admission_reason_counts
 from .production_diagnostics import ProductionFailureCategory
 
 _STATE_VERSION = 1
@@ -105,19 +106,7 @@ def _safe_sha(value: Any) -> str | None:
 
 
 def _clean_admission_reason_counts(value: Any) -> dict[str, int]:
-    if not isinstance(value, dict):
-        return {}
-    clean: dict[str, int] = {}
-    for reason, count in sorted(value.items()):
-        if (
-            isinstance(reason, str)
-            and re.fullmatch(r"[a-z0-9_]{1,64}", reason)
-            and isinstance(count, int)
-            and not isinstance(count, bool)
-            and count >= 0
-        ):
-            clean[reason] = count
-    return clean
+    return safe_admission_reason_counts(value)
 
 
 def _clean_source_admission(value: Any) -> dict[str, Any] | None:
@@ -133,10 +122,7 @@ def _clean_source_admission(value: Any) -> dict[str, Any] | None:
         if not isinstance(row, dict):
             continue
         source_id = row.get("id")
-        if (
-            not isinstance(source_id, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
-        ):
+        if not is_safe_source_id(source_id):
             continue
         reasons = _clean_admission_reason_counts(row.get("skipped_invalid_reasons"))
         skipped = _non_negative_int(row.get("skipped_invalid_nodes"))
@@ -166,11 +152,7 @@ def _clean_source_admission_state(value: Any) -> dict[str, Any] | None:
         return None
     by_source: dict[str, Any] = {}
     for source_id, row in sorted(raw_by_source.items()):
-        if (
-            not isinstance(source_id, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
-            or not isinstance(row, dict)
-        ):
+        if not is_safe_source_id(source_id) or not isinstance(row, dict):
             continue
         by_source[source_id] = {
             "input_nodes": _non_negative_int(row.get("input_nodes")),

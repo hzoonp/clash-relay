@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .admission_sanitize import is_safe_source_id, safe_admission_reason_counts
 from .errors import ValidationError
 from .qualification_observability import (
     render_qualification_observability_markdown,
@@ -137,19 +138,7 @@ def _safe_download_routing(value: Any, *, required: bool) -> dict[str, Any]:
 
 
 def _safe_admission_reason_counts(value: Any) -> dict[str, int]:
-    if not isinstance(value, dict):
-        return {}
-    result: dict[str, int] = {}
-    for reason, count in sorted(value.items()):
-        if (
-            isinstance(reason, str)
-            and re.fullmatch(r"[a-z0-9_]{1,64}", reason)
-            and isinstance(count, int)
-            and not isinstance(count, bool)
-            and count >= 0
-        ):
-            result[reason] = count
-    return result
+    return safe_admission_reason_counts(value)
 
 
 def _safe_source_admission_rows(value: Any) -> tuple[dict[str, Any], int, dict[str, int]]:
@@ -162,10 +151,7 @@ def _safe_source_admission_rows(value: Any) -> tuple[dict[str, Any], int, dict[s
         if not isinstance(row, dict):
             continue
         source_id = row.get("id")
-        if (
-            not isinstance(source_id, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", source_id) is None
-        ):
+        if not isinstance(source_id, str) or not is_safe_source_id(source_id):
             continue
         reasons = _safe_admission_reason_counts(row.get("skipped_invalid_reasons"))
         skipped = _safe_count(row, "skipped_invalid_nodes")

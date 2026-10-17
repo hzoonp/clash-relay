@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 from .runtime_graph import RuntimeGraph
@@ -11,9 +10,10 @@ from .runtime_graph import RuntimeGraph
 def serialize_runtime_graph(graph: RuntimeGraph) -> dict[str, Any]:
     """Return a detached Mihomo document from the final compiled graph.
 
-    The deep copy makes the compiler/serializer boundary explicit: validation,
-    YAML rendering, and later qualification stages cannot mutate the compiled
-    graph by aliasing its internal candidate mapping.
+    ``RuntimeGraph.candidate`` already returns a deep-copied snapshot, so that
+    single copy is the compiler/serializer boundary: validation, YAML rendering,
+    and later qualification stages cannot mutate the compiled graph by aliasing
+    its internal candidate mapping.
     """
 
-    return copy.deepcopy(dict(graph.candidate))
+    return graph.candidate

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +83,32 @@ def _publisher(
         key_name=key_name,
         namespace_id=namespace_id,
     )
+
+
+def _keyed_publisher(
+    *,
+    token: str,
+    account_id: str,
+    namespace_title: str,
+    namespace_id: str,
+) -> Callable[[str], CloudflareKVPublisher]:
+    """Return the one key-to-publisher factory shared by every KV operation.
+
+    Each entry point resolves its namespace once and then asks for publishers by
+    derived key. Building that closure here keeps the credential wiring in one
+    place instead of repeating it per operation.
+    """
+
+    def publisher_for_key(key: str) -> CloudflareKVPublisher:
+        return _publisher(
+            token=token,
+            account_id=account_id,
+            namespace_title=namespace_title,
+            key_name=key,
+            namespace_id=namespace_id,
+        )
+
+    return publisher_for_key
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -353,14 +379,12 @@ def publish_production_release(
         key_name=production_key,
     ).resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     def capture_baseline(previous: bytes | None) -> None:
         if baseline_capture is None:
@@ -439,14 +463,12 @@ def reconcile_production_release(
         key_name=production_key,
     ).resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     return reconcile_release_bundle(
         factory=factory,
@@ -483,14 +505,12 @@ def reconcile_production_release_ids(
     )
     namespace_id = root.resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     keys = release_keys(production_key)
 
@@ -529,14 +549,12 @@ def audit_production_release_state(
     )
     namespace_id = root.resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     keys = release_keys(production_key)
     production = factory(keys.production).read()
@@ -604,14 +622,12 @@ def plan_production_release_retention(
     )
     namespace_id = root.resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     keys = release_keys(production_key)
     journal, journal_status = parse_release_journal(factory(keys.journal).read())
@@ -651,14 +667,12 @@ def audit_production_release_inventory(
     )
     namespace_id = root.resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     keys = release_keys(production_key)
     journal, journal_status = parse_release_journal(factory(keys.journal).read())
@@ -722,14 +736,12 @@ def apply_production_release_retention(
     )
     namespace_id = root.resolve_namespace_id()
 
-    def factory(key: str) -> CloudflareKVPublisher:
-        return _publisher(
-            token=token,
-            account_id=account_id,
-            namespace_title=namespace_title,
-            key_name=key,
-            namespace_id=namespace_id,
-        )
+    factory = _keyed_publisher(
+        token=token,
+        account_id=account_id,
+        namespace_title=namespace_title,
+        namespace_id=namespace_id,
+    )
 
     keys = release_keys(production_key)
     for release_id in candidates:
